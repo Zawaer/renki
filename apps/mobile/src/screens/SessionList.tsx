@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useClient } from "../lib/client";
 import { colors, statusColor } from "../theme";
+import { AccountsBar } from "./AccountsBar";
 
 export function SessionList({
   onSelect,
@@ -41,6 +42,7 @@ export function SessionList({
 
       <FlatList
         data={sessions}
+        style={styles.list}
         keyExtractor={(s) => s.id}
         ListEmptyComponent={<Text style={styles.empty}>No sessions yet.</Text>}
         renderItem={({ item }) => (
@@ -58,6 +60,8 @@ export function SessionList({
           </TouchableOpacity>
         )}
       />
+
+      <AccountsBar />
 
       {creating && (
         <NewSessionModal
@@ -161,6 +165,7 @@ const styles = StyleSheet.create({
   newBtn: { backgroundColor: colors.accent, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
   newBtnText: { color: "#fff", fontWeight: "600", fontSize: 13 },
   disabled: { opacity: 0.4 },
+  list: { flex: 1 },
   empty: { color: colors.faint, padding: 20, fontSize: 14 },
   row: {
     flexDirection: "row",

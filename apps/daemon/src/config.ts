@@ -32,6 +32,20 @@ const Env = z.object({
   CRC_ALLOW_INSECURE: z.string().optional(),
   /** Expo push endpoint (override to a mock in tests). */
   CRC_EXPO_PUSH_URL: z.string().url().default("https://exp.host/--/api/v2/push/send"),
+
+  // ── multi-account usage rotation (cswap) ──
+  /** Enable automatic account rotation. Off by default. */
+  CRC_ACCOUNT_ROTATION: z.string().optional(),
+  /** cswap executable (name on PATH or absolute path). */
+  CRC_CSWAP_BIN: z.string().min(1).default("cswap"),
+  /** Switch when the active account's 5h or 7d usage reaches this percent. */
+  CRC_ROTATION_THRESHOLD: z.coerce.number().min(1).max(100).default(90),
+  /** Minutes between switches (avoids flip-flopping near the threshold). */
+  CRC_ROTATION_COOLDOWN_MINUTES: z.coerce.number().positive().default(5),
+  /** How often to poll cswap for usage. */
+  CRC_ROTATION_POLL_SECONDS: z.coerce.number().int().positive().default(60),
+  /** cswap --switch strategy. */
+  CRC_ROTATION_STRATEGY: z.enum(["best", "next-available"]).default("best"),
 });
 
 export type Config = {
@@ -47,6 +61,14 @@ export type Config = {
   forcePermissionPrompts: boolean;
   allowInsecure: boolean;
   expoPushUrl: string;
+  rotation: {
+    enabled: boolean;
+    cswapBin: string;
+    threshold: number;
+    cooldownMs: number;
+    pollMs: number;
+    strategy: "best" | "next-available";
+  };
 };
 
 export function loadConfig(): Config {
@@ -73,5 +95,13 @@ export function loadConfig(): Config {
     forcePermissionPrompts: env.CRC_FORCE_PERMISSION_PROMPTS === "1" || env.CRC_FORCE_PERMISSION_PROMPTS === "true",
     allowInsecure: env.CRC_ALLOW_INSECURE === "1" || env.CRC_ALLOW_INSECURE === "true",
     expoPushUrl: env.CRC_EXPO_PUSH_URL,
+    rotation: {
+      enabled: env.CRC_ACCOUNT_ROTATION === "1" || env.CRC_ACCOUNT_ROTATION === "true",
+      cswapBin: env.CRC_CSWAP_BIN,
+      threshold: env.CRC_ROTATION_THRESHOLD,
+      cooldownMs: env.CRC_ROTATION_COOLDOWN_MINUTES * 60_000,
+      pollMs: env.CRC_ROTATION_POLL_SECONDS * 1000,
+      strategy: env.CRC_ROTATION_STRATEGY,
+    },
   };
 }

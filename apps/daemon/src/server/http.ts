@@ -1,7 +1,8 @@
 import websocketPlugin from "@fastify/websocket";
-import { CreateSessionRequest, RegisterPushTokenRequest } from "@crc/protocol";
+import { CreateSessionRequest, RegisterPushTokenRequest, SwitchAccountRequest } from "@crc/protocol";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
+import type { AccountRotator } from "../accounts/rotator.js";
 import type { Config } from "../config.js";
 import { logger } from "../logger.js";
 import type { DeviceRegistry } from "../push/devices.js";
@@ -18,6 +19,7 @@ export type ServerDeps = {
   broker: PermissionBroker;
   pushTokens: PushTokenStore;
   devices: DeviceRegistry;
+  accounts: AccountRotator;
 };
 
 /**
@@ -30,7 +32,7 @@ export type ServerDeps = {
  * is enforced once, in an onRequest hook, so it covers the WS upgrade too.
  */
 export async function createServer(config: Config, deps: ServerDeps): Promise<FastifyInstance> {
-  const { manager, broker, pushTokens, devices } = deps;
+  const { manager, broker, pushTokens, devices, accounts } = deps;
   const app = Fastify({ logger: false });
 
   // Permissive CORS: single-user tool behind a token + tailnet, so we don't
@@ -93,6 +95,26 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
     pushTokens.set(parsed.data.deviceId, parsed.data.expoToken, parsed.data.platform);
     return { ok: true };
+  });
+
+  // Multi-account usage + rotation state.
+  app.get("/accounts", async (_req, reply) => {
+    try {
+      return await accounts.snapshot();
+    } catch (err) {
+      // cswap missing/misconfigured shouldn't 500 the app — report it softly.
+      return reply.code(200).send({
+        activeAccountNumber: null,
+        accounts: [],
+        rotation: { enabled: false, threshold: 0, cooldownMs: 0, lastSwitchAt: null, lastHoldReason: String(err) },
+      });
+    }
+  });
+
+  app.post("/accounts/switch", async (req, reply) => {
+    const parsed = SwitchAccountRequest.safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+    return accounts.manualSwitch(parsed.data.to);
   });
 
   // ── WebSocket ────────────────────────────────────────────────────────────

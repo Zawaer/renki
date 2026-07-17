@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ClientProvider, useClient, useStoreValue } from "./lib/client.js";
 import { type AppConfig, clearConfig, loadConfig, saveConfig } from "./lib/config.js";
+import { AccountsBar } from "./components/AccountsBar.js";
 import { SessionList } from "./components/SessionList.js";
 import { SessionView } from "./components/SessionView.js";
 import { Setup } from "./components/Setup.js";
@@ -67,8 +68,11 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
       )}
 
       <div className="grid flex-1 grid-cols-[280px_1fr] overflow-hidden">
-        <aside className="border-r border-neutral-800">
-          <SessionList selectedId={selected} onSelect={setSelected} />
+        <aside className="flex flex-col border-r border-neutral-800">
+          <div className="min-h-0 flex-1">
+            <SessionList selectedId={selected} onSelect={setSelected} />
+          </div>
+          <AccountsBar />
         </aside>
         <main className="overflow-hidden">
           {selected ? (

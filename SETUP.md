@@ -129,6 +129,42 @@ Enable `CRC_FORCE_PERMISSION_PROMPTS=1` on the daemon so tool permissions
 actually reach your phone instead of being auto-approved by the homelab's
 allow-list.
 
+## Multi-account usage rotation (optional)
+
+If you have more than one Claude account, the daemon can automate the manual
+"hit the limit → `cswap --switch-account` → keep going" habit.
+
+**Prerequisite:** install [`cswap`](https://github.com/realiti4/claude-swap) and
+add your accounts (`cswap --add-account` while logged into each). Confirm
+`cswap --list --json` shows them.
+
+Then set in `.env`:
+
+```
+CRC_ACCOUNT_ROTATION=1
+CRC_ROTATION_THRESHOLD=90        # switch at 90% of the 5h or 7d window
+CRC_ROTATION_COOLDOWN_MINUTES=5  # anti-flip-flop
+```
+
+How it behaves:
+
+- The daemon polls `cswap` for per-account usage. When the active account's 5h
+  **or** 7d usage crosses the threshold and another account has headroom, it
+  runs `cswap --switch` so the *next* `claude` startup uses the other account.
+- **Never mid-flight:** it defers the swap while any session is running a turn
+  (a live CLI could otherwise refresh its token against the wrong account).
+  Because sessions resume per-prompt, the swap lands cleanly between turns.
+- **Fail-safe:** if usage is unavailable or the check errors, it holds on the
+  current account rather than switching blind.
+- All clients show a live per-account usage strip and a manual **Switch** button.
+
+The daemon only ever asks `cswap` to change which account the **official** CLI
+loads at startup — it never extracts or reuses a token. That's the mechanism
+Anthropic has confirmed is within the Consumer Terms.
+
+Pair this with `CRC_FORCE_PERMISSION_PROMPTS=1` if you want tool approvals to
+reach your phone rather than being auto-allowed.
+
 ## Security model (single-user v1)
 
 - **Tailscale (WireGuard)** is the network boundary — the daemon is never on the

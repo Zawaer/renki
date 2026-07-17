@@ -30,6 +30,12 @@ Under the hood the daemon drives Claude via the official
 callbacks) rather than scraping the interactive CLI — which is what makes the
 whole thing robust.
 
+**Optional multi-account rotation:** if you have more than one Claude account,
+the daemon can automate the manual "swap accounts when I hit my limit" habit —
+it drives [`cswap`](https://github.com/realiti4/claude-swap) to change which
+account the official CLI loads at its next startup (never mid-turn, fail-safe,
+never touching tokens itself). See [SETUP.md](./SETUP.md).
+
 ## Architecture
 
 Monorepo (pnpm + Turbo):
@@ -69,5 +75,6 @@ pnpm --filter @crc/web dev             # open http://127.0.0.1:5173
 - [x] Security: Tailscale-friendly, token auth, safe-bind guard
 - [x] VS Code extension (webview reusing the web bundle + editor bridge)
 - [x] Android app (Expo) + push notifications
+- [x] Optional multi-account usage rotation (cswap)
 
 All six build steps complete. Single-user, self-hosted, v1. Built as a portfolio project.

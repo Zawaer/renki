@@ -1,10 +1,12 @@
 import type {
+  AccountsResponse,
   CreateSessionRequest,
   CreateSessionResponse,
   GetTranscriptResponse,
   ListReposResponse,
   ListSessionsResponse,
   Session,
+  SwitchAccountResponse,
 } from "@crc/protocol";
 
 /**
@@ -51,6 +53,15 @@ export class RestClient {
   async archiveSession(sessionId: string): Promise<Session> {
     const res = await this.post<{ session: Session }>(`/sessions/${encodeURIComponent(sessionId)}/archive`, {});
     return res.session;
+  }
+
+  async listAccounts(): Promise<AccountsResponse> {
+    return this.get<AccountsResponse>("/accounts");
+  }
+
+  /** Manually rotate accounts. Omit `to` to jump to the account with most headroom. */
+  async switchAccount(to?: number | string): Promise<SwitchAccountResponse> {
+    return this.post<SwitchAccountResponse>("/accounts/switch", to === undefined ? {} : { to });
   }
 
   // ── internals ──────────────────────────────────────────────────────────────

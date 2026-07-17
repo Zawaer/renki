@@ -1,3 +1,4 @@
+import { AccountRotator } from "./accounts/rotator.js";
 import { loadConfig } from "./config.js";
 import { openDb } from "./db/index.js";
 import { logger } from "./logger.js";
@@ -22,6 +23,8 @@ async function main() {
   const pushTokens = new PushTokenStore(db);
   const notifier = new Notifier(config, manager, devices, pushTokens);
   notifier.attach();
+  const accounts = new AccountRotator(config, manager);
+  accounts.start();
 
   // Safety: never expose an UNAUTHENTICATED daemon beyond loopback. Binding a
   // non-loopback host (e.g. the tailnet IP or 0.0.0.0) with no token would put
@@ -36,7 +39,7 @@ async function main() {
     process.exit(1);
   }
 
-  const app = await createServer(config, { manager, broker, pushTokens, devices });
+  const app = await createServer(config, { manager, broker, pushTokens, devices, accounts });
   await app.listen({ host: config.host, port: config.port });
   logger.info("daemon listening", {
     url: `http://${config.host}:${config.port}`,
@@ -52,6 +55,7 @@ async function main() {
   const shutdown = async (signal: string) => {
     logger.info("shutting down", { signal });
     clearInterval(sweep);
+    accounts.stop();
     await app.close().catch(() => {});
     process.exit(0);
   };

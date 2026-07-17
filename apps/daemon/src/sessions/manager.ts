@@ -70,7 +70,10 @@ export class SessionManager {
     };
     this.db.insert(sessions).values(row).run();
 
-    // First event in the log: the session's birth certificate.
+    // First events in the log: the session's birth certificate + its initial
+    // status. Recording status here means the log fully describes state from
+    // seq 0 — a client can fold it and know the session is idle without any
+    // out-of-band snapshot.
     this.events.append(id, {
       kind: "session_created",
       repoId: repo.id,
@@ -79,6 +82,7 @@ export class SessionManager {
       branch,
       worktreePath,
     });
+    this.events.append(id, { kind: "status_changed", status: "idle" });
 
     logger.info("session created", { id, repo: repo.name, branch });
     return rowToSession(row);

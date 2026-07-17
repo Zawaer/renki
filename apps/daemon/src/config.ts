@@ -16,6 +16,18 @@ const Env = z.object({
   CRC_AUTH_TOKEN: z.string().min(1).optional(),
   /** Idle minutes before the take-control lock auto-releases. */
   CRC_CONTROL_IDLE_MINUTES: z.coerce.number().int().positive().default(15),
+  /** Seconds a pending permission request waits for the controller before denying. */
+  CRC_PERMISSION_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(300),
+  /** Port the HTTP+WS server listens on. */
+  CRC_PORT: z.coerce.number().int().positive().default(4517),
+  /** Address to bind. Default localhost; set to the tailnet IP in Step 4. */
+  CRC_HOST: z.string().min(1).default("127.0.0.1"),
+  /**
+   * When "1"/"true", ignore your personal ~/.claude allow-lists (settingSources
+   * = []) so EVERY gated tool routes through the controller's approval. When
+   * off, the daemon inherits your normal Claude Code settings.
+   */
+  CRC_FORCE_PERMISSION_PROMPTS: z.string().optional(),
 });
 
 export type Config = {
@@ -25,6 +37,10 @@ export type Config = {
   worktreesDir: string;
   authToken: string | undefined;
   controlIdleMs: number;
+  permissionTimeoutMs: number;
+  port: number;
+  host: string;
+  forcePermissionPrompts: boolean;
 };
 
 export function loadConfig(): Config {
@@ -37,5 +53,9 @@ export function loadConfig(): Config {
     worktreesDir: resolve(dataDir, "worktrees"),
     authToken: env.CRC_AUTH_TOKEN,
     controlIdleMs: env.CRC_CONTROL_IDLE_MINUTES * 60_000,
+    permissionTimeoutMs: env.CRC_PERMISSION_TIMEOUT_SECONDS * 1000,
+    port: env.CRC_PORT,
+    host: env.CRC_HOST,
+    forcePermissionPrompts: env.CRC_FORCE_PERMISSION_PROMPTS === "1" || env.CRC_FORCE_PERMISSION_PROMPTS === "true",
   };
 }

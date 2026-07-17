@@ -175,6 +175,7 @@ export class SessionManager {
       prompt: input.text,
       promptId: input.promptId,
       model: input.model,
+      forcePermissionPrompts: this.config.forcePermissionPrompts,
       emit: (payload) => this.events.append(input.sessionId, payload),
       resolvePermission: input.resolvePermission,
     });

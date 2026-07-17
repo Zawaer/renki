@@ -25,8 +25,14 @@ export type PermissionRequest = {
   signal: AbortSignal;
 };
 
+export type PermissionOutcome = {
+  decision: PermissionDecision;
+  /** Which device answered (for the audit trail), or null if auto-resolved. */
+  byDeviceId: string | null;
+};
+
 /** Caller-supplied policy: decide (possibly by asking a remote controller). */
-export type PermissionResolver = (req: PermissionRequest) => Promise<PermissionDecision>;
+export type PermissionResolver = (req: PermissionRequest) => Promise<PermissionOutcome>;
 
 export type RunTurnArgs = {
   cwd: string;
@@ -39,6 +45,8 @@ export type RunTurnArgs = {
   resolvePermission: PermissionResolver;
   abortController?: AbortController;
   model?: string;
+  /** If true, don't load ~/.claude settings so every gated tool asks the controller. */
+  forcePermissionPrompts?: boolean;
 };
 
 export type RunTurnResult = {
@@ -62,20 +70,21 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
     abortController: args.abortController,
     ...(args.resumeSessionId ? { resume: args.resumeSessionId } : {}),
     ...(args.model ? { model: args.model } : {}),
+    ...(args.forcePermissionPrompts ? { settingSources: [] } : {}),
     // Route every permission decision through the caller's resolver. This only
     // fires for tools the permission system doesn't auto-resolve (edits, bash,
     // etc.), which is exactly the set a human controller should see.
     canUseTool: async (toolName, input, opts): Promise<PermissionResult> => {
       const requestId = opts.toolUseID;
       args.emit({ kind: "permission_request", requestId, turnId, toolName, toolInput: input });
-      const decision = await args.resolvePermission({
+      const { decision, byDeviceId } = await args.resolvePermission({
         requestId,
         turnId,
         toolName,
         toolInput: input,
         signal: opts.signal,
       });
-      args.emit({ kind: "permission_resolved", requestId, decision, byDeviceId: null });
+      args.emit({ kind: "permission_resolved", requestId, decision, byDeviceId });
 
       return decision === "allow"
         ? { behavior: "allow", updatedInput: input }

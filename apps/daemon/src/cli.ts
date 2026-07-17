@@ -136,7 +136,7 @@ async function main() {
 const cliPermissionResolver: PermissionResolver = async (req) => {
   const decision = process.env.CRC_CLI_PERMISSION === "deny" ? "deny" : "allow";
   process.stdout.write(`\n  ⟶ [permission] ${req.toolName} → ${decision}\n`);
-  return decision;
+  return { decision, byDeviceId: DEVICE_ID };
 };
 
 /** Pretty-print live events to stdout, giving the token-streaming effect. */

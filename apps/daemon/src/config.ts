@@ -28,6 +28,8 @@ const Env = z.object({
    * off, the daemon inherits your normal Claude Code settings.
    */
   CRC_FORCE_PERMISSION_PROMPTS: z.string().optional(),
+  /** Escape hatch to allow binding a non-loopback host with no auth token. */
+  CRC_ALLOW_INSECURE: z.string().optional(),
 });
 
 export type Config = {
@@ -41,9 +43,18 @@ export type Config = {
   port: number;
   host: string;
   forcePermissionPrompts: boolean;
+  allowInsecure: boolean;
 };
 
 export function loadConfig(): Config {
+  // Load a .env from the working directory if present (Node built-in; no dep).
+  // Real process env still wins for anything already set.
+  try {
+    process.loadEnvFile();
+  } catch {
+    /* no .env file — fine */
+  }
+
   const env = Env.parse(process.env);
   const dataDir = resolve(env.CRC_DATA_DIR);
   return {
@@ -57,5 +68,6 @@ export function loadConfig(): Config {
     port: env.CRC_PORT,
     host: env.CRC_HOST,
     forcePermissionPrompts: env.CRC_FORCE_PERMISSION_PROMPTS === "1" || env.CRC_FORCE_PERMISSION_PROMPTS === "true",
+    allowInsecure: env.CRC_ALLOW_INSECURE === "1" || env.CRC_ALLOW_INSECURE === "true",
   };
 }

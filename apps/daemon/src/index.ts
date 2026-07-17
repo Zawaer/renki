@@ -16,6 +16,19 @@ async function main() {
   const manager = new SessionManager(config, db);
   const broker = new PermissionBroker(config.permissionTimeoutMs);
 
+  // Safety: never expose an UNAUTHENTICATED daemon beyond loopback. Binding a
+  // non-loopback host (e.g. the tailnet IP or 0.0.0.0) with no token would put
+  // an open "run anything on my machine" API on the network. Refuse unless the
+  // operator explicitly opts in with CRC_ALLOW_INSECURE.
+  if (!config.authToken && !isLoopback(config.host) && !config.allowInsecure) {
+    logger.error(
+      "refusing to bind a non-loopback host with no CRC_AUTH_TOKEN — set a token, " +
+        "or (not recommended) CRC_ALLOW_INSECURE=1",
+      { host: config.host },
+    );
+    process.exit(1);
+  }
+
   const app = await createServer(config, manager, broker);
   await app.listen({ host: config.host, port: config.port });
   logger.info("daemon listening", {
@@ -57,6 +70,10 @@ function startIdleSweep(manager: SessionManager, idleMs: number): NodeJS.Timeout
   }, 30_000);
   interval.unref();
   return interval;
+}
+
+function isLoopback(host: string): boolean {
+  return host === "127.0.0.1" || host === "::1" || host === "localhost";
 }
 
 main().catch((err) => {

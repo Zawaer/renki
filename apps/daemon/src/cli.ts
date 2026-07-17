@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { parseArgs } from "node:util";
 import type { SessionEvent } from "@crc/protocol";
 import { loadConfig } from "./config.js";
@@ -38,6 +39,13 @@ async function main() {
   });
 
   const [command, ...rest] = positionals;
+
+  if (command === "token") {
+    // Mint a strong random token to paste into .env as CRC_AUTH_TOKEN.
+    process.stdout.write(`${randomBytes(32).toString("base64url")}\n`);
+    return;
+  }
+
   const config = loadConfig();
 
   if (command === "repos") {
@@ -123,7 +131,7 @@ async function main() {
 
     default:
       return fail(
-        "commands: repos | new <repoId> | sessions | prompt <sessionId> <text> | transcript <sessionId> | archive <sessionId>",
+        "commands: token | repos | new <repoId> | sessions | prompt <sessionId> <text> | transcript <sessionId> | archive <sessionId>",
       );
   }
 }

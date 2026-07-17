@@ -1,0 +1,68 @@
+# Claude Remote Control (CRC)
+
+Self-hosted, multi-device remote control for [Claude Code](https://claude.com/claude-code).
+Run and watch multiple parallel Claude Code sessions across your repos from any
+device — your Mac, VS Code, or your phone — with real-time sync and a
+**take-control** lock so one device drives while the others watch live.
+
+It runs entirely on your own hardware. Prompts and code only ever reach
+Anthropic through the `claude` process the daemon runs locally; there is no
+relay server.
+
+## Why
+
+Built to fix three specific frustrations with existing tools:
+
+1. **Staleness** — no more "exit and rejoin to see updates". Every session is an
+   append-only, sequence-numbered **event log**; clients fold it and reconnect
+   by asking for "everything after seq N", so a reconnecting or late-joining
+   device *cannot* miss anything. Staleness is impossible by construction, not
+   patched over.
+2. **Painless parallelism per repo** — each session runs in its own **git
+   worktree** on a dedicated branch, so parallel sessions on the same repo never
+   collide on file state.
+3. **First-class multi-device control** — every connected device sees the live
+   stream (tokens, tool calls, permission prompts); exactly one holds the lock
+   and can prompt or approve. Taking control is instant.
+
+Under the hood the daemon drives Claude via the official
+`@anthropic-ai/claude-agent-sdk` (structured streaming + programmatic permission
+callbacks) rather than scraping the interactive CLI — which is what makes the
+whole thing robust.
+
+## Architecture
+
+Monorepo (pnpm + Turbo):
+
+| Package | What it is |
+| --- | --- |
+| `packages/protocol` | The shared contract: Zod schemas for domain types, the event log, and every WS/REST message. |
+| `packages/client-core` | Pure-TS brain reused by every client: the event-log→state reducer, a reconnecting WebSocket client (replays from `lastSeq`), and the REST client. No DOM. |
+| `apps/daemon` | Homelab service: spawns Claude sessions (SDK, resume-per-prompt), git worktrees, SQLite persistence, and one HTTP port serving REST + WebSocket. |
+| `apps/web` | Reference client (React + Vite + Tailwind). Reused as-is inside the VS Code webview. |
+
+Planned: `apps/vscode` (webview wrapping the web UI) and `apps/mobile` (Expo /
+React Native, reusing `client-core` + `protocol`).
+
+## Quick start
+
+See **[SETUP.md](./SETUP.md)** for the full homelab + Tailscale walkthrough.
+
+```bash
+pnpm install && pnpm build
+cp .env.example .env
+pnpm --filter @crc/daemon cli token   # -> paste into .env as CRC_AUTH_TOKEN
+pnpm --filter @crc/daemon dev          # start the daemon
+pnpm --filter @crc/web dev             # open http://127.0.0.1:5173
+```
+
+## Status
+
+- [x] Protocol contract + daemon core (worktrees, SDK, persistence)
+- [x] WebSocket + REST server with event-sourced replay & take-control lock
+- [x] Shared `client-core` + React web app
+- [x] Security: Tailscale-friendly, token auth, safe-bind guard
+- [ ] VS Code extension
+- [ ] Android app (Expo) + push notifications
+
+Single-user, self-hosted, v1. Built as a portfolio project.

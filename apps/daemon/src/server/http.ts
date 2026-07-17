@@ -7,6 +7,7 @@ import { logger } from "../logger.js";
 import { scanRepos } from "../repos.js";
 import { SessionError } from "../sessions/errors.js";
 import type { SessionManager } from "../sessions/manager.js";
+import { tokenMatches } from "./auth.js";
 import { Connection } from "./connection.js";
 import type { PermissionBroker } from "./permissions.js";
 
@@ -41,7 +42,7 @@ export async function createServer(
   app.addHook("onRequest", async (req, reply) => {
     if (!config.authToken) return;
     if (req.url.startsWith("/health")) return;
-    if (tokenFrom(req) !== config.authToken) {
+    if (!tokenMatches(tokenFrom(req), config.authToken)) {
       return reply.code(401).send({ error: "unauthorized" });
     }
   });

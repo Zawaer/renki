@@ -148,15 +148,38 @@ CRC_ROTATION_COOLDOWN_MINUTES=5  # anti-flip-flop
 
 How it behaves:
 
-- The daemon polls `cswap` for per-account usage. When the active account's 5h
-  **or** 7d usage crosses the threshold and another account has headroom, it
-  runs `cswap --switch` so the *next* `claude` startup uses the other account.
-- **Never mid-flight:** it defers the swap while any session is running a turn
-  (a live CLI could otherwise refresh its token against the wrong account).
-  Because sessions resume per-prompt, the swap lands cleanly between turns.
-- **Fail-safe:** if usage is unavailable or the check errors, it holds on the
-  current account rather than switching blind.
+- **Rate-limit trigger (works with any account type, incl. setup-tokens):** when
+  a turn actually fails because the account hit its limit, the daemon switches
+  to the other account and — by default — **retries the same prompt once** on
+  the new account. An inline notice shows this in the conversation. Turn off
+  the retry with `CRC_ROTATION_AUTORETRY=0`.
+- **Proactive threshold trigger (needs usage data — see below):** if usage % is
+  available, it also switches when the active account's 5h **or** 7d usage
+  crosses the threshold and another account has headroom.
+- **Never mid-flight:** it defers a proactive swap while any session is running
+  a turn; the rate-limit swap happens *after* the failed turn ends. Either way
+  the swap lands at a clean boundary, and resume-per-prompt continues context.
+- **Fail-safe:** if usage is unavailable or a check errors, it holds rather than
+  switching blind.
 - All clients show a live per-account usage strip and a manual **Switch** button.
+
+### Seeing usage percentages (optional)
+
+`cswap` can't report usage for accounts added via `add-token` (setup-tokens /
+API keys — it makes no API calls for those). To always see 5h/7d %, give the
+daemon a **read-only claude.ai session key** per account (the same credential
+the macOS Claude-Usage-Tracker uses) — this is separate from your coding
+setup-tokens and only ever reads usage:
+
+1. Copy `apps/daemon/usage-accounts.example.json` to your data dir as
+   `usage-accounts.json` (gitignored).
+2. For each account, log into claude.ai in a browser, open DevTools → Cookies →
+   copy the `sessionKey` (`sk-ant-sid01-…`) and your organization UUID.
+3. Fill them in, matching each entry's `email` to the account's email in cswap.
+
+The daemon polls that endpoint, matches by email, and fills in the usage bars —
+and with real usage available, the proactive threshold trigger works too. The
+rate-limit trigger works fine even without any of this.
 
 The daemon only ever asks `cswap` to change which account the **official** CLI
 loads at startup — it never extracts or reuses a token. That's the mechanism

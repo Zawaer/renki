@@ -33,10 +33,11 @@ export type TurnView = {
   errorMessage: string | null;
 };
 
-/** A prompt the controller sent, or an assistant turn in response. */
+/** A prompt the controller sent, an assistant turn, or a system notice. */
 export type TimelineItem =
   | { type: "prompt"; promptId: string; deviceId: string; text: string }
-  | { type: "turn"; turn: TurnView };
+  | { type: "turn"; turn: TurnView }
+  | { type: "notice"; text: string; level: "info" | "warn" };
 
 export type PermissionView = {
   requestId: string;
@@ -157,6 +158,10 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
         durationMs: e.durationMs,
         errorMessage: e.errorMessage,
       }));
+      return s;
+
+    case "notice":
+      s.timeline = [...s.timeline, { type: "notice", text: e.text, level: e.level }];
       return s;
 
     case "error":

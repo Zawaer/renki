@@ -1,0 +1,12 @@
+[
+  {
+    "email": "you@example.com",
+    "sessionKey": "sk-ant-sid01-REPLACE-with-your-claude.ai-sessionKey-cookie",
+    "orgId": "your-organization-uuid"
+  },
+  {
+    "email": "second@example.com",
+    "sessionKey": "sk-ant-sid01-...",
+    "orgId": "..."
+  }
+]

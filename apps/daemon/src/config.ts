@@ -46,6 +46,16 @@ const Env = z.object({
   CRC_ROTATION_POLL_SECONDS: z.coerce.number().int().positive().default(60),
   /** cswap --switch strategy. */
   CRC_ROTATION_STRATEGY: z.enum(["best", "next-available"]).default("best"),
+  /** On a rate-limit failure, switch accounts and retry the prompt once. */
+  CRC_ROTATION_AUTORETRY: z.string().optional(),
+  /**
+   * JSON file of claude.ai session keys for usage %:
+   *   [{ "email": "...", "sessionKey": "sk-ant-sid01-...", "orgId": "..." }]
+   * Read-only usage display only; separate from the coding setup-tokens.
+   */
+  CRC_USAGE_CONFIG: z.string().optional(),
+  /** Base URL for the usage endpoint (override for testing). */
+  CRC_USAGE_BASE_URL: z.string().url().default("https://claude.ai"),
 });
 
 export type Config = {
@@ -68,7 +78,10 @@ export type Config = {
     cooldownMs: number;
     pollMs: number;
     strategy: "best" | "next-available";
+    autoRetry: boolean;
   };
+  usageConfigPath: string;
+  usageBaseUrl: string;
 };
 
 export function loadConfig(): Config {
@@ -102,6 +115,9 @@ export function loadConfig(): Config {
       cooldownMs: env.CRC_ROTATION_COOLDOWN_MINUTES * 60_000,
       pollMs: env.CRC_ROTATION_POLL_SECONDS * 1000,
       strategy: env.CRC_ROTATION_STRATEGY,
+      autoRetry: env.CRC_ROTATION_AUTORETRY !== "0" && env.CRC_ROTATION_AUTORETRY !== "false",
     },
+    usageConfigPath: env.CRC_USAGE_CONFIG ? resolve(env.CRC_USAGE_CONFIG) : resolve(dataDir, "usage-accounts.json"),
+    usageBaseUrl: env.CRC_USAGE_BASE_URL,
   };
 }

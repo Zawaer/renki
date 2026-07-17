@@ -118,6 +118,13 @@ function TimelineRow({ item }: { item: TimelineItem }) {
       </View>
     );
   }
+  if (item.type === "notice") {
+    return (
+      <View style={styles.noticeWrap}>
+        <Text style={[styles.notice, item.level === "warn" && styles.noticeWarn]}>{item.text}</Text>
+      </View>
+    );
+  }
   return <AssistantTurn turn={item.turn} />;
 }
 
@@ -215,6 +222,17 @@ const styles = StyleSheet.create({
   timeline: { flex: 1 },
   timelineContent: { padding: 12, gap: 12 },
   empty: { color: colors.faint, fontSize: 14 },
+  noticeWrap: { alignItems: "center" },
+  notice: {
+    backgroundColor: colors.panel2,
+    color: colors.dim,
+    fontSize: 11,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  noticeWarn: { color: colors.busy },
   userBubbleWrap: { alignItems: "flex-end" },
   userBubble: { backgroundColor: colors.accent, borderRadius: 16, borderBottomRightRadius: 4, paddingHorizontal: 14, paddingVertical: 9, maxWidth: "85%" },
   userText: { color: "#fff", fontSize: 15 },

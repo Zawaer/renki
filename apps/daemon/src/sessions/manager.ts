@@ -22,14 +22,26 @@ import { SessionError } from "./errors.js";
  * It is transport-agnostic: it knows nothing about WebSockets or HTTP. Step 2's
  * server is a thin adapter that calls these methods and forwards events.
  */
+/** Injected by the rotator so a rate-limited turn can switch account + retry. */
+export type RateLimitAutoSwitch = {
+  autoRetryEnabled: boolean;
+  rateLimitSwitch: () => Promise<{ switched: boolean; active: number | null }>;
+};
+
 export class SessionManager {
   readonly events: EventLog;
+  private autoSwitch: RateLimitAutoSwitch | null = null;
 
   constructor(
     private readonly config: Config,
     private readonly db: DB,
   ) {
     this.events = new EventLog(db);
+  }
+
+  /** Wire the account rotator in (set once at startup; avoids a ctor cycle). */
+  setAutoSwitch(autoSwitch: RateLimitAutoSwitch): void {
+    this.autoSwitch = autoSwitch;
   }
 
   // ── Creation / listing / teardown ──────────────────────────────────────────
@@ -173,21 +185,46 @@ export class SessionManager {
       text: input.text,
     });
 
-    const result = await runTurn({
-      cwd: session.worktreePath,
-      resumeSessionId: session.claudeSessionId,
-      prompt: input.text,
-      promptId: input.promptId,
-      model: input.model,
-      forcePermissionPrompts: this.config.forcePermissionPrompts,
-      emit: (payload) => this.events.append(input.sessionId, payload),
-      resolvePermission: input.resolvePermission,
-    });
+    let resumeId = session.claudeSessionId;
+    const runOnce = () =>
+      runTurn({
+        cwd: session.worktreePath,
+        resumeSessionId: resumeId,
+        prompt: input.text,
+        promptId: input.promptId,
+        model: input.model,
+        forcePermissionPrompts: this.config.forcePermissionPrompts,
+        emit: (payload) => this.events.append(input.sessionId, payload),
+        resolvePermission: input.resolvePermission,
+      });
+
+    let result = await runOnce();
+    resumeId = result.claudeSessionId ?? resumeId;
+
+    // Rate-limit auto-rotation: if the turn failed because the account hit its
+    // limit, switch to the other account and retry the SAME prompt exactly once.
+    // The turn has already ended, so this swap is at a clean boundary — never
+    // mid-flight. Once only, so two exhausted accounts can't loop.
+    if (!result.ok && result.rateLimited && this.autoSwitch?.autoRetryEnabled) {
+      this.events.append(input.sessionId, { kind: "notice", text: "Usage limit hit — switching account…", level: "warn" });
+      const sw = await this.autoSwitch.rateLimitSwitch();
+      if (sw.switched) {
+        this.events.append(input.sessionId, {
+          kind: "notice",
+          text: `Switched account${sw.active ? ` (now #${sw.active})` : ""} — retrying.`,
+          level: "info",
+        });
+        result = await runOnce();
+        resumeId = result.claudeSessionId ?? resumeId;
+      } else {
+        this.events.append(input.sessionId, { kind: "notice", text: "No other account available to switch to.", level: "warn" });
+      }
+    }
 
     const nextStatus: SessionStatus = result.ok ? "idle" : "error";
     this.patch(input.sessionId, {
       status: nextStatus,
-      claudeSessionId: result.claudeSessionId,
+      claudeSessionId: resumeId,
       lastActivityAt: Date.now(),
     });
     this.events.append(input.sessionId, { kind: "status_changed", status: nextStatus });

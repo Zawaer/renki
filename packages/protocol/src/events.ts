@@ -126,6 +126,16 @@ const payloads = [
     message: z.string(),
     code: z.string().nullable(),
   }),
+
+  /**
+   * A system notice rendered inline in the conversation — e.g. "rate limit hit,
+   * switched to account 2 and retried". Informational; not tied to a turn.
+   */
+  z.object({
+    kind: z.literal("notice"),
+    text: z.string(),
+    level: z.enum(["info", "warn"]),
+  }),
 ] as const;
 
 /** What the daemon produces before it knows the sequence number. */

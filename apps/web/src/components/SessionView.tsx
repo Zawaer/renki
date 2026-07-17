@@ -101,6 +101,15 @@ function TimelineRow({ item }: { item: TimelineItem }) {
       </div>
     );
   }
+  if (item.type === "notice") {
+    return (
+      <div className="flex justify-center">
+        <span className={`rounded-full px-3 py-1 text-xs ${item.level === "warn" ? "bg-amber-950/40 text-amber-300" : "bg-neutral-800 text-neutral-400"}`}>
+          {item.text}
+        </span>
+      </div>
+    );
+  }
   return <AssistantTurn turn={item.turn} />;
 }
 

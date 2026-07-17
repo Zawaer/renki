@@ -56,11 +56,20 @@ export type RunTurnResult = {
   costUsd: number | null;
   durationMs: number | null;
   errorMessage: string | null;
+  /** True when the failure looks like an account usage/rate limit. */
+  rateLimited: boolean;
 };
+
+/** Pure heuristic: does this error text/flag indicate a usage/rate limit? */
+export function classifyRateLimit(text: string | null | undefined): boolean {
+  if (!text) return false;
+  return /rate.?limit|usage limit|limit reached|limit exceeded|exceeded your usage|too many requests|429/i.test(text);
+}
 
 export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
   const turnId = newTurnId();
   let claudeSessionId: string | null = args.resumeSessionId;
+  let sawRateLimitError = false;
   const blockKinds = new Map<number, "text" | "thinking" | "tool_use">();
 
   const options: Options = {
@@ -106,6 +115,7 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
           break;
 
         case "assistant":
+          if ((message as { error?: string }).error === "rate_limit") sawRateLimitError = true;
           handleAssistantMessage(message.message, turnId, args.emit);
           break;
 
@@ -115,6 +125,7 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
 
         case "result": {
           const ok = message.subtype === "success" && !message.is_error;
+          const errorMessage = ok ? null : summarizeResultError(message);
           args.emit({
             kind: "turn_result",
             turnId,
@@ -122,14 +133,15 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
             ok,
             costUsd: message.total_cost_usd ?? null,
             durationMs: message.duration_ms ?? null,
-            errorMessage: ok ? null : summarizeResultError(message),
+            errorMessage,
           });
           return {
             claudeSessionId,
             ok,
             costUsd: message.total_cost_usd ?? null,
             durationMs: message.duration_ms ?? null,
-            errorMessage: ok ? null : summarizeResultError(message),
+            errorMessage,
+            rateLimited: !ok && (sawRateLimitError || classifyRateLimit(errorMessage)),
           };
         }
 
@@ -150,11 +162,25 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
       durationMs: null,
       errorMessage: msg,
     });
-    return { claudeSessionId, ok: false, costUsd: null, durationMs: null, errorMessage: msg };
+    return {
+      claudeSessionId,
+      ok: false,
+      costUsd: null,
+      durationMs: null,
+      errorMessage: msg,
+      rateLimited: sawRateLimitError || classifyRateLimit(msg),
+    };
   }
 
   // Generator ended without a `result` message (shouldn't normally happen).
-  return { claudeSessionId, ok: false, costUsd: null, durationMs: null, errorMessage: "no result message" };
+  return {
+    claudeSessionId,
+    ok: false,
+    costUsd: null,
+    durationMs: null,
+    errorMessage: "no result message",
+    rateLimited: false,
+  };
 }
 
 /**

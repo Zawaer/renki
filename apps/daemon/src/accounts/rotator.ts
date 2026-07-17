@@ -1,8 +1,9 @@
-import type { AccountsResponse, RotationStatus, SwitchAccountResponse } from "@crc/protocol";
+import type { Account, AccountsResponse, RotationStatus, SwitchAccountResponse } from "@crc/protocol";
 import type { Config } from "../config.js";
 import { logger } from "../logger.js";
 import type { SessionManager } from "../sessions/manager.js";
 import { Cswap } from "./cswap.js";
+import type { UsageReader } from "./usage.js";
 
 /**
  * Automates the manual "hit the limit, run cswap --switch, keep going" habit.
@@ -32,8 +33,45 @@ export class AccountRotator {
   constructor(
     private readonly config: Config,
     private readonly manager: SessionManager,
+    private readonly usage: UsageReader,
   ) {
     this.cswap = new Cswap(config.rotation.cswapBin);
+  }
+
+  /** Auto-retry (switch + re-run) is only attempted when rotation is enabled. */
+  get autoRetryEnabled(): boolean {
+    return this.config.rotation.enabled && this.config.rotation.autoRetry;
+  }
+
+  /** cswap accounts with real usage merged in from the usage reader, by email. */
+  private async mergedAccounts(): Promise<{ activeAccountNumber: number | null; accounts: Account[] }> {
+    const { activeAccountNumber, accounts } = await this.cswap.list();
+    if (!this.usage.configured) return { activeAccountNumber, accounts };
+    const byEmail = await this.usage.usageByEmail();
+    const merged = accounts.map((a) => {
+      const u = byEmail.get(a.email.toLowerCase());
+      return u ? { ...a, usage: u, usageStatus: "ok" } : a;
+    });
+    return { activeAccountNumber, accounts: merged };
+  }
+
+  /**
+   * Hard rate-limit trigger: a turn actually failed with a rate limit, so switch
+   * now regardless of usage numbers (which we may not even have). The caller
+   * limits this to once per prompt, so there's no flip-flop risk.
+   */
+  async rateLimitSwitch(): Promise<{ switched: boolean; active: number | null }> {
+    const { accounts } = await this.cswap.list();
+    if (accounts.length < 2) return { switched: false, active: null };
+    try {
+      const active = await this.cswap.switch(this.config.rotation.strategy);
+      this.lastSwitchAt = Date.now();
+      logger.info("rate-limit switch", { active });
+      return { switched: true, active };
+    } catch (err) {
+      logger.warn("rate-limit switch failed", { err: String(err) });
+      return { switched: false, active: null };
+    }
   }
 
   start(): void {
@@ -53,7 +91,7 @@ export class AccountRotator {
 
   /** Snapshot for GET /accounts: live usage + current rotation policy state. */
   async snapshot(): Promise<AccountsResponse> {
-    const { activeAccountNumber, accounts } = await this.cswap.list();
+    const { activeAccountNumber, accounts } = await this.mergedAccounts();
     return { activeAccountNumber, accounts, rotation: this.status() };
   }
 
@@ -100,7 +138,7 @@ export class AccountRotator {
 
   private async evaluate(): Promise<void> {
     const { threshold, cooldownMs, strategy } = this.config.rotation;
-    const { accounts } = await this.cswap.list();
+    const { accounts } = await this.mergedAccounts();
 
     const active = accounts.find((a) => a.active);
     if (!active) return this.hold("no active account");

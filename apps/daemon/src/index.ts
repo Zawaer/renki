@@ -1,4 +1,5 @@
 import { AccountRotator } from "./accounts/rotator.js";
+import { UsageReader } from "./accounts/usage.js";
 import { loadConfig } from "./config.js";
 import { openDb } from "./db/index.js";
 import { logger } from "./logger.js";
@@ -23,7 +24,9 @@ async function main() {
   const pushTokens = new PushTokenStore(db);
   const notifier = new Notifier(config, manager, devices, pushTokens);
   notifier.attach();
-  const accounts = new AccountRotator(config, manager);
+  const usageReader = new UsageReader(config.usageConfigPath, config.usageBaseUrl);
+  const accounts = new AccountRotator(config, manager, usageReader);
+  manager.setAutoSwitch(accounts); // lets a rate-limited turn switch + retry
   accounts.start();
 
   // Safety: never expose an UNAUTHENTICATED daemon beyond loopback. Binding a

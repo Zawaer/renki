@@ -44,8 +44,10 @@ Monorepo (pnpm + Turbo):
 `apps/vscode` embeds that same web bundle in a webview panel — the only
 VS Code-specific code is config plumbing (daemon URL in settings, token in
 SecretStorage) and a `postMessage` bridge (click a file in a tool call to open
-it in your editor). Planned: `apps/mobile` (Expo / React Native, reusing
-`client-core` + `protocol`).
+it in your editor). `apps/mobile` is an Expo / React Native app that reuses
+`client-core` + `protocol` (the views are RN-native, since DOM components can't
+cross over) and adds push notifications for permission requests / turn
+completion while backgrounded.
 
 ## Quick start
 
@@ -66,6 +68,6 @@ pnpm --filter @crc/web dev             # open http://127.0.0.1:5173
 - [x] Shared `client-core` + React web app
 - [x] Security: Tailscale-friendly, token auth, safe-bind guard
 - [x] VS Code extension (webview reusing the web bundle + editor bridge)
-- [ ] Android app (Expo) + push notifications
+- [x] Android app (Expo) + push notifications
 
-Single-user, self-hosted, v1. Built as a portfolio project.
+All six build steps complete. Single-user, self-hosted, v1. Built as a portfolio project.

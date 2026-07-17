@@ -101,6 +101,34 @@ Then, in VS Code:
    SecretStorage (never in `settings.json`), and file paths in tool calls become
    clickable — they open the file from the session's worktree in your editor.
 
+### Android app (Expo)
+
+```bash
+pnpm --filter @crc/mobile start        # Metro; scan the QR with Expo Go (Android)
+```
+
+In the app's setup screen, enter your daemon's **HTTPS** tailnet URL (use
+`tailscale serve` — Android blocks plaintext HTTP by default in release builds)
+and your token. The phone gets a stable device id, so it keeps its place in the
+take-control lock across restarts.
+
+**Push notifications** (permission requests / turn completion while the app is
+backgrounded) need a few extra one-time steps:
+
+1. `cd apps/mobile && npx eas init` to create an EAS project, then put the
+   printed id in `app.json` under `extra.eas.projectId`.
+2. Remote push requires a **development build** (Expo Go no longer supports it):
+   `npx expo run:android` (with a device/emulator + Android SDK) or
+   `eas build --profile development --platform android`.
+3. Launch that build, grant the notification permission — the app registers its
+   Expo push token with the daemon (`POST /devices/push-token`). Now, when you
+   send a prompt and background the app, you'll get a push if Claude needs a
+   permission decision or the turn finishes. Tapping it opens that session.
+
+Enable `CRC_FORCE_PERMISSION_PROMPTS=1` on the daemon so tool permissions
+actually reach your phone instead of being auto-approved by the homelab's
+allow-list.
+
 ## Security model (single-user v1)
 
 - **Tailscale (WireGuard)** is the network boundary — the daemon is never on the

@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Claude Remote Control",
+    "slug": "crc",
+    "scheme": "crc",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "android": {
+      "package": "org.crc.app"
+    },
+    "plugins": ["expo-secure-store", "expo-notifications"],
+    "extra": {
+      "eas": {
+        "projectId": ""
+      }
+    }
+  }
+}

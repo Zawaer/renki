@@ -41,8 +41,11 @@ Monorepo (pnpm + Turbo):
 | `apps/daemon` | Homelab service: spawns Claude sessions (SDK, resume-per-prompt), git worktrees, SQLite persistence, and one HTTP port serving REST + WebSocket. |
 | `apps/web` | Reference client (React + Vite + Tailwind). Reused as-is inside the VS Code webview. |
 
-Planned: `apps/vscode` (webview wrapping the web UI) and `apps/mobile` (Expo /
-React Native, reusing `client-core` + `protocol`).
+`apps/vscode` embeds that same web bundle in a webview panel — the only
+VS Code-specific code is config plumbing (daemon URL in settings, token in
+SecretStorage) and a `postMessage` bridge (click a file in a tool call to open
+it in your editor). Planned: `apps/mobile` (Expo / React Native, reusing
+`client-core` + `protocol`).
 
 ## Quick start
 
@@ -62,7 +65,7 @@ pnpm --filter @crc/web dev             # open http://127.0.0.1:5173
 - [x] WebSocket + REST server with event-sourced replay & take-control lock
 - [x] Shared `client-core` + React web app
 - [x] Security: Tailscale-friendly, token auth, safe-bind guard
-- [ ] VS Code extension
+- [x] VS Code extension (webview reusing the web bundle + editor bridge)
 - [ ] Android app (Expo) + push notifications
 
 Single-user, self-hosted, v1. Built as a portfolio project.

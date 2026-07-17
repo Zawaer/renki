@@ -81,6 +81,26 @@ refuses to start on a non-loopback host without one (override only with
   the setup screen enter your daemon URL (the tailnet HTTPS URL) + token.
 - Open a second browser/device to try the take-control handoff live.
 
+### VS Code extension
+
+The extension embeds the same web UI in a panel; you configure the connection
+in VS Code instead of the in-app Setup screen.
+
+```bash
+pnpm build                                  # builds web + copies it into the extension
+```
+
+Then, in VS Code:
+
+1. Open the `apps/vscode` folder and press **F5** ("Run CRC Extension") — this
+   launches an Extension Development Host window. (Packaging a `.vsix` is
+   optional and needs `@vscode/vsce`; the dev host doesn't.)
+2. In the dev-host window: set **`crc.daemonUrl`** in Settings, then run
+   **"Claude Remote Control: Set Auth Token"** from the command palette.
+3. Run **"Claude Remote Control: Open Panel"**. The token lives in VS Code's
+   SecretStorage (never in `settings.json`), and file paths in tool calls become
+   clickable — they open the file from the session's worktree in your editor.
+
 ## Security model (single-user v1)
 
 - **Tailscale (WireGuard)** is the network boundary — the daemon is never on the

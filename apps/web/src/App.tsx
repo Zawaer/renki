@@ -4,9 +4,14 @@ import { type AppConfig, clearConfig, loadConfig, saveConfig } from "./lib/confi
 import { SessionList } from "./components/SessionList.js";
 import { SessionView } from "./components/SessionView.js";
 import { Setup } from "./components/Setup.js";
+import { injectedConfig } from "./lib/host.js";
 
 export function App() {
-  const [config, setConfig] = useState<AppConfig | null>(() => loadConfig());
+  // A host (VS Code webview) can inject config; otherwise fall back to what this
+  // browser saved. When hosted, we never show the Setup/Disconnect flow — the
+  // host owns the connection settings.
+  const injected = injectedConfig();
+  const [config, setConfig] = useState<AppConfig | null>(() => injected ?? loadConfig());
 
   if (!config) {
     return (
@@ -22,6 +27,7 @@ export function App() {
   return (
     <ClientProvider config={config}>
       <Workspace
+        managed={injected !== null}
         onReset={() => {
           clearConfig();
           setConfig(null);
@@ -31,7 +37,7 @@ export function App() {
   );
 }
 
-function Workspace({ onReset }: { onReset: () => void }) {
+function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean }) {
   const { realtime, config } = useClient();
   const status = useStoreValue(realtime.status);
   const lastError = useStoreValue(realtime.lastError);
@@ -46,9 +52,11 @@ function Workspace({ onReset }: { onReset: () => void }) {
         </div>
         <div className="flex items-center gap-3 text-xs text-neutral-500">
           <span>{config.deviceName}</span>
-          <button className="hover:text-neutral-300" onClick={onReset}>
-            Disconnect
-          </button>
+          {!managed && (
+            <button className="hover:text-neutral-300" onClick={onReset}>
+              Disconnect
+            </button>
+          )}
         </div>
       </header>
 

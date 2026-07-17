@@ -3,6 +3,10 @@ dist/
 *.tsbuildinfo
 .turbo/
 
+# VS Code extension: web bundle is copied in at build time
+apps/vscode/media/web/
+*.vsix
+
 # Local daemon runtime data (SQLite db, worktrees, logs)
 data/
 *.sqlite

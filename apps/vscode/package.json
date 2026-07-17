@@ -1,0 +1,50 @@
+{
+  "name": "crc-vscode",
+  "displayName": "Claude Remote Control",
+  "description": "Drive your homelab Claude Code sessions from inside VS Code.",
+  "version": "0.0.1",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "main": "./dist/extension.js",
+  "categories": ["Other"],
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "crc.open",
+        "title": "Claude Remote Control: Open Panel"
+      },
+      {
+        "command": "crc.setToken",
+        "title": "Claude Remote Control: Set Auth Token"
+      }
+    ],
+    "configuration": {
+      "title": "Claude Remote Control",
+      "properties": {
+        "crc.daemonUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL of your CRC daemon, e.g. https://homelab.tailnet.ts.net"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node scripts/copy-web.mjs && node scripts/bundle.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "package": "vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "@crc/web": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/vscode": "^1.90.0",
+    "esbuild": "^0.24.2",
+    "typescript": "^5.7.2"
+  }
+}

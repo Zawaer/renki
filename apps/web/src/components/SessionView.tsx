@@ -1,6 +1,7 @@
 import type { BlockView, PermissionView, TimelineItem, TurnView } from "@crc/client-core";
 import { useEffect, useRef, useState } from "react";
 import { useClient, useStoreValue } from "../lib/client.js";
+import { hostOpenFile, isHosted } from "../lib/host.js";
 import { Button, StatusBadge } from "./ui.js";
 
 export function SessionView({ sessionId }: { sessionId: string }) {
@@ -122,11 +123,21 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
 
 function Block({ block }: { block: BlockView }) {
   if (block.kind === "tool_use") {
+    const filePath = extractFilePath(block.toolInput);
     return (
       <div className="rounded-lg border border-neutral-800 bg-neutral-900/60 text-xs">
         <div className="flex items-center gap-2 px-3 py-1.5 font-mono text-neutral-300">
           <span className="text-amber-400">⚙</span>
           {block.toolName}
+          {filePath && isHosted() && (
+            <button
+              onClick={() => hostOpenFile(filePath)}
+              className="ml-auto truncate text-indigo-400 hover:underline"
+              title={`Open ${filePath} in editor`}
+            >
+              {filePath.split("/").pop()}
+            </button>
+          )}
         </div>
         <pre className="overflow-x-auto border-t border-neutral-800 px-3 py-1.5 font-mono text-neutral-400">
           {truncate(JSON.stringify(block.toolInput, null, 2), 800)}
@@ -226,4 +237,13 @@ function Composer({
 
 function truncate(s: string, n: number): string {
   return s.length > n ? `${s.slice(0, n)}…` : s;
+}
+
+/** Tools like Read/Edit/Write carry a `file_path`; surface it for host open. */
+function extractFilePath(input: unknown): string | null {
+  if (input && typeof input === "object" && "file_path" in input) {
+    const p = (input as { file_path: unknown }).file_path;
+    if (typeof p === "string" && p.length > 0) return p;
+  }
+  return null;
 }

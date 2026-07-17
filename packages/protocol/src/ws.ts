@@ -1,0 +1,119 @@
+import { z } from "zod";
+import { PermissionDecision } from "./domain.js";
+import { SessionEvent } from "./events.js";
+
+/**
+ * WebSocket protocol. Consumed by the daemon's WS server (Step 2) and every
+ * client. Auth + device identity are handled at the connection layer (a bearer
+ * token + deviceId supplied on the upgrade request / query string), so the
+ * message schemas below assume an already-authenticated, identified socket.
+ *
+ * The golden rule of the protocol: clients drive state purely from the event
+ * log. `subscribe` carries the client's last-seen seq; the daemon replays the
+ * gap, then streams live `event` messages. There is no separate "current state"
+ * fetch that could race with live updates.
+ */
+
+// ── Client → Server ────────────────────────────────────────────────────────
+
+export const ClientMessage = z.discriminatedUnion("type", [
+  /**
+   * Start watching a session. `lastSeq` is the highest seq this client already
+   * has (-1 = brand new, wants full history). Daemon responds with `subscribed`
+   * then a `replay`, then live `event`s.
+   */
+  z.object({
+    type: z.literal("subscribe"),
+    sessionId: z.string(),
+    lastSeq: z.number().int().min(-1),
+  }),
+
+  z.object({
+    type: z.literal("unsubscribe"),
+    sessionId: z.string(),
+  }),
+
+  /** Immediately reassign the lock to this device and broadcast the change. */
+  z.object({
+    type: z.literal("take_control"),
+    sessionId: z.string(),
+  }),
+
+  z.object({
+    type: z.literal("release_control"),
+    sessionId: z.string(),
+  }),
+
+  /**
+   * Submit a finished prompt. Rejected (via `error`) unless this device is the
+   * current controller AND the session is idle (not mid-turn). `promptId` is a
+   * client-generated id so the client can correlate its optimistic UI with the
+   * resulting `prompt_submitted` event.
+   */
+  z.object({
+    type: z.literal("submit_prompt"),
+    sessionId: z.string(),
+    promptId: z.string(),
+    text: z.string().min(1),
+  }),
+
+  /** Answer a pending permission request. Only honored from the controller. */
+  z.object({
+    type: z.literal("resolve_permission"),
+    sessionId: z.string(),
+    requestId: z.string(),
+    decision: PermissionDecision,
+  }),
+
+  z.object({ type: z.literal("ping") }),
+]);
+export type ClientMessage = z.infer<typeof ClientMessage>;
+
+// ── Server → Client ──────────────────────────────────────────────────────────
+
+export const ServerMessage = z.discriminatedUnion("type", [
+  /** Ack of a subscribe; `currentSeq` is the log head at subscription time. */
+  z.object({
+    type: z.literal("subscribed"),
+    sessionId: z.string(),
+    currentSeq: z.number().int().min(-1),
+  }),
+
+  /** The gap-fill batch sent right after `subscribed`, oldest-first. */
+  z.object({
+    type: z.literal("replay"),
+    sessionId: z.string(),
+    events: z.array(SessionEvent),
+    upToSeq: z.number().int().min(-1),
+  }),
+
+  /** A single live event appended after the client was caught up. */
+  z.object({
+    type: z.literal("event"),
+    event: SessionEvent,
+  }),
+
+  /**
+   * A recoverable, request-scoped error (e.g. "not the controller",
+   * "session busy"). `ref` echoes a client id (like promptId) when relevant.
+   */
+  z.object({
+    type: z.literal("error"),
+    code: z.string(),
+    message: z.string(),
+    ref: z.string().nullable(),
+  }),
+
+  z.object({ type: z.literal("pong") }),
+]);
+export type ServerMessage = z.infer<typeof ServerMessage>;
+
+/** Stable error codes so clients can branch without string-matching messages. */
+export const WsErrorCode = {
+  NotController: "not_controller",
+  SessionBusy: "session_busy",
+  SessionNotFound: "session_not_found",
+  BadMessage: "bad_message",
+  Unauthorized: "unauthorized",
+} as const;
+export type WsErrorCode = (typeof WsErrorCode)[keyof typeof WsErrorCode];

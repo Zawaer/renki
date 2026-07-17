@@ -1,0 +1,19 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.turbo/
+
+# Local daemon runtime data (SQLite db, worktrees, logs)
+data/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store

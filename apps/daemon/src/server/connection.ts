@@ -7,6 +7,7 @@ import {
 } from "@crc/protocol";
 import type { WebSocket } from "ws";
 import { logger } from "../logger.js";
+import type { DeviceRegistry } from "../push/devices.js";
 import { SessionError } from "../sessions/errors.js";
 import type { SessionManager } from "../sessions/manager.js";
 import type { PermissionBroker } from "./permissions.js";
@@ -35,7 +36,9 @@ export class Connection {
     readonly deviceName: string | null,
     private readonly manager: SessionManager,
     private readonly broker: PermissionBroker,
+    private readonly devices: DeviceRegistry,
   ) {
+    this.devices.connect(deviceId); // mark online so the notifier stays quiet
     socket.on("message", (raw) => this.onMessage(raw.toString()));
     socket.on("close", () => this.onClose());
     socket.on("error", (err) => logger.warn("socket error", { deviceId, err: String(err) }));
@@ -169,13 +172,15 @@ export class Connection {
 
   private onClose(): void {
     this.closed = true;
+    this.devices.disconnect(this.deviceId); // now push-eligible again
     for (const off of this.subs.values()) off();
     this.subs.clear();
-    // Clean-disconnect auto-release: drop any locks this device was holding so a
-    // session never gets stuck controlled by a device that's gone.
-    for (const session of this.manager.listSessions()) {
-      if (session.controller === this.deviceId) this.manager.releaseControl(session.id, this.deviceId);
-    }
+    // NOTE: we deliberately do NOT release control here. On mobile a dropped
+    // socket usually means "app backgrounded", not "done" — and releasing would
+    // kill the very controller we need to push a permission request to. The lock
+    // is released explicitly (release_control) or by the idle-timeout sweep, so
+    // it still can't get stuck, but a backgrounded phone keeps its lock long
+    // enough to receive a push, reopen, and approve.
     logger.info("connection closed", { deviceId: this.deviceId });
   }
 }

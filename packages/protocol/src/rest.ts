@@ -40,3 +40,15 @@ export const GetTranscriptResponse = z.object({
   events: z.array(SessionEvent),
 });
 export type GetTranscriptResponse = z.infer<typeof GetTranscriptResponse>;
+
+/**
+ * Register (or refresh) a device's Expo push token so the daemon can notify it
+ * about permission requests / turn completion while its app is backgrounded.
+ * `platform` is informational. Sending an empty token unregisters.
+ */
+export const RegisterPushTokenRequest = z.object({
+  deviceId: z.string().min(1),
+  expoToken: z.string(),
+  platform: z.enum(["android", "ios", "web"]).optional(),
+});
+export type RegisterPushTokenRequest = z.infer<typeof RegisterPushTokenRequest>;

@@ -30,6 +30,8 @@ const Env = z.object({
   CRC_FORCE_PERMISSION_PROMPTS: z.string().optional(),
   /** Escape hatch to allow binding a non-loopback host with no auth token. */
   CRC_ALLOW_INSECURE: z.string().optional(),
+  /** Expo push endpoint (override to a mock in tests). */
+  CRC_EXPO_PUSH_URL: z.string().url().default("https://exp.host/--/api/v2/push/send"),
 });
 
 export type Config = {
@@ -44,6 +46,7 @@ export type Config = {
   host: string;
   forcePermissionPrompts: boolean;
   allowInsecure: boolean;
+  expoPushUrl: string;
 };
 
 export function loadConfig(): Config {
@@ -69,5 +72,6 @@ export function loadConfig(): Config {
     host: env.CRC_HOST,
     forcePermissionPrompts: env.CRC_FORCE_PERMISSION_PROMPTS === "1" || env.CRC_FORCE_PERMISSION_PROMPTS === "true",
     allowInsecure: env.CRC_ALLOW_INSECURE === "1" || env.CRC_ALLOW_INSECURE === "true",
+    expoPushUrl: env.CRC_EXPO_PUSH_URL,
   };
 }

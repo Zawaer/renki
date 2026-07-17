@@ -39,6 +39,7 @@ export class EventLog {
       .run();
 
     this.emitter.emit(channel(sessionId), event);
+    this.emitter.emit(ANY, event);
     return event;
   }
 
@@ -70,6 +71,12 @@ export class EventLog {
     return () => this.emitter.off(ch, listener);
   }
 
+  /** Subscribe to EVERY appended event across all sessions (used by the push notifier). */
+  onAny(listener: (event: SessionEvent) => void): () => void {
+    this.emitter.on(ANY, listener);
+    return () => this.emitter.off(ANY, listener);
+  }
+
   /**
    * Reserve (or peek) the next seq for a session. Seeds from DB the first time
    * we touch a session so seq keeps climbing across daemon restarts.
@@ -91,6 +98,8 @@ export class EventLog {
     return next;
   }
 }
+
+const ANY = "evt:*";
 
 function channel(sessionId: string): string {
   return `evt:${sessionId}`;

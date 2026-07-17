@@ -30,6 +30,13 @@ export const sessions = sqliteTable("sessions", {
   lastActivityAt: integer("last_activity_at").notNull(),
 });
 
+export const pushTokens = sqliteTable("push_tokens", {
+  deviceId: text("device_id").primaryKey(),
+  expoToken: text("expo_token").notNull(),
+  platform: text("platform"),
+  updatedAt: integer("updated_at").notNull(),
+});
+
 export const events = sqliteTable(
   "events",
   {
@@ -70,5 +77,12 @@ export const DDL = `
     kind TEXT NOT NULL,
     data TEXT NOT NULL,
     PRIMARY KEY (session_id, seq)
+  );
+
+  CREATE TABLE IF NOT EXISTS push_tokens (
+    device_id TEXT PRIMARY KEY,
+    expo_token TEXT NOT NULL,
+    platform TEXT,
+    updated_at INTEGER NOT NULL
   );
 ` as const;

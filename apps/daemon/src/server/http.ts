@@ -1,15 +1,24 @@
 import websocketPlugin from "@fastify/websocket";
-import { CreateSessionRequest } from "@crc/protocol";
+import { CreateSessionRequest, RegisterPushTokenRequest } from "@crc/protocol";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
 import type { Config } from "../config.js";
 import { logger } from "../logger.js";
+import type { DeviceRegistry } from "../push/devices.js";
+import type { PushTokenStore } from "../push/tokens.js";
 import { scanRepos } from "../repos.js";
 import { SessionError } from "../sessions/errors.js";
 import type { SessionManager } from "../sessions/manager.js";
 import { tokenMatches } from "./auth.js";
 import { Connection } from "./connection.js";
 import type { PermissionBroker } from "./permissions.js";
+
+export type ServerDeps = {
+  manager: SessionManager;
+  broker: PermissionBroker;
+  pushTokens: PushTokenStore;
+  devices: DeviceRegistry;
+};
 
 /**
  * Builds the single HTTP server that carries BOTH the REST control plane and
@@ -20,11 +29,8 @@ import type { PermissionBroker } from "./permissions.js";
  * transcript). WebSocket = the live conversation. Auth (a shared bearer token)
  * is enforced once, in an onRequest hook, so it covers the WS upgrade too.
  */
-export async function createServer(
-  config: Config,
-  manager: SessionManager,
-  broker: PermissionBroker,
-): Promise<FastifyInstance> {
+export async function createServer(config: Config, deps: ServerDeps): Promise<FastifyInstance> {
+  const { manager, broker, pushTokens, devices } = deps;
   const app = Fastify({ logger: false });
 
   // Permissive CORS: single-user tool behind a token + tailnet, so we don't
@@ -81,6 +87,14 @@ export async function createServer(
     }
   });
 
+  // Register/refresh a device's Expo push token (empty token unregisters).
+  app.post("/devices/push-token", async (req, reply) => {
+    const parsed = RegisterPushTokenRequest.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+    pushTokens.set(parsed.data.deviceId, parsed.data.expoToken, parsed.data.platform);
+    return { ok: true };
+  });
+
   // ── WebSocket ────────────────────────────────────────────────────────────
   await app.register(websocketPlugin);
   app.get<{ Querystring: { deviceId?: string; deviceName?: string } }>(
@@ -93,7 +107,7 @@ export async function createServer(
         return;
       }
       const deviceName = req.query.deviceName?.trim() || null;
-      new Connection(socket, deviceId, deviceName, manager, broker);
+      new Connection(socket, deviceId, deviceName, manager, broker, devices);
       logger.info("connection opened", { deviceId, deviceName });
     },
   );

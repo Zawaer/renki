@@ -1,6 +1,9 @@
 import { loadConfig } from "./config.js";
 import { openDb } from "./db/index.js";
 import { logger } from "./logger.js";
+import { DeviceRegistry } from "./push/devices.js";
+import { Notifier } from "./push/notifier.js";
+import { PushTokenStore } from "./push/tokens.js";
 import { SessionManager } from "./sessions/manager.js";
 import { createServer } from "./server/http.js";
 import { PermissionBroker } from "./server/permissions.js";
@@ -15,6 +18,10 @@ async function main() {
   const db = openDb(config);
   const manager = new SessionManager(config, db);
   const broker = new PermissionBroker(config.permissionTimeoutMs);
+  const devices = new DeviceRegistry();
+  const pushTokens = new PushTokenStore(db);
+  const notifier = new Notifier(config, manager, devices, pushTokens);
+  notifier.attach();
 
   // Safety: never expose an UNAUTHENTICATED daemon beyond loopback. Binding a
   // non-loopback host (e.g. the tailnet IP or 0.0.0.0) with no token would put
@@ -29,7 +36,7 @@ async function main() {
     process.exit(1);
   }
 
-  const app = await createServer(config, manager, broker);
+  const app = await createServer(config, { manager, broker, pushTokens, devices });
   await app.listen({ host: config.host, port: config.port });
   logger.info("daemon listening", {
     url: `http://${config.host}:${config.port}`,

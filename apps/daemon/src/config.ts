@@ -1,5 +1,6 @@
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { z } from "zod";
 
 /**
@@ -84,14 +85,36 @@ export type Config = {
   usageBaseUrl: string;
 };
 
-export function loadConfig(): Config {
-  // Load a .env from the working directory if present (Node built-in; no dep).
-  // Real process env still wins for anything already set.
-  try {
-    process.loadEnvFile();
-  } catch {
-    /* no .env file — fine */
+/**
+ * Find and load the nearest `.env`, walking up from the current directory to the
+ * workspace root. This matters because `pnpm --filter @crc/daemon dev` runs with
+ * cwd = apps/daemon, so a plain `process.loadEnvFile()` (which resolves `.env`
+ * from cwd) would silently miss the repo-root `.env` the docs tell you to
+ * create. We stop at the workspace root (the dir with pnpm-workspace.yaml) so we
+ * never wander above the monorepo. Real process env still wins for anything set.
+ */
+function loadDotEnv(): void {
+  let dir = process.cwd();
+  for (;;) {
+    const envPath = resolve(dir, ".env");
+    if (existsSync(envPath)) {
+      try {
+        process.loadEnvFile(envPath);
+      } catch {
+        /* unreadable .env — fall back to process env */
+      }
+      return;
+    }
+    // Don't climb past the monorepo root.
+    if (existsSync(resolve(dir, "pnpm-workspace.yaml"))) return;
+    const parent = dirname(dir);
+    if (parent === dir) return; // hit the filesystem root
+    dir = parent;
   }
+}
+
+export function loadConfig(): Config {
+  loadDotEnv();
 
   const env = Env.parse(process.env);
   const dataDir = resolve(env.CRC_DATA_DIR);

@@ -9,6 +9,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "cli": "tsx src/cli.ts",
     "start": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts"

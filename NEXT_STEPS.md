@@ -1,10 +1,21 @@
 # Next steps
 
 All six build steps and the multi-account rotation feature are implemented and
-committed. Everything was verified server-side with scripted tests against the
-live daemon, but the parts that need a browser, VS Code, an Android device, or
-live-exhausted accounts couldn't be exercised in the build environment. This is
-the punch list to finish on real hardware, plus deferred enhancements.
+committed. The pure core now has a Vitest unit suite (`pnpm test`) — the
+event-log→state reducer, the daemon event log, the rate-limit classifier, and
+the SessionManager lock/single-writer invariants. The parts that need a browser,
+VS Code, an Android device, or live-exhausted accounts still can't be exercised
+in the build environment. This is the punch list to finish on real hardware,
+plus deferred enhancements.
+
+## 0. Test coverage (started)
+
+- [x] **Pure core unit tests.** Reducer determinism + replay==live, event-log
+      seq/replay/gap-free handoff, `classifyRateLimit`, SessionManager guards.
+- [ ] **Server integration tests.** Stand up the WS/REST server in-process and
+      drive subscribe → replay → live over a real socket (no live `claude`).
+- [ ] **Reducer tests reused by clients.** The web/mobile views fold the same
+      reducer; a light render smoke test would guard the UI layer too.
 
 ## 1. Verify on real hardware (not yet done)
 

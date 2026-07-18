@@ -67,6 +67,11 @@ pnpm --filter @crc/daemon dev          # start the daemon
 pnpm --filter @crc/web dev             # open http://127.0.0.1:5173
 ```
 
+Run the test suite (Vitest) with `pnpm test` — it covers the pure core: the
+event-log→state reducer (determinism + replay==live), the daemon's event log
+(seq monotonicity, gap-free replay), the rate-limit classifier, and the
+SessionManager lock/single-writer invariants.
+
 ## Status
 
 - [x] Protocol contract + daemon core (worktrees, SDK, persistence)
@@ -76,5 +81,6 @@ pnpm --filter @crc/web dev             # open http://127.0.0.1:5173
 - [x] VS Code extension (webview reusing the web bundle + editor bridge)
 - [x] Android app (Expo) + push notifications
 - [x] Optional multi-account usage rotation (cswap)
+- [x] Vitest unit suite over the pure core (reducer, event log, lock invariants)
 
 All six build steps complete. Single-user, self-hosted, v1. Built as a portfolio project.

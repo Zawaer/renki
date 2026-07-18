@@ -1,0 +1,267 @@
+import type { EventPayload, SessionEvent } from "@crc/protocol";
+import { describe, expect, it } from "vitest";
+import {
+  applyEvent,
+  applyEvents,
+  initialConversation,
+  type ConversationState,
+} from "../src/reducer.js";
+
+/**
+ * The reducer is the load-bearing claim of the whole project: feed the same
+ * ordered events through it — whether as a cold replay or a live stream — and
+ * every client lands on the same state. These tests pin that property down
+ * (determinism + replay==live) alongside the per-event folding rules.
+ */
+
+const SID = "s_test";
+
+/** Stamp a list of payloads into SessionEvents with sequential seqs from 0. */
+function stream(...payloads: EventPayload[]): SessionEvent[] {
+  return payloads.map((p, i) => ({ seq: i, sessionId: SID, ts: 1000 + i, ...p }) as SessionEvent);
+}
+
+function fold(events: SessionEvent[]): ConversationState {
+  return applyEvents(initialConversation(SID), events);
+}
+
+// A realistic single-prompt turn: create → idle → take control → prompt →
+// think → text (streamed then finalized) → a gated tool → approve → result →
+// turn done → back to idle.
+const TURN = "t_1";
+function scriptedStream(): SessionEvent[] {
+  return stream(
+    { kind: "session_created", repoId: "r1", repoName: "acme", baseBranch: "main", branch: "crc/ab12", worktreePath: "/wt/s_test" },
+    { kind: "status_changed", status: "idle" },
+    { kind: "control_changed", controller: "d_phone", controllerName: "Phone" },
+    { kind: "status_changed", status: "busy" },
+    { kind: "prompt_submitted", promptId: "p1", deviceId: "d_phone", text: "fix the bug" },
+    { kind: "assistant_delta", turnId: TURN, blockIndex: 0, blockKind: "thinking", text: "Let me " },
+    { kind: "assistant_delta", turnId: TURN, blockIndex: 0, blockKind: "thinking", text: "look…" },
+    { kind: "assistant_block", turnId: TURN, blockIndex: 0, blockKind: "thinking", text: "Let me look…", toolUseId: null, toolName: null, toolInput: null },
+    { kind: "assistant_delta", turnId: TURN, blockIndex: 1, blockKind: "text", text: "I'll " },
+    { kind: "assistant_delta", turnId: TURN, blockIndex: 1, blockKind: "text", text: "edit it." },
+    { kind: "assistant_block", turnId: TURN, blockIndex: 1, blockKind: "text", text: "I'll edit it.", toolUseId: null, toolName: null, toolInput: null },
+    { kind: "assistant_block", turnId: TURN, blockIndex: 2, blockKind: "tool_use", text: null, toolUseId: "tu_1", toolName: "Edit", toolInput: { file: "a.ts" } },
+    { kind: "permission_request", requestId: "req_1", turnId: TURN, toolName: "Edit", toolInput: { file: "a.ts" } },
+    { kind: "permission_resolved", requestId: "req_1", decision: "allow", byDeviceId: "d_phone" },
+    { kind: "tool_result", turnId: TURN, toolUseId: "tu_1", ok: true, summary: "edited a.ts" },
+    { kind: "turn_result", turnId: TURN, promptId: "p1", ok: true, costUsd: 0.012, durationMs: 3400, errorMessage: null },
+    { kind: "status_changed", status: "idle" },
+  );
+}
+
+describe("initialConversation", () => {
+  it("starts empty with lastSeq -1", () => {
+    const s = initialConversation(SID);
+    expect(s).toEqual({
+      sessionId: SID,
+      status: null,
+      controller: null,
+      controllerName: null,
+      repoName: null,
+      branch: null,
+      timeline: [],
+      pending: [],
+      lastSeq: -1,
+    });
+  });
+});
+
+describe("per-event folding", () => {
+  it("session_created records repo + branch", () => {
+    const s = fold(stream({ kind: "session_created", repoId: "r1", repoName: "acme", baseBranch: "main", branch: "crc/ab12", worktreePath: "/wt" }));
+    expect(s.repoName).toBe("acme");
+    expect(s.branch).toBe("crc/ab12");
+  });
+
+  it("status_changed sets status", () => {
+    const s = fold(stream({ kind: "status_changed", status: "busy" }));
+    expect(s.status).toBe("busy");
+  });
+
+  it("control_changed sets and clears the controller", () => {
+    const taken = fold(stream({ kind: "control_changed", controller: "d1", controllerName: "Mac" }));
+    expect(taken.controller).toBe("d1");
+    expect(taken.controllerName).toBe("Mac");
+    const released = fold(stream(
+      { kind: "control_changed", controller: "d1", controllerName: "Mac" },
+      { kind: "control_changed", controller: null, controllerName: null },
+    ));
+    expect(released.controller).toBeNull();
+    expect(released.controllerName).toBeNull();
+  });
+
+  it("prompt_submitted appends a prompt item", () => {
+    const s = fold(stream({ kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "hi" }));
+    expect(s.timeline).toEqual([{ type: "prompt", promptId: "p1", deviceId: "d1", text: "hi" }]);
+  });
+
+  it("assistant_delta accumulates text across chunks within a block", () => {
+    const s = fold(stream(
+      { kind: "assistant_delta", turnId: TURN, blockIndex: 0, blockKind: "text", text: "Hel" },
+      { kind: "assistant_delta", turnId: TURN, blockIndex: 0, blockKind: "text", text: "lo" },
+    ));
+    const turn = (s.timeline[0] as any).turn;
+    expect(turn.blocks[0]).toEqual({ kind: "text", text: "Hello" });
+    expect(turn.status).toBe("running");
+  });
+
+  it("assistant_block's canonical text supersedes the streamed accumulation", () => {
+    const s = fold(stream(
+      { kind: "assistant_delta", turnId: TURN, blockIndex: 0, blockKind: "text", text: "par" },
+      { kind: "assistant_delta", turnId: TURN, blockIndex: 0, blockKind: "text", text: "tial" },
+      { kind: "assistant_block", turnId: TURN, blockIndex: 0, blockKind: "text", text: "final canonical", toolUseId: null, toolName: null, toolInput: null },
+    ));
+    const turn = (s.timeline[0] as any).turn;
+    expect(turn.blocks[0]).toEqual({ kind: "text", text: "final canonical" });
+  });
+
+  it("tool_use block plus tool_result attaches the result by toolUseId", () => {
+    const s = fold(stream(
+      { kind: "assistant_block", turnId: TURN, blockIndex: 0, blockKind: "tool_use", text: null, toolUseId: "tu_1", toolName: "Bash", toolInput: { cmd: "ls" } },
+      { kind: "tool_result", turnId: TURN, toolUseId: "tu_1", ok: true, summary: "a.ts b.ts" },
+    ));
+    const turn = (s.timeline[0] as any).turn;
+    expect(turn.blocks[0]).toEqual({
+      kind: "tool_use",
+      toolUseId: "tu_1",
+      toolName: "Bash",
+      toolInput: { cmd: "ls" },
+      result: { ok: true, summary: "a.ts b.ts" },
+    });
+  });
+
+  it("a tool_result for an unknown toolUseId attaches to nothing", () => {
+    const s = fold(stream(
+      { kind: "assistant_block", turnId: TURN, blockIndex: 0, blockKind: "tool_use", text: null, toolUseId: "tu_1", toolName: "Bash", toolInput: {} },
+      { kind: "tool_result", turnId: TURN, toolUseId: "tu_OTHER", ok: false, summary: "nope" },
+    ));
+    const turn = (s.timeline[0] as any).turn;
+    expect(turn.blocks[0].result).toBeNull();
+  });
+
+  it("permission_request adds to pending; permission_resolved removes it", () => {
+    const requested = fold(stream(
+      { kind: "permission_request", requestId: "req_1", turnId: TURN, toolName: "Edit", toolInput: { f: 1 } },
+    ));
+    expect(requested.pending).toEqual([{ requestId: "req_1", turnId: TURN, toolName: "Edit", toolInput: { f: 1 } }]);
+
+    const resolved = applyEvent(requested, {
+      seq: 1, sessionId: SID, ts: 2,
+      kind: "permission_resolved", requestId: "req_1", decision: "deny", byDeviceId: "d1",
+    } as SessionEvent);
+    expect(resolved.pending).toEqual([]);
+  });
+
+  it("resolving an unknown request leaves pending untouched", () => {
+    const s = fold(stream(
+      { kind: "permission_request", requestId: "req_1", turnId: TURN, toolName: "Edit", toolInput: {} },
+      { kind: "permission_resolved", requestId: "req_OTHER", decision: "allow", byDeviceId: null },
+    ));
+    expect(s.pending.map((p) => p.requestId)).toEqual(["req_1"]);
+  });
+
+  it("turn_result marks the turn done with cost + duration", () => {
+    const s = fold(stream(
+      { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "go" },
+      { kind: "assistant_block", turnId: TURN, blockIndex: 0, blockKind: "text", text: "done", toolUseId: null, toolName: null, toolInput: null },
+      { kind: "turn_result", turnId: TURN, promptId: "p1", ok: true, costUsd: 0.5, durationMs: 1200, errorMessage: null },
+    ));
+    const turn = (s.timeline[1] as any).turn;
+    expect(turn.status).toBe("done");
+    expect(turn.costUsd).toBe(0.5);
+    expect(turn.durationMs).toBe(1200);
+    expect(turn.promptId).toBe("p1");
+  });
+
+  it("a failed turn_result marks the turn errored and carries the message", () => {
+    const s = fold(stream(
+      { kind: "turn_result", turnId: TURN, promptId: "p1", ok: false, costUsd: null, durationMs: null, errorMessage: "boom" },
+    ));
+    const turn = (s.timeline[0] as any).turn;
+    expect(turn.status).toBe("error");
+    expect(turn.errorMessage).toBe("boom");
+  });
+
+  it("notice appends an inline timeline notice", () => {
+    const s = fold(stream({ kind: "notice", text: "switched account", level: "warn" }));
+    expect(s.timeline).toEqual([{ type: "notice", text: "switched account", level: "warn" }]);
+  });
+
+  it("error events fold nothing into the timeline but still advance lastSeq", () => {
+    const s = fold(stream(
+      { kind: "status_changed", status: "idle" },
+      { kind: "error", message: "spawn failed", code: "ENOENT" },
+    ));
+    expect(s.timeline).toEqual([]);
+    expect(s.lastSeq).toBe(1);
+  });
+
+  it("lastSeq tracks the highest seq folded", () => {
+    expect(fold(scriptedStream()).lastSeq).toBe(scriptedStream().length - 1);
+  });
+});
+
+describe("full scripted turn", () => {
+  it("produces the expected timeline shape", () => {
+    const s = fold(scriptedStream());
+    expect(s.status).toBe("idle");
+    expect(s.controller).toBe("d_phone");
+    expect(s.repoName).toBe("acme");
+    expect(s.pending).toEqual([]);
+    // prompt item, then the turn item.
+    expect(s.timeline[0]).toEqual({ type: "prompt", promptId: "p1", deviceId: "d_phone", text: "fix the bug" });
+    const turn = (s.timeline[1] as any).turn;
+    expect(turn.status).toBe("done");
+    expect(turn.blocks.map((b: any) => b.kind)).toEqual(["thinking", "text", "tool_use"]);
+    expect(turn.blocks[0].text).toBe("Let me look…");
+    expect(turn.blocks[1].text).toBe("I'll edit it.");
+    expect(turn.blocks[2].result).toEqual({ ok: true, summary: "edited a.ts" });
+  });
+});
+
+describe("determinism", () => {
+  it("folding the same events twice yields deeply-equal state", () => {
+    const a = fold(scriptedStream());
+    const b = fold(scriptedStream());
+    expect(a).toEqual(b);
+  });
+});
+
+describe("replay == live (staleness is impossible)", () => {
+  it("splitting the stream at every point and resuming lands on the identical state", () => {
+    const events = scriptedStream();
+    const whole = fold(events);
+
+    for (let k = 0; k <= events.length; k++) {
+      // Client A folds a prefix and remembers its lastSeq.
+      const prefix = applyEvents(initialConversation(SID), events.slice(0, k));
+      // It reconnects: the server returns "everything after lastSeq" (read()).
+      const missed = events.filter((e) => e.seq > prefix.lastSeq);
+      const resumed = applyEvents(prefix, missed);
+      expect(resumed).toEqual(whole);
+    }
+  });
+
+  it("a late joiner replaying from seq -1 matches a client that watched live", () => {
+    const events = scriptedStream();
+    const live = events.reduce(applyEvent, initialConversation(SID));
+    const lateJoiner = applyEvents(initialConversation(SID), events);
+    expect(lateJoiner).toEqual(live);
+  });
+});
+
+describe("purity", () => {
+  it("applyEvent never mutates the previous state", () => {
+    const prev = fold(scriptedStream());
+    const snapshot = structuredClone(prev);
+    const next = applyEvent(prev, {
+      seq: 999, sessionId: SID, ts: 9,
+      kind: "notice", text: "later", level: "info",
+    } as SessionEvent);
+    expect(prev).toEqual(snapshot); // untouched
+    expect(next).not.toBe(prev); // new object
+    expect(next.timeline).not.toBe(prev.timeline); // new array
+  });
+});

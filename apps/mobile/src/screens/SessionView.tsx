@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { Markdown } from "../components/Markdown";
 import { useClient, useStoreValue } from "../lib/client";
 import { colors, statusColor } from "../theme";
 
@@ -161,9 +162,9 @@ function Block({ block }: { block: BlockView }) {
     );
   }
   if (block.kind === "thinking") {
-    return <Text style={styles.thinking}>{block.text}</Text>;
+    return <Markdown content={block.text} muted />;
   }
-  return <Text style={styles.assistantText}>{block.text}</Text>;
+  return <Markdown content={block.text} />;
 }
 
 function PermissionCard({
@@ -237,8 +238,6 @@ const styles = StyleSheet.create({
   userBubble: { backgroundColor: colors.accent, borderRadius: 16, borderBottomRightRadius: 4, paddingHorizontal: 14, paddingVertical: 9, maxWidth: "85%" },
   userText: { color: "#fff", fontSize: 15 },
   turn: { gap: 8 },
-  assistantText: { color: colors.text, fontSize: 15, lineHeight: 21 },
-  thinking: { color: colors.faint, fontSize: 14, fontStyle: "italic" },
   running: { color: colors.dim, fontSize: 16 },
   meta: { color: colors.faint, fontSize: 11 },
   errText: { color: colors.danger },

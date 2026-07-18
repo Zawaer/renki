@@ -2,6 +2,7 @@ import type { BlockView, PermissionView, TimelineItem, TurnView } from "@crc/cli
 import { useEffect, useRef, useState } from "react";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { hostOpenFile, isHosted } from "../lib/host.js";
+import { Markdown } from "./Markdown.js";
 import { Button, StatusBadge } from "./ui.js";
 
 export function SessionView({ sessionId }: { sessionId: string }) {
@@ -165,9 +166,13 @@ function Block({ block }: { block: BlockView }) {
     );
   }
   if (block.kind === "thinking") {
-    return <div className="whitespace-pre-wrap border-l-2 border-neutral-700 pl-3 text-sm italic text-neutral-500">{block.text}</div>;
+    return (
+      <div className="border-l-2 border-neutral-700 pl-3">
+        <Markdown content={block.text} muted />
+      </div>
+    );
   }
-  return <div className="whitespace-pre-wrap text-sm text-neutral-200">{block.text}</div>;
+  return <Markdown content={block.text} />;
 }
 
 function PermissionCard({

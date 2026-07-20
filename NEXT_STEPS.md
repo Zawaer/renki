@@ -17,29 +17,37 @@ and a strong portfolio piece — are won or lost on the **on-ramp**, not on more
 features. The throughline for everything below: shrink "found the repo" →
 "running Claude from my phone" to a couple of minutes. Build in this order.
 
-- [ ] **P0 — Prove it end-to-end + OSS hygiene.** Do one honest full run (daemon
-      + phone over Tailscale → create session → stream → take-control) so it's
-      demonstrably working. Then the table stakes: add a LICENSE, a GitHub
-      Actions CI (vitest + typecheck + build), clean up the accidental root-level
-      Expo build artifacts (`android/`, `app.json`, `tsconfig.json`, `.expo/`,
-      root `package.json` expo deps), and settle the Android package name
-      (`org.crc.app` placeholder vs `com.zawaer.clauderemotecontrol`).
-- [ ] **P1 — QR pairing + `crc init` wizard (highest leverage).** `crc init`
-      mints the token, writes `.env`, detects Tailscale and offers to run
-      `tailscale serve`, then prints a QR encoding `{ baseUrl, token }`. Add a
-      "Scan" button to the mobile Setup screen (`apps/mobile/src/screens/Setup.tsx`).
-      Collapses the whole manual setup into one command and removes token-typing
-      entirely — this is the demo "moment."
+- [x] **P0 — Prove it end-to-end + OSS hygiene.** Full run done live (daemon +
+      phone over Tailscale → session → stream → take-control). LICENSE (MIT),
+      GitHub Actions CI (build + typecheck + test), the accidental root-level
+      Expo artifacts cleaned up (twice — `expo prebuild` from the repo root
+      keeps being a footgun, watch for it), and the Android package name
+      settled on `com.zawaer.clauderemotecontrol`.
+- [x] **P1a — QR device pairing.** Done: any connected client (web or phone)
+      shows a QR of its own working `{ baseUrl, token }`
+      (`packages/client-core/src/pairing.ts`); a new device scans it via
+      "Scan QR code" on the mobile Setup screen instead of typing either value.
+  - [ ] **P1b — `crc init` wizard.** Still open: a CLI wizard that mints the
+        token, writes `.env`, detects Tailscale and offers to run
+        `tailscale serve`, then prints the *first* pairing QR to a terminal
+        (today's QR flow needs one client already configured manually to
+        onboard the rest — this closes that bootstrap gap).
 - [ ] **P2 — Distribution.** Prebuilt Android APK (EAS build or a GitHub release
       artifact) + an Expo Go path, and a `docker run` / `npx` one-liner for the
       daemon. Turns "clone the monorepo and fight Gradle" into "install, run,
       scan." Without this, P1's polish is wasted because people never reach Setup.
-- [ ] **P3 — README + demo + architecture.** Lead the README with a ~60s
-      screen-recording GIF, a one-paragraph what/why, the 3-step quickstart, a
-      small architecture diagram (the event-log/replay + take-control design is
-      worth showing off), and a security section (self-hosted, tailnet, 256-bit
-      token, timing-safe compare — say it; it signals judgment). For a portfolio,
-      the README is disproportionately what gets seen.
+- [x] **P3a — README + architecture + security docs.** Done: README has a
+      one-paragraph what/why, a features list, a Mermaid architecture diagram,
+      a 3-step quickstart, and Contributing/Security/License pointers.
+      CONTRIBUTING.md, SECURITY.md, CODE_OF_CONDUCT.md, and GitHub issue/PR
+      templates added.
+  - [ ] **P3b — Demo GIF.** Still open: a ~60s screen recording of the actual
+        take-control handoff. Needs a human to record it — this is genuinely
+        worth doing before the repo goes public, it's the thing that gets
+        someone to actually try the quickstart.
+  - [ ] The repo is currently **private** on GitHub. Flip to public when ready
+        (and consider setting the repo's About description/topics — see the
+        `description` field already in the root `package.json` for text to reuse).
 
 **Deliberately skipped for now** (revisit only on real demand):
 

@@ -81,6 +81,15 @@ refuses to start on a non-loopback host without one (override only with
   the setup screen enter your daemon URL (the tailnet HTTPS URL) + token.
 - Open a second browser/device to try the take-control handoff live.
 
+### Pairing additional devices (QR code)
+
+Once one client is connected, don't retype the URL and token on the next one.
+Any connected web or Android client has a **"Pair a device"** button that shows
+a QR code encoding its own working `{ baseUrl, token }`. On the device you're
+adding, use **"Scan QR code"** on the Setup screen (Android) instead of typing
+— it runs the same connectivity test either way, so a stale or wrong QR still
+fails safely rather than "connecting" silently.
+
 ### VS Code extension
 
 The extension embeds the same web UI in a panel; you configure the connection
@@ -107,9 +116,15 @@ Then, in VS Code:
 pnpm --filter @crc/mobile start        # Metro; scan the QR with Expo Go (Android)
 ```
 
-In the app's setup screen, enter your daemon's **HTTPS** tailnet URL (use
+(That QR just loads the JS bundle — Metro's own dev-client QR, not the CRC
+pairing one below.)
+
+On the app's Setup screen, either **tap "Scan QR code"** and scan the pairing
+QR from an already-connected client (see [§5](#pairing-additional-devices-qr-code)
+above — fastest, no typing), or enter your daemon's **HTTPS** tailnet URL (use
 `tailscale serve` — Android blocks plaintext HTTP by default in release builds)
-and your token. The phone gets a stable device id, so it keeps its place in the
+and your token manually. Either way runs the same connectivity check before
+saving. The phone gets a stable device id, so it keeps its place in the
 take-control lock across restarts.
 
 **Push notifications** (permission requests / turn completion while the app is
@@ -173,27 +188,39 @@ setup-tokens and only ever reads usage. You never have to find an org UUID: the
 daemon resolves the org **and** email from the key automatically.
 
 **Easiest — connect from any client.** In the Accounts strip tap **Connect
-usage %**. Three ways in, all landing on the same daemon endpoint:
+usage %**. Three ways to get a session key, all landing on the same daemon
+endpoint, followed by **one extra step: you pick which organization's usage
+to track.** claude.ai accounts commonly have more than one org (e.g. an empty
+personal org next to the one that actually carries your subscription), so the
+daemon never guesses — it lists every org the key can see, with each org's
+live usage, and you tap the right one.
 
 - **Phone (native login):** a WebView opens claude.ai; sign in and the session
-  cookie is captured automatically. Needs a custom dev build — see the mobile
-  note below (you already build outside Expo Go for push).
+  cookie is captured automatically (no Cloudflare challenge — it's a real
+  browser session, not an automated one). Needs a custom dev build — see the
+  mobile note below (you already build outside Expo Go for push).
 - **Mac (guided login):** the daemon opens a real browser on its host; sign in
   and it reads the cookie. Requires Playwright on the daemon host:
   `pnpm --filter @crc/daemon add playwright` (reuses your installed Chrome via
   `CRC_USAGE_LOGIN_CHANNEL=chrome`, so no 150 MB download). You can also run it
   headless of the app with `pnpm --filter @crc/daemon exec crc usage login`.
-- **Paste (works everywhere):** copy the `sessionKey` (`sk-ant-sid01-…`) cookie
-  from claude.ai DevTools (or from the Claude Usage app) and paste it. On the
-  CLI: `crc usage connect sk-ant-sid01-…`.
+- **Paste (works everywhere):** copy the `sessionKey` (`sk-ant-sid…`) cookie
+  from claude.ai DevTools (or from the Claude Usage app) and paste it.
+
+On the CLI, the same two steps: `crc usage orgs <sessionKey>` lists your orgs
+with their usage, then `crc usage connect <sessionKey> <orgId>` persists the
+one you picked.
 
 **Manual file (still supported).** Copy `apps/daemon/usage-accounts.example.json`
-to your data dir as `usage-accounts.json` (gitignored); `orgId`/`email` are
-optional now — a bare `{ "sessionKey": "…" }` is enough.
+to your data dir as `usage-accounts.json` (gitignored) and fill in the
+`sessionKey` **and** `orgId` for each account — get the `orgId` from
+`crc usage orgs <sessionKey>` first, since the daemon won't auto-pick one.
 
-The daemon polls the usage endpoint, matches by email, and fills in the usage
-bars — and with real usage available, the proactive threshold trigger works too.
-The rate-limit trigger works fine even without any of this.
+The daemon fetches usage through a browser-fingerprinted HTTP client (claude.ai
+puts this endpoint behind Cloudflare, which blocks a plain server-side
+request), matches by email, and fills in the usage bars — and with real usage
+available, the proactive threshold trigger works too. The rate-limit trigger
+works fine even without any of this.
 
 > **Mobile dev build:** the native login uses `react-native-webview` +
 > `@react-native-cookies/cookies`, which need native code. Rebuild the dev

@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { parseArgs } from "node:util";
 import type { SessionEvent } from "@crc/protocol";
 import { loadConfig } from "./config.js";
@@ -40,13 +39,14 @@ async function main() {
 
   const [command, ...rest] = positionals;
 
+  const config = loadConfig();
+
   if (command === "token") {
-    // Mint a strong random token to paste into .env as CRC_AUTH_TOKEN.
-    process.stdout.write(`${randomBytes(32).toString("base64url")}\n`);
+    // Resolved the same way the running daemon resolves it: CRC_AUTH_TOKEN if
+    // set, else the persisted (or just-minted) <dataDir>/auth-token.
+    process.stdout.write(`${config.authToken}\n`);
     return;
   }
-
-  const config = loadConfig();
 
   if (command === "repos") {
     const repos = await scanRepos(config);

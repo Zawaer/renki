@@ -1,7 +1,9 @@
-import { existsSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { z } from "zod";
+import { logger } from "./logger.js";
 
 /**
  * Daemon configuration, resolved once at startup from environment variables
@@ -13,7 +15,12 @@ const Env = z.object({
   CRC_REPOS_ROOT: z.string().min(1).default(resolve(homedir(), "coding")),
   /** Where the daemon keeps its SQLite db and per-session worktrees. */
   CRC_DATA_DIR: z.string().min(1).default(resolve(process.cwd(), "data")),
-  /** Shared secret clients must present (used from Step 4 onward). */
+  /**
+   * Shared secret clients must present. Optional — leave it unset and the
+   * daemon mints one on first boot and persists it at
+   * `<dataDir>/auth-token`, so there's always a real token with no manual
+   * step (`crc token` prints whichever one is active).
+   */
   CRC_AUTH_TOKEN: z.string().min(1).optional(),
   /** Idle minutes before the take-control lock auto-releases. */
   CRC_CONTROL_IDLE_MINUTES: z.coerce.number().int().positive().default(15),
@@ -29,8 +36,6 @@ const Env = z.object({
    * off, the daemon inherits your normal Claude Code settings.
    */
   CRC_FORCE_PERMISSION_PROMPTS: z.string().optional(),
-  /** Escape hatch to allow binding a non-loopback host with no auth token. */
-  CRC_ALLOW_INSECURE: z.string().optional(),
   /** Expo push endpoint (override to a mock in tests). */
   CRC_EXPO_PUSH_URL: z.string().url().default("https://exp.host/--/api/v2/push/send"),
 
@@ -68,13 +73,12 @@ export type Config = {
   dataDir: string;
   dbPath: string;
   worktreesDir: string;
-  authToken: string | undefined;
+  authToken: string;
   controlIdleMs: number;
   permissionTimeoutMs: number;
   port: number;
   host: string;
   forcePermissionPrompts: boolean;
-  allowInsecure: boolean;
   expoPushUrl: string;
   rotation: {
     enabled: boolean;
@@ -119,6 +123,29 @@ function loadDotEnv(): void {
   }
 }
 
+/**
+ * Resolve the daemon's auth token: an explicit CRC_AUTH_TOKEN always wins.
+ * Otherwise reuse — or mint and persist — `<dataDir>/auth-token`, so the
+ * daemon always has a real token without the operator setting one by hand,
+ * and it survives restarts (and container recreates, as long as dataDir is a
+ * volume) instead of changing on every boot.
+ */
+function resolveAuthToken(envToken: string | undefined, dataDir: string): string {
+  if (envToken) return envToken;
+
+  const tokenPath = resolve(dataDir, "auth-token");
+  if (existsSync(tokenPath)) {
+    const existing = readFileSync(tokenPath, "utf8").trim();
+    if (existing) return existing;
+  }
+
+  const generated = randomBytes(32).toString("base64url");
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(tokenPath, `${generated}\n`, { mode: 0o600 });
+  logger.info("no CRC_AUTH_TOKEN set — generated one", { path: tokenPath });
+  return generated;
+}
+
 export function loadConfig(): Config {
   loadDotEnv();
 
@@ -129,13 +156,12 @@ export function loadConfig(): Config {
     dataDir,
     dbPath: resolve(dataDir, "crc.sqlite"),
     worktreesDir: resolve(dataDir, "worktrees"),
-    authToken: env.CRC_AUTH_TOKEN,
+    authToken: resolveAuthToken(env.CRC_AUTH_TOKEN, dataDir),
     controlIdleMs: env.CRC_CONTROL_IDLE_MINUTES * 60_000,
     permissionTimeoutMs: env.CRC_PERMISSION_TIMEOUT_SECONDS * 1000,
     port: env.CRC_PORT,
     host: env.CRC_HOST,
     forcePermissionPrompts: env.CRC_FORCE_PERMISSION_PROMPTS === "1" || env.CRC_FORCE_PERMISSION_PROMPTS === "true",
-    allowInsecure: env.CRC_ALLOW_INSECURE === "1" || env.CRC_ALLOW_INSECURE === "true",
     expoPushUrl: env.CRC_EXPO_PUSH_URL,
     rotation: {
       enabled: env.CRC_ACCOUNT_ROTATION === "1" || env.CRC_ACCOUNT_ROTATION === "true",

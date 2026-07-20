@@ -47,11 +47,10 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
     if (req.method === "OPTIONS") return reply.code(204).send();
   });
 
-  // Token auth. Skipped when no token is configured (LAN-only dev) and for the
-  // unauthenticated health check. Token accepted via Authorization: Bearer, the
-  // x-crc-token header, or a ?token= query param (WebSocket-friendly).
+  // Token auth (skipped only for the unauthenticated health check). Token
+  // accepted via Authorization: Bearer, the x-crc-token header, or a ?token=
+  // query param (WebSocket-friendly).
   app.addHook("onRequest", async (req, reply) => {
-    if (!config.authToken) return;
     if (req.url.startsWith("/health")) return;
     if (!tokenMatches(tokenFrom(req), config.authToken)) {
       return reply.code(401).send({ error: "unauthorized" });

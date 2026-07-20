@@ -29,29 +29,9 @@ async function main() {
   manager.setAutoSwitch(accounts); // lets a rate-limited turn switch + retry
   accounts.start();
 
-  // Safety: never expose an UNAUTHENTICATED daemon beyond loopback. Binding a
-  // non-loopback host (e.g. the tailnet IP or 0.0.0.0) with no token would put
-  // an open "run anything on my machine" API on the network. Refuse unless the
-  // operator explicitly opts in with CRC_ALLOW_INSECURE.
-  if (!config.authToken && !isLoopback(config.host) && !config.allowInsecure) {
-    logger.error(
-      "refusing to bind a non-loopback host with no CRC_AUTH_TOKEN — set a token, " +
-        "or (not recommended) CRC_ALLOW_INSECURE=1",
-      { host: config.host },
-    );
-    process.exit(1);
-  }
-
   const app = await createServer(config, { manager, broker, pushTokens, devices, accounts, usage: usageReader });
   await app.listen({ host: config.host, port: config.port });
-  logger.info("daemon listening", {
-    url: `http://${config.host}:${config.port}`,
-    reposRoot: config.reposRoot,
-    authRequired: Boolean(config.authToken),
-  });
-  if (!config.authToken) {
-    logger.warn("no CRC_AUTH_TOKEN set — API is open to anyone who can reach the port");
-  }
+  logger.info("daemon listening", { url: `http://${config.host}:${config.port}`, reposRoot: config.reposRoot });
 
   const sweep = startIdleSweep(manager, config.controlIdleMs);
 
@@ -84,10 +64,6 @@ function startIdleSweep(manager: SessionManager, idleMs: number): NodeJS.Timeout
   }, 30_000);
   interval.unref();
   return interval;
-}
-
-function isLoopback(host: string): boolean {
-  return host === "127.0.0.1" || host === "::1" || host === "localhost";
 }
 
 main().catch((err) => {

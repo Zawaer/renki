@@ -33,12 +33,14 @@ pnpm build          # compiles protocol + daemon (+ web) to dist/
 
 ```bash
 cp .env.example .env
-pnpm --filter @crc/daemon cli token   # prints a strong token
 ```
 
-Paste that token into `.env` as `CRC_AUTH_TOKEN`, and set `CRC_REPOS_ROOT` to
-your projects folder. Leave `CRC_HOST=127.0.0.1` — we expose it over Tailscale
-in step 4 rather than binding to the network directly.
+`CRC_AUTH_TOKEN` is optional — leave it commented out and the daemon mints one
+on first boot (`pnpm --filter @crc/daemon cli token` shows whichever one is
+active, generating it if needed). Set it yourself in `.env` only if you want
+to choose the value. `CRC_REPOS_ROOT` defaults to `~/coding`; only uncomment
+it if your repos live somewhere else. Leave `CRC_HOST=127.0.0.1` — we expose
+it over Tailscale in step 4 rather than binding to the network directly.
 
 Quick sanity check:
 
@@ -83,9 +85,10 @@ secure origin, and `wss://` comes for free. WebSocket upgrades pass through
 ### Alternative: bind to the tailnet directly
 
 If you'd rather not use `tailscale serve`, set `CRC_HOST=0.0.0.0` (or your
-`100.x.y.z` tailnet IP) in `.env`. A token is then **required** — the daemon
-refuses to start on a non-loopback host without one (override only with
-`CRC_ALLOW_INSECURE=1`, not recommended). You'll be on `http://…:4517` (no TLS).
+`100.x.y.z` tailnet IP) in `.env`. The token requirement doesn't change either
+way — the daemon always has one, auto-generated if you didn't set one — but
+you'll be on `http://…:4517` with no TLS, so the token travels in plaintext on
+your tailnet instead of over HTTPS.
 
 ## 5. Connect a client
 

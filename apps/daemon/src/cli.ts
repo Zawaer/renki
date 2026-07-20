@@ -58,6 +58,58 @@ async function main() {
     return;
   }
 
+  // Connect a claude.ai usage session key without a running daemon. Two-step so
+  // YOU pick the org (an account often has an empty personal org + the real one):
+  //   crc usage login                    open a browser, sign in; prints key + orgs
+  //   crc usage orgs <key>               list the orgs a key can see (pick one)
+  //   crc usage connect <key> <orgId>    track that org's usage
+  if (command === "usage") {
+    const { UsageReader } = await import("./accounts/usage.js");
+    const reader = new UsageReader(config.usageConfigPath, config.usageBaseUrl);
+    const printOrgs = (
+      orgs: { orgId: string; name: string; usage: { fiveHour: { pct: number }; sevenDay: { pct: number } } | null }[],
+    ) => {
+      for (const o of orgs) {
+        const u = o.usage ? `5h ${o.usage.fiveHour.pct}% · 7d ${o.usage.sevenDay.pct}%` : "no usage data";
+        console.log(`${o.orgId}\t${u}\t${o.name}`);
+      }
+      console.log("\nConnect one with: crc usage connect <key> <orgId>");
+    };
+
+    if (rest[0] === "login") {
+      const { loginAndExtractSessionKey, PlaywrightUnavailableError } = await import("./accounts/login.js");
+      try {
+        console.log("Opening a browser — sign in to claude.ai in the window that appears…");
+        const key = await loginAndExtractSessionKey({
+          baseUrl: config.usageBaseUrl,
+          channel: config.usageLoginChannel || undefined,
+          timeoutMs: config.usageLoginTimeoutMs,
+        });
+        const { orgs } = await reader.listOrgs(key);
+        console.log(`\nsession key: ${key}\n`);
+        printOrgs(orgs);
+      } catch (err) {
+        return fail(err instanceof PlaywrightUnavailableError ? err.message : err instanceof Error ? err.message : String(err));
+      }
+      return;
+    }
+    if (rest[0] === "orgs") {
+      const key = rest[1];
+      if (!key) return fail("usage: crc usage orgs <sessionKey>");
+      printOrgs((await reader.listOrgs(key)).orgs);
+      return;
+    }
+    if (rest[0] === "connect") {
+      const key = rest[1];
+      const orgId = rest[2];
+      if (!key || !orgId) return fail("usage: crc usage connect <sessionKey> <orgId>  (list orgs: crc usage orgs <key>)");
+      const id = await reader.addKey(key, orgId);
+      console.log(`connected ${id.email ?? "(email unknown)"} — 5h ${id.usage.fiveHour.pct}% · 7d ${id.usage.sevenDay.pct}%`);
+      return;
+    }
+    return fail("usage: crc usage login | crc usage orgs <key> | crc usage connect <key> <orgId>");
+  }
+
   const db = openDb(config);
   const manager = new SessionManager(config, db);
 
@@ -131,7 +183,7 @@ async function main() {
 
     default:
       return fail(
-        "commands: token | repos | new <repoId> | sessions | prompt <sessionId> <text> | transcript <sessionId> | archive <sessionId>",
+        "commands: token | repos | usage login|connect | new <repoId> | sessions | prompt <sessionId> <text> | transcript <sessionId> | archive <sessionId>",
       );
   }
 }

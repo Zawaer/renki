@@ -8,9 +8,20 @@
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "android": {
-      "package": "org.crc.app"
+      "package": "com.zawaer.clauderemotecontrol"
     },
-    "plugins": ["expo-secure-store", "expo-notifications"],
+    "plugins": [
+      "expo-secure-store",
+      "expo-notifications",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "kotlinVersion": "1.9.24"
+          }
+        }
+      ]
+    ],
     "extra": {
       "eas": {
         "projectId": ""

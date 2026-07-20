@@ -5,13 +5,16 @@
   "main": "index.js",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "android": "expo run:android",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "@crc/client-core": "workspace:*",
     "@crc/protocol": "workspace:*",
+    "@react-native-cookies/cookies": "^6.2.1",
     "expo": "~52.0.0",
+    "expo-build-properties": "~0.13.3",
     "expo-constants": "~17.0.0",
     "expo-crypto": "~14.0.0",
     "expo-notifications": "~0.29.0",
@@ -19,7 +22,8 @@
     "expo-status-bar": "~2.0.0",
     "react": "18.3.1",
     "react-native": "0.76.5",
-    "react-native-markdown-display": "^7.0.2"
+    "react-native-markdown-display": "^7.0.2",
+    "react-native-webview": "13.12.5"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

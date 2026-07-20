@@ -169,17 +169,36 @@ How it behaves:
 API keys — it makes no API calls for those). To always see 5h/7d %, give the
 daemon a **read-only claude.ai session key** per account (the same credential
 the macOS Claude-Usage-Tracker uses) — this is separate from your coding
-setup-tokens and only ever reads usage:
+setup-tokens and only ever reads usage. You never have to find an org UUID: the
+daemon resolves the org **and** email from the key automatically.
 
-1. Copy `apps/daemon/usage-accounts.example.json` to your data dir as
-   `usage-accounts.json` (gitignored).
-2. For each account, log into claude.ai in a browser, open DevTools → Cookies →
-   copy the `sessionKey` (`sk-ant-sid01-…`) and your organization UUID.
-3. Fill them in, matching each entry's `email` to the account's email in cswap.
+**Easiest — connect from any client.** In the Accounts strip tap **Connect
+usage %**. Three ways in, all landing on the same daemon endpoint:
 
-The daemon polls that endpoint, matches by email, and fills in the usage bars —
-and with real usage available, the proactive threshold trigger works too. The
-rate-limit trigger works fine even without any of this.
+- **Phone (native login):** a WebView opens claude.ai; sign in and the session
+  cookie is captured automatically. Needs a custom dev build — see the mobile
+  note below (you already build outside Expo Go for push).
+- **Mac (guided login):** the daemon opens a real browser on its host; sign in
+  and it reads the cookie. Requires Playwright on the daemon host:
+  `pnpm --filter @crc/daemon add playwright` (reuses your installed Chrome via
+  `CRC_USAGE_LOGIN_CHANNEL=chrome`, so no 150 MB download). You can also run it
+  headless of the app with `pnpm --filter @crc/daemon exec crc usage login`.
+- **Paste (works everywhere):** copy the `sessionKey` (`sk-ant-sid01-…`) cookie
+  from claude.ai DevTools (or from the Claude Usage app) and paste it. On the
+  CLI: `crc usage connect sk-ant-sid01-…`.
+
+**Manual file (still supported).** Copy `apps/daemon/usage-accounts.example.json`
+to your data dir as `usage-accounts.json` (gitignored); `orgId`/`email` are
+optional now — a bare `{ "sessionKey": "…" }` is enough.
+
+The daemon polls the usage endpoint, matches by email, and fills in the usage
+bars — and with real usage available, the proactive threshold trigger works too.
+The rate-limit trigger works fine even without any of this.
+
+> **Mobile dev build:** the native login uses `react-native-webview` +
+> `@react-native-cookies/cookies`, which need native code. Rebuild the dev
+> client after installing: `pnpm --filter @crc/mobile exec expo prebuild` then
+> `pnpm --filter @crc/mobile run android` (or `ios`). It won't work in Expo Go.
 
 The daemon only ever asks `cswap` to change which account the **official** CLI
 loads at startup — it never extracts or reuses a token. That's the mechanism

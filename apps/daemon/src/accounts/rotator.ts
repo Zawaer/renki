@@ -92,7 +92,23 @@ export class AccountRotator {
   /** Snapshot for GET /accounts: live usage + current rotation policy state. */
   async snapshot(): Promise<AccountsResponse> {
     const { activeAccountNumber, accounts } = await this.mergedAccounts();
-    return { activeAccountNumber, accounts, rotation: this.status() };
+    return {
+      activeAccountNumber,
+      accounts,
+      rotation: this.status(),
+      usageConfigured: this.usage.configured,
+      usageConnectedEmails: this.usage.connectedEmails(),
+    };
+  }
+
+  /** Email of the currently active cswap account, used as a usage-key hint. */
+  async activeEmail(): Promise<string | undefined> {
+    try {
+      const { accounts } = await this.cswap.list();
+      return accounts.find((a) => a.active)?.email || undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   /** Manual switch (REST). Honors the never-mid-flight rule too. */

@@ -42,7 +42,7 @@ async function main() {
     process.exit(1);
   }
 
-  const app = await createServer(config, { manager, broker, pushTokens, devices, accounts });
+  const app = await createServer(config, { manager, broker, pushTokens, devices, accounts, usage: usageReader });
   await app.listen({ host: config.host, port: config.port });
   logger.info("daemon listening", {
     url: `http://${config.host}:${config.port}`,

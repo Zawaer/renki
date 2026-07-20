@@ -1,5 +1,6 @@
 import type {
   AccountsResponse,
+  ConnectUsageKeyResponse,
   CreateSessionRequest,
   CreateSessionResponse,
   GetTranscriptResponse,
@@ -7,6 +8,7 @@ import type {
   ListSessionsResponse,
   Session,
   SwitchAccountResponse,
+  UsageLoginResponse,
 } from "@crc/protocol";
 
 /**
@@ -62,6 +64,24 @@ export class RestClient {
   /** Manually rotate accounts. Omit `to` to jump to the account with most headroom. */
   async switchAccount(to?: number | string): Promise<SwitchAccountResponse> {
     return this.post<SwitchAccountResponse>("/accounts/switch", to === undefined ? {} : { to });
+  }
+
+  /**
+   * Connect a claude.ai usage session key (`sk-ant-sid…`) for the % display.
+   * Two-step: call WITHOUT `orgId` first to get the orgs to pick from (`ok:false`,
+   * `orgs` populated, nothing persisted), then call again WITH the chosen `orgId`
+   * to persist it (`ok:true`).
+   */
+  async connectUsageKey(sessionKey: string, orgId?: string): Promise<ConnectUsageKeyResponse> {
+    return this.post<ConnectUsageKeyResponse>("/accounts/usage-key", orgId ? { sessionKey, orgId } : { sessionKey });
+  }
+
+  /**
+   * Mac guided login: ask the daemon to open a browser, wait for sign-in, and
+   * extract the key. Only meaningful when the daemon host has a display + Chrome.
+   */
+  async startUsageLogin(): Promise<UsageLoginResponse> {
+    return this.post<UsageLoginResponse>("/accounts/usage-key/login", {});
   }
 
   // ── internals ──────────────────────────────────────────────────────────────

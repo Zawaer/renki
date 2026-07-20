@@ -3,12 +3,14 @@ import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useClient } from "../lib/client";
 import { colors } from "../theme";
+import { ConnectUsage } from "./ConnectUsage";
 
 /** Compact multi-account usage strip (mirror of the web AccountsBar). */
 export function AccountsBar() {
   const { rest } = useClient();
   const [data, setData] = useState<AccountsResponse | null>(null);
   const [switching, setSwitching] = useState(false);
+  const [connecting, setConnecting] = useState(false);
 
   const refresh = useCallback(() => {
     rest.listAccounts().then(setData).catch(() => {});
@@ -45,6 +47,10 @@ export function AccountsBar() {
       {data.accounts.map((a) => (
         <AccountRow key={a.number} account={a} />
       ))}
+      <TouchableOpacity onPress={() => setConnecting(true)} style={styles.connectBtn}>
+        <Text style={styles.connect}>{data.usageConfigured ? "+ Add usage account" : "Connect usage %"}</Text>
+      </TouchableOpacity>
+      <ConnectUsage visible={connecting} onClose={() => setConnecting(false)} onConnected={refresh} />
     </View>
   );
 }
@@ -89,6 +95,8 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
   header: { color: colors.dim, fontSize: 12, fontWeight: "600" },
   switch: { color: colors.accent, fontSize: 12 },
+  connectBtn: { marginTop: 8 },
+  connect: { color: colors.accent, fontSize: 11 },
   acct: { marginBottom: 8 },
   acctHead: { flexDirection: "row", alignItems: "center", gap: 6 },
   dot: { width: 7, height: 7, borderRadius: 4 },

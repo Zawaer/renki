@@ -1,12 +1,10 @@
 [
   {
-    "email": "you@example.com",
-    "sessionKey": "sk-ant-sid01-REPLACE-with-your-claude.ai-sessionKey-cookie",
-    "orgId": "your-organization-uuid"
+    "sessionKey": "sk-ant-sid01-REPLACE-with-your-claude.ai-sessionKey-cookie"
   },
   {
-    "email": "second@example.com",
+    "email": "second@example.com (optional — resolved from the key if omitted)",
     "sessionKey": "sk-ant-sid01-...",
-    "orgId": "..."
+    "orgId": "optional-org-uuid (resolved from the key if omitted)"
   }
 ]

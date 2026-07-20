@@ -1,8 +1,10 @@
 import websocketPlugin from "@fastify/websocket";
-import { CreateSessionRequest, RegisterPushTokenRequest, SwitchAccountRequest } from "@crc/protocol";
+import { ConnectUsageKeyRequest, CreateSessionRequest, RegisterPushTokenRequest, SwitchAccountRequest } from "@crc/protocol";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
+import { loginAndExtractSessionKey, PlaywrightUnavailableError } from "../accounts/login.js";
 import type { AccountRotator } from "../accounts/rotator.js";
+import type { UsageReader } from "../accounts/usage.js";
 import type { Config } from "../config.js";
 import { logger } from "../logger.js";
 import type { DeviceRegistry } from "../push/devices.js";
@@ -20,6 +22,7 @@ export type ServerDeps = {
   pushTokens: PushTokenStore;
   devices: DeviceRegistry;
   accounts: AccountRotator;
+  usage: UsageReader;
 };
 
 /**
@@ -32,7 +35,7 @@ export type ServerDeps = {
  * is enforced once, in an onRequest hook, so it covers the WS upgrade too.
  */
 export async function createServer(config: Config, deps: ServerDeps): Promise<FastifyInstance> {
-  const { manager, broker, pushTokens, devices, accounts } = deps;
+  const { manager, broker, pushTokens, devices, accounts, usage } = deps;
   const app = Fastify({ logger: false });
 
   // Permissive CORS: single-user tool behind a token + tailnet, so we don't
@@ -107,6 +110,8 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
         activeAccountNumber: null,
         accounts: [],
         rotation: { enabled: false, threshold: 0, cooldownMs: 0, lastSwitchAt: null, lastHoldReason: String(err) },
+        usageConfigured: usage.configured,
+        usageConnectedEmails: usage.connectedEmails(),
       });
     }
   });
@@ -115,6 +120,55 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
     const parsed = SwitchAccountRequest.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
     return accounts.manualSwitch(parsed.data.to);
+  });
+
+  // Connect a claude.ai usage session key (pasted from web/phone, or already
+  // extracted). Validates + auto-resolves org/email so the % starts showing.
+  app.post("/accounts/usage-key", async (req, reply) => {
+    const parsed = ConnectUsageKeyRequest.safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+    try {
+      // Step 2: an org was chosen — persist it.
+      if (parsed.data.orgId) {
+        const hint = parsed.data.email ?? (await accounts.activeEmail());
+        const id = await usage.addKey(parsed.data.sessionKey, parsed.data.orgId, hint);
+        return { ok: true, email: id.email, orgId: id.orgId, usage: id.usage, orgs: [], message: null };
+      }
+      // Step 1: no org yet — return the orgs to pick from (nothing persisted).
+      const { email, orgs } = await usage.listOrgs(parsed.data.sessionKey);
+      return { ok: false, email, orgId: null, usage: null, orgs, message: null };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "could not connect usage key";
+      logger.warn("usage key connect failed", { err: message });
+      return reply.code(200).send({ ok: false, email: null, orgId: null, usage: null, orgs: [], message });
+    }
+  });
+
+  // Mac-only guided login: daemon opens a browser, user signs in, we read the
+  // cookie. Returns { unavailable: true } if Playwright/Chrome isn't installed.
+  app.post("/accounts/usage-key/login", async (_req, reply) => {
+    try {
+      const sessionKey = await loginAndExtractSessionKey({
+        baseUrl: config.usageBaseUrl,
+        channel: config.usageLoginChannel || undefined,
+        timeoutMs: config.usageLoginTimeoutMs,
+      });
+      // Return the orgs to pick from + the key, so the web client completes the
+      // pick with a follow-up connect call. Nothing is persisted yet.
+      const { email, orgs } = await usage.listOrgs(sessionKey);
+      return { ok: false, email, usage: null, orgs, sessionKey, message: null, unavailable: false };
+    } catch (err) {
+      if (err instanceof PlaywrightUnavailableError) {
+        return reply
+          .code(200)
+          .send({ ok: false, email: null, usage: null, orgs: [], sessionKey: null, message: err.message, unavailable: true });
+      }
+      const message = err instanceof Error ? err.message : "guided login failed";
+      logger.warn("usage guided login failed", { err: message });
+      return reply
+        .code(200)
+        .send({ ok: false, email: null, usage: null, orgs: [], sessionKey: null, message, unavailable: false });
+    }
   });
 
   // ── WebSocket ────────────────────────────────────────────────────────────

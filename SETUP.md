@@ -51,16 +51,32 @@ pnpm --filter @crc/daemon cli repos   # should list your repos
 ## 3. Run as an always-on service (pm2)
 
 pm2 is a solid fit for keeping this running in the background on a homelab
-box or a VPS alike:
+box or a VPS alike. `ecosystem.config.cjs` defines two processes:
+**`crc-daemon`** (required) and **`crc-web`** (optional — the website itself,
+served as a static build so it's reachable from any device without anyone
+needing a local dev environment or the repo cloned).
 
 ```bash
 pnpm build
 pm2 start ecosystem.config.cjs
 pm2 save && pm2 startup     # survive reboots (follow the printed instruction)
 pm2 logs crc-daemon
+pm2 logs crc-web
 ```
 
-For local development instead, `pnpm --filter @crc/daemon dev` (auto-reloads).
+`crc-web` runs `vite preview` over `apps/web/dist` on port **4173**, bound to
+all interfaces — reachable at `http://<tailnet-ip>:4173` from any device on
+your tailnet. Unlike the daemon, it doesn't need `tailscale serve`/HTTPS: it's
+just static files, and a plain-HTTP page connecting to the daemon's `https://`
+URL isn't a mixed-content problem (only the reverse direction is). Only
+`crc-daemon` on its own is required if you'd rather just run
+`pnpm --filter @crc/web dev` locally on whichever device you're using at the
+moment (what the rest of this guide assumes).
+
+To deploy a web change: `pnpm build` again, then `pm2 restart crc-web`.
+
+For local daemon development instead of pm2, `pnpm --filter @crc/daemon dev`
+(auto-reloads).
 
 ## 4. Reach it from anywhere with Tailscale
 
@@ -93,7 +109,9 @@ your tailnet instead of over HTTPS.
 ## 5. Connect a client
 
 - **Web:** `pnpm --filter @crc/web dev` → open `http://127.0.0.1:5173`, and in
-  the setup screen enter your daemon URL (the tailnet HTTPS URL) + token.
+  the setup screen enter your daemon URL (the tailnet HTTPS URL) + token. (Or,
+  if you set up the always-on `crc-web` pm2 process in step 3, just open
+  `http://<tailnet-ip>:4173` from any device instead.)
 - Open a second browser/device to try the take-control handoff live.
 
 ### Pairing additional devices (QR code)

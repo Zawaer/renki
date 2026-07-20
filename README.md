@@ -9,7 +9,8 @@ Run and watch multiple parallel Claude Code sessions across your repos from any
 device — your Mac, VS Code, or your phone — with real-time sync and a
 **take-control** lock so one device drives while the others watch live.
 
-It runs entirely on your own hardware. Prompts and code only ever reach
+It runs entirely on your own hardware — a homelab box or a personal VPS,
+whichever you already have running 24/7. Prompts and code only ever reach
 Anthropic through the `claude` process the daemon runs locally; there is no
 relay server.
 
@@ -69,7 +70,7 @@ Monorepo (pnpm + Turbo):
 | --- | --- |
 | `packages/protocol` | The shared contract: Zod schemas for domain types, the event log, and every WS/REST message. |
 | `packages/client-core` | Pure-TS brain reused by every client: the event-log→state reducer, a reconnecting WebSocket client (replays from `lastSeq`), the REST client, and the QR pairing codec. No DOM. |
-| `apps/daemon` | Homelab service: spawns Claude sessions (SDK, resume-per-prompt), git worktrees, SQLite persistence, and one HTTP port serving REST + WebSocket. |
+| `apps/daemon` | The always-on host service (homelab box or VPS): spawns Claude sessions (SDK, resume-per-prompt), git worktrees, SQLite persistence, and one HTTP port serving REST + WebSocket. |
 | `apps/web` | Reference client (React + Vite + Tailwind). Reused as-is inside the VS Code webview. |
 
 `apps/vscode` embeds that same web bundle in a webview panel — the only
@@ -103,8 +104,9 @@ flowchart LR
 
 ## Quick start
 
-See **[SETUP.md](./SETUP.md)** for the full homelab + Tailscale walkthrough
-(daemon, web, VS Code, Android, QR pairing, multi-account rotation).
+See **[SETUP.md](./SETUP.md)** for the full always-on-host + Tailscale
+walkthrough (daemon, web, VS Code, Android, QR pairing, multi-account
+rotation).
 
 ```bash
 pnpm install && pnpm build

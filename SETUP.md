@@ -1,14 +1,25 @@
 # Setup & deployment
 
-How to run the daemon on your homelab and reach it securely from your other
-devices.
+How to run the daemon on an always-on host and reach it securely from your
+other devices.
+
+## Choosing a host
+
+The daemon needs to run on a machine that's on 24/7 — sessions surviving a
+closed laptop lid or a powered-off phone is the whole point, so it can't live
+on the device you're driving it from. A **homelab box** and a **personal
+VPS** work identically here — pick whichever you already have running. The
+one thing that follows the host, not you: your repos and the `claude` CLI's
+login need to actually live there (see below), not on your laptop.
 
 ## Prerequisites
 
 - Node 20+ and `pnpm` (via `corepack enable pnpm`)
-- The `claude` CLI installed and **logged in** on the homelab box (the daemon
-  uses your existing Claude Code auth via the Agent SDK)
-- Your git repos sitting under one folder (e.g. `~/coding`)
+- The `claude` CLI installed and **logged in** on the host (the daemon uses
+  your existing Claude Code auth via the Agent SDK). On a headless VPS with
+  no local browser, `claude login` still works — it prints a URL you can
+  open from any device to complete the sign-in.
+- Your git repos sitting under one folder on that same host (e.g. `~/coding`)
 
 ## 1. Install & build
 
@@ -37,7 +48,8 @@ pnpm --filter @crc/daemon cli repos   # should list your repos
 
 ## 3. Run as an always-on service (pm2)
 
-pm2 is already how you run other homelab services:
+pm2 is a solid fit for keeping this running in the background on a homelab
+box or a VPS alike:
 
 ```bash
 pnpm build
@@ -53,12 +65,12 @@ For local development instead, `pnpm --filter @crc/daemon dev` (auto-reloads).
 The daemon stays bound to loopback; Tailscale exposes it **only to your own
 devices**, encrypted end-to-end, with no ports opened to the internet.
 
-Install Tailscale on the homelab and each client device, then `tailscale up`.
+Install Tailscale on the host and each client device, then `tailscale up`.
 
 ### Recommended: `tailscale serve` (gives you HTTPS + WSS)
 
 ```bash
-# On the homelab, proxy tailnet HTTPS -> the local daemon:
+# On the host, proxy tailnet HTTPS -> the local daemon:
 tailscale serve --bg 4517
 tailscale serve status     # shows your https://<machine>.<tailnet>.ts.net URL
 ```
@@ -141,7 +153,7 @@ backgrounded) need a few extra one-time steps:
    permission decision or the turn finishes. Tapping it opens that session.
 
 Enable `CRC_FORCE_PERMISSION_PROMPTS=1` on the daemon so tool permissions
-actually reach your phone instead of being auto-approved by the homelab's
+actually reach your phone instead of being auto-approved by the host's
 allow-list.
 
 ## Multi-account usage rotation (optional)

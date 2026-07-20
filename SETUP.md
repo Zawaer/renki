@@ -15,10 +15,15 @@ login need to actually live there (see below), not on your laptop.
 ## Prerequisites
 
 - Node 20+ and `pnpm` (via `corepack enable pnpm`)
-- The `claude` CLI installed and **logged in** on the host (the daemon uses
-  your existing Claude Code auth via the Agent SDK). On a headless VPS with
-  no local browser, `claude login` still works — it prints a URL you can
-  open from any device to complete the sign-in.
+- The `claude` CLI installed and authenticated on the host (the daemon uses
+  it via the Agent SDK). **Recommended: `claude setup-token`** — a long-lived
+  token built for exactly this always-on-server case, so it won't go stale on
+  you. Plain `claude login` also works (same subscription, no extra cost
+  either way) and is fine to start with, but its browser-OAuth session **can
+  expire on a long-running headless box** and need a fresh interactive
+  re-login to fix — worth knowing if it's a homelab/VPS you're not sitting in
+  front of. Either command works fine on a headless box with no local
+  browser — both print a URL you can open from any device to complete it.
 - Your git repos sitting under one folder on that same host (e.g. `~/coding`)
 
 ## 1. Install & build

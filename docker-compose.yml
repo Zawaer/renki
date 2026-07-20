@@ -1,0 +1,36 @@
+services:
+  daemon:
+    build: .
+    container_name: crc-daemon
+    restart: unless-stopped
+    # CRC_AUTH_TOKEN is optional here — if it's not in .env, the daemon mints
+    # one on first boot and persists it at ./data/auth-token (on the host,
+    # since that's bind-mounted below). Retrieve it any time with:
+    #   docker compose exec daemon node dist/cli.js token
+    env_file:
+      - .env
+    environment:
+      # Fixed to match the volumes below — point CRC_REPOS_ROOT in .env at the
+      # HOST path instead of changing these two.
+      CRC_REPOS_ROOT: /repos
+      CRC_DATA_DIR: /data
+      # Container-internal only: Docker's port publishing can't reach a
+      # process bound to the container's own loopback. The published port
+      # below is still restricted to the HOST's loopback, so this doesn't
+      # widen exposure — see the `ports:` comment.
+      CRC_HOST: 0.0.0.0
+    ports:
+      # Bound to the host's loopback only, same as the bare-metal setup in
+      # SETUP.md — front this with `tailscale serve --bg 4517` on the host.
+      - "127.0.0.1:4517:4517"
+    volumes:
+      - ${CRC_REPOS_ROOT}:/repos
+      - ./data:/data
+      # Reuses the host's existing `claude login` session instead of logging
+      # in again inside the container. Not read-only: the SDK also writes
+      # its own per-session transcripts here (resume-per-prompt reads them
+      # back). Linux hosts only — the `claude` CLI stores its session in a
+      # plain file there. On macOS it's in the system Keychain, which isn't
+      # a mountable file; run `claude login` inside the container instead
+      # (`docker compose exec daemon claude login`) if your host is a Mac.
+      - ${HOME}/.claude:/root/.claude

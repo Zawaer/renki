@@ -147,11 +147,25 @@ allow-list.
 ## Multi-account usage rotation (optional)
 
 If you have more than one Claude account, the daemon can automate the manual
-"hit the limit → `cswap --switch-account` → keep going" habit.
+"hit the limit → `cswap switch` → keep going" habit.
 
-**Prerequisite:** install [`cswap`](https://github.com/realiti4/claude-swap) and
-add your accounts (`cswap --add-account` while logged into each). Confirm
-`cswap --list --json` shows them.
+**Prerequisite:** install [`cswap`](https://github.com/realiti4/claude-swap),
+then add each account with **whichever of the three credential kinds below
+fits it** — CRC never distinguishes between them; it only ever calls
+`cswap list` / `switch` / `switch-to`, so the choice per account is entirely
+yours. Confirm they're registered with `cswap list --json`.
+
+### Choosing how to add each account
+
+| Kind | How to add it | Tied to | Notes |
+| --- | --- | --- | --- |
+| **Interactive login** | `claude login`, then `cswap add` (captures whatever account `claude` is *currently* logged into) | Your Pro/Max/Team subscription | The default, easiest path. Its OAuth session **can go stale on a long-running headless box** and need an interactive re-`claude login` to fix — `cswap list --token-status` shows expiry state if you're chasing this. |
+| **Long-lived setup-token** | `claude setup-token` prints a token → `cswap add-token` (paste it, or pipe it: `claude setup-token \| cswap add-token -`) | Your Pro/Max/Team subscription — same billing, no extra cost | Anthropic's own fix for headless/server use: built specifically to **not** need the periodic browser-based refresh that trips up interactive-login sessions. If an account keeps expiring on your daemon, re-add it this way. |
+| **Plain API key** | An Anthropic Console API key → also fed to `cswap add-token` | Nothing — pay-per-token API billing, no Claude.ai subscription involved | For accounts you'd rather keep entirely separate from any subscription/OAuth flow. |
+
+All three coexist fine — mix and match per account in the same `cswap`
+install. Rotation, usage %, and the take-control lock all work identically
+regardless of which kind an account uses.
 
 Then set in `.env`:
 

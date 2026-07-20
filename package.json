@@ -16,5 +16,12 @@
     "turbo": "^2.3.3",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
+  },
+  "pnpm": {
+    "comment": "React Native (mobile) pins React 18, while web runs React 19. Force ONE @types/react across the workspace so no package sees two unrelated React type copies (which broke the web + mobile typechecks). 18 is the common denominator: RN needs it, react-markdown accepts >=18, and web's standard component code typechecks fine against it.",
+    "overrides": {
+      "@types/react": "^18.3.12",
+      "@types/react-dom": "^18.3.0"
+    }
   }
 }

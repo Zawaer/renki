@@ -4,6 +4,7 @@ import { FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } 
 import { useClient } from "../lib/client";
 import { colors, statusColor } from "../theme";
 import { AccountsBar } from "./AccountsBar";
+import { PairDevice } from "./PairDevice";
 
 export function SessionList({
   onSelect,
@@ -15,6 +16,7 @@ export function SessionList({
   const { rest } = useClient();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [creating, setCreating] = useState(false);
+  const [pairing, setPairing] = useState(false);
 
   const refresh = useCallback(() => {
     rest.listSessions().then(setSessions).catch(() => {});
@@ -31,6 +33,9 @@ export function SessionList({
       <View style={styles.header}>
         <Text style={styles.title}>Sessions</Text>
         <View style={styles.headerActions}>
+          <TouchableOpacity onPress={() => setPairing(true)}>
+            <Text style={styles.link}>Pair a device</Text>
+          </TouchableOpacity>
           <TouchableOpacity onPress={onReset}>
             <Text style={styles.link}>Disconnect</Text>
           </TouchableOpacity>
@@ -39,6 +44,8 @@ export function SessionList({
           </TouchableOpacity>
         </View>
       </View>
+
+      <PairDevice visible={pairing} onClose={() => setPairing(false)} />
 
       <FlatList
         data={sessions}

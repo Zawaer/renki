@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ClientProvider, useClient, useStoreValue } from "./lib/client.js";
 import { type AppConfig, clearConfig, loadConfig, saveConfig } from "./lib/config.js";
 import { AccountsBar } from "./components/AccountsBar.js";
+import { PairDevice } from "./components/PairDevice.js";
 import { SessionList } from "./components/SessionList.js";
 import { SessionView } from "./components/SessionView.js";
 import { Setup } from "./components/Setup.js";
@@ -53,6 +54,7 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
         </div>
         <div className="flex items-center gap-3 text-xs text-neutral-500">
           <span>{config.deviceName}</span>
+          {!managed && <PairDevice />}
           {!managed && (
             <button className="hover:text-neutral-300" onClick={onReset}>
               Disconnect

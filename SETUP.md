@@ -14,19 +14,34 @@ login need to actually live there (see below), not on your laptop.
 
 ## Prerequisites
 
-- Node 20+ and `pnpm` (via `corepack enable pnpm`)
-- The `claude` CLI installed and authenticated on the host (the daemon uses
-  it via the Agent SDK). **Recommended: `claude setup-token`** — a long-lived
-  token built for exactly this always-on-server case, so it won't go stale on
-  you. Plain `claude login` also works (same subscription, no extra cost
-  either way) and is fine to start with, but its browser-OAuth session **can
-  expire on a long-running headless box** and need a fresh interactive
-  re-login to fix — worth knowing if it's a homelab/VPS you're not sitting in
-  front of. Either command works fine on a headless box with no local
-  browser — both print a URL you can open from any device to complete it.
+- **Docker + Docker Compose** on the host (recommended — see step 1), *or*
+  Node 20+ and `pnpm` (via `corepack enable pnpm`) if you'd rather run it
+  without Docker.
+- The `claude` CLI installed and authenticated on the host either way — even
+  the Docker container reuses it from there, since Claude Code auth isn't
+  something a container can do in isolation. **Recommended:
+  `claude setup-token`** — a long-lived token built for exactly this
+  always-on-server case, so it won't go stale on you. Plain `claude login`
+  also works (same subscription, no extra cost either way) and is fine to
+  start with, but its browser-OAuth session **can expire on a long-running
+  headless box** and need a fresh interactive re-login to fix — worth
+  knowing if it's a homelab/VPS you're not sitting in front of. Either
+  command works fine on a headless box with no local browser — both print a
+  URL you can open from any device to complete it.
 - Your git repos sitting under one folder on that same host (e.g. `~/coding`)
 
 ## 1. Install & build
+
+### Docker (recommended)
+
+```bash
+git clone <this-repo> && cd claude-remote-control
+```
+
+That's it for this step — `docker compose up --build` (step 3) builds the
+image for you.
+
+### Without Docker
 
 ```bash
 git clone <this-repo> && cd claude-remote-control
@@ -41,19 +56,45 @@ cp .env.example .env
 ```
 
 `CRC_AUTH_TOKEN` is optional — leave it commented out and the daemon mints one
-on first boot (`pnpm --filter @crc/daemon cli token` shows whichever one is
-active, generating it if needed). Set it yourself in `.env` only if you want
-to choose the value. `CRC_REPOS_ROOT` defaults to `~/coding`; only uncomment
-it if your repos live somewhere else. Leave `CRC_HOST=127.0.0.1` — we expose
-it over Tailscale in step 4 rather than binding to the network directly.
+on first boot (`pnpm --filter @crc/daemon cli token`, or for Docker,
+`docker compose exec daemon node dist/cli.js token`, shows whichever one is
+active). Set it yourself only if you want to choose the value.
+
+`CRC_REPOS_ROOT` defaults to `~/coding` for the non-Docker path — only
+uncomment it if your repos live somewhere else. **For Docker, uncomment it
+and set an absolute path** — it's what gets mounted into the container, so
+it can't fall back to a default the way the bare-metal daemon can.
+
+Leave `CRC_HOST=127.0.0.1` — we expose it over Tailscale in step 4 rather
+than binding to the network directly. (`docker-compose.yml` sets this to
+`0.0.0.0` *inside the container only*, which is what makes Docker's own port
+publishing work — the port it publishes to the host is still loopback-only,
+so this doesn't change your actual exposure. Nothing to touch here.)
 
 Quick sanity check:
 
 ```bash
 pnpm --filter @crc/daemon cli repos   # should list your repos
+# or, for Docker:
+docker compose run --rm daemon node dist/cli.js repos
 ```
 
-## 3. Run as an always-on service (pm2)
+## 3. Run as an always-on service
+
+### Docker (recommended)
+
+```bash
+docker compose up -d --build
+docker compose logs -f daemon
+```
+
+Reuses your host's `claude` session (mounted from `~/.claude`) and your repos
+(mounted from `CRC_REPOS_ROOT`) — see `docker-compose.yml` for exactly what's
+mounted and why. Re-run the same command any time you pull new code;
+`restart: unless-stopped` means it also survives a host reboot with no extra
+step.
+
+### Without Docker (pm2)
 
 pm2 is a solid fit for keeping this running in the background on a homelab
 box or a VPS alike. `ecosystem.config.cjs` defines two processes:
@@ -85,8 +126,10 @@ For local daemon development instead of pm2, `pnpm --filter @crc/daemon dev`
 
 ## 4. Reach it from anywhere with Tailscale
 
-The daemon stays bound to loopback; Tailscale exposes it **only to your own
-devices**, encrypted end-to-end, with no ports opened to the internet.
+The daemon stays bound to loopback — directly, or via Docker's published
+port, which is loopback-only either way (see step 3). Tailscale exposes it
+**only to your own devices**, encrypted end-to-end, with no ports opened to
+the internet.
 
 Install Tailscale on the host and each client device, then `tailscale up`.
 

@@ -52,3 +52,17 @@ export const RegisterPushTokenRequest = z.object({
   platform: z.enum(["android", "ios", "web"]).optional(),
 });
 export type RegisterPushTokenRequest = z.infer<typeof RegisterPushTokenRequest>;
+
+/**
+ * The daemon's own best guess at a URL other devices could reach it on, read
+ * from the local `tailscale` CLI (if installed) on the daemon's host. Lets a
+ * client that's connected via a loopback address (e.g. a Mac browser on
+ * `http://127.0.0.1:4517`) suggest a real one instead of leaving the user to
+ * go find their Tailscale hostname by hand.
+ */
+export const TailscaleStatusResponse = z.object({
+  available: z.boolean(),
+  /** MagicDNS hostname, e.g. "homelab.tailnet.ts.net" (no trailing dot). */
+  hostname: z.string().nullable(),
+});
+export type TailscaleStatusResponse = z.infer<typeof TailscaleStatusResponse>;

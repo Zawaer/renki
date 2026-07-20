@@ -6,6 +6,7 @@ import { Button } from "./ui.js";
 export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
   const [baseUrl, setBaseUrl] = useState("http://127.0.0.1:4517");
   const [token, setToken] = useState("");
+  const [showToken, setShowToken] = useState(false);
   const [deviceName, setDeviceName] = useState("Web");
   const [error, setError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
@@ -44,13 +45,22 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
           />
         </Field>
         <Field label="Auth token">
-          <input
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            type="password"
-            placeholder="CRC_AUTH_TOKEN"
-            className="input"
-          />
+          <div className="flex items-center gap-2">
+            <input
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              type={showToken ? "text" : "password"}
+              placeholder="CRC_AUTH_TOKEN"
+              className="input min-w-0 flex-1"
+            />
+            <button
+              type="button"
+              onClick={() => setShowToken((v) => !v)}
+              className="shrink-0 text-xs text-neutral-500 hover:text-neutral-300"
+            >
+              {showToken ? "Hide" : "Show"}
+            </button>
+          </div>
         </Field>
         <Field label="This device's name">
           <input value={deviceName} onChange={(e) => setDeviceName(e.target.value)} className="input" />

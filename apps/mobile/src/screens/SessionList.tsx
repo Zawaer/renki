@@ -9,9 +9,11 @@ import { PairDevice } from "./PairDevice";
 export function SessionList({
   onSelect,
   onReset,
+  onReconnect,
 }: {
   onSelect: (id: string) => void;
   onReset: () => void;
+  onReconnect: (baseUrl: string) => Promise<void>;
 }) {
   const { rest } = useClient();
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -45,7 +47,7 @@ export function SessionList({
         </View>
       </View>
 
-      <PairDevice visible={pairing} onClose={() => setPairing(false)} />
+      <PairDevice visible={pairing} onClose={() => setPairing(false)} onReconnect={onReconnect} />
 
       <FlatList
         data={sessions}

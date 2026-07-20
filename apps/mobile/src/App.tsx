@@ -65,12 +65,25 @@ export function App() {
           await clearConfig();
           setConfig(null);
         }}
+        onReconnect={async (baseUrl) => {
+          const next = { ...config, baseUrl };
+          await saveConfig(next);
+          setConfig(next);
+        }}
       />
     </ClientProvider>
   );
 }
 
-function Main({ config, onReset }: { config: AppConfig; onReset: () => void }) {
+function Main({
+  config,
+  onReset,
+  onReconnect,
+}: {
+  config: AppConfig;
+  onReset: () => void;
+  onReconnect: (baseUrl: string) => Promise<void>;
+}) {
   const [selected, setSelected] = useState<string | null>(null);
   const selectedRef = useRef(setSelected);
   selectedRef.current = setSelected;
@@ -88,7 +101,7 @@ function Main({ config, onReset }: { config: AppConfig; onReset: () => void }) {
   if (selected) {
     return <SessionView sessionId={selected} onBack={() => setSelected(null)} />;
   }
-  return <SessionList onSelect={setSelected} onReset={onReset} />;
+  return <SessionList onSelect={setSelected} onReset={onReset} onReconnect={onReconnect} />;
 }
 
 const styles = StyleSheet.create({

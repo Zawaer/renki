@@ -18,6 +18,7 @@ import { colors } from "../theme";
 export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
   const [baseUrl, setBaseUrl] = useState("https://");
   const [token, setToken] = useState("");
+  const [showToken, setShowToken] = useState(false);
   const [deviceName, setDeviceName] = useState("Phone");
   const [error, setError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
@@ -80,16 +81,21 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
         />
 
         <Text style={styles.label}>Auth token</Text>
-        <TextInput
-          style={styles.input}
-          value={token}
-          onChangeText={setToken}
-          autoCapitalize="none"
-          autoCorrect={false}
-          secureTextEntry
-          placeholder="CRC_AUTH_TOKEN"
-          placeholderTextColor={colors.faint}
-        />
+        <View style={styles.tokenRow}>
+          <TextInput
+            style={[styles.input, styles.tokenInput]}
+            value={token}
+            onChangeText={setToken}
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry={!showToken}
+            placeholder="CRC_AUTH_TOKEN"
+            placeholderTextColor={colors.faint}
+          />
+          <TouchableOpacity onPress={() => setShowToken((v) => !v)}>
+            <Text style={styles.link}>{showToken ? "Hide" : "Show"}</Text>
+          </TouchableOpacity>
+        </View>
 
         <Text style={styles.label}>This device's name</Text>
         <TextInput style={styles.input} value={deviceName} onChangeText={setDeviceName} />
@@ -157,6 +163,8 @@ const styles = StyleSheet.create({
   title: { color: colors.text, fontSize: 20, fontWeight: "700" },
   sub: { color: colors.dim, fontSize: 13, marginBottom: 12, textAlign: "center" },
   label: { color: colors.dim, fontSize: 12, marginTop: 8 },
+  tokenRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  tokenInput: { flex: 1 },
   input: {
     backgroundColor: colors.panel,
     borderColor: colors.border,

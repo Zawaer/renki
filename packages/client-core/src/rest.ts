@@ -8,6 +8,7 @@ import type {
   ListSessionsResponse,
   Session,
   SwitchAccountResponse,
+  TailscaleStatusResponse,
   UsageLoginResponse,
 } from "@crc/protocol";
 
@@ -82,6 +83,11 @@ export class RestClient {
    */
   async startUsageLogin(): Promise<UsageLoginResponse> {
     return this.post<UsageLoginResponse>("/accounts/usage-key/login", {});
+  }
+
+  /** The daemon host's own Tailscale hostname, if it can detect one — used to suggest a pairing URL. */
+  async getTailscaleStatus(): Promise<TailscaleStatusResponse> {
+    return this.get<TailscaleStatusResponse>("/tailscale-status");
   }
 
   // ── internals ──────────────────────────────────────────────────────────────

@@ -12,6 +12,7 @@ import type { PushTokenStore } from "../push/tokens.js";
 import { scanRepos } from "../repos.js";
 import { SessionError } from "../sessions/errors.js";
 import type { SessionManager } from "../sessions/manager.js";
+import { getTailscaleStatus } from "../tailscale.js";
 import { tokenMatches } from "./auth.js";
 import { Connection } from "./connection.js";
 import type { PermissionBroker } from "./permissions.js";
@@ -60,6 +61,10 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
   app.get("/health", async () => ({ ok: true }));
 
   app.get("/repos", async () => ({ repos: await scanRepos(config) }));
+
+  // Lets a client connected via a loopback address suggest a real, shareable
+  // one when showing a pairing QR — see tailscale.ts.
+  app.get("/tailscale-status", async () => getTailscaleStatus());
 
   app.get("/sessions", async () => ({ sessions: manager.listSessions() }));
 

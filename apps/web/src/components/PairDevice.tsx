@@ -1,6 +1,7 @@
-import { encodePairing } from "@crc/client-core";
+import { encodePairing, isLikelyLoopbackUrl } from "@crc/client-core";
 import QRCode from "qrcode";
 import { useEffect, useState } from "react";
+import { saveConfig } from "../lib/config.js";
 import { useClient } from "../lib/client.js";
 
 /**
@@ -9,11 +10,21 @@ import { useClient } from "../lib/client.js";
  * tailnet URL and a 43-char token by hand. This client is the right source: it
  * already has a URL that's proven reachable, which the daemon itself can't
  * know (LAN IP vs tailnet hostname vs custom domain is an operator choice).
+ *
+ * If THIS browser is only reachable via a loopback address (e.g.
+ * http://127.0.0.1:4517 on the Mac itself), the QR would tell another device
+ * to reach itself, which fails. Rather than just warn, ask the daemon (which
+ * runs on the same host, so it can check its own `tailscale status`) for a
+ * real address and offer to switch to it in one click.
  */
 export function PairDevice() {
-  const { config } = useClient();
+  const { config, rest } = useClient();
   const [open, setOpen] = useState(false);
   const [dataUrl, setDataUrl] = useState<string | null>(null);
+  const loopback = isLikelyLoopbackUrl(config.baseUrl);
+  const [suggestion, setSuggestion] = useState<"loading" | "none" | string>("loading");
+  const [switching, setSwitching] = useState(false);
+  const [switchError, setSwitchError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -22,6 +33,31 @@ export function PairDevice() {
       .then(setDataUrl)
       .catch(() => setDataUrl(null));
   }, [open, config.baseUrl, config.token]);
+
+  useEffect(() => {
+    if (!open || !loopback) return;
+    setSuggestion("loading");
+    rest
+      .getTailscaleStatus()
+      .then((s) => setSuggestion(s.available && s.hostname ? `https://${s.hostname}` : "none"))
+      .catch(() => setSuggestion("none"));
+  }, [open, loopback, rest]);
+
+  async function useSuggestion(url: string) {
+    setSwitching(true);
+    setSwitchError(null);
+    try {
+      const res = await fetch(`${url}/repos`, { headers: { authorization: `Bearer ${config.token}` } });
+      if (!res.ok) throw new Error(`Daemon responded ${res.status} at ${url}.`);
+      saveConfig({ ...config, baseUrl: url });
+      window.location.reload();
+    } catch {
+      setSwitchError(
+        `Could not reach ${url}. Make sure "tailscale serve --bg <port>" is running on the daemon host.`,
+      );
+      setSwitching(false);
+    }
+  }
 
   return (
     <>
@@ -38,6 +74,37 @@ export function PairDevice() {
             onClick={(e) => e.stopPropagation()}
           >
             <span className="text-sm font-medium text-neutral-200">Scan with the CRC phone app</span>
+            {loopback && (
+              <div className="max-w-70 space-y-2 rounded-md border border-amber-800 bg-amber-950/40 px-2.5 py-2 text-[11px] leading-snug text-amber-300">
+                <p>
+                  This browser is connected via <code>{config.baseUrl}</code> — a loopback address that
+                  only means "this computer." A phone scanning this QR would try to reach itself and fail.
+                </p>
+                {suggestion === "loading" && <p className="text-amber-400/70">Checking Tailscale…</p>}
+                {suggestion === "none" && (
+                  <p>
+                    Couldn't detect a Tailscale address on the daemon host. Reconnect this browser using
+                    its tailnet URL manually (Disconnect, then enter{" "}
+                    <code>https://your-machine.tailnet.ts.net</code>), then show the QR again.
+                  </p>
+                )}
+                {suggestion !== "loading" && suggestion !== "none" && (
+                  <>
+                    <p>
+                      Detected: <code>{suggestion}</code>
+                    </p>
+                    <button
+                      onClick={() => useSuggestion(suggestion)}
+                      disabled={switching}
+                      className="w-full rounded-md bg-amber-800/60 py-1 text-amber-100 hover:bg-amber-800 disabled:opacity-50"
+                    >
+                      {switching ? "Reconnecting…" : "Reconnect using this address"}
+                    </button>
+                    {switchError && <p className="text-red-400">{switchError}</p>}
+                  </>
+                )}
+              </div>
+            )}
             {dataUrl ? (
               <img src={dataUrl} alt="Pairing QR code" width={280} height={280} className="rounded-lg" />
             ) : (

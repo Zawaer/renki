@@ -6,7 +6,53 @@ event-log→state reducer, the daemon event log, the rate-limit classifier, and
 the SessionManager lock/single-writer invariants. The parts that need a browser,
 VS Code, an Android device, or live-exhausted accounts still can't be exercised
 in the build environment. This is the punch list to finish on real hardware,
-plus deferred enhancements.
+plus deferred enhancements — and, up top, the roadmap to turn this into a real
+open-source project.
+
+## ★ Roadmap: open-source + portfolio readiness (priority)
+
+The engine is built (event-sourced daemon, worktree isolation, take-control
+locking, careful auth, four clients, tests). Both goals — a useful OSS project
+and a strong portfolio piece — are won or lost on the **on-ramp**, not on more
+features. The throughline for everything below: shrink "found the repo" →
+"running Claude from my phone" to a couple of minutes. Build in this order.
+
+- [ ] **P0 — Prove it end-to-end + OSS hygiene.** Do one honest full run (daemon
+      + phone over Tailscale → create session → stream → take-control) so it's
+      demonstrably working. Then the table stakes: add a LICENSE, a GitHub
+      Actions CI (vitest + typecheck + build), clean up the accidental root-level
+      Expo build artifacts (`android/`, `app.json`, `tsconfig.json`, `.expo/`,
+      root `package.json` expo deps), and settle the Android package name
+      (`org.crc.app` placeholder vs `com.zawaer.clauderemotecontrol`).
+- [ ] **P1 — QR pairing + `crc init` wizard (highest leverage).** `crc init`
+      mints the token, writes `.env`, detects Tailscale and offers to run
+      `tailscale serve`, then prints a QR encoding `{ baseUrl, token }`. Add a
+      "Scan" button to the mobile Setup screen (`apps/mobile/src/screens/Setup.tsx`).
+      Collapses the whole manual setup into one command and removes token-typing
+      entirely — this is the demo "moment."
+- [ ] **P2 — Distribution.** Prebuilt Android APK (EAS build or a GitHub release
+      artifact) + an Expo Go path, and a `docker run` / `npx` one-liner for the
+      daemon. Turns "clone the monorepo and fight Gradle" into "install, run,
+      scan." Without this, P1's polish is wasted because people never reach Setup.
+- [ ] **P3 — README + demo + architecture.** Lead the README with a ~60s
+      screen-recording GIF, a one-paragraph what/why, the 3-step quickstart, a
+      small architecture diagram (the event-log/replay + take-control design is
+      worth showing off), and a security section (self-hosted, tailnet, 256-bit
+      token, timing-safe compare — say it; it signals judgment). For a portfolio,
+      the README is disproportionately what gets seen.
+
+**Deliberately skipped for now** (revisit only on real demand):
+
+- **Central/hosted relay** for people without a server. Big shift: you'd be
+  relaying arbitrary-code-execution sessions = real cost/abuse/liability, and it
+  centralizes a decentralized tool. If ever built, only as a *blind* relay (à la
+  Tailscale DERP) that never sees plaintext or the token, with auth kept
+  end-to-end. The better answer to "no homelab" is lowering the self-host bar
+  (P1/P2), not becoming the host.
+- **Account-based auth.** The single shared bearer token is the correct minimal
+  design for self-hosting + tailnet; accounts only start earning their keep once
+  a multi-tenant relay exists. Fix the token's *UX* (QR pairing, P1), not the
+  mechanism.
 
 ## 0. Test coverage (started)
 

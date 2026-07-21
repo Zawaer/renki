@@ -54,6 +54,7 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
         </div>
         <div className="flex items-center gap-3 text-xs text-(--crc-fg-muted)">
           <span>{config.deviceName}</span>
+          <AccountsBar />
           {!managed && <PairDevice />}
           {!managed && (
             <button className="inline-flex items-center gap-1 hover:text-(--crc-fg)" onClick={onReset}>
@@ -76,7 +77,6 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
           <div className="min-h-0 flex-1">
             <SessionList selectedId={selected} onSelect={setSelected} />
           </div>
-          <AccountsBar />
         </aside>
         <main className="overflow-hidden bg-(--crc-bg)">
           {selected ? (

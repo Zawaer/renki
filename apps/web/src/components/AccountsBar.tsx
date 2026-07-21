@@ -3,17 +3,20 @@ import { useCallback, useEffect, useState } from "react";
 import { useClient } from "../lib/client.js";
 
 /**
- * Compact multi-account usage strip. Shows each account's 5h/7d usage and which
- * one is active, and offers a manual switch. Auto-rotation happens on the daemon
- * (this just surfaces it). When no claude.ai usage key is connected yet, it also
- * exposes a "Connect usage %" panel: a guided Mac browser login, or paste a key.
- * Renders nothing when no accounts are configured, so the feature is invisible
- * unless cswap is set up.
+ * Compact multi-account usage badge, header-mounted (VS Code-style account
+ * icon rather than permanent sidebar real estate). Click to open a dropdown
+ * with each account's 5h/7d usage, which one is active, and a manual switch.
+ * Auto-rotation happens on the daemon (this just surfaces it). When no
+ * claude.ai usage key is connected yet, the dropdown also exposes a "Connect
+ * usage %" panel: a guided Mac browser login, or paste a key. Renders nothing
+ * when no accounts are configured, so the feature is invisible unless cswap
+ * is set up.
  */
 export function AccountsBar() {
   const { rest } = useClient();
   const [data, setData] = useState<AccountsResponse | null>(null);
   const [switching, setSwitching] = useState(false);
+  const [open, setOpen] = useState(false);
 
   const refresh = useCallback(() => {
     rest.listAccounts().then(setData).catch(() => {});
@@ -38,25 +41,48 @@ export function AccountsBar() {
     }
   }
 
+  const active = data.accounts.find((a) => a.active);
+  const worstPct = active?.usage ? Math.max(active.usage.fiveHour.pct, active.usage.sevenDay.pct) : null;
+  const dotColor = worstPct == null ? "bg-(--crc-fg-muted)" : worstPct >= 90 ? "bg-(--crc-danger)" : worstPct >= 70 ? "bg-(--crc-warning)" : "bg-(--crc-success)";
+
   return (
-    <div className="border-t border-(--crc-border) p-3 text-xs">
-      <div className="mb-2 flex items-center justify-between">
-        <span className="font-medium text-(--crc-fg-muted)">
-          Accounts {data.rotation.enabled ? `· auto @ ${data.rotation.threshold}%` : "· auto off"}
-        </span>
-        <button onClick={switchNow} disabled={switching} className="text-(--crc-link) hover:underline disabled:opacity-40">
-          {switching ? "…" : "Switch"}
-        </button>
-      </div>
-      <div className="space-y-2">
-        {data.accounts.map((a) => (
-          <AccountRow key={a.number} account={a} />
-        ))}
-      </div>
-      {data.rotation.lastHoldReason && (
-        <div className="mt-2 text-[11px] text-(--crc-fg-muted)">holding: {data.rotation.lastHoldReason}</div>
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title="Accounts & usage"
+        className="flex items-center gap-1 rounded-sm px-1.5 py-1 text-(--crc-fg-muted) hover:bg-(--crc-hover) hover:text-(--crc-fg)"
+      >
+        <span className="codicon codicon-account" />
+        {worstPct != null && <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />}
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div
+            className="absolute right-0 top-full z-50 mt-2 w-72 space-y-2 rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) p-3 text-xs shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <span className="font-medium text-(--crc-fg-muted)">
+                Accounts {data.rotation.enabled ? `· auto @ ${data.rotation.threshold}%` : "· auto off"}
+              </span>
+              <button onClick={switchNow} disabled={switching} className="text-(--crc-link) hover:underline disabled:opacity-40">
+                {switching ? "…" : "Switch"}
+              </button>
+            </div>
+            <div className="space-y-2">
+              {data.accounts.map((a) => (
+                <AccountRow key={a.number} account={a} />
+              ))}
+            </div>
+            {data.rotation.lastHoldReason && (
+              <div className="text-[11px] text-(--crc-fg-muted)">holding: {data.rotation.lastHoldReason}</div>
+            )}
+            <UsageConnect configured={data.usageConfigured ?? false} onConnected={refresh} />
+          </div>
+        </>
       )}
-      <UsageConnect configured={data.usageConfigured ?? false} onConnected={refresh} />
     </div>
   );
 }

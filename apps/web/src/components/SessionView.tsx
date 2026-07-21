@@ -1,4 +1,12 @@
-import { THINKING_VERBS, type BlockView, type PermissionView, type TimelineItem, type TurnView } from "@crc/client-core";
+import {
+  estimateTokens,
+  formatTokenCount,
+  THINKING_VERBS,
+  type BlockView,
+  type PermissionView,
+  type TimelineItem,
+  type TurnView,
+} from "@crc/client-core";
 import { useEffect, useRef, useState } from "react";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { hostOpenFile, isHosted } from "../lib/host.js";
@@ -130,6 +138,8 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
       {turn.status === "done" && turn.costUsd != null && (
         <div className="text-[11px] text-(--crc-fg-muted)">
           ${turn.costUsd.toFixed(4)} · {turn.durationMs}ms
+          {(turn.inputTokens != null || turn.outputTokens != null) &&
+            ` · ${formatTokenCount((turn.inputTokens ?? 0) + (turn.outputTokens ?? 0))} tokens`}
         </div>
       )}
       {turn.status === "error" && (
@@ -210,6 +220,7 @@ function ThinkingBlock({
 }) {
   const elapsedSeconds = useElapsedSeconds(live ? block.startedAtMs : null);
   const verb = useThinkingVerb(live);
+  const estimatedTokens = estimateTokens(block.text);
 
   return (
     <div className="border-l-2 border-(--crc-border) pl-3">
@@ -218,7 +229,8 @@ function ThinkingBlock({
           <>
             <span className="codicon codicon-loading codicon-modifier-spin" />
             <span>
-              {verb}… {elapsedSeconds != null && `· ${elapsedSeconds}s`}
+              {verb}… {elapsedSeconds != null && `· ${elapsedSeconds}s `}
+              {estimatedTokens > 0 && `· ~${formatTokenCount(estimatedTokens)} tokens`}
             </span>
           </>
         ) : block.startedAtMs != null && block.endedAtMs != null ? (

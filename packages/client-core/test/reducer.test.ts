@@ -46,7 +46,7 @@ function scriptedStream(): SessionEvent[] {
     { kind: "permission_request", requestId: "req_1", turnId: TURN, toolName: "Edit", toolInput: { file: "a.ts" } },
     { kind: "permission_resolved", requestId: "req_1", decision: "allow", byDeviceId: "d_phone" },
     { kind: "tool_result", turnId: TURN, toolUseId: "tu_1", ok: true, summary: "edited a.ts" },
-    { kind: "turn_result", turnId: TURN, promptId: "p1", ok: true, costUsd: 0.012, durationMs: 3400, errorMessage: null },
+    { kind: "turn_result", turnId: TURN, promptId: "p1", ok: true, costUsd: 0.012, durationMs: 3400, errorMessage: null, inputTokens: 1200, outputTokens: 340 },
     { kind: "status_changed", status: "idle" },
   );
 }
@@ -183,26 +183,30 @@ describe("per-event folding", () => {
     expect(s.pending.map((p) => p.requestId)).toEqual(["req_1"]);
   });
 
-  it("turn_result marks the turn done with cost + duration", () => {
+  it("turn_result marks the turn done with cost + duration + token usage", () => {
     const s = fold(stream(
       { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "go" },
       { kind: "assistant_block", turnId: TURN, blockIndex: 0, blockKind: "text", text: "done", toolUseId: null, toolName: null, toolInput: null },
-      { kind: "turn_result", turnId: TURN, promptId: "p1", ok: true, costUsd: 0.5, durationMs: 1200, errorMessage: null },
+      { kind: "turn_result", turnId: TURN, promptId: "p1", ok: true, costUsd: 0.5, durationMs: 1200, errorMessage: null, inputTokens: 800, outputTokens: 120 },
     ));
     const turn = (s.timeline[1] as any).turn;
     expect(turn.status).toBe("done");
     expect(turn.costUsd).toBe(0.5);
     expect(turn.durationMs).toBe(1200);
     expect(turn.promptId).toBe("p1");
+    expect(turn.inputTokens).toBe(800);
+    expect(turn.outputTokens).toBe(120);
   });
 
   it("a failed turn_result marks the turn errored and carries the message", () => {
     const s = fold(stream(
-      { kind: "turn_result", turnId: TURN, promptId: "p1", ok: false, costUsd: null, durationMs: null, errorMessage: "boom" },
+      { kind: "turn_result", turnId: TURN, promptId: "p1", ok: false, costUsd: null, durationMs: null, errorMessage: "boom", inputTokens: null, outputTokens: null },
     ));
     const turn = (s.timeline[0] as any).turn;
     expect(turn.status).toBe("error");
     expect(turn.errorMessage).toBe("boom");
+    expect(turn.inputTokens).toBeNull();
+    expect(turn.outputTokens).toBeNull();
   });
 
   it("notice appends an inline timeline notice", () => {
@@ -242,6 +246,8 @@ describe("full scripted turn", () => {
     // Thinking ran from its first delta to its own assistant_block finalization.
     expect(turn.blocks[0].startedAtMs).toBe(1005);
     expect(turn.blocks[0].endedAtMs).toBe(1007);
+    expect(turn.inputTokens).toBe(1200);
+    expect(turn.outputTokens).toBe(340);
   });
 });
 

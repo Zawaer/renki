@@ -102,6 +102,8 @@ describe("SessionView", () => {
         costUsd: 0.0123,
         durationMs: 4200,
         errorMessage: null,
+        inputTokens: 1200,
+        outputTokens: 340,
       }),
       ev(sessionId, { kind: "status_changed", status: "idle" }),
       ev(sessionId, { kind: "notice", text: "Switched account — retrying.", level: "info" }),
@@ -116,7 +118,7 @@ describe("SessionView", () => {
     expect(screen.getByText("Let me look at the repo first.")).toBeInTheDocument();
     expect(screen.getByText("Read")).toBeInTheDocument();
     expect(screen.getByText("Done — added a README.")).toBeInTheDocument();
-    expect(screen.getByText("$0.0123 · 4200ms")).toBeInTheDocument();
+    expect(screen.getByText("$0.0123 · 4200ms · 1.5k tokens")).toBeInTheDocument();
     expect(screen.getByText("Switched account — retrying.")).toBeInTheDocument();
     // Release button, not Take control — this device already holds the lock.
     expect(screen.getByRole("button", { name: "Release" })).toBeInTheDocument();
@@ -194,7 +196,16 @@ describe("SessionView", () => {
       ev(sessionId, { kind: "control_changed", controller: "d1", controllerName: "Web" }),
       ev(sessionId, { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "Investigate" }),
       // Explicit past ts (not the ev() helper's Date.now()) so elapsed is a real, non-zero, deterministic-ish value.
-      { seq: 100, sessionId, ts: Date.now() - 5000, kind: "assistant_delta", turnId: "t1", blockIndex: 0, blockKind: "thinking", text: "Hmm…" } as SessionEvent,
+      {
+        seq: 100,
+        sessionId,
+        ts: Date.now() - 5000,
+        kind: "assistant_delta",
+        turnId: "t1",
+        blockIndex: 0,
+        blockKind: "thinking",
+        text: "Hmm, let me think this through carefully before responding",
+      } as SessionEvent,
     ];
 
     renderSession(sessionId, events);
@@ -202,6 +213,7 @@ describe("SessionView", () => {
     const verbPattern = new RegExp(`(${THINKING_VERBS.join("|")})…`);
     expect(document.body.textContent).toMatch(verbPattern);
     expect(document.body.textContent).toMatch(/·\s*\d+s/);
+    expect(document.body.textContent).toMatch(/·\s*~\d+ tokens/);
   });
 
   it("shows 'Thought for Xs' once the thinking block is finalized", () => {

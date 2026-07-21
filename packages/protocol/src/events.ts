@@ -118,6 +118,8 @@ const payloads = [
     costUsd: z.number().nullable(),
     durationMs: z.number().int().nullable(),
     errorMessage: z.string().nullable(),
+    inputTokens: z.number().int().nullable(),
+    outputTokens: z.number().int().nullable(),
   }),
 
   /** A non-turn error (spawn failure, worktree problem, etc.). */

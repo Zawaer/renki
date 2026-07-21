@@ -31,6 +31,9 @@ export type TurnView = {
   costUsd: number | null;
   durationMs: number | null;
   errorMessage: string | null;
+  /** Real usage from the SDK's result message — only known once the turn finishes. */
+  inputTokens: number | null;
+  outputTokens: number | null;
 };
 
 /** A prompt the controller sent, an assistant turn, or a system notice. */
@@ -175,6 +178,8 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
         costUsd: e.costUsd,
         durationMs: e.durationMs,
         errorMessage: e.errorMessage,
+        inputTokens: e.inputTokens,
+        outputTokens: e.outputTokens,
       }));
       return s;
 
@@ -239,5 +244,7 @@ function emptyTurn(turnId: string): TurnView {
     costUsd: null,
     durationMs: null,
     errorMessage: null,
+    inputTokens: null,
+    outputTokens: null,
   };
 }

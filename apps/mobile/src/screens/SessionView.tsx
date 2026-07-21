@@ -1,4 +1,12 @@
-import { THINKING_VERBS, type BlockView, type PermissionView, type TimelineItem, type TurnView } from "@crc/client-core";
+import {
+  estimateTokens,
+  formatTokenCount,
+  THINKING_VERBS,
+  type BlockView,
+  type PermissionView,
+  type TimelineItem,
+  type TurnView,
+} from "@crc/client-core";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -145,6 +153,8 @@ function AssistantTurn({ turn, colors, styles }: { turn: TurnView; colors: Theme
       {turn.status === "done" && turn.costUsd != null && (
         <Text style={styles.meta}>
           ${turn.costUsd.toFixed(4)} · {turn.durationMs}ms
+          {(turn.inputTokens != null || turn.outputTokens != null) &&
+            ` · ${formatTokenCount((turn.inputTokens ?? 0) + (turn.outputTokens ?? 0))} tokens`}
         </Text>
       )}
       {turn.status === "error" && <Text style={styles.errText}>Turn failed: {turn.errorMessage}</Text>}
@@ -218,12 +228,15 @@ function ThinkingBlock({
 }) {
   const elapsedSeconds = useElapsedSeconds(live ? block.startedAtMs : null);
   const verb = useThinkingVerb(live);
+  const estimatedTokens = estimateTokens(block.text);
 
   return (
     <View style={styles.thinkingWrap}>
       <Text style={styles.thinkingHeader}>
         {live
-          ? `${verb}…${elapsedSeconds != null ? ` · ${elapsedSeconds}s` : ""}`
+          ? `${verb}…${elapsedSeconds != null ? ` · ${elapsedSeconds}s` : ""}${
+              estimatedTokens > 0 ? ` · ~${formatTokenCount(estimatedTokens)} tokens` : ""
+            }`
           : block.startedAtMs != null && block.endedAtMs != null
             ? `Thought for ${formatDuration(block.endedAtMs - block.startedAtMs)}`
             : "Thinking"}

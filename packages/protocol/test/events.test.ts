@@ -25,7 +25,7 @@ const SAMPLES: Record<EventKind, unknown> = {
   tool_result: { kind: "tool_result", turnId: "t1", toolUseId: "tu", ok: true, summary: "done" },
   permission_request: { kind: "permission_request", requestId: "req", turnId: "t1", toolName: "Bash", toolInput: {} },
   permission_resolved: { kind: "permission_resolved", requestId: "req", decision: "allow", byDeviceId: null },
-  turn_result: { kind: "turn_result", turnId: "t1", promptId: "p1", ok: true, costUsd: 0.01, durationMs: 10, errorMessage: null },
+  turn_result: { kind: "turn_result", turnId: "t1", promptId: "p1", ok: true, costUsd: 0.01, durationMs: 10, errorMessage: null, inputTokens: 100, outputTokens: 50 },
   error: { kind: "error", message: "boom", code: null },
   notice: { kind: "notice", text: "switched", level: "info" },
 };

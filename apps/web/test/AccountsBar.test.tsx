@@ -1,0 +1,73 @@
+import type { AccountsResponse } from "@crc/protocol";
+import { RealtimeClient, RestClient } from "@crc/client-core";
+import { fireEvent, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
+import { AccountsBar } from "../src/components/AccountsBar.js";
+import { ClientContext } from "../src/lib/client.js";
+import { cleanupRoots, render } from "./render.js";
+
+/**
+ * Smoke test for the header's usage badge/dropdown — renders it with real
+ * account data (not the empty-state null) to pin down that it's still
+ * reachable after any styling/relocation pass, since AccountsBar silently
+ * swallows fetch errors and renders nothing at all when it has no accounts.
+ */
+
+afterEach(cleanupRoots);
+
+const SAMPLE: AccountsResponse = {
+  activeAccountNumber: 1,
+  accounts: [
+    {
+      number: 1,
+      email: "dev@example.com",
+      active: true,
+      usageStatus: "ok",
+      usage: {
+        fiveHour: { pct: 42, resetsAt: null },
+        sevenDay: { pct: 18, resetsAt: null },
+      },
+    },
+  ],
+  rotation: { enabled: true, threshold: 90, cooldownMs: 60_000, lastSwitchAt: null, lastHoldReason: null },
+  usageConfigured: true,
+  usageConnectedEmails: ["dev@example.com"],
+};
+
+function renderAccountsBar(response: AccountsResponse) {
+  const rest = new RestClient({ baseUrl: "http://test.invalid", token: "t" });
+  rest.listAccounts = async () => response;
+  const realtime = new RealtimeClient({ baseUrl: "http://test.invalid", token: "t", deviceId: "d1" });
+  const config = { baseUrl: "http://test.invalid", token: "t", deviceId: "d1", deviceName: "Test" };
+
+  return render(
+    <ClientContext.Provider value={{ rest, realtime, config }}>
+      <AccountsBar />
+    </ClientContext.Provider>,
+  );
+}
+
+describe("AccountsBar", () => {
+  it("shows a badge trigger, and the account row + usage meters once opened", async () => {
+    renderAccountsBar(SAMPLE);
+
+    const trigger = await screen.findByRole("button", { name: "Accounts & usage" });
+    // Closed by default — a header badge, not an always-visible panel.
+    expect(screen.queryByText("dev@example.com")).not.toBeInTheDocument();
+
+    fireEvent.click(trigger);
+
+    expect(screen.getByText("dev@example.com")).toBeInTheDocument();
+    expect(screen.getByText("42%")).toBeInTheDocument();
+    expect(screen.getByText("18%")).toBeInTheDocument();
+    expect(screen.getByText(/auto @ 90%/)).toBeInTheDocument();
+  });
+
+  it("renders nothing when there are no configured accounts (by design)", async () => {
+    renderAccountsBar({ ...SAMPLE, accounts: [] });
+
+    // Give the listAccounts().then(setData) microtask a tick to resolve.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByRole("button", { name: "Accounts & usage" })).not.toBeInTheDocument();
+  });
+});

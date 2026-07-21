@@ -134,6 +134,8 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
             costUsd: message.total_cost_usd ?? null,
             durationMs: message.duration_ms ?? null,
             errorMessage,
+            inputTokens: message.usage?.input_tokens ?? null,
+            outputTokens: message.usage?.output_tokens ?? null,
           });
           return {
             claudeSessionId,
@@ -161,6 +163,8 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
       costUsd: null,
       durationMs: null,
       errorMessage: msg,
+      inputTokens: null,
+      outputTokens: null,
     });
     return {
       claudeSessionId,

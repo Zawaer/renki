@@ -167,6 +167,22 @@ Now every device on your tailnet can reach
 secure origin, and `wss://` comes for free. WebSocket upgrades pass through
 `tailscale serve` unchanged.
 
+**If you already run a reverse proxy (Caddy, Traefik, nginx…) on this host
+for other `.internal`/local sites, check it first.** `tailscale serve`
+claims `<tailnet-ip>:443` directly — if your reverse proxy is *also* bound
+to that address (common if it fronts other homelab services over Tailscale
+too), the two silently collide: one loses the port, often invisibly enough
+that Docker still reports the container "Up" with its port publish quietly
+unattached. The symptom is broken TLS on your *other*, unrelated sites
+(`SSL_ERROR_INTERNAL_ERROR_ALERT` and similar), not an obvious "address
+already in use" error, so it's easy to chase the wrong cause. Check first
+with `tailscale serve status`; undo with `tailscale serve --https=443 off`
+(or `tailscale serve reset` to clear everything if it's gotten tangled). If
+your reverse proxy already owns that IP, point *it* at the daemon instead of
+running `tailscale serve` at all — see
+[Advanced: other networking options](#advanced-other-networking-options)
+below.
+
 ### Alternative: bind to the tailnet directly
 
 If you'd rather not use `tailscale serve`, set `CRC_HOST=0.0.0.0` (or your
@@ -196,6 +212,18 @@ This is orthogonal to Tailscale, not a replacement for it — Caddy handles the
 domain/TLS, Tailscale (or your firewall) still decides who can reach the port
 at all. Traefik works the same way if you already run it for other
 containers and want Docker-label auto-discovery instead of a Caddyfile.
+
+**Already running Caddy for other internal sites (e.g. `*.internal`) bound to
+your tailnet IP?** Don't *also* run `tailscale serve` on that IP — see the
+warning in step 4, they'll fight over port 443. Add the daemon as another
+site in your existing Caddyfile instead, reusing whatever internal CA you
+already have trusted rather than `tailscale serve`'s own cert:
+
+```
+crc.your-homelab.internal {
+    reverse_proxy 127.0.0.1:4517
+}
+```
 
 **Headscale** is a self-hosted, open-source implementation of Tailscale's
 coordination server — a drop-in alternative if you'd rather not depend on

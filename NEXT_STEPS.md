@@ -61,7 +61,12 @@ features. The throughline for everything below: shrink "found the repo" →
       a 3-step quickstart, and Contributing/Security/License pointers.
       CONTRIBUTING.md, SECURITY.md, CODE_OF_CONDUCT.md, and GitHub issue/PR
       templates added.
-  - [ ] **P3b — Demo GIF.** Still open: a ~60s screen recording of the actual
+  - [x] **P3b — Networking alternatives documented.** SETUP.md § 4 now covers
+        Caddy (reverse proxy for a real domain/HTTPS, orthogonal to Tailscale),
+        Headscale (self-hosted alternative to Tailscale's control plane), and
+        an explicit warning against direct public exposure given the daemon's
+        code-execution blast radius. SECURITY.md cross-references it.
+  - [ ] **P3c — Demo GIF.** Still open: a ~60s screen recording of the actual
         take-control handoff. Needs a human to record it — this is genuinely
         worth doing before the repo goes public, it's the thing that gets
         someone to actually try the quickstart.

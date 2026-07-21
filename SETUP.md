@@ -175,6 +175,48 @@ way — the daemon always has one, auto-generated if you didn't set one — but
 you'll be on `http://…:4517` with no TLS, so the token travels in plaintext on
 your tailnet instead of over HTTPS.
 
+### Advanced: other networking options
+
+Tailscale is the recommended and only *supported* way to reach the daemon
+remotely. The options below are for less common setups people sometimes ask
+about — not first-class, but documented so you're not guessing.
+
+**Reverse proxy (Caddy) for a real domain.** A separate concern from remote
+access: if you'd rather use a domain you own than a `*.ts.net` tailnet
+address, put [Caddy](https://caddyserver.com) in front — free automatic HTTPS
+in about two lines:
+
+```
+example.com {
+    reverse_proxy 127.0.0.1:4517
+}
+```
+
+This is orthogonal to Tailscale, not a replacement for it — Caddy handles the
+domain/TLS, Tailscale (or your firewall) still decides who can reach the port
+at all. Traefik works the same way if you already run it for other
+containers and want Docker-label auto-discovery instead of a Caddyfile.
+
+**Headscale** is a self-hosted, open-source implementation of Tailscale's
+coordination server — a drop-in alternative if you'd rather not depend on
+Tailscale's hosted control plane (the WireGuard traffic itself is always
+direct and encrypted either way). Same client setup on your devices, just
+pointed at your own Headscale instance. Worth it only if you have a specific
+reason to run your own control plane; Tailscale's free tier (100 devices) is
+the easier default for most people.
+
+**Exposing the daemon directly to the public internet — not recommended.**
+Skipping Tailscale/a VPN and port-forwarding or reverse-proxying the daemon
+straight onto the open internet is possible, but this daemon spawns real
+processes with real filesystem/code-execution access — closer in blast
+radius to exposing SSH than to exposing a blog. The bearer token becomes the
+*only* thing standing between the open internet and that access (see
+[Security model](#security-model-single-user-v1) below), and there's no rate
+limiting or other hardening built in for this scenario. If you do it anyway:
+always put TLS in front (Caddy, above), set your own strong `CRC_AUTH_TOKEN`
+rather than relying on the auto-generated one, and treat that token with the
+same care as an SSH private key.
+
 ## 5. Connect a client
 
 - **Web:** `pnpm --filter @crc/web dev` → open `http://127.0.0.1:5173`, and in

@@ -45,6 +45,10 @@ design tradeoff rather than a bug:
 - **Network boundary:** the daemon binds to loopback by default. The
   recommended way to reach it from other devices is
   [Tailscale](https://tailscale.com) (WireGuard) — never the public internet.
+  Direct public exposure is technically possible but not a hardened path (no
+  built-in rate limiting) — see
+  [SETUP.md § Advanced: other networking options](./SETUP.md#advanced-other-networking-options)
+  before considering it.
 - **Auth:** a single shared bearer token (`CRC_AUTH_TOKEN`), compared in
   constant time, required on every request including the WebSocket upgrade.
   The daemon refuses to bind a non-loopback host without one.

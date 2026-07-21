@@ -35,7 +35,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const conv = useStoreValue(store);
   const scrollRef = useRef<ScrollView>(null);
   const [text, setText] = useState("");
-  const [model, setModel] = useState(""); // "" = daemon default
+  const [model, setModel] = useState(""); // "" until capabilities load and pick the SDK's own default
   const [effortKey, setEffortKey] = useState(DEFAULT_EFFORT_KEY);
   const [capabilities, setCapabilities] = useState<CapabilitiesResponse>({ models: [], commands: [] });
 
@@ -47,6 +47,12 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   useEffect(() => {
     rest.getCapabilities().then(setCapabilities).catch(() => {});
   }, [rest]);
+
+  // supportedModels() already includes its own "Default (recommended)" entry
+  // (first in the list) — no separate placeholder needed on top of it.
+  useEffect(() => {
+    if (!model && capabilities.models.length > 0) setModel(capabilities.models[0]?.value ?? "");
+  }, [capabilities, model]);
 
   const isController = conv.controller === config.deviceId;
   const status = conv.status ?? "idle";
@@ -66,7 +72,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
 
   function cycleModel() {
     if (capabilities.models.length === 0) return;
-    const values = ["", ...capabilities.models.map((m) => m.value)];
+    const values = capabilities.models.map((m) => m.value);
     const next = values[(values.indexOf(model) + 1) % values.length];
     setModel(next ?? "");
   }

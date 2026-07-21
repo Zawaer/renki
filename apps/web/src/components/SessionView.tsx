@@ -321,7 +321,7 @@ function Composer({
 }) {
   const { rest } = useClient();
   const [text, setText] = useState("");
-  const [model, setModel] = useState(""); // "" = daemon default
+  const [model, setModel] = useState(""); // "" until capabilities load and pick the SDK's own default
   const [effortKey, setEffortKey] = useState(DEFAULT_EFFORT_KEY);
   const [capabilities, setCapabilities] = useState<CapabilitiesResponse>({ models: [], commands: [] });
   const [suggestionIndex, setSuggestionIndex] = useState(0);
@@ -329,6 +329,14 @@ function Composer({
   useEffect(() => {
     rest.getCapabilities().then(setCapabilities).catch(() => {});
   }, [rest]);
+
+  // supportedModels() already includes its own "Default (recommended)" entry
+  // (first in the list) — no need for our own placeholder on top of it. Once
+  // the real list loads, default the selection to that entry rather than an
+  // empty value that wouldn't match any <option>.
+  useEffect(() => {
+    if (!model && capabilities.models.length > 0) setModel(capabilities.models[0]?.value ?? "");
+  }, [capabilities, model]);
 
   const effort = EFFORT_LEVELS.find((e) => e.key === effortKey) ?? EFFORT_LEVELS[0];
   const suggestions =
@@ -374,7 +382,7 @@ function Composer({
           onChange={(e) => setModel(e.target.value)}
           className="rounded-sm border border-(--crc-border) bg-(--crc-input-bg) px-1.5 py-1 text-(--crc-fg)"
         >
-          <option value="">Default model</option>
+          {capabilities.models.length === 0 && <option value="">Loading models…</option>}
           {capabilities.models.map((m) => (
             <option key={m.value} value={m.value} title={m.description}>
               {m.displayName}

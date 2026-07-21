@@ -23,6 +23,7 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
   const [error, setError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [found, setFound] = useState<{ repos: number; root: string; url: string; tok: string } | null>(null);
 
   async function connectWith(url: string, tok: string) {
     setError(null);
@@ -32,12 +33,18 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
       const res = await fetch(`${cleanUrl}/repos`, { headers: { authorization: `Bearer ${tok}` } });
       if (res.status === 401) throw new Error("Token rejected (401).");
       if (!res.ok) throw new Error(`Daemon responded ${res.status}.`);
-      onSave({ baseUrl: cleanUrl, token: tok, deviceId: await getOrCreateDeviceId(), deviceName });
+      const body = (await res.json()) as { repos: unknown[]; root: string };
+      setFound({ repos: body.repos.length, root: body.root, url: cleanUrl, tok });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not reach the daemon.");
     } finally {
       setTesting(false);
     }
+  }
+
+  async function continueSetup() {
+    if (!found) return;
+    onSave({ baseUrl: found.url, token: found.tok, deviceId: await getOrCreateDeviceId(), deviceName });
   }
 
   function onScanned(raw: string) {
@@ -72,7 +79,10 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
         <TextInput
           style={styles.input}
           value={baseUrl}
-          onChangeText={setBaseUrl}
+          onChangeText={(v) => {
+            setBaseUrl(v);
+            setFound(null);
+          }}
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="url"
@@ -85,7 +95,10 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
           <TextInput
             style={[styles.input, styles.tokenInput]}
             value={token}
-            onChangeText={setToken}
+            onChangeText={(v) => {
+              setToken(v);
+              setFound(null);
+            }}
             autoCapitalize="none"
             autoCorrect={false}
             secureTextEntry={!showToken}
@@ -102,12 +115,23 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
 
         {error && <Text style={styles.error}>{error}</Text>}
 
+        {found && (
+          <Text style={styles.success}>
+            Connected — found {found.repos} repo{found.repos === 1 ? "" : "s"} under {found.root}.
+            {found.repos === 0 && " Add a git repo there (or point CRC_REPOS_ROOT elsewhere) before creating a session."}
+          </Text>
+        )}
+
         <TouchableOpacity
           style={[styles.button, (!token || testing) && styles.buttonDisabled]}
           disabled={!token || testing}
-          onPress={() => connectWith(baseUrl, token)}
+          onPress={() => (found ? continueSetup() : connectWith(baseUrl, token))}
         >
-          {testing ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Connect</Text>}
+          {testing ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>{found ? "Continue" : "Connect"}</Text>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -176,6 +200,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   error: { color: colors.danger, fontSize: 13, marginTop: 8 },
+  success: { color: colors.ok, fontSize: 13, marginTop: 8 },
   button: {
     backgroundColor: colors.accent,
     borderRadius: 10,

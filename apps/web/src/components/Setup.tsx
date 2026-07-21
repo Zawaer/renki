@@ -10,6 +10,7 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
   const [deviceName, setDeviceName] = useState("Web");
   const [error, setError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
+  const [found, setFound] = useState<{ repos: number; root: string } | null>(null);
 
   async function submit() {
     setError(null);
@@ -20,12 +21,17 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
       });
       if (res.status === 401) throw new Error("Token rejected (401).");
       if (!res.ok) throw new Error(`Daemon responded ${res.status}.`);
-      onSave({ baseUrl: baseUrl.replace(/\/$/, ""), token, deviceId: getOrCreateDeviceId(), deviceName });
+      const body = (await res.json()) as { repos: unknown[]; root: string };
+      setFound({ repos: body.repos.length, root: body.root });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not reach the daemon.");
     } finally {
       setTesting(false);
     }
+  }
+
+  function continueSetup() {
+    onSave({ baseUrl: baseUrl.replace(/\/$/, ""), token, deviceId: getOrCreateDeviceId(), deviceName });
   }
 
   return (
@@ -39,7 +45,10 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
         <Field label="Daemon URL">
           <input
             value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
+            onChange={(e) => {
+              setBaseUrl(e.target.value);
+              setFound(null);
+            }}
             placeholder="http://homelab.tailnet:4517"
             className="input"
           />
@@ -48,7 +57,10 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
           <div className="flex items-center gap-2">
             <input
               value={token}
-              onChange={(e) => setToken(e.target.value)}
+              onChange={(e) => {
+                setToken(e.target.value);
+                setFound(null);
+              }}
               type={showToken ? "text" : "password"}
               placeholder="CRC_AUTH_TOKEN"
               className="input min-w-0 flex-1"
@@ -68,8 +80,21 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
 
         {error && <p className="text-sm text-red-400">{error}</p>}
 
-        <Button variant="primary" className="w-full" disabled={testing || !token} onClick={submit}>
-          {testing ? "Testing…" : "Connect"}
+        {found && (
+          <p className="text-sm text-emerald-400">
+            Connected — found {found.repos} repo{found.repos === 1 ? "" : "s"} under{" "}
+            <code className="text-emerald-300">{found.root}</code>.
+            {found.repos === 0 && " Add a git repo there (or point CRC_REPOS_ROOT elsewhere) before creating a session."}
+          </p>
+        )}
+
+        <Button
+          variant="primary"
+          className="w-full"
+          disabled={testing || !token}
+          onClick={found ? continueSetup : submit}
+        >
+          {testing ? "Testing…" : found ? "Continue" : "Connect"}
         </Button>
 
         <style>{`.input{width:100%;border-radius:0.5rem;border:1px solid #262626;background:#0b0d10;padding:0.5rem 0.75rem;font-size:0.875rem;color:#e5e7eb;outline:none}.input:focus{border-color:#4f46e5}`}</style>

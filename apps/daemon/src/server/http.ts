@@ -69,7 +69,7 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
 
   app.get("/health", async () => ({ ok: true }));
 
-  app.get("/repos", async () => ({ repos: await scanRepos(config) }));
+  app.get("/repos", async () => ({ repos: await scanRepos(config), root: config.reposRoot }));
 
   // Lets a client connected via a loopback address suggest a real, shareable
   // one when showing a pairing QR — see tailscale.ts.

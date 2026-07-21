@@ -12,6 +12,8 @@ import { SessionEvent } from "./events.js";
 
 export const ListReposResponse = z.object({
   repos: z.array(Repo),
+  /** The daemon's resolved CRC_REPOS_ROOT — surfaced so clients can show where repos are (or should be) found. */
+  root: z.string(),
 });
 export type ListReposResponse = z.infer<typeof ListReposResponse>;
 

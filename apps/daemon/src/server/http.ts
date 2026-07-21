@@ -5,6 +5,7 @@ import type { WebSocket } from "ws";
 import { loginAndExtractSessionKey, PlaywrightUnavailableError } from "../accounts/login.js";
 import type { AccountRotator } from "../accounts/rotator.js";
 import type { UsageReader } from "../accounts/usage.js";
+import { getCapabilities } from "../claude/capabilities.js";
 import type { Config } from "../config.js";
 import { logger } from "../logger.js";
 import type { DeviceRegistry } from "../push/devices.js";
@@ -76,6 +77,10 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
   app.get("/tailscale-status", async () => getTailscaleStatus(config.port));
 
   app.get("/sessions", async () => ({ sessions: manager.listSessions() }));
+
+  // Empty until the first turn runs this process's lifetime — only obtainable
+  // from a live SDK Query object (see claude/capabilities.ts).
+  app.get("/capabilities", async () => getCapabilities());
 
   app.post("/sessions", async (req, reply) => {
     const parsed = CreateSessionRequest.safeParse(req.body);

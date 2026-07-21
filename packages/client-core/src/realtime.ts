@@ -128,10 +128,18 @@ export class RealtimeClient {
     this.send({ type: "release_control", sessionId });
   }
 
-  /** Returns the client-generated promptId so the UI can correlate it. */
-  submitPrompt(sessionId: string, text: string): string {
+  /**
+   * Returns the client-generated promptId so the UI can correlate it.
+   * `model`/`maxThinkingTokens` are a per-message override — omit for the
+   * daemon's own default, matching every call site before this option existed.
+   */
+  submitPrompt(
+    sessionId: string,
+    text: string,
+    opts?: { model?: string; maxThinkingTokens?: number | null },
+  ): string {
     const promptId = genId("p");
-    this.send({ type: "submit_prompt", sessionId, promptId, text });
+    this.send({ type: "submit_prompt", sessionId, promptId, text, ...opts });
     return promptId;
   }
 

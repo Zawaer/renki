@@ -1,4 +1,6 @@
 import {
+  DEFAULT_EFFORT_KEY,
+  EFFORT_LEVELS,
   estimateTokens,
   formatTokenCount,
   THINKING_VERBS,
@@ -7,6 +9,7 @@ import {
   type TimelineItem,
   type TurnView,
 } from "@crc/client-core";
+import type { CapabilitiesResponse } from "@crc/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -27,27 +30,58 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const colors = useTheme();
   const statusColor = statusColorFor(colors);
   const styles = makeStyles(colors);
-  const { realtime, config } = useClient();
+  const { realtime, rest, config } = useClient();
   const store = realtime.conversation(sessionId);
   const conv = useStoreValue(store);
   const scrollRef = useRef<ScrollView>(null);
   const [text, setText] = useState("");
+  const [model, setModel] = useState(""); // "" = daemon default
+  const [effortKey, setEffortKey] = useState(DEFAULT_EFFORT_KEY);
+  const [capabilities, setCapabilities] = useState<CapabilitiesResponse>({ models: [], commands: [] });
 
   useEffect(() => {
     realtime.watch(sessionId);
     return () => realtime.unwatch(sessionId);
   }, [realtime, sessionId]);
 
+  useEffect(() => {
+    rest.getCapabilities().then(setCapabilities).catch(() => {});
+  }, [rest]);
+
   const isController = conv.controller === config.deviceId;
   const status = conv.status ?? "idle";
   const canSend = isController && status !== "busy";
+  const effort = EFFORT_LEVELS.find((e) => e.key === effortKey) ?? EFFORT_LEVELS[0];
+  const suggestions =
+    text.startsWith("/") && text.length > 1 && !text.includes(" ")
+      ? capabilities.commands.filter((c) => c.name.toLowerCase().startsWith(text.slice(1).toLowerCase()))
+      : [];
 
   function send() {
     const t = text.trim();
     if (!t || !canSend) return;
-    realtime.submitPrompt(sessionId, t);
+    realtime.submitPrompt(sessionId, t, { model: model || undefined, maxThinkingTokens: effort?.maxThinkingTokens ?? undefined });
     setText("");
   }
+
+  function cycleModel() {
+    if (capabilities.models.length === 0) return;
+    const values = ["", ...capabilities.models.map((m) => m.value)];
+    const next = values[(values.indexOf(model) + 1) % values.length];
+    setModel(next ?? "");
+  }
+
+  function cycleEffort() {
+    const idx = EFFORT_LEVELS.findIndex((e) => e.key === effortKey);
+    const next = EFFORT_LEVELS[(idx + 1) % EFFORT_LEVELS.length];
+    if (next) setEffortKey(next.key);
+  }
+
+  function pickSuggestion(name: string) {
+    setText(`/${name} `);
+  }
+
+  const modelLabel = capabilities.models.find((m) => m.value === model)?.displayName ?? "Default";
 
   return (
     <KeyboardAvoidingView
@@ -104,6 +138,26 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
       ))}
 
       {/* Composer */}
+      {suggestions.length > 0 && (
+        <View style={styles.suggestBox}>
+          {suggestions.map((c) => (
+            <TouchableOpacity key={c.name} style={styles.suggestRow} onPress={() => pickSuggestion(c.name)}>
+              <Text style={styles.suggestName}>/{c.name}</Text>
+              <Text style={styles.suggestDesc} numberOfLines={1}>
+                {c.description}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+      <View style={styles.optionsRow}>
+        <TouchableOpacity style={styles.optionPill} onPress={cycleModel}>
+          <Text style={styles.optionPillText}>Model: {modelLabel}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.optionPill} onPress={cycleEffort}>
+          <Text style={styles.optionPillText}>Effort: {effort?.label ?? "Medium"}</Text>
+        </TouchableOpacity>
+      </View>
       <View style={styles.composer}>
         <TextInput
           style={styles.composerInput}
@@ -384,13 +438,43 @@ const makeStyles = (colors: ThemeColors) =>
     allowText: { color: colors.accentFg, fontWeight: "600" },
     denyBtn: { borderColor: colors.danger, borderWidth: 1, borderRadius: 2, paddingHorizontal: 18, paddingVertical: 8 },
     denyText: { color: colors.danger, fontWeight: "600" },
+    optionsRow: {
+      flexDirection: "row",
+      gap: 8,
+      paddingHorizontal: 10,
+      paddingTop: 8,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+    },
+    optionPill: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 2,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+    },
+    optionPillText: { color: colors.dim, fontSize: 11 },
+    suggestBox: {
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      maxHeight: 160,
+    },
+    suggestRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.panel,
+    },
+    suggestName: { color: colors.accent, fontSize: 13, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
+    suggestDesc: { flex: 1, color: colors.dim, fontSize: 12 },
     composer: {
       flexDirection: "row",
       alignItems: "flex-end",
       gap: 8,
       padding: 10,
-      borderTopWidth: 1,
-      borderTopColor: colors.border,
     },
     composerInput: {
       flex: 1,

@@ -1,4 +1,6 @@
 import {
+  DEFAULT_EFFORT_KEY,
+  EFFORT_LEVELS,
   estimateTokens,
   formatTokenCount,
   THINKING_VERBS,
@@ -7,6 +9,7 @@ import {
   type TimelineItem,
   type TurnView,
 } from "@crc/client-core";
+import type { CapabilitiesResponse } from "@crc/protocol";
 import { useEffect, useRef, useState } from "react";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { hostOpenFile, isHosted } from "../lib/host.js";
@@ -94,7 +97,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
       <Composer
         disabled={!isController || status === "busy"}
         reason={!isController ? "Take control to send prompts" : status === "busy" ? "Claude is working…" : ""}
-        onSend={(text) => realtime.submitPrompt(sessionId, text)}
+        onSend={(text, opts) => realtime.submitPrompt(sessionId, text, opts)}
       />
     </div>
   );
@@ -314,24 +317,113 @@ function Composer({
 }: {
   disabled: boolean;
   reason: string;
-  onSend: (text: string) => void;
+  onSend: (text: string, opts?: { model?: string; maxThinkingTokens?: number | null }) => void;
 }) {
+  const { rest } = useClient();
   const [text, setText] = useState("");
+  const [model, setModel] = useState(""); // "" = daemon default
+  const [effortKey, setEffortKey] = useState(DEFAULT_EFFORT_KEY);
+  const [capabilities, setCapabilities] = useState<CapabilitiesResponse>({ models: [], commands: [] });
+  const [suggestionIndex, setSuggestionIndex] = useState(0);
+
+  useEffect(() => {
+    rest.getCapabilities().then(setCapabilities).catch(() => {});
+  }, [rest]);
+
+  const effort = EFFORT_LEVELS.find((e) => e.key === effortKey) ?? EFFORT_LEVELS[0];
+  const suggestions =
+    text.startsWith("/") && text.length > 1 && !text.includes(" ")
+      ? capabilities.commands.filter((c) => c.name.toLowerCase().startsWith(text.slice(1).toLowerCase()))
+      : [];
 
   function send() {
     const t = text.trim();
     if (!t || disabled) return;
-    onSend(t);
+    onSend(t, { model: model || undefined, maxThinkingTokens: effort?.maxThinkingTokens ?? undefined });
     setText("");
   }
 
+  function pickSuggestion(name: string) {
+    setText(`/${name} `);
+    setSuggestionIndex(0);
+  }
+
   return (
-    <div className="border-t border-(--crc-border) p-3">
+    <div className="relative border-t border-(--crc-border) p-3">
+      {suggestions.length > 0 && (
+        <div className="absolute bottom-full left-3 right-3 z-10 mb-1 max-h-48 overflow-y-auto rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) shadow-lg">
+          {suggestions.map((c, i) => (
+            <button
+              key={c.name}
+              onClick={() => pickSuggestion(c.name)}
+              className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs ${
+                i === suggestionIndex ? "bg-(--crc-selected) text-(--crc-selected-fg)" : "text-(--crc-fg)"
+              }`}
+            >
+              <span className="font-mono text-(--crc-link)">/{c.name}</span>
+              <span className="truncate text-(--crc-fg-muted)">{c.description}</span>
+              {c.argumentHint && <span className="ml-auto shrink-0 text-(--crc-fg-muted)">{c.argumentHint}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="mb-2 flex items-center gap-2 text-xs">
+        <select
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          className="rounded-sm border border-(--crc-border) bg-(--crc-input-bg) px-1.5 py-1 text-(--crc-fg)"
+        >
+          <option value="">Default model</option>
+          {capabilities.models.map((m) => (
+            <option key={m.value} value={m.value} title={m.description}>
+              {m.displayName}
+            </option>
+          ))}
+        </select>
+        <select
+          value={effortKey}
+          onChange={(e) => setEffortKey(e.target.value)}
+          className="rounded-sm border border-(--crc-border) bg-(--crc-input-bg) px-1.5 py-1 text-(--crc-fg)"
+        >
+          {EFFORT_LEVELS.map((e) => (
+            <option key={e.key} value={e.key}>
+              {e.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <div className="flex items-end gap-2">
         <textarea
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            setSuggestionIndex(0);
+          }}
           onKeyDown={(e) => {
+            if (suggestions.length > 0) {
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setSuggestionIndex((i) => (i + 1) % suggestions.length);
+                return;
+              }
+              if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setSuggestionIndex((i) => (i - 1 + suggestions.length) % suggestions.length);
+                return;
+              }
+              if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+                e.preventDefault();
+                const picked = suggestions[suggestionIndex];
+                if (picked) pickSuggestion(picked.name);
+                return;
+              }
+              if (e.key === "Escape") {
+                setText("");
+                return;
+              }
+            }
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               send();
@@ -339,7 +431,7 @@ function Composer({
           }}
           rows={2}
           disabled={disabled}
-          placeholder={disabled ? reason : "Send a prompt… (Enter to send, Shift+Enter for newline)"}
+          placeholder={disabled ? reason : "Send a prompt… (Enter to send, Shift+Enter for newline, / for commands)"}
           className="flex-1 resize-none rounded-sm border border-(--crc-border) bg-(--crc-input-bg) px-3 py-2 text-sm text-(--crc-fg) outline-none placeholder:text-(--crc-fg-muted) focus:border-(--crc-focus) disabled:opacity-50"
         />
         <Button variant="primary" disabled={disabled || !text.trim()} onClick={send}>

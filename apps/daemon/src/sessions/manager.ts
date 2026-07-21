@@ -8,6 +8,7 @@ import { createWorktree, removeWorktree } from "../git/worktrees.js";
 import { newSessionId } from "../ids.js";
 import { logger } from "../logger.js";
 import { findRepo } from "../repos.js";
+import { hasCapabilities, setCapabilities } from "../claude/capabilities.js";
 import { type PermissionResolver, runTurn } from "../claude/runner.js";
 import { SessionError } from "./errors.js";
 
@@ -166,6 +167,7 @@ export class SessionManager {
     text: string;
     resolvePermission: PermissionResolver;
     model?: string;
+    maxThinkingTokens?: number | null;
   }): Promise<void> {
     const session = this.getSession(input.sessionId);
     if (session.status === "archived") throw new SessionError("session_archived", "Session is archived.");
@@ -193,9 +195,13 @@ export class SessionManager {
         prompt: input.text,
         promptId: input.promptId,
         model: input.model,
+        maxThinkingTokens: input.maxThinkingTokens,
         forcePermissionPrompts: this.config.forcePermissionPrompts,
         emit: (payload) => this.events.append(input.sessionId, payload),
         resolvePermission: input.resolvePermission,
+        // Cheap to skip once the daemon already knows this — it's static per
+        // `claude` install, not per-session.
+        onCapabilities: hasCapabilities() ? undefined : setCapabilities,
       });
 
     let result = await runOnce();

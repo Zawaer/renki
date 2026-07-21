@@ -1,6 +1,6 @@
 import { applyEvents, initialConversation, RealtimeClient, RestClient, THINKING_VERBS } from "@crc/client-core";
-import type { SessionEvent } from "@crc/protocol";
-import { screen } from "@testing-library/react";
+import type { CapabilitiesResponse, SessionEvent } from "@crc/protocol";
+import { fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { SessionView } from "../src/components/SessionView.js";
 import { ClientContext } from "../src/lib/client.js";
@@ -33,18 +33,25 @@ function ev(sessionId: string, payload: Omit<SessionEvent, "seq" | "sessionId" |
  * used directly instead of the exported <ClientProvider> so mounting never
  * tries to open an actual WebSocket.
  */
-function renderSession(sessionId: string, events: SessionEvent[], deviceId = "d1") {
+function renderSession(
+  sessionId: string,
+  events: SessionEvent[],
+  deviceId = "d1",
+  capabilities?: CapabilitiesResponse,
+) {
   const realtime = new RealtimeClient({ baseUrl: "http://test.invalid", token: "t", deviceId });
   const state = applyEvents(initialConversation(sessionId), events);
   realtime.conversation(sessionId).set(state);
   const rest = new RestClient({ baseUrl: "http://test.invalid", token: "t" });
+  if (capabilities) rest.getCapabilities = async () => capabilities;
   const config = { baseUrl: "http://test.invalid", token: "t", deviceId, deviceName: "Test" };
 
-  return render(
+  render(
     <ClientContext.Provider value={{ rest, realtime, config }}>
       <SessionView sessionId={sessionId} />
     </ClientContext.Provider>,
   );
+  return { realtime, rest };
 }
 
 describe("SessionView", () => {
@@ -247,5 +254,75 @@ describe("SessionView", () => {
     renderSession(sessionId, events);
 
     expect(screen.getByText("Thought for 12s")).toBeInTheDocument();
+  });
+
+  it("submits the selected model + effort's thinking budget alongside the prompt", async () => {
+    const sessionId = "s6";
+    const events = [
+      ev(sessionId, {
+        kind: "session_created",
+        repoId: "demo",
+        repoName: "demo",
+        baseBranch: "main",
+        branch: "crc/opts",
+        worktreePath: "/tmp/wt",
+      }),
+      ev(sessionId, { kind: "status_changed", status: "idle" }),
+      ev(sessionId, { kind: "control_changed", controller: "d1", controllerName: "Web" }),
+    ];
+    const capabilities = {
+      models: [{ value: "claude-opus-4-8", displayName: "Opus", description: "Most capable" }],
+      commands: [],
+    };
+
+    const { realtime } = renderSession(sessionId, events, "d1", capabilities);
+    const calls: unknown[] = [];
+    realtime.submitPrompt = (sid: string, text: string, opts?: unknown) => {
+      calls.push({ sid, text, opts });
+      return "p1";
+    };
+
+    // Capabilities load asynchronously — wait for the fetched model to actually
+    // appear as an <option> before trying to select it.
+    await screen.findByText("Opus");
+    const selects = screen.getAllByRole("combobox");
+    const [modelSelect, effortSelect] = selects;
+    fireEvent.change(modelSelect, { target: { value: "claude-opus-4-8" } });
+    fireEvent.change(effortSelect, { target: { value: "xhigh" } });
+
+    fireEvent.change(screen.getByPlaceholderText(/Send a prompt/), { target: { value: "hello" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(calls).toEqual([{ sid: sessionId, text: "hello", opts: { model: "claude-opus-4-8", maxThinkingTokens: 32_000 } }]);
+  });
+
+  it("shows a slash-command autocomplete and fills in the picked command", async () => {
+    const sessionId = "s7";
+    const events = [
+      ev(sessionId, {
+        kind: "session_created",
+        repoId: "demo",
+        repoName: "demo",
+        baseBranch: "main",
+        branch: "crc/slash",
+        worktreePath: "/tmp/wt",
+      }),
+      ev(sessionId, { kind: "status_changed", status: "idle" }),
+      ev(sessionId, { kind: "control_changed", controller: "d1", controllerName: "Web" }),
+    ];
+    const capabilities = {
+      models: [],
+      commands: [{ name: "compact", description: "Summarize the conversation", argumentHint: "" }],
+    };
+
+    renderSession(sessionId, events, "d1", capabilities);
+
+    const textarea = screen.getByPlaceholderText(/Send a prompt/) as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "/comp" } });
+
+    const suggestion = await screen.findByText("/compact");
+    fireEvent.click(suggestion);
+
+    expect(textarea.value).toBe("/compact ");
   });
 });

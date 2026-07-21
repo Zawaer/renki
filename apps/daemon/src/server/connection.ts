@@ -109,6 +109,8 @@ export class Connection {
             deviceId: this.deviceId,
             promptId: msg.promptId,
             text: msg.text,
+            model: msg.model,
+            maxThinkingTokens: msg.maxThinkingTokens,
             resolvePermission: this.broker.resolverFor(msg.sessionId),
           })
           .catch((err) => {

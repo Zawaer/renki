@@ -1,5 +1,6 @@
 import type {
   AccountsResponse,
+  CapabilitiesResponse,
   ConnectUsageKeyResponse,
   CreateSessionRequest,
   CreateSessionResponse,
@@ -88,6 +89,15 @@ export class RestClient {
   /** The daemon host's own Tailscale hostname, if it can detect one — used to suggest a pairing URL. */
   async getTailscaleStatus(): Promise<TailscaleStatusResponse> {
     return this.get<TailscaleStatusResponse>("/tailscale-status");
+  }
+
+  /**
+   * Available models + slash commands, as reported by the Agent SDK. Empty
+   * until the first turn has run this daemon process's lifetime — it's only
+   * obtainable from a live SDK query, so there's a cold-start gap.
+   */
+  async getCapabilities(): Promise<CapabilitiesResponse> {
+    return this.get<CapabilitiesResponse>("/capabilities");
   }
 
   // ── internals ──────────────────────────────────────────────────────────────

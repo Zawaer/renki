@@ -48,13 +48,17 @@ export const ClientMessage = z.discriminatedUnion("type", [
    * Submit a finished prompt. Rejected (via `error`) unless this device is the
    * current controller AND the session is idle (not mid-turn). `promptId` is a
    * client-generated id so the client can correlate its optimistic UI with the
-   * resulting `prompt_submitted` event.
+   * resulting `prompt_submitted` event. `model`/`maxThinkingTokens` are a
+   * per-message override (omit for the daemon's own default); a fresh SDK
+   * query starts per prompt anyway, so there's no mid-turn switch to support.
    */
   z.object({
     type: z.literal("submit_prompt"),
     sessionId: z.string(),
     promptId: z.string(),
     text: z.string().min(1),
+    model: z.string().optional(),
+    maxThinkingTokens: z.number().int().nullable().optional(),
   }),
 
   /** Answer a pending permission request. Only honored from the controller. */

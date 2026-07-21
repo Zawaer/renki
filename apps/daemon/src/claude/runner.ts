@@ -1,6 +1,6 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Options, PermissionResult } from "@anthropic-ai/claude-agent-sdk";
-import type { EventPayload, PermissionDecision } from "@crc/protocol";
+import type { CapabilitiesResponse, EventPayload, PermissionDecision } from "@crc/protocol";
 import { logger } from "../logger.js";
 import { newTurnId } from "../ids.js";
 
@@ -45,8 +45,16 @@ export type RunTurnArgs = {
   resolvePermission: PermissionResolver;
   abortController?: AbortController;
   model?: string;
+  /** Thinking-token budget for this turn; omit/null for the SDK's own default. */
+  maxThinkingTokens?: number | null;
   /** If true, don't load ~/.claude settings so every gated tool asks the controller. */
   forcePermissionPrompts?: boolean;
+  /**
+   * Only obtainable from a live Query object, so the caller opts in (once,
+   * when it doesn't already have this cached daemon-wide) rather than paying
+   * for the extra control-request round-trip on every single turn.
+   */
+  onCapabilities?: (caps: CapabilitiesResponse) => void;
 };
 
 export type RunTurnResult = {
@@ -79,6 +87,7 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
     abortController: args.abortController,
     ...(args.resumeSessionId ? { resume: args.resumeSessionId } : {}),
     ...(args.model ? { model: args.model } : {}),
+    ...(args.maxThinkingTokens != null ? { maxThinkingTokens: args.maxThinkingTokens } : {}),
     ...(args.forcePermissionPrompts ? { settingSources: [] } : {}),
     // Route every permission decision through the caller's resolver. This only
     // fires for tools the permission system doesn't auto-resolve (edits, bash,
@@ -104,7 +113,20 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
   };
 
   try {
-    for await (const message of query({ prompt: args.prompt, options })) {
+    const q = query({ prompt: args.prompt, options });
+
+    // supportedModels()/supportedCommands() only exist on a LIVE Query object,
+    // so this is the one place we can ever discover them. Runs concurrently
+    // with the message loop below (a separate control-request channel, not
+    // blocking) — best-effort, a failure here shouldn't fail the turn.
+    if (args.onCapabilities) {
+      const onCapabilities = args.onCapabilities;
+      Promise.all([q.supportedModels(), q.supportedCommands()])
+        .then(([models, commands]) => onCapabilities({ models, commands }))
+        .catch((err) => logger.debug("supportedModels/supportedCommands failed", { err: String(err) }));
+    }
+
+    for await (const message of q) {
       // Every SDK message carries the session id; keep the latest so we can
       // resume next time even if the id was freshly minted this turn.
       if ("session_id" in message && message.session_id) claudeSessionId = message.session_id;

@@ -1,0 +1,24 @@
+# Copy this to docker-compose.override.yml (gitignored — stays local to this
+# host) if a reverse proxy running in its own container needs to reach
+# crc-daemon / crc-web by name. Docker Compose merges an override.yml file in
+# automatically, no extra flags needed — `docker compose up -d` picks it up.
+#
+# Set the network name below to whatever your reverse proxy container is
+# already attached to (`docker inspect <proxy-container> --format
+# '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'` will show it),
+# then point its site config at `crc-daemon:4517` / `crc-web:80` instead of
+# `127.0.0.1:...`. See SETUP.md § Advanced networking for the full writeup.
+
+services:
+  daemon:
+    networks:
+      - default
+      - reverse-proxy
+  web:
+    networks:
+      - default
+      - reverse-proxy
+
+networks:
+  reverse-proxy:
+    external: true

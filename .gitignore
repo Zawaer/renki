@@ -19,6 +19,10 @@ data/
 .env.*
 !.env.example
 
+# Host-specific Docker network wiring (e.g. joining an existing reverse-proxy
+# network) — Compose merges this in automatically if present; see SETUP.md.
+docker-compose.override.yml
+
 # OS
 .DS_Store
 

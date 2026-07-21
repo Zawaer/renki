@@ -37,12 +37,9 @@ services:
     # If you front this with a Caddy/Traefik/nginx CONTAINER instead of
     # tailscale serve (see SETUP.md § Advanced networking), that reverse
     # proxy's `127.0.0.1` means ITSELF, not this container — it has no route
-    # to the port published above unless they share a Docker network.
-    # Uncomment both blocks below, set the SAME network name your reverse
-    # proxy is already on, and point its site config at `crc-daemon:4517`
-    # (this container's name) instead of `127.0.0.1:4517`.
-    # networks:
-    #   - reverse-proxy
+    # to the port published above unless they share a Docker network. Don't
+    # edit this file for that — add a docker-compose.override.yml instead
+    # (gitignored, stays local to this host); see SETUP.md.
 
   # Optional: the actual web UI, statically built and served by nginx — the
   # Docker equivalent of the crc-web pm2 process. Not required; the daemon on
@@ -61,9 +58,3 @@ services:
       # process — front it the same way (tailscale serve, or your own
       # reverse-proxy container on the same network as above).
       - "127.0.0.1:4173:80"
-    # networks:
-    #   - reverse-proxy
-
-# networks:
-#   reverse-proxy:
-#     external: true

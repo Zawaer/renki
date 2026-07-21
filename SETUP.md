@@ -246,13 +246,19 @@ through Caddy with `tls internal` is what gets you that.
 **If that Caddy runs in its own container** (common — one shared
 `docker-compose.yml` fronting several homelab services), the snippets above
 will 502: `127.0.0.1` inside Caddy's container means *itself*, not your
-host, so it has no route to either port at all. Put both CRC containers on
-the same Docker network as Caddy instead and proxy to them by container
-name — uncomment the `networks:` blocks already sitting in CRC's own
-`docker-compose.yml` for both the `daemon` and `web` services (see the
-comments there), point them at whatever network your reverse proxy already
-uses, then change the `reverse_proxy` lines above to `crc-web:80` and
-`crc-daemon:4517` respectively.
+host, so it has no route to either port at all. Change the `reverse_proxy`
+lines above to `crc-web:80` and `crc-daemon:4517` (container names instead of
+`127.0.0.1`), then put both CRC containers on whatever Docker network Caddy
+is already on — find that network's name with:
+
+```
+docker inspect <your-caddy-container> --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'
+```
+
+Copy `docker-compose.override.yml.example` to `docker-compose.override.yml`
+(gitignored — stays local to this host, so `git pull` never conflicts with
+it) and set that network name in it. Compose merges an override file in
+automatically, no extra flags — just `docker compose up -d` again.
 
 **Headscale** is a self-hosted, open-source implementation of Tailscale's
 coordination server — a drop-in alternative if you'd rather not depend on

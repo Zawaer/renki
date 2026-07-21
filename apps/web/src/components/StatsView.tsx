@@ -1,4 +1,4 @@
-import type { RepoStatsBucket, StatsBucket, StatsResponse } from "@crc/protocol";
+import type { RepoStatsBucket, RtkGainDay, RtkGainResponse, StatsBucket, StatsResponse } from "@crc/protocol";
 import { formatTokenCount } from "@crc/client-core";
 import { useCallback, useEffect, useState } from "react";
 import { useClient } from "../lib/client.js";
@@ -16,6 +16,7 @@ export function StatsView() {
   const { rest } = useClient();
   const [data, setData] = useState<StatsResponse | null>(null);
   const [error, setError] = useState(false);
+  const [rtk, setRtk] = useState<RtkGainResponse | null>(null);
 
   const refresh = useCallback(() => {
     rest
@@ -25,6 +26,7 @@ export function StatsView() {
         setError(false);
       })
       .catch(() => setError(true));
+    rest.getRtkGain().then(setRtk).catch(() => {});
   }, [rest]);
 
   useEffect(() => {
@@ -41,11 +43,16 @@ export function StatsView() {
   }
   if (data.lifetime.turnCount === 0) {
     return (
-      <CenteredNote
-        icon="codicon-graph-line"
-        text="No completed turns yet."
-        sub="Stats will start filling in here once you've run some prompts."
-      />
+      <div className="h-full overflow-y-auto p-6">
+        <h1 className="mb-4 text-sm font-semibold text-(--crc-fg)">Stats</h1>
+        <CenteredNote
+          fill={false}
+          icon="codicon-graph-line"
+          text="No completed turns yet."
+          sub="Stats will start filling in here once you've run some prompts."
+        />
+        {rtk?.enabled && <RtkSection rtk={rtk} />}
+      </div>
     );
   }
 
@@ -66,9 +73,15 @@ export function StatsView() {
 
       {data.byRepo.length > 1 && (
         <Section title="By repo" table={<RepoTable rows={data.byRepo} />}>
-          <ChartCard title="Cost">
-            <RepoBars repos={data.byRepo} />
-          </ChartCard>
+          <div className="grid gap-6 sm:grid-cols-2">
+            <ChartCard title="Tokens">
+              <Legend items={[{ label: "Input", color: "var(--crc-chart-input)" }, { label: "Output", color: "var(--crc-chart-output)" }]} />
+              <RepoBars repos={data.byRepo} metric="tokens" />
+            </ChartCard>
+            <ChartCard title="Cost">
+              <RepoBars repos={data.byRepo} metric="cost" />
+            </ChartCard>
+          </div>
         </Section>
       )}
 
@@ -157,6 +170,96 @@ export function StatsView() {
           </div>
         )}
       </Section>
+
+      {rtk?.enabled && <RtkSection rtk={rtk} />}
+    </div>
+  );
+}
+
+function RtkSection({ rtk }: { rtk: RtkGainResponse }) {
+  if (!rtk.available || !rtk.summary) {
+    return (
+      <section className="mb-8">
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-(--crc-fg-muted)">RTK savings</h2>
+        <div className="rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) p-4 text-xs text-(--crc-fg-muted)">
+          RTK is enabled but not reachable on the daemon host{rtk.error ? ` — ${rtk.error}` : ""}.
+        </div>
+      </section>
+    );
+  }
+
+  const { summary, daily } = rtk;
+
+  return (
+    <Section title="RTK savings" table={daily.length > 0 ? <RtkTable rows={daily} /> : undefined}>
+      <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatTile label="Commands" value={String(summary.totalCommands)} />
+        <StatTile label="Tokens saved" value={formatTokenCount(summary.totalSavedTokens)} />
+        <StatTile label="Avg savings" value={`${Math.round(summary.avgSavingsPct)}%`} />
+        <StatTile label="Exec time" value={formatDuration(summary.totalTimeMs)} />
+      </div>
+
+      {daily.length > 0 && (
+        <div className="grid gap-6 sm:grid-cols-2">
+          <ChartCard title="Tokens saved">
+            <Bars
+              items={daily.map((d) => ({
+                key: d.date,
+                label: formatDayLabel(d.date),
+                a: d.savedTokens,
+                tooltip: `${formatDayLabel(d.date)}\n${formatTokenCount(d.savedTokens)} saved · ${Math.round(d.savingsPct)}%`,
+              }))}
+              colorA="var(--crc-accent)"
+            />
+          </ChartCard>
+          <ChartCard title="Savings %">
+            <Bars
+              items={daily.map((d) => ({
+                key: d.date,
+                label: formatDayLabel(d.date),
+                a: d.savingsPct,
+                tooltip: `${formatDayLabel(d.date)}\n${Math.round(d.savingsPct)}% savings · ${d.commands} cmd${d.commands === 1 ? "" : "s"}`,
+              }))}
+              colorA="var(--crc-accent)"
+            />
+          </ChartCard>
+        </div>
+      )}
+
+      <p className="mt-3 text-[10px] leading-snug text-(--crc-fg-muted)">
+        From <code>rtk gain</code> on the daemon host — not computed by CRC.
+      </p>
+    </Section>
+  );
+}
+
+function RtkTable({ rows }: { rows: RtkGainDay[] }) {
+  return (
+    <div className="overflow-x-auto rounded-sm border border-(--crc-border)">
+      <table className="w-full text-left text-[11px]">
+        <thead className="bg-(--crc-bg-elevated) text-(--crc-fg-muted)">
+          <tr>
+            {["", "Commands", "Input", "Output", "Saved", "Savings %", "Exec time"].map((h) => (
+              <th key={h} className="px-2.5 py-1.5 font-medium">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="[&>tr:nth-child(even)]:bg-(--crc-bg-elevated)/40">
+          {[...rows].reverse().map((d) => (
+            <tr key={d.date}>
+              <td className="px-2.5 py-1 text-(--crc-fg)">{formatDayLabel(d.date)}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{d.commands}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatTokenCount(d.inputTokens)}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatTokenCount(d.outputTokens)}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatTokenCount(d.savedTokens)}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{Math.round(d.savingsPct)}%</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatDuration(d.totalTimeMs)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -286,24 +389,34 @@ function Bars({ items, colorA, colorB }: { items: BarItem[]; colorA: string; col
  * from the label, not from color, so coloring bars by rank would just spend
  * the identity channel re-encoding what bar length already shows.
  */
-function RepoBars({ repos }: { repos: RepoStatsBucket[] }) {
-  const max = Math.max(1, ...repos.map((r) => r.costUsd));
+function RepoBars({ repos, metric }: { repos: RepoStatsBucket[]; metric: "cost" | "tokens" }) {
+  const totalFor = (r: RepoStatsBucket) => (metric === "cost" ? r.costUsd : r.inputTokens + r.outputTokens);
+  const max = Math.max(1, ...repos.map(totalFor));
   return (
     <div className="space-y-2">
-      {repos.map((r) => (
-        <div key={r.repoId} className="flex items-center gap-2">
-          <div className="w-28 shrink-0 truncate text-[11px] text-(--crc-fg)" title={r.repoName}>
-            {r.repoName}
+      {repos.map((r) => {
+        const total = totalFor(r);
+        return (
+          <div key={r.repoId} className="flex items-center gap-2">
+            <div className="w-28 shrink-0 truncate text-[11px] text-(--crc-fg)" title={r.repoName}>
+              {r.repoName}
+            </div>
+            <div className="flex h-4 flex-1 overflow-hidden rounded-sm bg-(--crc-bg)">
+              {metric === "tokens" ? (
+                <>
+                  <div className="h-full" style={{ width: `${(r.inputTokens / max) * 100}%`, background: "var(--crc-chart-input)" }} />
+                  <div className="h-full" style={{ width: `${(r.outputTokens / max) * 100}%`, background: "var(--crc-chart-output)" }} />
+                </>
+              ) : (
+                <div className="h-full rounded-sm" style={{ width: `${Math.max((total / max) * 100, total > 0 ? 2 : 0)}%`, background: "var(--crc-accent)" }} />
+              )}
+            </div>
+            <div className="w-16 shrink-0 text-right text-[11px] text-(--crc-fg-muted) tabular-nums">
+              {metric === "cost" ? formatCost(total) : formatTokenCount(total)}
+            </div>
           </div>
-          <div className="h-4 flex-1 overflow-hidden rounded-sm bg-(--crc-bg)">
-            <div
-              className="h-full rounded-sm"
-              style={{ width: `${Math.max((r.costUsd / max) * 100, r.costUsd > 0 ? 2 : 0)}%`, background: "var(--crc-accent)" }}
-            />
-          </div>
-          <div className="w-16 shrink-0 text-right text-[11px] text-(--crc-fg-muted) tabular-nums">{formatCost(r.costUsd)}</div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -370,9 +483,9 @@ function DataTable({ rows, labelFor }: { rows: StatsBucket[]; labelFor: (key: st
   );
 }
 
-function CenteredNote({ icon, text, sub }: { icon?: string; text: string; sub?: string }) {
+function CenteredNote({ icon, text, sub, fill = true }: { icon?: string; text: string; sub?: string; fill?: boolean }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-(--crc-fg-muted)">
+    <div className={`flex flex-col items-center justify-center gap-2 text-center text-(--crc-fg-muted) ${fill ? "h-full" : "mb-8 py-12"}`}>
       {icon && <span className={`codicon ${icon} text-2xl`} />}
       <p className="text-sm">{text}</p>
       {sub && <p className="max-w-xs text-xs">{sub}</p>}

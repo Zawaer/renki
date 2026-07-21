@@ -11,11 +11,17 @@ import { useClient } from "../lib/client.js";
  * already has a URL that's proven reachable, which the daemon itself can't
  * know (LAN IP vs tailnet hostname vs custom domain is an operator choice).
  *
- * If THIS browser is only reachable via a loopback address (e.g.
- * http://127.0.0.1:4517 on the Mac itself), the QR would tell another device
- * to reach itself, which fails. Rather than just warn, ask the daemon (which
- * runs on the same host, so it can check its own `tailscale status`) for a
- * real address and offer to switch to it in one click.
+ * Two cases where this browser's own address isn't a good fit for the QR:
+ *  - Loopback (e.g. http://127.0.0.1:4517) — means "this computer," so
+ *    another device scanning it would just try to reach itself.
+ *  - A private-CA'd LAN hostname (e.g. Caddy's `tls internal`) — this
+ *    browser trusts it because someone manually installed the CA, but a
+ *    native mobile app has its own separate trust store that doesn't
+ *    automatically include manually-installed CAs (notably Android, since
+ *    API 24) even though the phone's own browser would trust it fine.
+ * Rather than just fail silently on the other device, ask the daemon (same
+ * host, so it can check its own `tailscale status`) for a real, publicly
+ * certified address and offer to use it instead.
  */
 export function PairDevice() {
   const { config, rest } = useClient();
@@ -25,25 +31,37 @@ export function PairDevice() {
   const [suggestion, setSuggestion] = useState<"loading" | "none" | string>("loading");
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState<string | null>(null);
+  // What the QR actually encodes, if different from this browser's own address —
+  // set by "Use this for the QR" below, without touching this browser's own connection.
+  const [qrOverride, setQrOverride] = useState<string | null>(null);
+
+  const qrBaseUrl = qrOverride ?? config.baseUrl;
+  const normalize = (u: string) => u.replace(/\/$/, "");
+  const suggestionUsable = suggestion !== "loading" && suggestion !== "none";
+  const suggestionDiffers = suggestionUsable && normalize(suggestion) !== normalize(config.baseUrl);
 
   useEffect(() => {
     if (!open) return;
-    const payload = encodePairing({ baseUrl: config.baseUrl, token: config.token });
+    const payload = encodePairing({ baseUrl: qrBaseUrl, token: config.token });
     QRCode.toDataURL(payload, { width: 280, margin: 1 })
       .then(setDataUrl)
       .catch(() => setDataUrl(null));
-  }, [open, config.baseUrl, config.token]);
+  }, [open, qrBaseUrl, config.token]);
 
   useEffect(() => {
-    if (!open || !loopback) return;
+    if (!open) return;
     setSuggestion("loading");
+    setQrOverride(null);
     rest
       .getTailscaleStatus()
-      .then((s) => setSuggestion(s.available && s.hostname ? `https://${s.hostname}` : "none"))
+      .then((s) => {
+        if (!s.available || !s.hostname || !s.servePort) return setSuggestion("none");
+        setSuggestion(`https://${s.hostname}${s.servePort === 443 ? "" : `:${s.servePort}`}`);
+      })
       .catch(() => setSuggestion("none"));
-  }, [open, loopback, rest]);
+  }, [open, rest]);
 
-  async function useSuggestion(url: string) {
+  async function reconnectUsing(url: string) {
     setSwitching(true);
     setSwitchError(null);
     try {
@@ -88,19 +106,54 @@ export function PairDevice() {
                     <code>https://your-machine.tailnet.ts.net</code>), then show the QR again.
                   </p>
                 )}
-                {suggestion !== "loading" && suggestion !== "none" && (
+                {suggestionUsable && (
                   <>
                     <p>
                       Detected: <code>{suggestion}</code>
                     </p>
                     <button
-                      onClick={() => useSuggestion(suggestion)}
+                      onClick={() => reconnectUsing(suggestion)}
                       disabled={switching}
                       className="w-full rounded-md bg-amber-800/60 py-1 text-amber-100 hover:bg-amber-800 disabled:opacity-50"
                     >
                       {switching ? "Reconnecting…" : "Reconnect using this address"}
                     </button>
                     {switchError && <p className="text-red-400">{switchError}</p>}
+                  </>
+                )}
+              </div>
+            )}
+            {!loopback && suggestionDiffers && (
+              <div className="max-w-70 space-y-2 rounded-md border border-neutral-700 bg-neutral-800/50 px-2.5 py-2 text-[11px] leading-snug text-neutral-300">
+                {qrOverride ? (
+                  <>
+                    <p>
+                      This QR now points at <code>{qrOverride}</code> instead of{" "}
+                      <code>{config.baseUrl}</code> — this browser's own connection is unaffected.
+                    </p>
+                    <button
+                      onClick={() => setQrOverride(null)}
+                      className="w-full rounded-md border border-neutral-600 py-1 text-neutral-200 hover:bg-neutral-700"
+                    >
+                      Use {config.baseUrl} instead
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p>
+                      Pairing a phone that won't trust <code>{config.baseUrl}</code>'s certificate (common on
+                      Android, if that address goes through a reverse proxy's own private CA)? Use the
+                      Tailscale address instead — no certificate to install:
+                    </p>
+                    <p>
+                      <code>{suggestion}</code>
+                    </p>
+                    <button
+                      onClick={() => setQrOverride(suggestion)}
+                      className="w-full rounded-md border border-neutral-600 py-1 text-neutral-200 hover:bg-neutral-700"
+                    >
+                      Use this for the QR
+                    </button>
                   </>
                 )}
               </div>

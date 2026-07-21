@@ -71,9 +71,9 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
 
   app.get("/repos", async () => ({ repos: await scanRepos(config), root: config.reposRoot }));
 
-  // Lets a client connected via a loopback address suggest a real, shareable
-  // one when showing a pairing QR — see tailscale.ts.
-  app.get("/tailscale-status", async () => getTailscaleStatus());
+  // Lets a client connected via a loopback or private-CA'd address suggest a
+  // real, shareable one when showing a pairing QR — see tailscale.ts.
+  app.get("/tailscale-status", async () => getTailscaleStatus(config.port));
 
   app.get("/sessions", async () => ({ sessions: manager.listSessions() }));
 

@@ -10,10 +10,15 @@ import { colors } from "../theme";
  * code so another device (a second phone, or the web app) can scan it instead
  * of typing a tailnet URL and a 43-char token by hand.
  *
- * If THIS phone is only reachable via a loopback address, the QR would tell
- * another device to reach itself, which fails. Rather than just warn, ask the
- * daemon (same host, so it can check its own `tailscale status`) for a real
- * address and offer to switch to it in one tap.
+ * Two cases where this phone's own address isn't a good fit for the QR:
+ *  - Loopback — means "this device," so another device scanning it would
+ *    just try to reach itself.
+ *  - A private-CA'd LAN hostname (e.g. Caddy's `tls internal`) — this phone
+ *    may trust it (if the CA was manually installed here too), but another
+ *    device's own separate trust store likely won't.
+ * Rather than just fail on the other device, ask the daemon (same host, so
+ * it can check its own `tailscale status`) for a real, publicly certified
+ * address and offer to use it instead.
  */
 export function PairDevice({
   visible,
@@ -25,22 +30,34 @@ export function PairDevice({
   onReconnect: (baseUrl: string) => Promise<void>;
 }) {
   const { config, rest } = useClient();
-  const payload = encodePairing({ baseUrl: config.baseUrl, token: config.token });
   const loopback = isLikelyLoopbackUrl(config.baseUrl);
   const [suggestion, setSuggestion] = useState<"loading" | "none" | string>("loading");
   const [switching, setSwitching] = useState(false);
   const [switchError, setSwitchError] = useState<string | null>(null);
+  // What the QR actually encodes, if different from this phone's own address —
+  // set by "Use this for the QR" below, without touching this phone's own connection.
+  const [qrOverride, setQrOverride] = useState<string | null>(null);
+
+  const qrBaseUrl = qrOverride ?? config.baseUrl;
+  const payload = encodePairing({ baseUrl: qrBaseUrl, token: config.token });
+  const normalize = (u: string) => u.replace(/\/$/, "");
+  const suggestionUsable = suggestion !== "loading" && suggestion !== "none";
+  const suggestionDiffers = suggestionUsable && normalize(suggestion) !== normalize(config.baseUrl);
 
   useEffect(() => {
-    if (!visible || !loopback) return;
+    if (!visible) return;
     setSuggestion("loading");
+    setQrOverride(null);
     rest
       .getTailscaleStatus()
-      .then((s) => setSuggestion(s.available && s.hostname ? `https://${s.hostname}` : "none"))
+      .then((s) => {
+        if (!s.available || !s.hostname || !s.servePort) return setSuggestion("none");
+        setSuggestion(`https://${s.hostname}${s.servePort === 443 ? "" : `:${s.servePort}`}`);
+      })
       .catch(() => setSuggestion("none"));
-  }, [visible, loopback, rest]);
+  }, [visible, rest]);
 
-  async function useSuggestion(url: string) {
+  async function reconnectUsing(url: string) {
     setSwitching(true);
     setSwitchError(null);
     try {
@@ -73,19 +90,45 @@ export function PairDevice({
                   tailnet URL manually, then show the QR again.
                 </Text>
               )}
-              {suggestion !== "loading" && suggestion !== "none" && (
+              {suggestionUsable && (
                 <>
                   <Text style={styles.warning}>Detected: {suggestion}</Text>
                   <TouchableOpacity
                     style={styles.suggestBtn}
                     disabled={switching}
-                    onPress={() => useSuggestion(suggestion)}
+                    onPress={() => reconnectUsing(suggestion)}
                   >
                     <Text style={styles.suggestBtnText}>
                       {switching ? "Reconnecting…" : "Reconnect using this address"}
                     </Text>
                   </TouchableOpacity>
                   {switchError && <Text style={styles.warning}>{switchError}</Text>}
+                </>
+              )}
+            </View>
+          )}
+          {!loopback && suggestionDiffers && (
+            <View style={styles.suggestBox}>
+              {qrOverride ? (
+                <>
+                  <Text style={styles.suggestText}>
+                    This QR now points at {qrOverride} instead of {config.baseUrl} — this phone's own
+                    connection is unaffected.
+                  </Text>
+                  <TouchableOpacity style={styles.suggestBtnNeutral} onPress={() => setQrOverride(null)}>
+                    <Text style={styles.suggestBtnNeutralText}>Use {config.baseUrl} instead</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.suggestText}>
+                    Pairing a device that won't trust {config.baseUrl}'s certificate (common on Android, if
+                    that address goes through a reverse proxy's own private CA)? Use the Tailscale address
+                    instead — no certificate to install: {suggestion}
+                  </Text>
+                  <TouchableOpacity style={styles.suggestBtnNeutral} onPress={() => setQrOverride(suggestion)}>
+                    <Text style={styles.suggestBtnNeutralText}>Use this for the QR</Text>
+                  </TouchableOpacity>
                 </>
               )}
             </View>
@@ -125,6 +168,18 @@ const styles = StyleSheet.create({
   warning: { color: colors.busy, fontSize: 11, lineHeight: 15, textAlign: "center" },
   suggestBtn: { backgroundColor: "rgba(245, 158, 11, 0.25)", borderRadius: 6, paddingVertical: 6, alignItems: "center" },
   suggestBtnText: { color: colors.busy, fontSize: 12, fontWeight: "600" },
+  suggestBox: {
+    maxWidth: 260,
+    gap: 6,
+    backgroundColor: colors.panel2,
+    borderRadius: 8,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  suggestText: { color: colors.dim, fontSize: 11, lineHeight: 15, textAlign: "center" },
+  suggestBtnNeutral: { borderWidth: 1, borderColor: colors.border, borderRadius: 6, paddingVertical: 6, alignItems: "center" },
+  suggestBtnNeutralText: { color: colors.text, fontSize: 12, fontWeight: "600" },
   qrWrap: { padding: 12, backgroundColor: "#fff", borderRadius: 12 },
   hint: { color: colors.faint, fontSize: 11, textAlign: "center", maxWidth: 240 },
   closeBtn: { marginTop: 4, paddingHorizontal: 16, paddingVertical: 8 },

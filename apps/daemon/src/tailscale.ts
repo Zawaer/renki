@@ -4,21 +4,52 @@ import { logger } from "./logger.js";
 
 /**
  * Best-effort read of this host's own Tailscale MagicDNS hostname, via the
- * local `tailscale` CLI. Used only to SUGGEST a reachable pairing URL to a
- * client that's connected via a loopback address (e.g. a Mac browser on
- * `http://127.0.0.1:4517` showing a QR that would only work on itself) —
- * never required, and never throws. Any failure (binary missing, not logged
- * into a tailnet, etc.) just reports unavailable.
+ * local `tailscale` CLI. Used to SUGGEST a reachable pairing URL to a client
+ * that's connected via an address unlikely to work for another device — a
+ * loopback address (e.g. `http://127.0.0.1:4517`), or a private-CA'd LAN
+ * hostname (e.g. Caddy's `tls internal`) that a native mobile app won't trust
+ * even though a browser on the same machine does. Never required, never
+ * throws — any failure (binary missing, not logged into a tailnet, etc.)
+ * just reports unavailable.
+ *
+ * Pass this daemon's own port to also resolve `servePort`: the actual port
+ * `tailscale serve` is fronting THIS daemon on, if any. Without knowing that,
+ * a suggested `https://<hostname>` could point at nothing (serve not set up)
+ * or at a different port than 443 (set up on an alternate port to avoid
+ * colliding with another reverse proxy already on 443).
  */
-export async function getTailscaleStatus(): Promise<TailscaleStatusResponse> {
+export async function getTailscaleStatus(port?: number): Promise<TailscaleStatusResponse> {
   try {
     const raw = await run(["status", "--json"]);
     const dnsName = raw?.Self?.DNSName;
-    if (typeof dnsName !== "string" || !dnsName) return { available: false, hostname: null };
-    return { available: true, hostname: dnsName.replace(/\.$/, "") };
+    if (typeof dnsName !== "string" || !dnsName) return { available: false, hostname: null, servePort: null };
+    const hostname = dnsName.replace(/\.$/, "");
+    const servePort = port !== undefined ? await findServePort(port) : null;
+    return { available: true, hostname, servePort };
   } catch (err) {
     logger.debug("tailscale status unavailable", { err: String(err) });
-    return { available: false, hostname: null };
+    return { available: false, hostname: null, servePort: null };
+  }
+}
+
+/** The external port (from a `Web` key like "host:port") whose handler proxies to this daemon's local port, if any. */
+async function findServePort(localPort: number): Promise<number | null> {
+  try {
+    const raw = await run(["serve", "status", "--json"]);
+    const web = raw?.Web;
+    if (!web || typeof web !== "object") return null;
+
+    const expected = `http://127.0.0.1:${localPort}`;
+    for (const [key, hostConfig] of Object.entries(web) as [string, any][]) {
+      if (hostConfig?.Handlers?.["/"]?.Proxy === expected) {
+        const port = Number(key.split(":").pop());
+        return Number.isFinite(port) ? port : null;
+      }
+    }
+    return null;
+  } catch (err) {
+    logger.debug("tailscale serve status unavailable", { err: String(err) });
+    return null;
   }
 }
 

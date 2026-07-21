@@ -66,5 +66,13 @@ export const TailscaleStatusResponse = z.object({
   available: z.boolean(),
   /** MagicDNS hostname, e.g. "homelab.tailnet.ts.net" (no trailing dot). */
   hostname: z.string().nullable(),
+  /**
+   * The HTTPS port `tailscale serve` is actually proxying to this daemon on,
+   * if any (443 for a default `tailscale serve --bg <port>` setup, something
+   * else if serve was pointed at a non-default port to dodge a collision with
+   * another reverse proxy already on 443). Null if serve isn't fronting this
+   * daemon at all — callers shouldn't suggest a hostname-only URL in that case.
+   */
+  servePort: z.number().nullable(),
 });
 export type TailscaleStatusResponse = z.infer<typeof TailscaleStatusResponse>;

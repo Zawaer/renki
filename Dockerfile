@@ -35,6 +35,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+# Your repos are bind-mounted from the host, so they're owned by your host
+# user, not by this container's root — git 2.35.2+ refuses to touch a
+# directory it doesn't consider "owned" by the running user (CVE-2022-24765)
+# and fails every git call with "detected dubious ownership". Everything
+# under /repos is already yours by definition (you mounted it in), so there's
+# no privilege boundary being crossed here — trust the whole tree.
+RUN git config --system --add safe.directory '*'
+
 WORKDIR /app
 COPY --from=builder /app/deploy .
 

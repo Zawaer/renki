@@ -206,43 +206,43 @@ containers and want Docker-label auto-discovery instead of a Caddyfile.
 your tailnet IP?** Don't *also* run `tailscale serve` on that IP — see the
 warning in step 4, they'll fight over port 443. Add the daemon — and, if
 you're running the optional `web` container from step 3, the actual UI too
-— as another site in your existing Caddyfile instead, reusing whatever
-internal CA you already have trusted rather than `tailscale serve`'s own
-cert. One hostname is enough — split by *path*, not by subdomain, since the
-UI just needs to know where to send API calls, and a path prefix works
-identically to a separate domain for that:
+— as two more sites in your existing Caddyfile, the exact same shape as
+every other site already in it, reusing whatever internal CA you already
+have trusted rather than `tailscale serve`'s own cert:
 
 ```
 crc.your-homelab.internal {
-    handle_path /api/* {
-        reverse_proxy 127.0.0.1:4517   # the daemon
-    }
-    handle {
-        reverse_proxy 127.0.0.1:4173   # the actual web UI
-    }
+    reverse_proxy 127.0.0.1:4173   # the actual web UI
+    tls internal
+}
+
+crc-api.your-homelab.internal {
+    reverse_proxy 127.0.0.1:4517   # the daemon (API only — no page to browse)
+    tls internal
 }
 ```
 
-`handle_path` strips the `/api` prefix before forwarding (WebSocket upgrades
-pass through unchanged, same as any other `reverse_proxy` — verified
-end-to-end, including the `/ws` route). In the UI's own Setup screen, enter
-`https://crc.your-homelab.internal/api` as the Daemon URL — the client just
-concatenates `baseUrl + path`, so a path prefix works exactly like a
-separate hostname would, with one DNS/CA entry instead of two. Prefer two
-separate hostnames instead (`crc.internal` for the UI, `crc-api.internal`
-for the daemon) if you'd rather keep them fully independent — same idea,
-just two `reverse_proxy` blocks instead of one `handle_path` split.
+In the UI's own Setup screen, the Daemon URL is
+`https://crc-api.your-homelab.internal`. Two plain `reverse_proxy` blocks —
+nothing CRC-specific about them, so they slot into an existing Caddyfile the
+same way any other two-container app would. (If you'd rather have just one
+hostname, Caddy can also split by *path* instead of subdomain —
+`handle_path /api/*` routing to the daemon, everything else to the UI, with
+`https://crc.your-homelab.internal/api` as the Daemon URL — but that trades
+one DNS entry for a bit of Caddyfile that looks different from your other
+sites, so the two-hostname version above is the better default if your
+Caddyfile is otherwise this uniform.)
 
 **If that Caddy runs in its own container** (common — one shared
-`docker-compose.yml` fronting several homelab services), the snippet above
+`docker-compose.yml` fronting several homelab services), the snippets above
 will 502: `127.0.0.1` inside Caddy's container means *itself*, not your
 host, so it has no route to either port at all. Put both CRC containers on
 the same Docker network as Caddy instead and proxy to them by container
 name — uncomment the `networks:` blocks already sitting in CRC's own
 `docker-compose.yml` for both the `daemon` and `web` services (see the
 comments there), point them at whatever network your reverse proxy already
-uses, then change the `reverse_proxy` lines above to `crc-daemon:4517` and
-`crc-web:80` respectively.
+uses, then change the `reverse_proxy` lines above to `crc-web:80` and
+`crc-daemon:4517` respectively.
 
 **Headscale** is a self-hosted, open-source implementation of Tailscale's
 coordination server — a drop-in alternative if you'd rather not depend on

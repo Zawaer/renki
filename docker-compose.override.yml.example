@@ -8,15 +8,18 @@
 # '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'` will show it),
 # then point its site config at `crc-daemon:4517` / `crc-web:80` instead of
 # `127.0.0.1:...`. See SETUP.md § Advanced networking for the full writeup.
+#
+# daemon and web never talk to each other over Docker networking (the
+# browser hits both directly over HTTPS), so there's no need to also keep
+# them on Compose's own default network — reverse-proxy alone is enough,
+# same as any other single-network service on your reverse proxy.
 
 services:
   daemon:
     networks:
-      - default
       - reverse-proxy
   web:
     networks:
-      - default
       - reverse-proxy
 
 networks:

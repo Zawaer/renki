@@ -296,6 +296,46 @@ describe("SessionView", () => {
     expect(calls).toEqual([{ sid: sessionId, text: "hello", opts: { model: "claude-opus-4-8", maxThinkingTokens: 32_000 } }]);
   });
 
+  it("lets you type a model ID directly when it isn't in the fetched list", async () => {
+    const sessionId = "s6b";
+    const events = [
+      ev(sessionId, {
+        kind: "session_created",
+        repoId: "demo",
+        repoName: "demo",
+        baseBranch: "main",
+        branch: "crc/custom-model",
+        worktreePath: "/tmp/wt",
+      }),
+      ev(sessionId, { kind: "status_changed", status: "idle" }),
+      ev(sessionId, { kind: "control_changed", controller: "d1", controllerName: "Web" }),
+    ];
+    const capabilities = {
+      models: [{ value: "claude-opus-4-8", displayName: "Opus", description: "Most capable" }],
+      commands: [],
+    };
+
+    const { realtime } = renderSession(sessionId, events, "d1", capabilities);
+    const calls: unknown[] = [];
+    realtime.submitPrompt = (sid: string, text: string, opts?: unknown) => {
+      calls.push({ sid, text, opts });
+      return "p1";
+    };
+
+    await screen.findByRole("button", { name: /Opus/ });
+    fireEvent.click(screen.getByRole("button", { name: /Opus/ }));
+    fireEvent.change(screen.getByPlaceholderText("claude-fable-5"), { target: { value: "claude-fable-5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Use" }));
+
+    // The trigger button now reflects the typed-in model, not the fetched list.
+    expect(screen.getByRole("button", { name: "claude-fable-5" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText(/Send a prompt/), { target: { value: "hi" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(calls[0]).toMatchObject({ sid: sessionId, text: "hi", opts: { model: "claude-fable-5" } });
+  });
+
   it("shows a slash-command autocomplete and fills in the picked command", async () => {
     const sessionId = "s7";
     const events = [

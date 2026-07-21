@@ -326,6 +326,7 @@ function Composer({
   const [capabilities, setCapabilities] = useState<CapabilitiesResponse>({ models: [], commands: [] });
   const [suggestionIndex, setSuggestionIndex] = useState(0);
   const [openMenu, setOpenMenu] = useState<"model" | "effort" | null>(null);
+  const [customModel, setCustomModel] = useState("");
 
   useEffect(() => {
     rest.getCapabilities().then(setCapabilities).catch(() => {});
@@ -358,6 +359,14 @@ function Composer({
     setSuggestionIndex(0);
   }
 
+  function useCustomModel() {
+    const id = customModel.trim();
+    if (!id) return;
+    setModel(id);
+    setCustomModel("");
+    setOpenMenu(null);
+  }
+
   return (
     <div className="relative border-t border-(--crc-border) p-3">
       {suggestions.length > 0 && (
@@ -380,7 +389,11 @@ function Composer({
 
       <div className="mb-2 flex items-center gap-2 text-xs">
         <PickerButton
-          label={capabilities.models.length === 0 ? "Loading models…" : (selectedModel?.displayName ?? "Default")}
+          label={
+            capabilities.models.length === 0 && !model
+              ? "Loading models…"
+              : (selectedModel?.displayName ?? model ?? "Default")
+          }
           open={openMenu === "model"}
           onToggle={() => setOpenMenu((v) => (v === "model" ? null : "model"))}
         />
@@ -399,22 +412,43 @@ function Composer({
             onClick={(e) => e.stopPropagation()}
           >
             {openMenu === "model"
-              ? capabilities.models.map((m) => (
-                  <button
-                    key={m.value}
-                    onClick={() => {
-                      setModel(m.value);
-                      setOpenMenu(null);
-                    }}
-                    className="flex w-full items-start justify-between gap-2 px-3 py-1.5 text-left hover:bg-(--crc-hover)"
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate font-medium text-(--crc-fg)">{m.displayName}</div>
-                      {m.description && <div className="truncate text-(--crc-fg-muted)">{m.description}</div>}
+              ? [
+                  ...capabilities.models.map((m) => (
+                    <button
+                      key={m.value}
+                      onClick={() => {
+                        setModel(m.value);
+                        setOpenMenu(null);
+                      }}
+                      className="flex w-full items-start justify-between gap-2 px-3 py-1.5 text-left hover:bg-(--crc-hover)"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate font-medium text-(--crc-fg)">{m.displayName}</div>
+                        {m.description && <div className="truncate text-(--crc-fg-muted)">{m.description}</div>}
+                      </div>
+                      {m.value === model && <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />}
+                    </button>
+                  )),
+                  <div key="custom" className="mt-1 border-t border-(--crc-border) p-2">
+                    <div className="mb-1 text-(--crc-fg-muted)">Not listed? Enter a model ID directly:</div>
+                    <div className="flex gap-1.5">
+                      <input
+                        value={customModel}
+                        onChange={(ev) => setCustomModel(ev.target.value)}
+                        onKeyDown={(ev) => {
+                          if (ev.key === "Enter") useCustomModel();
+                        }}
+                        placeholder="claude-fable-5"
+                        spellCheck={false}
+                        autoComplete="off"
+                        className="min-w-0 flex-1 rounded-sm border border-(--crc-border) bg-(--crc-input-bg) px-2 py-1 text-(--crc-fg) outline-none focus:border-(--crc-focus)"
+                      />
+                      <Button variant="default" disabled={!customModel.trim()} onClick={useCustomModel} className="shrink-0">
+                        Use
+                      </Button>
                     </div>
-                    {m.value === model && <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />}
-                  </button>
-                ))
+                  </div>,
+                ]
               : EFFORT_LEVELS.map((e) => (
                   <button
                     key={e.key}

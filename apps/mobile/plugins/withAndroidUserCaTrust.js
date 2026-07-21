@@ -9,9 +9,17 @@ const path = require("node:path");
 // user-added CAs via this exact network security config; without it, the
 // daemon works fine in the phone's browser but fails in this app with
 // something like "Network request failed".
+//
+// cleartextTrafficPermitted must be set explicitly here: once a
+// networkSecurityConfig is present, Android ignores android:usesCleartextTraffic
+// entirely (even the debug-variant manifest's own tools:replace override for
+// it), and the attribute's own default is false on API 28+. Without this,
+// plain http:// breaks completely — both the Metro dev server during
+// development AND CRC's own supported http:// daemon URLs (e.g.
+// http://127.0.0.1:4517 for a same-machine daemon) in production.
 const NETWORK_SECURITY_CONFIG = `<?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <base-config>
+    <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
             <certificates src="user" />

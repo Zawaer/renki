@@ -1,8 +1,8 @@
 import { EventEmitter } from "node:events";
-import type { EventPayload, SessionEvent, StatsBucket, StatsResponse } from "@crc/protocol";
+import type { EventPayload, RepoStatsBucket, SessionEvent, StatsBucket, StatsResponse } from "@crc/protocol";
 import { and, asc, eq, gt, max } from "drizzle-orm";
 import type { DB } from "../db/index.js";
-import { events } from "../db/schema.js";
+import { events, sessions } from "../db/schema.js";
 
 /**
  * The EventLog is the daemon's single source of truth for session activity.
@@ -68,10 +68,22 @@ export class EventLog {
    * token fields came back null (e.g. an errored turn still cost wait time).
    */
   statsSummary(): StatsResponse {
-    const rows = this.db.select({ ts: events.ts, data: events.data }).from(events).where(eq(events.kind, "turn_result")).all();
+    // Sessions are never hard-deleted, so this should resolve for every turn —
+    // the "unknown" fallback below only guards against future data cleanup.
+    const repoBySession = new Map<string, { repoId: string; repoName: string }>();
+    for (const s of this.db.select({ id: sessions.id, repoId: sessions.repoId, repoName: sessions.repoName }).from(sessions).all()) {
+      repoBySession.set(s.id, { repoId: s.repoId, repoName: s.repoName });
+    }
+
+    const rows = this.db
+      .select({ sessionId: events.sessionId, ts: events.ts, data: events.data })
+      .from(events)
+      .where(eq(events.kind, "turn_result"))
+      .all();
 
     const daily = new Map<string, StatsBucket>();
     const monthly = new Map<string, StatsBucket>();
+    const byRepo = new Map<string, RepoStatsBucket>();
     const lifetime = emptyBucket("lifetime");
     let firstTurnAt: number | null = null;
 
@@ -81,12 +93,17 @@ export class EventLog {
       accumulate(bucketFor(daily, iso.slice(0, 10)), payload);
       accumulate(bucketFor(monthly, iso.slice(0, 7)), payload);
       accumulate(lifetime, payload);
+
+      const repo = repoBySession.get(row.sessionId) ?? { repoId: "unknown", repoName: "Unknown repo" };
+      accumulate(repoBucketFor(byRepo, repo), payload);
+
       if (firstTurnAt === null || row.ts < firstTurnAt) firstTurnAt = row.ts;
     }
 
     return {
       daily: [...daily.values()].sort((a, b) => a.key.localeCompare(b.key)),
       monthly: [...monthly.values()].sort((a, b) => a.key.localeCompare(b.key)),
+      byRepo: [...byRepo.values()].sort((a, b) => b.costUsd - a.costUsd),
       lifetime,
       firstTurnAt,
     };
@@ -160,7 +177,19 @@ function bucketFor(map: Map<string, StatsBucket>, key: string): StatsBucket {
   return bucket;
 }
 
-function accumulate(bucket: StatsBucket, payload: Extract<EventPayload, { kind: "turn_result" }>): void {
+function repoBucketFor(map: Map<string, RepoStatsBucket>, repo: { repoId: string; repoName: string }): RepoStatsBucket {
+  let bucket = map.get(repo.repoId);
+  if (!bucket) {
+    bucket = { repoId: repo.repoId, repoName: repo.repoName, costUsd: 0, inputTokens: 0, outputTokens: 0, durationMs: 0, turnCount: 0 };
+    map.set(repo.repoId, bucket);
+  }
+  return bucket;
+}
+
+/** The numeric fields shared by every bucket shape (time-based or by-repo). */
+type Accumulable = { costUsd: number; inputTokens: number; outputTokens: number; durationMs: number; turnCount: number };
+
+function accumulate(bucket: Accumulable, payload: Extract<EventPayload, { kind: "turn_result" }>): void {
   bucket.costUsd += payload.costUsd ?? 0;
   bucket.inputTokens += payload.inputTokens ?? 0;
   bucket.outputTokens += payload.outputTokens ?? 0;

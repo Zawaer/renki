@@ -1,4 +1,4 @@
-import type { StatsBucket, StatsResponse } from "@crc/protocol";
+import type { RepoStatsBucket, StatsBucket, StatsResponse } from "@crc/protocol";
 import { formatTokenCount } from "@crc/client-core";
 import { useCallback, useEffect, useState } from "react";
 import { useClient } from "../lib/client.js";
@@ -60,8 +60,16 @@ export function StatsView() {
         <StatTile label="Input tokens" value={formatTokenCount(data.lifetime.inputTokens)} />
         <StatTile label="Output tokens" value={formatTokenCount(data.lifetime.outputTokens)} />
         <StatTile label="Time waited" value={formatDuration(data.lifetime.durationMs)} />
-        <StatTile label="Turns" value={`${data.lifetime.turnCount}`} />
+        <StatTile label="Replies received" value={`${data.lifetime.turnCount}`} />
       </div>
+
+      {data.byRepo.length > 1 && (
+        <Section title="By repo" table={<RepoTable rows={data.byRepo} />}>
+          <ChartCard title="Cost">
+            <RepoBars repos={data.byRepo} />
+          </ChartCard>
+        </Section>
+      )}
 
       <Section
         title={`Last ${DAY_WINDOW} days`}
@@ -174,7 +182,7 @@ function Section({ title, children, table }: { title: string; children: React.Re
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-(--crc-fg-muted)">{title}</h2>
         {table && (
-          <Button variant="ghost" className="!px-2 !py-0.5 text-[11px]" onClick={() => setShowTable((v) => !v)}>
+          <Button variant="ghost" className="px-2! py-0.5! text-[11px]" onClick={() => setShowTable((v) => !v)}>
             {showTable ? "Hide table" : "View as table"}
           </Button>
         )}
@@ -244,11 +252,11 @@ function Bars({ items, colorA, colorB }: { items: BarItem[]; colorA: string; col
               </div>
               <div className="flex w-full flex-col justify-end gap-0.5" style={{ height: CHART_H }}>
                 {colorB !== undefined && (it.b ?? 0) > 0 && (
-                  <div className="w-full rounded-t-[4px]" style={{ height: Math.max(hB, 2), background: colorB }} />
+                  <div className="w-full rounded-t-sm" style={{ height: Math.max(hB, 2), background: colorB }} />
                 )}
                 {total > 0 ? (
                   <div
-                    className={`w-full ${colorB === undefined || !(it.b ?? 0) ? "rounded-t-[4px]" : ""}`}
+                    className={`w-full ${colorB === undefined || !(it.b ?? 0) ? "rounded-t-sm" : ""}`}
                     style={{ height: Math.max(hA, 2), background: colorA }}
                   />
                 ) : (
@@ -266,6 +274,65 @@ function Bars({ items, colorA, colorB }: { items: BarItem[]; colorA: string; col
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Ranked horizontal bar list, one row per repo (already cost-sorted by the
+ * daemon). Repo names are nominal, not ordered magnitude, so every bar takes
+ * the same single hue — per the categorical color rule, identity here comes
+ * from the label, not from color, so coloring bars by rank would just spend
+ * the identity channel re-encoding what bar length already shows.
+ */
+function RepoBars({ repos }: { repos: RepoStatsBucket[] }) {
+  const max = Math.max(1, ...repos.map((r) => r.costUsd));
+  return (
+    <div className="space-y-2">
+      {repos.map((r) => (
+        <div key={r.repoId} className="flex items-center gap-2">
+          <div className="w-28 shrink-0 truncate text-[11px] text-(--crc-fg)" title={r.repoName}>
+            {r.repoName}
+          </div>
+          <div className="h-4 flex-1 overflow-hidden rounded-sm bg-(--crc-bg)">
+            <div
+              className="h-full rounded-sm"
+              style={{ width: `${Math.max((r.costUsd / max) * 100, r.costUsd > 0 ? 2 : 0)}%`, background: "var(--crc-accent)" }}
+            />
+          </div>
+          <div className="w-16 shrink-0 text-right text-[11px] text-(--crc-fg-muted) tabular-nums">{formatCost(r.costUsd)}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RepoTable({ rows }: { rows: RepoStatsBucket[] }) {
+  return (
+    <div className="overflow-x-auto rounded-sm border border-(--crc-border)">
+      <table className="w-full text-left text-[11px]">
+        <thead className="bg-(--crc-bg-elevated) text-(--crc-fg-muted)">
+          <tr>
+            {["Repo", "Turns", "Input", "Output", "Cost", "Time waited"].map((h) => (
+              <th key={h} className="px-2.5 py-1.5 font-medium">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="[&>tr:nth-child(even)]:bg-(--crc-bg-elevated)/40">
+          {rows.map((r) => (
+            <tr key={r.repoId}>
+              <td className="px-2.5 py-1 text-(--crc-fg)">{r.repoName}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{r.turnCount}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatTokenCount(r.inputTokens)}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatTokenCount(r.outputTokens)}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatCost(r.costUsd)}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatDuration(r.durationMs)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

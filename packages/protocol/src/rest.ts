@@ -55,13 +55,6 @@ export const RegisterPushTokenRequest = z.object({
 });
 export type RegisterPushTokenRequest = z.infer<typeof RegisterPushTokenRequest>;
 
-/**
- * The daemon's own best guess at a URL other devices could reach it on, read
- * from the local `tailscale` CLI (if installed) on the daemon's host. Lets a
- * client that's connected via a loopback address (e.g. a Mac browser on
- * `http://127.0.0.1:4517`) suggest a real one instead of leaving the user to
- * go find their Tailscale hostname by hand.
- */
 /** Aggregated turn_result totals for one bucket (a day, a month, or the "lifetime" bucket). */
 export const StatsBucket = z.object({
   key: z.string(),
@@ -73,20 +66,41 @@ export const StatsBucket = z.object({
 });
 export type StatsBucket = z.infer<typeof StatsBucket>;
 
+/** Same totals, grouped by repo instead of by time — which repos are actually costing the most. */
+export const RepoStatsBucket = z.object({
+  repoId: z.string(),
+  repoName: z.string(),
+  costUsd: z.number(),
+  inputTokens: z.number(),
+  outputTokens: z.number(),
+  durationMs: z.number(),
+  turnCount: z.number().int(),
+});
+export type RepoStatsBucket = z.infer<typeof RepoStatsBucket>;
+
 /**
  * Cost/token/wait-time analytics, built by scanning every stored `turn_result`
  * event. `daily`/`monthly` are sorted ascending by key ("2026-07-22" /
- * "2026-07") and only contain buckets with at least one turn. `firstTurnAt` is
- * the timestamp of the earliest recorded turn, or null if none have run yet.
+ * "2026-07") and only contain buckets with at least one turn. `byRepo` is
+ * sorted descending by cost. `firstTurnAt` is the timestamp of the earliest
+ * recorded turn, or null if none have run yet.
  */
 export const StatsResponse = z.object({
   daily: z.array(StatsBucket),
   monthly: z.array(StatsBucket),
+  byRepo: z.array(RepoStatsBucket),
   lifetime: StatsBucket,
   firstTurnAt: z.number().int().nullable(),
 });
 export type StatsResponse = z.infer<typeof StatsResponse>;
 
+/**
+ * The daemon's own best guess at a URL other devices could reach it on, read
+ * from the local `tailscale` CLI (if installed) on the daemon's host. Lets a
+ * client that's connected via a loopback address (e.g. a Mac browser on
+ * `http://127.0.0.1:4517`) suggest a real one instead of leaving the user to
+ * go find their Tailscale hostname by hand.
+ */
 export const TailscaleStatusResponse = z.object({
   available: z.boolean(),
   /** MagicDNS hostname, e.g. "homelab.tailnet.ts.net" (no trailing dot). */

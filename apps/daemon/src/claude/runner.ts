@@ -87,7 +87,7 @@ export function classifyRateLimit(text: string | null | undefined): boolean {
  * same text as a single-item async generator gets streaming-input mode
  * without changing anything else about a one-shot prompt.
  */
-async function* singlePromptStream(text: string): AsyncGenerator<SDKUserMessage> {
+export async function* singlePromptStream(text: string): AsyncGenerator<SDKUserMessage> {
   yield {
     type: "user",
     message: { role: "user", content: text },
@@ -229,6 +229,31 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
     errorMessage: "no result message",
     rateLimited: false,
   };
+}
+
+/**
+ * Spins up a throwaway query purely to read supportedModels()/
+ * supportedCommands() — the control-request channel resolves these as part
+ * of the CLI's initial handshake, before the prompt is actually processed, so
+ * aborting right after gives us the capability list without waiting for (or
+ * paying for) a real response. Meant to be called once at daemon startup so
+ * the picker isn't empty until the first real prompt happens to run.
+ */
+export async function warmUpCapabilities(cwd: string): Promise<CapabilitiesResponse | null> {
+  const abortController = new AbortController();
+  try {
+    const q = query({
+      prompt: singlePromptStream("(internal capability check — not a real prompt)"),
+      options: { cwd, abortController },
+    });
+    const [models, commands] = await Promise.all([q.supportedModels(), q.supportedCommands()]);
+    return { models, commands };
+  } catch (err) {
+    logger.warn("capabilities warm-up failed", { err: String(err) });
+    return null;
+  } finally {
+    abortController.abort();
+  }
 }
 
 /**

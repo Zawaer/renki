@@ -1,5 +1,7 @@
 import { AccountRotator } from "./accounts/rotator.js";
 import { UsageReader } from "./accounts/usage.js";
+import { hasCapabilities, setCapabilities } from "./claude/capabilities.js";
+import { warmUpCapabilities } from "./claude/runner.js";
 import { loadConfig } from "./config.js";
 import { openDb } from "./db/index.js";
 import { logger } from "./logger.js";
@@ -32,6 +34,15 @@ async function main() {
   const app = await createServer(config, { manager, broker, pushTokens, devices, accounts, usage: usageReader });
   await app.listen({ host: config.host, port: config.port });
   logger.info("daemon listening", { url: `http://${config.host}:${config.port}`, reposRoot: config.reposRoot });
+
+  // Fire-and-forget: populates the model/slash-command picker before the
+  // first real prompt runs, instead of leaving it empty until then. Doesn't
+  // block the server from accepting connections.
+  if (!hasCapabilities()) {
+    void warmUpCapabilities(config.reposRoot).then((caps) => {
+      if (caps) setCapabilities(caps);
+    });
+  }
 
   const sweep = startIdleSweep(manager, config.controlIdleMs);
 

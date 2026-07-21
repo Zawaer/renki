@@ -86,8 +86,15 @@ features. The throughline for everything below: shrink "found the repo" →
 
 - [x] **Pure core unit tests.** Reducer determinism + replay==live, event-log
       seq/replay/gap-free handoff, `classifyRateLimit`, SessionManager guards.
-- [ ] **Server integration tests.** Stand up the WS/REST server in-process and
-      drive subscribe → replay → live over a real socket (no live `claude`).
+- [x] **Server integration tests.** Done (`test/server.test.ts`): the real
+      Fastify + WS server in-process, driven over a real socket — REST
+      auth/CRUD, and the subscribe → replay → live handoff (no live `claude`;
+      "live" events are appended directly to the log, same trick
+      session-manager.test.ts uses). Caught a real bug along the way: a
+      rejected WS upgrade (bad token) leaked its raw socket forever, because
+      `@fastify/websocket`'s cleanup hook only runs if its own onRequest hook
+      (registered after auth) got a chance to run first — fixed by
+      registering the plugin before the auth hook.
 - [ ] **Reducer tests reused by clients.** The web/mobile views fold the same
       reducer; a light render smoke test would guard the UI layer too.
 

@@ -39,6 +39,15 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
   const { manager, broker, pushTokens, devices, accounts, usage } = deps;
   const app = Fastify({ logger: false });
 
+  // Registered before any hook that might short-circuit a request (CORS,
+  // auth below): @fastify/websocket adds its own onRequest hook that flags
+  // upgrade requests so its onResponse hook knows to destroy the raw socket
+  // afterward. If auth rejects a WS upgrade first, later onRequest hooks —
+  // including this plugin's — never run, that flag never gets set, and the
+  // socket leaks forever. Registering it first means its hook always runs
+  // regardless of what auth decides.
+  await app.register(websocketPlugin);
+
   // Permissive CORS: single-user tool behind a token + tailnet, so we don't
   // need per-origin rules — the web/VS Code clients just need to reach it.
   app.addHook("onRequest", async (req, reply) => {
@@ -175,8 +184,7 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
     }
   });
 
-  // ── WebSocket ────────────────────────────────────────────────────────────
-  await app.register(websocketPlugin);
+  // ── WebSocket (plugin registered above, before the auth hook) ─────────────
   app.get<{ Querystring: { deviceId?: string; deviceName?: string } }>(
     "/ws",
     { websocket: true },

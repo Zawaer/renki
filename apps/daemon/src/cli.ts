@@ -9,7 +9,7 @@ import { loadConfig } from "./config.js";
 import { openDb } from "./db/index.js";
 import { logger } from "./logger.js";
 import { scanRepos } from "./repos.js";
-import { getTailscaleStatus } from "./tailscale.js";
+import { checkTailscaleServeConflict, getTailscaleStatus } from "./tailscale.js";
 import type { PermissionResolver } from "./claude/runner.js";
 import { SessionError } from "./sessions/errors.js";
 import { SessionManager } from "./sessions/manager.js";
@@ -271,7 +271,24 @@ async function runInit(config: ReturnType<typeof loadConfig>): Promise<void> {
 
   if (status.available && status.hostname) {
     console.log(`Detected: ${status.hostname}`);
-    const proceed = await confirm(`Run "tailscale serve --bg ${config.port}" now?`);
+
+    const conflict = await checkTailscaleServeConflict(config.port);
+    if (conflict.conflicting) {
+      console.log(
+        `\nWarning: "tailscale serve" already points this tailnet's HTTPS at\n` +
+          `${conflict.existingProxyTarget} — continuing will overwrite that.\n`,
+      );
+    } else {
+      console.log(
+        "\nNote: this claims <tailnet-ip>:443 directly. If another reverse proxy\n" +
+          "(Caddy, Traefik, nginx…) is already bound to that same address for other\n" +
+          "sites, it can silently lose the port — see SETUP.md step 4 if you're unsure.\n",
+      );
+    }
+
+    const proceed = await confirm(`Run "tailscale serve --bg ${config.port}" now?`, {
+      defaultYes: !conflict.conflicting,
+    });
     if (proceed) {
       const ok = await tryTailscaleServe(config.port);
       if (ok) {
@@ -309,11 +326,13 @@ async function runInit(config: ReturnType<typeof loadConfig>): Promise<void> {
   console.log(`Or enter manually — Daemon URL: ${baseUrl}   Token: ${config.authToken}`);
 }
 
-async function confirm(question: string): Promise<boolean> {
+async function confirm(question: string, { defaultYes = true }: { defaultYes?: boolean } = {}): Promise<boolean> {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const answer = await rl.question(`${question} [Y/n] `);
-    return answer.trim() === "" || /^y(es)?$/i.test(answer.trim());
+    const answer = await rl.question(`${question} ${defaultYes ? "[Y/n]" : "[y/N]"} `);
+    const trimmed = answer.trim();
+    if (trimmed === "") return defaultYes;
+    return /^y(es)?$/i.test(trimmed);
   } finally {
     rl.close();
   }

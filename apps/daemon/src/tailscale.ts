@@ -22,6 +22,43 @@ export async function getTailscaleStatus(): Promise<TailscaleStatusResponse> {
   }
 }
 
+export type TailscaleServeConflict =
+  | { conflicting: false }
+  | { conflicting: true; existingProxyTarget: string };
+
+/**
+ * Checks `tailscale serve`'s OWN config for a root ("/") handler already
+ * pointing somewhere other than this daemon's port, before `crc init` runs
+ * `tailscale serve --bg <port>` — which would silently overwrite it. Caught
+ * live: a homelab's reverse proxy (Caddy) bound to the same tailnet IP on
+ * port 443 collided with `tailscale serve` claiming that address directly,
+ * breaking the reverse proxy's *other* sites with no clear error. This check
+ * only sees conflicts *tailscale serve itself* already knows about (a
+ * different local app previously `tailscale serve`-d on this host) — it
+ * can't see a separate program (like that Caddy) bound to the port outside
+ * tailscale's own config, so the caller should warn generically regardless
+ * of what this returns.
+ */
+export async function checkTailscaleServeConflict(port: number): Promise<TailscaleServeConflict> {
+  try {
+    const raw = await run(["serve", "status", "--json"]);
+    const web = raw?.Web;
+    if (!web || typeof web !== "object") return { conflicting: false };
+
+    const expected = `http://127.0.0.1:${port}`;
+    for (const hostConfig of Object.values(web) as any[]) {
+      const proxy = hostConfig?.Handlers?.["/"]?.Proxy;
+      if (typeof proxy === "string" && proxy !== expected) {
+        return { conflicting: true, existingProxyTarget: proxy };
+      }
+    }
+    return { conflicting: false };
+  } catch (err) {
+    logger.debug("tailscale serve status unavailable", { err: String(err) });
+    return { conflicting: false };
+  }
+}
+
 function run(args: string[]): Promise<any> {
   return new Promise((resolve, reject) => {
     execFile("tailscale", args, { timeout: 5_000, maxBuffer: 1024 * 1024 }, (err, stdout) => {

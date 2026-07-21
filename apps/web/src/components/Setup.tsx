@@ -36,10 +36,10 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
 
   return (
     <div className="flex h-full items-center justify-center p-6">
-      <div className="w-full max-w-sm space-y-4 rounded-xl border border-neutral-800 bg-neutral-900/60 p-6">
+      <div className="w-full max-w-sm space-y-4 rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) p-6">
         <div>
-          <h1 className="text-lg font-semibold">Connect to your daemon</h1>
-          <p className="mt-1 text-sm text-neutral-400">Enter the address and token of your homelab daemon.</p>
+          <h1 className="text-lg font-semibold text-(--crc-fg)">Connect to your daemon</h1>
+          <p className="mt-1 text-sm text-(--crc-fg-muted)">Enter the address and token of your homelab daemon.</p>
         </div>
 
         <Field label="Daemon URL">
@@ -68,7 +68,7 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
             <button
               type="button"
               onClick={() => setShowToken((v) => !v)}
-              className="shrink-0 text-xs text-neutral-500 hover:text-neutral-300"
+              className="shrink-0 text-xs text-(--crc-fg-muted) hover:text-(--crc-fg)"
             >
               {showToken ? "Hide" : "Show"}
             </button>
@@ -78,12 +78,12 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
           <input value={deviceName} onChange={(e) => setDeviceName(e.target.value)} className="input" />
         </Field>
 
-        {error && <p className="text-sm text-red-400">{error}</p>}
+        {error && <p className="text-sm text-(--crc-danger)">{error}</p>}
 
         {found && (
-          <p className="text-sm text-emerald-400">
+          <p className="text-sm text-(--crc-success)">
             Connected — found {found.repos} repo{found.repos === 1 ? "" : "s"} under{" "}
-            <code className="text-emerald-300">{found.root}</code>.
+            <code className="text-(--crc-success)">{found.root}</code>.
             {found.repos === 0 && " Add a git repo there (or point CRC_REPOS_ROOT elsewhere) before creating a session."}
           </p>
         )}
@@ -97,7 +97,7 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
           {testing ? "Testing…" : found ? "Continue" : "Connect"}
         </Button>
 
-        <style>{`.input{width:100%;border-radius:0.5rem;border:1px solid #262626;background:#0b0d10;padding:0.5rem 0.75rem;font-size:0.875rem;color:#e5e7eb;outline:none}.input:focus{border-color:#4f46e5}`}</style>
+        <style>{`.input{width:100%;border-radius:2px;border:1px solid var(--crc-border);background:var(--crc-bg-inset);padding:0.5rem 0.75rem;font-size:0.875rem;color:var(--crc-fg);outline:none}.input:focus{border-color:var(--crc-focus)}`}</style>
       </div>
     </div>
   );
@@ -106,7 +106,7 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block space-y-1">
-      <span className="text-xs font-medium text-neutral-400">{label}</span>
+      <span className="text-xs font-medium text-(--crc-fg-muted)">{label}</span>
       {children}
     </label>
   );

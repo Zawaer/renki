@@ -47,16 +47,17 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between border-b border-neutral-800 px-4 py-2">
+      <header className="flex items-center justify-between border-b border-(--crc-border) bg-(--crc-bg-elevated) px-4 py-2">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-neutral-200">Claude Remote Control</span>
+          <span className="text-sm font-semibold text-(--crc-fg)">Claude Remote Control</span>
           <ConnBadge status={status} />
         </div>
-        <div className="flex items-center gap-3 text-xs text-neutral-500">
+        <div className="flex items-center gap-3 text-xs text-(--crc-fg-muted)">
           <span>{config.deviceName}</span>
           {!managed && <PairDevice />}
           {!managed && (
-            <button className="hover:text-neutral-300" onClick={onReset}>
+            <button className="inline-flex items-center gap-1 hover:text-(--crc-fg)" onClick={onReset}>
+              <span className="codicon codicon-debug-disconnect" />
               Disconnect
             </button>
           )}
@@ -64,23 +65,24 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
       </header>
 
       {lastError && (
-        <div className="bg-red-950/40 px-4 py-1.5 text-xs text-red-300">
+        <div className="flex items-center gap-1.5 bg-(--crc-danger)/15 px-4 py-1.5 text-xs text-(--crc-danger)">
+          <span className="codicon codicon-error" />
           {lastError.code}: {lastError.message}
         </div>
       )}
 
       <div className="grid flex-1 grid-cols-[280px_1fr] overflow-hidden">
-        <aside className="flex flex-col border-r border-neutral-800">
+        <aside className="flex flex-col border-r border-(--crc-border) bg-(--crc-bg-elevated)">
           <div className="min-h-0 flex-1">
             <SessionList selectedId={selected} onSelect={setSelected} />
           </div>
           <AccountsBar />
         </aside>
-        <main className="overflow-hidden">
+        <main className="overflow-hidden bg-(--crc-bg)">
           {selected ? (
             <SessionView key={selected} sessionId={selected} />
           ) : (
-            <div className="flex h-full items-center justify-center text-sm text-neutral-600">
+            <div className="flex h-full items-center justify-center text-sm text-(--crc-fg-muted)">
               Select or create a session.
             </div>
           )}
@@ -92,13 +94,13 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
 
 function ConnBadge({ status }: { status: "connecting" | "open" | "closed" }) {
   const map = {
-    open: { color: "bg-emerald-500", label: "connected" },
-    connecting: { color: "bg-amber-400 animate-pulse", label: "connecting" },
-    closed: { color: "bg-red-500", label: "offline" },
+    open: { color: "bg-(--crc-success)", label: "connected" },
+    connecting: { color: "bg-(--crc-warning) animate-pulse", label: "connecting" },
+    closed: { color: "bg-(--crc-danger)", label: "offline" },
   } as const;
   const s = map[status];
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-neutral-500">
+    <span className="inline-flex items-center gap-1.5 text-xs text-(--crc-fg-muted)">
       <span className={`h-2 w-2 rounded-full ${s.color}`} />
       {s.label}
     </span>

@@ -92,6 +92,9 @@ importers:
       '@crc/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@expo/vector-icons':
+        specifier: ^14.0.4
+        version: 14.0.4
       '@react-native-cookies/cookies':
         specifier: ^6.2.1
         version: 6.2.1(react-native@0.76.5(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(@types/react@18.3.31)(react@18.3.1))
@@ -178,6 +181,9 @@ importers:
       '@crc/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@vscode/codicons':
+        specifier: ^0.0.45
+        version: 0.0.45
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
@@ -2428,6 +2434,9 @@ packages:
 
   '@vitest/utils@2.1.9':
     resolution: {integrity: sha512-v0psaMSkNJ3A2NMrUEHFRzJtDPFn+/VWZ5WxImB21T9fjucJRmS7xCS3ppEnARb9y11OAzaD+P2Ps+b+BGX5iQ==}
+
+  '@vscode/codicons@0.0.45':
+    resolution: {integrity: sha512-1KAZ7XCMagp5Gdrlr4bbbcAqgcIL623iO1wW6rfcSVGAVUQvR0WP7bQx1SbJ11gmV3fdQTSEFIJQ/5C+HuVasw==}
 
   '@xmldom/xmldom@0.7.13':
     resolution: {integrity: sha512-lm2GW5PkosIzccsaZIz7tp8cPADSIlIHWDFTR1N0SzfinhhYgeIQjFMz4rYzanCScr3DqQLeomUDArp6MWKm+g==}
@@ -8481,6 +8490,8 @@ snapshots:
       '@vitest/pretty-format': 2.1.9
       loupe: 3.2.1
       tinyrainbow: 1.2.0
+
+  '@vscode/codicons@0.0.45': {}
 
   '@xmldom/xmldom@0.7.13': {}
 

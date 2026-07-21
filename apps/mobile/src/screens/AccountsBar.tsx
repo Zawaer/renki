@@ -2,11 +2,13 @@ import type { Account, AccountsResponse } from "@crc/protocol";
 import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useClient } from "../lib/client";
-import { colors } from "../theme";
+import { type ThemeColors, useTheme } from "../theme";
 import { ConnectUsage } from "./ConnectUsage";
 
 /** Compact multi-account usage strip (mirror of the web AccountsBar). */
 export function AccountsBar() {
+  const colors = useTheme();
+  const styles = makeStyles(colors);
   const { rest } = useClient();
   const [data, setData] = useState<AccountsResponse | null>(null);
   const [switching, setSwitching] = useState(false);
@@ -45,7 +47,7 @@ export function AccountsBar() {
         </TouchableOpacity>
       </View>
       {data.accounts.map((a) => (
-        <AccountRow key={a.number} account={a} />
+        <AccountRow key={a.number} account={a} colors={colors} styles={styles} />
       ))}
       <TouchableOpacity onPress={() => setConnecting(true)} style={styles.connectBtn}>
         <Text style={styles.connect}>{data.usageConfigured ? "+ Add usage account" : "Connect usage %"}</Text>
@@ -55,7 +57,7 @@ export function AccountsBar() {
   );
 }
 
-function AccountRow({ account }: { account: Account }) {
+function AccountRow({ account, colors, styles }: { account: Account; colors: ThemeColors; styles: Styles }) {
   return (
     <View style={styles.acct}>
       <View style={styles.acctHead}>
@@ -66,8 +68,8 @@ function AccountRow({ account }: { account: Account }) {
       </View>
       {account.usage ? (
         <View style={styles.meters}>
-          <Meter label="5h" pct={account.usage.fiveHour.pct} />
-          <Meter label="7d" pct={account.usage.sevenDay.pct} />
+          <Meter label="5h" pct={account.usage.fiveHour.pct} colors={colors} styles={styles} />
+          <Meter label="7d" pct={account.usage.sevenDay.pct} colors={colors} styles={styles} />
         </View>
       ) : (
         <Text style={styles.na}>usage n/a</Text>
@@ -76,7 +78,7 @@ function AccountRow({ account }: { account: Account }) {
   );
 }
 
-function Meter({ label, pct }: { label: string; pct: number }) {
+function Meter({ label, pct, colors, styles }: { label: string; pct: number; colors: ThemeColors; styles: Styles }) {
   const clamped = Math.max(0, Math.min(100, pct));
   const color = clamped >= 90 ? colors.error : clamped >= 70 ? colors.busy : colors.ok;
   return (
@@ -90,7 +92,10 @@ function Meter({ label, pct }: { label: string; pct: number }) {
   );
 }
 
-const styles = StyleSheet.create({
+type Styles = ReturnType<typeof makeStyles>;
+
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   bar: { borderTopWidth: 1, borderTopColor: colors.border, padding: 12 },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
   header: { color: colors.dim, fontSize: 12, fontWeight: "600" },

@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { WebView } from "react-native-webview";
 import { useClient } from "../lib/client";
-import { colors } from "../theme";
+import { type ThemeColors, useTheme } from "../theme";
 
 const CLAUDE_URL = "https://claude.ai";
 
@@ -33,6 +33,8 @@ export function ConnectUsage({
   onClose: () => void;
   onConnected: () => void;
 }) {
+  const colors = useTheme();
+  const styles = makeStyles(colors);
   const { rest } = useClient();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -184,7 +186,8 @@ export function ConnectUsage({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
   header: {
     flexDirection: "row",
@@ -209,21 +212,21 @@ const styles = StyleSheet.create({
     flex: 1,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 8,
+    borderRadius: 2,
     paddingHorizontal: 10,
     paddingVertical: 8,
     color: colors.text,
     backgroundColor: colors.panel,
   },
-  btn: { backgroundColor: colors.accent, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10 },
+  btn: { backgroundColor: colors.accent, borderRadius: 2, paddingHorizontal: 14, paddingVertical: 10 },
   btnDisabled: { opacity: 0.4 },
-  btnText: { color: "#fff", fontSize: 13, fontWeight: "600" },
+  btnText: { color: colors.accentFg, fontSize: 13, fontWeight: "600" },
   orgList: { padding: 16, gap: 10 },
   orgHint: { color: colors.dim, fontSize: 13, marginBottom: 4 },
   orgRow: {
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 10,
+    borderRadius: 2,
     padding: 14,
     backgroundColor: colors.panel,
     gap: 4,

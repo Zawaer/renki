@@ -39,12 +39,12 @@ export function AccountsBar() {
   }
 
   return (
-    <div className="border-t border-neutral-800 p-3 text-xs">
+    <div className="border-t border-(--crc-border) p-3 text-xs">
       <div className="mb-2 flex items-center justify-between">
-        <span className="font-medium text-neutral-400">
+        <span className="font-medium text-(--crc-fg-muted)">
           Accounts {data.rotation.enabled ? `· auto @ ${data.rotation.threshold}%` : "· auto off"}
         </span>
-        <button onClick={switchNow} disabled={switching} className="text-indigo-400 hover:underline disabled:opacity-40">
+        <button onClick={switchNow} disabled={switching} className="text-(--crc-link) hover:underline disabled:opacity-40">
           {switching ? "…" : "Switch"}
         </button>
       </div>
@@ -54,7 +54,7 @@ export function AccountsBar() {
         ))}
       </div>
       {data.rotation.lastHoldReason && (
-        <div className="mt-2 text-[11px] text-neutral-600">holding: {data.rotation.lastHoldReason}</div>
+        <div className="mt-2 text-[11px] text-(--crc-fg-muted)">holding: {data.rotation.lastHoldReason}</div>
       )}
       <UsageConnect configured={data.usageConfigured ?? false} onConnected={refresh} />
     </div>
@@ -65,8 +65,8 @@ function AccountRow({ account }: { account: Account }) {
   return (
     <div>
       <div className="flex items-center gap-1.5">
-        <span className={`h-1.5 w-1.5 rounded-full ${account.active ? "bg-emerald-500" : "bg-neutral-700"}`} />
-        <span className="truncate text-neutral-300">{account.email}</span>
+        <span className={`h-1.5 w-1.5 rounded-full ${account.active ? "bg-(--crc-success)" : "bg-(--crc-fg-muted)"}`} />
+        <span className="truncate text-(--crc-fg)">{account.email}</span>
       </div>
       {account.usage ? (
         <div className="mt-1 flex gap-2 pl-3">
@@ -74,7 +74,7 @@ function AccountRow({ account }: { account: Account }) {
           <Meter label="7d" pct={account.usage.sevenDay.pct} />
         </div>
       ) : (
-        <div className="pl-3 text-[11px] text-neutral-600">usage n/a</div>
+        <div className="pl-3 text-[11px] text-(--crc-fg-muted)">usage n/a</div>
       )}
     </div>
   );
@@ -82,14 +82,14 @@ function AccountRow({ account }: { account: Account }) {
 
 function Meter({ label, pct }: { label: string; pct: number }) {
   const clamped = Math.max(0, Math.min(100, pct));
-  const color = clamped >= 90 ? "bg-red-500" : clamped >= 70 ? "bg-amber-400" : "bg-emerald-500";
+  const color = clamped >= 90 ? "bg-(--crc-danger)" : clamped >= 70 ? "bg-(--crc-warning)" : "bg-(--crc-success)";
   return (
     <div className="flex flex-1 items-center gap-1">
-      <span className="text-[10px] text-neutral-500">{label}</span>
-      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-800">
+      <span className="text-[10px] text-(--crc-fg-muted)">{label}</span>
+      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-(--crc-bg-elevated)">
         <div className={`h-full ${color}`} style={{ width: `${clamped}%` }} />
       </div>
-      <span className="w-8 text-right text-[10px] text-neutral-500">{Math.round(clamped)}%</span>
+      <span className="w-8 text-right text-[10px] text-(--crc-fg-muted)">{Math.round(clamped)}%</span>
     </div>
   );
 }
@@ -177,7 +177,7 @@ function UsageConnect({ configured, onConnected }: { configured: boolean; onConn
     return (
       <button
         onClick={() => setOpen(true)}
-        className="mt-2 text-[11px] text-indigo-400 hover:underline"
+        className="mt-2 text-[11px] text-(--crc-link) hover:underline"
       >
         {configured ? "+ Add usage account" : "Connect usage %"}
       </button>
@@ -188,19 +188,19 @@ function UsageConnect({ configured, onConnected }: { configured: boolean; onConn
     o.usage ? `5h ${Math.round(o.usage.fiveHour.pct)}% · 7d ${Math.round(o.usage.sevenDay.pct)}%` : "no usage data";
 
   return (
-    <div className="mt-2 space-y-2 rounded-lg border border-neutral-800 bg-neutral-950 p-2.5">
+    <div className="mt-2 space-y-2 rounded-sm border border-(--crc-border) bg-(--crc-bg-inset) p-2.5">
       {orgs ? (
         <>
-          <p className="text-[11px] text-neutral-400">Pick which organization's usage to track:</p>
+          <p className="text-[11px] text-(--crc-fg-muted)">Pick which organization's usage to track:</p>
           {orgs.map((o) => (
             <button
               key={o.orgId}
               onClick={() => pickOrg(o.orgId)}
               disabled={busy !== null}
-              className="flex w-full items-center justify-between rounded-md border border-neutral-800 bg-neutral-900 px-2.5 py-1.5 text-left hover:border-indigo-500 disabled:opacity-40"
+              className="flex w-full items-center justify-between rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) px-2.5 py-1.5 text-left hover:border-(--crc-focus) disabled:opacity-40"
             >
-              <span className="truncate text-[12px] text-neutral-200">{o.name}</span>
-              <span className="ml-2 shrink-0 text-[10px] text-neutral-500">{fmt(o)}</span>
+              <span className="truncate text-[12px] text-(--crc-fg)">{o.name}</span>
+              <span className="ml-2 shrink-0 text-[10px] text-(--crc-fg-muted)">{fmt(o)}</span>
             </button>
           ))}
           <div className="flex items-center justify-between">
@@ -209,11 +209,11 @@ function UsageConnect({ configured, onConnected }: { configured: boolean; onConn
                 setOrgs(null);
                 setPendingKey(null);
               }}
-              className="text-[11px] text-neutral-500 hover:underline"
+              className="text-[11px] text-(--crc-fg-muted) hover:underline"
             >
               Back
             </button>
-            {busy === "pick" && <span className="text-[11px] text-neutral-500">Connecting…</span>}
+            {busy === "pick" && <span className="text-[11px] text-(--crc-fg-muted)">Connecting…</span>}
           </div>
         </>
       ) : (
@@ -221,12 +221,12 @@ function UsageConnect({ configured, onConnected }: { configured: boolean; onConn
           <button
             onClick={signInOnMac}
             disabled={busy !== null}
-            className="w-full rounded-md bg-indigo-600 py-1.5 text-[12px] font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
+            className="w-full rounded-sm bg-(--crc-accent) py-1.5 text-[12px] font-medium text-(--crc-accent-fg) hover:bg-(--crc-accent-hover) disabled:opacity-40"
           >
             {busy === "login" ? "Waiting for sign-in…" : "Sign in to Claude.ai (on the Mac)"}
           </button>
-          <div className="flex items-center gap-2 text-[10px] text-neutral-600">
-            <div className="h-px flex-1 bg-neutral-800" /> or paste a key <div className="h-px flex-1 bg-neutral-800" />
+          <div className="flex items-center gap-2 text-[10px] text-(--crc-fg-muted)">
+            <div className="h-px flex-1 bg-(--crc-border)" /> or paste a key <div className="h-px flex-1 bg-(--crc-border)" />
           </div>
           <input
             value={key}
@@ -234,24 +234,24 @@ function UsageConnect({ configured, onConnected }: { configured: boolean; onConn
             placeholder="sk-ant-sid…"
             spellCheck={false}
             autoComplete="off"
-            className="w-full rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-[12px] text-neutral-200 outline-none focus:border-indigo-500"
+            className="w-full rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) px-2 py-1 text-[12px] text-(--crc-fg) outline-none focus:border-(--crc-focus)"
           />
           <div className="flex items-center justify-between">
-            <button onClick={() => setOpen(false)} className="text-[11px] text-neutral-500 hover:underline">
+            <button onClick={() => setOpen(false)} className="text-[11px] text-(--crc-fg-muted) hover:underline">
               Close
             </button>
             <button
               onClick={resolvePasted}
               disabled={busy !== null || key.trim().length === 0}
-              className="rounded-md border border-neutral-700 px-2.5 py-1 text-[11px] text-neutral-200 hover:bg-neutral-800 disabled:opacity-40"
+              className="rounded-sm border border-(--crc-border) px-2.5 py-1 text-[11px] text-(--crc-fg) hover:bg-(--crc-hover) disabled:opacity-40"
             >
               {busy === "paste" ? "Checking…" : "Next"}
             </button>
           </div>
         </>
       )}
-      {msg && <div className={`text-[11px] ${msg.ok ? "text-emerald-500" : "text-red-400"}`}>{msg.text}</div>}
-      <p className="text-[10px] leading-snug text-neutral-600">
+      {msg && <div className={`text-[11px] ${msg.ok ? "text-(--crc-success)" : "text-(--crc-danger)"}`}>{msg.text}</div>}
+      <p className="text-[10px] leading-snug text-(--crc-fg-muted)">
         Read-only claude.ai session key (same one the Claude Usage app uses). Never touches your coding tokens.
       </p>
     </div>

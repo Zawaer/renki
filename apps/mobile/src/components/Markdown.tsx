@@ -1,7 +1,7 @@
-import { memo, type ReactElement, type ReactNode } from "react";
+import { memo, type ReactElement, type ReactNode, useMemo } from "react";
 import { Platform, StyleSheet, type TextStyle, type ViewStyle } from "react-native";
 import MarkdownDisplay from "react-native-markdown-display";
-import { colors } from "../theme";
+import { type ThemeColors, useTheme } from "../theme";
 
 // The lib's bundled types trip TS2786 under @types/react 18 (its ComponentClass
 // instance type predates the `refs` change), so it isn't seen as a valid JSX
@@ -22,50 +22,55 @@ const MD = MarkdownDisplay as unknown as (props: {
  */
 
 const mono = Platform.OS === "ios" ? "Menlo" : "monospace";
-const codeBg = "#0e1116";
 
 // Shared rules (everything except `body`, whose color differs for thinking).
-const shared: Record<string, TextStyle | ViewStyle> = {
-  heading1: { color: colors.text, fontSize: 20, fontWeight: "700", marginTop: 6, marginBottom: 2 },
-  heading2: { color: colors.text, fontSize: 17, fontWeight: "700", marginTop: 6, marginBottom: 2 },
-  heading3: { color: colors.text, fontSize: 15, fontWeight: "700", marginTop: 4, marginBottom: 2 },
-  heading4: { color: colors.dim, fontSize: 14, fontWeight: "700" },
-  paragraph: { color: colors.text, marginTop: 0, marginBottom: 8 },
-  strong: { fontWeight: "700", color: colors.text },
-  em: { fontStyle: "italic" },
-  s: { textDecorationLine: "line-through", color: colors.faint },
-  link: { color: colors.accent, textDecorationLine: "underline" },
-  blockquote: {
-    backgroundColor: colors.panel,
-    borderLeftColor: colors.border,
-    borderLeftWidth: 3,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginVertical: 4,
-  },
-  bullet_list: { marginVertical: 2 },
-  ordered_list: { marginVertical: 2 },
-  list_item: { marginVertical: 1 },
-  code_inline: {
-    backgroundColor: colors.panel2,
-    color: colors.text,
-    fontFamily: mono,
-    fontSize: 13,
-    borderRadius: 4,
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-  },
-  code_block: { backgroundColor: codeBg, color: colors.dim, fontFamily: mono, fontSize: 12, borderRadius: 8, borderWidth: 1, borderColor: colors.border, padding: 10 },
-  fence: { backgroundColor: codeBg, color: colors.dim, fontFamily: mono, fontSize: 12, borderRadius: 8, borderWidth: 1, borderColor: colors.border, padding: 10 },
-  hr: { backgroundColor: colors.border, height: StyleSheet.hairlineWidth, marginVertical: 8 },
-  table: { borderColor: colors.border, borderWidth: 1, borderRadius: 6, marginVertical: 6 },
-  th: { color: colors.text, fontWeight: "700", padding: 6 },
-  td: { color: colors.text, padding: 6 },
-};
-
-const light = StyleSheet.create({ ...shared, body: { color: colors.text, fontSize: 15, lineHeight: 21 } });
-const muted = StyleSheet.create({ ...shared, body: { color: colors.faint, fontSize: 14, lineHeight: 20, fontStyle: "italic" } });
+function makeShared(colors: ThemeColors): Record<string, TextStyle | ViewStyle> {
+  return {
+    heading1: { color: colors.text, fontSize: 20, fontWeight: "700", marginTop: 6, marginBottom: 2 },
+    heading2: { color: colors.text, fontSize: 17, fontWeight: "700", marginTop: 6, marginBottom: 2 },
+    heading3: { color: colors.text, fontSize: 15, fontWeight: "700", marginTop: 4, marginBottom: 2 },
+    heading4: { color: colors.dim, fontSize: 14, fontWeight: "700" },
+    paragraph: { color: colors.text, marginTop: 0, marginBottom: 8 },
+    strong: { fontWeight: "700", color: colors.text },
+    em: { fontStyle: "italic" },
+    s: { textDecorationLine: "line-through", color: colors.faint },
+    link: { color: colors.accent, textDecorationLine: "underline" },
+    blockquote: {
+      backgroundColor: colors.panel,
+      borderLeftColor: colors.border,
+      borderLeftWidth: 2,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      marginVertical: 4,
+    },
+    bullet_list: { marginVertical: 2 },
+    ordered_list: { marginVertical: 2 },
+    list_item: { marginVertical: 1 },
+    code_inline: {
+      backgroundColor: colors.panel2,
+      color: colors.text,
+      fontFamily: mono,
+      fontSize: 13,
+      borderRadius: 2,
+      paddingHorizontal: 4,
+      paddingVertical: 1,
+    },
+    code_block: { backgroundColor: colors.panel2, color: colors.text, fontFamily: mono, fontSize: 12, borderRadius: 2, borderWidth: 1, borderColor: colors.border, padding: 10 },
+    fence: { backgroundColor: colors.panel2, color: colors.text, fontFamily: mono, fontSize: 12, borderRadius: 2, borderWidth: 1, borderColor: colors.border, padding: 10 },
+    hr: { backgroundColor: colors.border, height: StyleSheet.hairlineWidth, marginVertical: 8 },
+    table: { borderColor: colors.border, borderWidth: 1, borderRadius: 2, marginVertical: 6 },
+    th: { color: colors.text, fontWeight: "700", padding: 6 },
+    td: { color: colors.text, padding: 6 },
+  };
+}
 
 export const Markdown = memo(function Markdown({ content, muted: isMuted = false }: { content: string; muted?: boolean }) {
-  return <MD style={isMuted ? muted : light}>{content}</MD>;
+  const colors = useTheme();
+  const style = useMemo(() => {
+    const shared = makeShared(colors);
+    return isMuted
+      ? StyleSheet.create({ ...shared, body: { color: colors.faint, fontSize: 14, lineHeight: 20, fontStyle: "italic" } })
+      : StyleSheet.create({ ...shared, body: { color: colors.text, fontSize: 15, lineHeight: 21 } });
+  }, [colors, isMuted]);
+  return <MD style={style}>{content}</MD>;
 });

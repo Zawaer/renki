@@ -8,7 +8,7 @@ import { registerForPush } from "./lib/push";
 import { Setup } from "./screens/Setup";
 import { SessionList } from "./screens/SessionList";
 import { SessionView } from "./screens/SessionView";
-import { colors } from "./theme";
+import { type ThemeColors, useTheme } from "./theme";
 
 // Show notifications while the app is foregrounded too.
 Notifications.setNotificationHandler({
@@ -23,6 +23,8 @@ Notifications.setNotificationHandler({
 });
 
 export function App() {
+  const colors = useTheme();
+  const styles = makeStyles(colors);
   const [loading, setLoading] = useState(true);
   const [config, setConfig] = useState<AppConfig | null>(null);
 
@@ -104,7 +106,8 @@ function Main({
   return <SessionList onSelect={setSelected} onReset={onReset} onReconnect={onReconnect} />;
 }
 
-const styles = StyleSheet.create({
-  fill: { flex: 1, backgroundColor: colors.bg },
-  center: { alignItems: "center", justifyContent: "center" },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    fill: { flex: 1, backgroundColor: colors.bg },
+    center: { alignItems: "center", justifyContent: "center" },
+  });

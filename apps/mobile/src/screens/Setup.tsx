@@ -13,9 +13,11 @@ import {
   View,
 } from "react-native";
 import { type AppConfig, getOrCreateDeviceId } from "../lib/config";
-import { colors } from "../theme";
+import { type ThemeColors, useTheme } from "../theme";
 
 export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
+  const colors = useTheme();
+  const styles = makeStyles(colors);
   const [baseUrl, setBaseUrl] = useState("https://");
   const [token, setToken] = useState("");
   const [showToken, setShowToken] = useState(false);
@@ -136,13 +138,21 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
       </View>
 
       <Modal visible={scanning} animationType="slide" onRequestClose={() => setScanning(false)}>
-        <QrScanner onScanned={onScanned} onCancel={() => setScanning(false)} />
+        <QrScanner onScanned={onScanned} onCancel={() => setScanning(false)} styles={styles} />
       </Modal>
     </KeyboardAvoidingView>
   );
 }
 
-function QrScanner({ onScanned, onCancel }: { onScanned: (raw: string) => void; onCancel: () => void }) {
+function QrScanner({
+  onScanned,
+  onCancel,
+  styles,
+}: {
+  onScanned: (raw: string) => void;
+  onCancel: () => void;
+  styles: Styles;
+}) {
   const [permission, requestPermission] = useCameraPermissions();
   const handled = useRef(false);
 
@@ -180,7 +190,10 @@ function QrScanner({ onScanned, onCancel }: { onScanned: (raw: string) => void; 
   );
 }
 
-const styles = StyleSheet.create({
+type Styles = ReturnType<typeof makeStyles>;
+
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
   center: { alignItems: "center", justifyContent: "center", padding: 24, gap: 8 },
   body: { flex: 1, justifyContent: "center", padding: 24, gap: 8 },
@@ -193,7 +206,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.panel,
     borderColor: colors.border,
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: 2,
     paddingHorizontal: 12,
     paddingVertical: 10,
     color: colors.text,
@@ -203,18 +216,18 @@ const styles = StyleSheet.create({
   success: { color: colors.ok, fontSize: 13, marginTop: 8 },
   button: {
     backgroundColor: colors.accent,
-    borderRadius: 10,
+    borderRadius: 2,
     paddingVertical: 12,
     alignItems: "center",
     marginTop: 16,
   },
   buttonDisabled: { opacity: 0.4 },
-  buttonText: { color: "#fff", fontWeight: "600", fontSize: 15 },
+  buttonText: { color: colors.accentFg, fontWeight: "600", fontSize: 15 },
   scanButton: {
     backgroundColor: colors.panel,
     borderWidth: 1,
     borderColor: colors.accent,
-    borderRadius: 10,
+    borderRadius: 2,
     paddingVertical: 12,
     alignItems: "center",
   },
@@ -230,7 +243,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.6)",
     paddingHorizontal: 20,
     paddingVertical: 10,
-    borderRadius: 20,
+    borderRadius: 2,
   },
   cancelOverlayText: { color: "#fff", fontWeight: "600", fontSize: 14 },
 });

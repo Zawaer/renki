@@ -1,7 +1,90 @@
 @import "tailwindcss";
+@import "@vscode/codicons/dist/codicon.css";
 
+/*
+ * Theme tokens, in increasing priority:
+ *   1. :root            - VS Code Dark+ defaults (plain browser, no preference)
+ *   2. prefers-color-scheme: light - VS Code Light+ (plain browser, light OS/browser)
+ *   3. body.vscode-*    - the real --vscode-* variables VS Code injects into every
+ *      webview, so the panel live-tracks whatever editor theme is actually open.
+ * Components consume --crc-* only; they never reference --vscode-* directly.
+ */
 :root {
   color-scheme: dark;
+
+  --crc-bg: #1e1e1e;
+  --crc-bg-elevated: #252526;
+  --crc-bg-inset: #1a1a1a;
+  --crc-fg: #cccccc;
+  --crc-fg-muted: #9d9d9d;
+  --crc-border: #3c3c3c;
+  --crc-accent: #0078d4;
+  --crc-accent-hover: #1177bb;
+  --crc-accent-fg: #ffffff;
+  --crc-link: #3794ff;
+  --crc-input-bg: #3c3c3c;
+  --crc-hover: #2a2d2e;
+  --crc-selected: #04395e;
+  --crc-selected-fg: #ffffff;
+  --crc-success: #89d185;
+  --crc-warning: #cca700;
+  --crc-danger: #f14c4c;
+  --crc-focus: #007fd4;
+  --crc-font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --crc-font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Courier New", monospace;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+
+    --crc-bg: #ffffff;
+    --crc-bg-elevated: #f3f3f3;
+    --crc-bg-inset: #ffffff;
+    --crc-fg: #3b3b3b;
+    --crc-fg-muted: #717171;
+    --crc-border: #e5e5e5;
+    --crc-accent: #007acc;
+    --crc-accent-hover: #0062a3;
+    --crc-accent-fg: #ffffff;
+    --crc-link: #006ab1;
+    --crc-input-bg: #ffffff;
+    --crc-hover: #e8e8e8;
+    --crc-selected: #d6ebff;
+    --crc-selected-fg: #1a1a1a;
+    --crc-success: #388a34;
+    --crc-warning: #bf8803;
+    --crc-danger: #cd3131;
+    --crc-focus: #007acc;
+  }
+}
+
+body.vscode-dark,
+body.vscode-light,
+body.vscode-high-contrast,
+body.vscode-high-contrast-light {
+  color-scheme: normal;
+
+  --crc-bg: var(--vscode-editor-background);
+  --crc-bg-elevated: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  --crc-bg-inset: var(--vscode-input-background, var(--vscode-editor-background));
+  --crc-fg: var(--vscode-foreground);
+  --crc-fg-muted: var(--vscode-descriptionForeground, var(--vscode-foreground));
+  --crc-border: var(--vscode-panel-border, var(--vscode-widget-border, var(--vscode-sideBar-border)));
+  --crc-accent: var(--vscode-button-background);
+  --crc-accent-hover: var(--vscode-button-hoverBackground, var(--vscode-button-background));
+  --crc-accent-fg: var(--vscode-button-foreground, #ffffff);
+  --crc-link: var(--vscode-textLink-foreground);
+  --crc-input-bg: var(--vscode-input-background);
+  --crc-hover: var(--vscode-list-hoverBackground);
+  --crc-selected: var(--vscode-list-activeSelectionBackground);
+  --crc-selected-fg: var(--vscode-list-activeSelectionForeground, var(--crc-fg));
+  --crc-success: var(--vscode-charts-green, #89d185);
+  --crc-warning: var(--vscode-charts-yellow, #cca700);
+  --crc-danger: var(--vscode-errorForeground, #f14c4c);
+  --crc-focus: var(--vscode-focusBorder);
+  --crc-font-ui: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif);
+  --crc-font-mono: var(--vscode-editor-font-family, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
 }
 
 html,
@@ -12,7 +95,7 @@ body,
 
 body {
   margin: 0;
-  background: #0b0d10;
-  color: #e5e7eb;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--crc-bg);
+  color: var(--crc-fg);
+  font-family: var(--crc-font-ui);
 }

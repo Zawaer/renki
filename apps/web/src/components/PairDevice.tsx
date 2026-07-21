@@ -79,7 +79,8 @@ export function PairDevice() {
 
   return (
     <>
-      <button className="hover:text-neutral-300" onClick={() => setOpen(true)}>
+      <button className="inline-flex items-center gap-1 hover:text-(--crc-fg)" onClick={() => setOpen(true)}>
+        <span className="codicon codicon-device-mobile" />
         Pair a device
       </button>
       {open && (
@@ -88,17 +89,17 @@ export function PairDevice() {
           onClick={() => setOpen(false)}
         >
           <div
-            className="flex flex-col items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-900 p-6"
+            className="flex flex-col items-center gap-3 rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <span className="text-sm font-medium text-neutral-200">Scan with the CRC phone app</span>
+            <span className="text-sm font-medium text-(--crc-fg)">Scan with the CRC phone app</span>
             {loopback && (
-              <div className="max-w-70 space-y-2 rounded-md border border-amber-800 bg-amber-950/40 px-2.5 py-2 text-[11px] leading-snug text-amber-300">
+              <div className="max-w-70 space-y-2 rounded-sm border border-(--crc-warning)/50 bg-(--crc-warning)/10 px-2.5 py-2 text-[11px] leading-snug text-(--crc-warning)">
                 <p>
                   This browser is connected via <code>{config.baseUrl}</code> — a loopback address that
                   only means "this computer." A phone scanning this QR would try to reach itself and fail.
                 </p>
-                {suggestion === "loading" && <p className="text-amber-400/70">Checking Tailscale…</p>}
+                {suggestion === "loading" && <p className="opacity-70">Checking Tailscale…</p>}
                 {suggestion === "none" && (
                   <p>
                     Couldn't detect a Tailscale address on the daemon host. Reconnect this browser using
@@ -114,17 +115,17 @@ export function PairDevice() {
                     <button
                       onClick={() => reconnectUsing(suggestion)}
                       disabled={switching}
-                      className="w-full rounded-md bg-amber-800/60 py-1 text-amber-100 hover:bg-amber-800 disabled:opacity-50"
+                      className="w-full rounded-sm bg-(--crc-warning)/25 py-1 text-(--crc-warning) hover:bg-(--crc-warning)/35 disabled:opacity-50"
                     >
                       {switching ? "Reconnecting…" : "Reconnect using this address"}
                     </button>
-                    {switchError && <p className="text-red-400">{switchError}</p>}
+                    {switchError && <p className="text-(--crc-danger)">{switchError}</p>}
                   </>
                 )}
               </div>
             )}
             {!loopback && suggestionDiffers && (
-              <div className="max-w-70 space-y-2 rounded-md border border-neutral-700 bg-neutral-800/50 px-2.5 py-2 text-[11px] leading-snug text-neutral-300">
+              <div className="max-w-70 space-y-2 rounded-sm border border-(--crc-border) bg-(--crc-bg-inset) px-2.5 py-2 text-[11px] leading-snug text-(--crc-fg-muted)">
                 {qrOverride ? (
                   <>
                     <p>
@@ -133,7 +134,7 @@ export function PairDevice() {
                     </p>
                     <button
                       onClick={() => setQrOverride(null)}
-                      className="w-full rounded-md border border-neutral-600 py-1 text-neutral-200 hover:bg-neutral-700"
+                      className="w-full rounded-sm border border-(--crc-border) py-1 text-(--crc-fg) hover:bg-(--crc-hover)"
                     >
                       Use {config.baseUrl} instead
                     </button>
@@ -150,7 +151,7 @@ export function PairDevice() {
                     </p>
                     <button
                       onClick={() => setQrOverride(suggestion)}
-                      className="w-full rounded-md border border-neutral-600 py-1 text-neutral-200 hover:bg-neutral-700"
+                      className="w-full rounded-sm border border-(--crc-border) py-1 text-(--crc-fg) hover:bg-(--crc-hover)"
                     >
                       Use this for the QR
                     </button>
@@ -159,17 +160,17 @@ export function PairDevice() {
               </div>
             )}
             {dataUrl ? (
-              <img src={dataUrl} alt="Pairing QR code" width={280} height={280} className="rounded-lg" />
+              <img src={dataUrl} alt="Pairing QR code" width={280} height={280} className="rounded-sm" />
             ) : (
-              <div className="flex h-[280px] w-[280px] items-center justify-center text-xs text-neutral-600">
+              <div className="flex h-[280px] w-[280px] items-center justify-center text-xs text-(--crc-fg-muted)">
                 Generating…
               </div>
             )}
-            <span className="text-[11px] text-neutral-600">
+            <span className="text-[11px] text-(--crc-fg-muted)">
               Setup → Scan QR. Grants the same access this browser has.
             </span>
             <button
-              className="mt-1 rounded-md border border-neutral-700 px-3 py-1 text-xs text-neutral-300 hover:bg-neutral-800"
+              className="mt-1 rounded-sm border border-(--crc-border) px-3 py-1 text-xs text-(--crc-fg) hover:bg-(--crc-hover)"
               onClick={() => setOpen(false)}
             >
               Close

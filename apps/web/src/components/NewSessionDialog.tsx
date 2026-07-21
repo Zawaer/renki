@@ -59,13 +59,13 @@ export function NewSessionDialog({
   return (
     <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
       <div
-        className="w-full max-w-md space-y-3 rounded-xl border border-neutral-800 bg-neutral-900 p-5"
+        className="w-full max-w-md space-y-3 rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) p-5"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-base font-semibold">New session</h2>
+        <h2 className="text-base font-semibold text-(--crc-fg)">New session</h2>
 
         <label className="block space-y-1">
-          <span className="text-xs text-neutral-400">Repository</span>
+          <span className="text-xs text-(--crc-fg-muted)">Repository</span>
           <select value={repoId} onChange={(e) => pickRepo(e.target.value)} className="ns-input">
             {repos.map((r) => (
               <option key={r.id} value={r.id}>
@@ -76,12 +76,12 @@ export function NewSessionDialog({
         </label>
 
         <label className="block space-y-1">
-          <span className="text-xs text-neutral-400">Base branch</span>
+          <span className="text-xs text-(--crc-fg-muted)">Base branch</span>
           <input value={baseBranch} onChange={(e) => setBaseBranch(e.target.value)} className="ns-input" />
         </label>
 
         <label className="block space-y-1">
-          <span className="text-xs text-neutral-400">New branch (optional)</span>
+          <span className="text-xs text-(--crc-fg-muted)">New branch (optional)</span>
           <input
             value={newBranch}
             onChange={(e) => setNewBranch(e.target.value)}
@@ -91,11 +91,11 @@ export function NewSessionDialog({
         </label>
 
         <label className="block space-y-1">
-          <span className="text-xs text-neutral-400">Title (optional)</span>
+          <span className="text-xs text-(--crc-fg-muted)">Title (optional)</span>
           <input value={title} onChange={(e) => setTitle(e.target.value)} className="ns-input" />
         </label>
 
-        {error && <p className="text-sm text-red-400">{error}</p>}
+        {error && <p className="text-sm text-(--crc-danger)">{error}</p>}
 
         <div className="flex justify-end gap-2 pt-1">
           <Button variant="ghost" onClick={onClose}>
@@ -106,7 +106,7 @@ export function NewSessionDialog({
           </Button>
         </div>
 
-        <style>{`.ns-input{width:100%;border-radius:0.5rem;border:1px solid #262626;background:#0b0d10;padding:0.5rem 0.75rem;font-size:0.875rem;color:#e5e7eb;outline:none}.ns-input:focus{border-color:#4f46e5}`}</style>
+        <style>{`.ns-input{width:100%;border-radius:2px;border:1px solid var(--crc-border);background:var(--crc-bg-inset);padding:0.5rem 0.75rem;font-size:0.875rem;color:var(--crc-fg);outline:none}.ns-input:focus{border-color:var(--crc-focus)}`}</style>
       </div>
     </div>
   );

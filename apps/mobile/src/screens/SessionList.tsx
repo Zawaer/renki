@@ -1,8 +1,9 @@
 import type { Repo, Session } from "@crc/protocol";
+import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import { FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useClient } from "../lib/client";
-import { colors, statusColor } from "../theme";
+import { statusColorFor, type ThemeColors, useTheme } from "../theme";
 import { AccountsBar } from "./AccountsBar";
 import { PairDevice } from "./PairDevice";
 
@@ -15,6 +16,9 @@ export function SessionList({
   onReset: () => void;
   onReconnect: (baseUrl: string) => Promise<void>;
 }) {
+  const colors = useTheme();
+  const statusColor = statusColorFor(colors);
+  const styles = makeStyles(colors);
   const { rest } = useClient();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [creating, setCreating] = useState(false);
@@ -35,14 +39,17 @@ export function SessionList({
       <View style={styles.header}>
         <Text style={styles.title}>Sessions</Text>
         <View style={styles.headerActions}>
-          <TouchableOpacity onPress={() => setPairing(true)}>
+          <TouchableOpacity style={styles.iconLink} onPress={() => setPairing(true)}>
+            <Ionicons name="qr-code-outline" size={15} color={colors.dim} />
             <Text style={styles.link}>Pair a device</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={onReset}>
+          <TouchableOpacity style={styles.iconLink} onPress={onReset}>
+            <Ionicons name="log-out-outline" size={15} color={colors.dim} />
             <Text style={styles.link}>Disconnect</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.newBtn} onPress={() => setCreating(true)}>
-            <Text style={styles.newBtnText}>+ New</Text>
+            <Ionicons name="add" size={14} color={colors.accentFg} />
+            <Text style={styles.newBtnText}>New</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -65,7 +72,7 @@ export function SessionList({
                 {item.repoName}:{item.branch} · {item.status}
               </Text>
             </View>
-            {item.controller && <View style={styles.lockDot} />}
+            {item.controller && <Ionicons name="lock-closed" size={12} color={colors.accent} />}
           </TouchableOpacity>
         )}
       />
@@ -74,6 +81,8 @@ export function SessionList({
 
       {creating && (
         <NewSessionModal
+          colors={colors}
+          styles={styles}
           onClose={() => setCreating(false)}
           onCreated={(s) => {
             setCreating(false);
@@ -86,7 +95,17 @@ export function SessionList({
   );
 }
 
-function NewSessionModal({ onClose, onCreated }: { onClose: () => void; onCreated: (s: Session) => void }) {
+function NewSessionModal({
+  onClose,
+  onCreated,
+  colors,
+  styles,
+}: {
+  onClose: () => void;
+  onCreated: (s: Session) => void;
+  colors: ThemeColors;
+  styles: Styles;
+}) {
   const { rest } = useClient();
   const [repos, setRepos] = useState<Repo[]>([]);
   const [repoId, setRepoId] = useState<string | null>(null);
@@ -157,64 +176,67 @@ function NewSessionModal({ onClose, onCreated }: { onClose: () => void; onCreate
   );
 }
 
-const styles = StyleSheet.create({
-  fill: { flex: 1, backgroundColor: colors.bg, paddingTop: 48 },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  title: { color: colors.text, fontSize: 18, fontWeight: "700" },
-  headerActions: { flexDirection: "row", alignItems: "center", gap: 16 },
-  link: { color: colors.dim, fontSize: 13 },
-  newBtn: { backgroundColor: colors.accent, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
-  newBtnText: { color: "#fff", fontWeight: "600", fontSize: 13 },
-  disabled: { opacity: 0.4 },
-  list: { flex: 1 },
-  empty: { color: colors.faint, padding: 20, fontSize: 14 },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.panel,
-  },
-  dot: { width: 9, height: 9, borderRadius: 5 },
-  rowText: { flex: 1 },
-  rowTitle: { color: colors.text, fontSize: 15 },
-  rowSub: { color: colors.faint, fontSize: 12, marginTop: 2 },
-  lockDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.accent },
-  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
-  modalCard: {
-    backgroundColor: colors.panel,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 20,
-    gap: 6,
-    maxHeight: "80%",
-  },
-  modalTitle: { color: colors.text, fontSize: 17, fontWeight: "700", marginBottom: 4 },
-  repoList: { maxHeight: 200 },
-  repoRow: { padding: 10, borderRadius: 8, borderWidth: 1, borderColor: colors.border, marginVertical: 3 },
-  repoRowSelected: { borderColor: colors.accent, backgroundColor: colors.panel2 },
-  repoName: { color: colors.text, fontSize: 14 },
-  label: { color: colors.dim, fontSize: 12, marginTop: 8 },
-  input: {
-    backgroundColor: colors.bg,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    color: colors.text,
-    fontSize: 15,
-  },
-  error: { color: colors.danger, fontSize: 13, marginTop: 6 },
-  modalActions: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 16, marginTop: 12 },
-});
+type Styles = ReturnType<typeof makeStyles>;
+
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    fill: { flex: 1, backgroundColor: colors.bg, paddingTop: 48 },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 16,
+      paddingBottom: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    title: { color: colors.text, fontSize: 18, fontWeight: "700" },
+    headerActions: { flexDirection: "row", alignItems: "center", gap: 16 },
+    iconLink: { flexDirection: "row", alignItems: "center", gap: 4 },
+    link: { color: colors.dim, fontSize: 13 },
+    newBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.accent, borderRadius: 2, paddingHorizontal: 12, paddingVertical: 6 },
+    newBtnText: { color: colors.accentFg, fontWeight: "600", fontSize: 13 },
+    disabled: { opacity: 0.4 },
+    list: { flex: 1 },
+    empty: { color: colors.faint, padding: 20, fontSize: 14 },
+    row: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.panel,
+    },
+    dot: { width: 9, height: 9, borderRadius: 5 },
+    rowText: { flex: 1 },
+    rowTitle: { color: colors.text, fontSize: 15 },
+    rowSub: { color: colors.faint, fontSize: 12, marginTop: 2 },
+    modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
+    modalCard: {
+      backgroundColor: colors.panel,
+      borderTopLeftRadius: 8,
+      borderTopRightRadius: 8,
+      padding: 20,
+      gap: 6,
+      maxHeight: "80%",
+    },
+    modalTitle: { color: colors.text, fontSize: 17, fontWeight: "700", marginBottom: 4 },
+    repoList: { maxHeight: 200 },
+    repoRow: { padding: 10, borderRadius: 2, borderWidth: 1, borderColor: colors.border, marginVertical: 3 },
+    repoRowSelected: { borderColor: colors.accent, backgroundColor: colors.panel2 },
+    repoName: { color: colors.text, fontSize: 14 },
+    label: { color: colors.dim, fontSize: 12, marginTop: 8 },
+    input: {
+      backgroundColor: colors.bg,
+      borderColor: colors.border,
+      borderWidth: 1,
+      borderRadius: 2,
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+      color: colors.text,
+      fontSize: 15,
+    },
+    error: { color: colors.danger, fontSize: 13, marginTop: 6 },
+    modalActions: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 16, marginTop: 12 },
+  });

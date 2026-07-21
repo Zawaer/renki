@@ -14,30 +14,30 @@ import remarkGfm from "remark-gfm";
  */
 
 const components: Components = {
-  h1: ({ node, ...p }) => <h1 className="text-base font-semibold text-neutral-100" {...p} />,
-  h2: ({ node, ...p }) => <h2 className="text-sm font-semibold text-neutral-100" {...p} />,
-  h3: ({ node, ...p }) => <h3 className="text-sm font-semibold text-neutral-200" {...p} />,
-  h4: ({ node, ...p }) => <h4 className="text-sm font-semibold text-neutral-300" {...p} />,
+  h1: ({ node, ...p }) => <h1 className="text-base font-semibold text-(--crc-fg)" {...p} />,
+  h2: ({ node, ...p }) => <h2 className="text-sm font-semibold text-(--crc-fg)" {...p} />,
+  h3: ({ node, ...p }) => <h3 className="text-sm font-semibold text-(--crc-fg)" {...p} />,
+  h4: ({ node, ...p }) => <h4 className="text-sm font-semibold text-(--crc-fg)" {...p} />,
   p: ({ node, ...p }) => <p className="leading-relaxed" {...p} />,
-  ul: ({ node, ...p }) => <ul className="list-disc space-y-1 pl-5 marker:text-neutral-500" {...p} />,
-  ol: ({ node, ...p }) => <ol className="list-decimal space-y-1 pl-5 marker:text-neutral-500" {...p} />,
+  ul: ({ node, ...p }) => <ul className="list-disc space-y-1 pl-5 marker:text-(--crc-fg-muted)" {...p} />,
+  ol: ({ node, ...p }) => <ol className="list-decimal space-y-1 pl-5 marker:text-(--crc-fg-muted)" {...p} />,
   li: ({ node, ...p }) => <li className="leading-relaxed [&>ul]:mt-1 [&>ol]:mt-1" {...p} />,
   a: ({ node, ...p }) => (
-    <a className="text-indigo-400 underline underline-offset-2 hover:text-indigo-300" target="_blank" rel="noreferrer" {...p} />
+    <a className="text-(--crc-link) underline underline-offset-2 hover:opacity-80" target="_blank" rel="noreferrer" {...p} />
   ),
-  strong: ({ node, ...p }) => <strong className="font-semibold text-neutral-100" {...p} />,
+  strong: ({ node, ...p }) => <strong className="font-semibold text-(--crc-fg)" {...p} />,
   em: ({ node, ...p }) => <em className="italic" {...p} />,
-  del: ({ node, ...p }) => <del className="text-neutral-500 line-through" {...p} />,
-  blockquote: ({ node, ...p }) => <blockquote className="border-l-2 border-neutral-700 pl-3 text-neutral-400" {...p} />,
-  hr: ({ node, ...p }) => <hr className="border-neutral-800" {...p} />,
+  del: ({ node, ...p }) => <del className="text-(--crc-fg-muted) line-through" {...p} />,
+  blockquote: ({ node, ...p }) => <blockquote className="border-l-2 border-(--crc-border) pl-3 text-(--crc-fg-muted)" {...p} />,
+  hr: ({ node, ...p }) => <hr className="border-(--crc-border)" {...p} />,
   code: ({ node, ...p }) => (
-    <code className="rounded bg-neutral-800 px-1 py-0.5 font-mono text-[0.85em] text-neutral-200" {...p} />
+    <code className="rounded-sm bg-(--crc-bg-elevated) px-1 py-0.5 font-(family-name:--crc-font-mono) text-[0.85em] text-(--crc-fg)" {...p} />
   ),
   // Fenced blocks: the descendant selectors neutralize the inline-code pill so
   // the code sits flush inside the block.
   pre: ({ node, ...p }) => (
     <pre
-      className="overflow-x-auto rounded-lg border border-neutral-800 bg-neutral-950 p-3 font-mono text-xs text-neutral-300 [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit"
+      className="overflow-x-auto rounded-sm border border-(--crc-border) bg-(--crc-bg-inset) p-3 font-(family-name:--crc-font-mono) text-xs text-(--crc-fg) [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit"
       {...p}
     />
   ),
@@ -46,13 +46,13 @@ const components: Components = {
       <table className="w-full border-collapse text-xs" {...p} />
     </div>
   ),
-  th: ({ node, ...p }) => <th className="border border-neutral-800 px-2 py-1 text-left font-semibold text-neutral-200" {...p} />,
-  td: ({ node, ...p }) => <td className="border border-neutral-800 px-2 py-1 align-top" {...p} />,
+  th: ({ node, ...p }) => <th className="border border-(--crc-border) px-2 py-1 text-left font-semibold text-(--crc-fg)" {...p} />,
+  td: ({ node, ...p }) => <td className="border border-(--crc-border) px-2 py-1 align-top" {...p} />,
 };
 
 export const Markdown = memo(function Markdown({ content, muted = false }: { content: string; muted?: boolean }) {
   return (
-    <div className={`space-y-2 break-words text-sm ${muted ? "text-neutral-500" : "text-neutral-200"}`}>
+    <div className={`space-y-2 wrap-break-word text-sm ${muted ? "text-(--crc-fg-muted)" : "text-(--crc-fg)"}`}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {content}
       </ReactMarkdown>

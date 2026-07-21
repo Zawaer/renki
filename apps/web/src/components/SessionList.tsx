@@ -36,21 +36,21 @@ export function SessionList({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-neutral-800 p-3">
-        <span className="text-sm font-semibold">Sessions</span>
+      <div className="flex items-center justify-between border-b border-(--crc-border) p-3">
+        <span className="text-sm font-semibold text-(--crc-fg)">Sessions</span>
         <Button variant="primary" onClick={() => setCreating(true)}>
-          + New
+          <span className="codicon codicon-add" /> New
         </Button>
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {active.length === 0 && <p className="p-4 text-sm text-neutral-500">No active sessions.</p>}
+        {active.length === 0 && <p className="p-4 text-sm text-(--crc-fg-muted)">No active sessions.</p>}
         {active.map((s) => (
           <Row key={s.id} session={s} selected={s.id === selectedId} onSelect={() => onSelect(s.id)} />
         ))}
 
         {archived.length > 0 && (
-          <div className="mt-2 px-3 py-1 text-xs uppercase tracking-wide text-neutral-600">Archived</div>
+          <div className="mt-2 px-3 py-1 text-xs uppercase tracking-wide text-(--crc-fg-muted)">Archived</div>
         )}
         {archived.map((s) => (
           <Row key={s.id} session={s} selected={s.id === selectedId} onSelect={() => onSelect(s.id)} />
@@ -75,18 +75,20 @@ function Row({ session, selected, onSelect }: { session: Session; selected: bool
   return (
     <button
       onClick={onSelect}
-      className={`flex w-full items-center gap-2 border-b border-neutral-900 px-3 py-2.5 text-left hover:bg-neutral-900 ${
-        selected ? "bg-neutral-900" : ""
+      className={`flex w-full items-center gap-2 border-l-2 px-3 py-2.5 text-left ${
+        selected
+          ? "border-(--crc-focus) bg-(--crc-selected) text-(--crc-selected-fg)"
+          : "border-transparent hover:bg-(--crc-hover)"
       }`}
     >
       <StatusDot status={session.status} />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm text-neutral-200">{session.title || session.repoName}</div>
-        <div className="truncate text-xs text-neutral-500">
+        <div className="truncate text-sm text-(--crc-fg)">{session.title || session.repoName}</div>
+        <div className="truncate text-xs text-(--crc-fg-muted)">
           {session.repoName}:{session.branch}
         </div>
       </div>
-      {session.controller && <span className="text-xs text-indigo-400">●</span>}
+      {session.controller && <span className="codicon codicon-lock text-xs text-(--crc-link)" />}
     </button>
   );
 }

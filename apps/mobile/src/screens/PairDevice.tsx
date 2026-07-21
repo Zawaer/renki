@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import QRCode from "react-native-qrcode-svg";
 import { useClient } from "../lib/client";
-import { colors } from "../theme";
+import { type ThemeColors, useTheme, withAlpha } from "../theme";
 
 /**
  * "Pair a device" — renders this phone's own working { baseUrl, token } as a QR
@@ -29,6 +29,8 @@ export function PairDevice({
   onClose: () => void;
   onReconnect: (baseUrl: string) => Promise<void>;
 }) {
+  const colors = useTheme();
+  const styles = makeStyles(colors);
   const { config, rest } = useClient();
   const loopback = isLikelyLoopbackUrl(config.baseUrl);
   const [suggestion, setSuggestion] = useState<"loading" | "none" | string>("loading");
@@ -146,11 +148,12 @@ export function PairDevice({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", alignItems: "center", justifyContent: "center" },
   card: {
     backgroundColor: colors.panel,
-    borderRadius: 16,
+    borderRadius: 2,
     padding: 24,
     alignItems: "center",
     gap: 12,
@@ -161,26 +164,26 @@ const styles = StyleSheet.create({
   warningBox: {
     maxWidth: 260,
     gap: 6,
-    backgroundColor: "rgba(245, 158, 11, 0.12)",
-    borderRadius: 8,
+    backgroundColor: withAlpha(colors.busy, 0.12),
+    borderRadius: 2,
     padding: 8,
   },
   warning: { color: colors.busy, fontSize: 11, lineHeight: 15, textAlign: "center" },
-  suggestBtn: { backgroundColor: "rgba(245, 158, 11, 0.25)", borderRadius: 6, paddingVertical: 6, alignItems: "center" },
+  suggestBtn: { backgroundColor: withAlpha(colors.busy, 0.25), borderRadius: 2, paddingVertical: 6, alignItems: "center" },
   suggestBtnText: { color: colors.busy, fontSize: 12, fontWeight: "600" },
   suggestBox: {
     maxWidth: 260,
     gap: 6,
     backgroundColor: colors.panel2,
-    borderRadius: 8,
+    borderRadius: 2,
     padding: 8,
     borderWidth: 1,
     borderColor: colors.border,
   },
   suggestText: { color: colors.dim, fontSize: 11, lineHeight: 15, textAlign: "center" },
-  suggestBtnNeutral: { borderWidth: 1, borderColor: colors.border, borderRadius: 6, paddingVertical: 6, alignItems: "center" },
+  suggestBtnNeutral: { borderWidth: 1, borderColor: colors.border, borderRadius: 2, paddingVertical: 6, alignItems: "center" },
   suggestBtnNeutralText: { color: colors.text, fontSize: 12, fontWeight: "600" },
-  qrWrap: { padding: 12, backgroundColor: "#fff", borderRadius: 12 },
+  qrWrap: { padding: 12, backgroundColor: "#fff", borderRadius: 2 },
   hint: { color: colors.faint, fontSize: 11, textAlign: "center", maxWidth: 240 },
   closeBtn: { marginTop: 4, paddingHorizontal: 16, paddingVertical: 8 },
   closeBtnText: { color: colors.accent, fontSize: 14, fontWeight: "600" },

@@ -132,6 +132,9 @@ port, which is loopback-only either way (see step 3). Tailscale exposes it
 the internet.
 
 Install Tailscale on the host and each client device, then `tailscale up`.
+`tailscale serve`/`status` need root by default — run
+`sudo tailscale set --operator=$USER` once so you don't need `sudo` for
+every command after.
 
 ### Recommended: `tailscale serve` (gives you HTTPS + WSS)
 

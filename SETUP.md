@@ -233,6 +233,16 @@ one DNS entry for a bit of Caddyfile that looks different from your other
 sites, so the two-hostname version above is the better default if your
 Caddyfile is otherwise this uniform.)
 
+You'll never actually browse to `crc-api.your-homelab.internal` in a tab —
+it's not a page, just the address the UI's own JavaScript calls in the
+background, same as `api.example.com` on any site with a separate frontend
+and backend. It still needs to be a *real, trusted HTTPS* address though,
+not just a bare `IP:port`: once the UI is loaded over HTTPS, browsers flatly
+refuse to let its JS call anything served over plain HTTP ("mixed content"
+— not configurable, not a CRC thing, just how browsers work), so the daemon
+has to be HTTPS too, with a cert the browser actually trusts. Routing it
+through Caddy with `tls internal` is what gets you that.
+
 **If that Caddy runs in its own container** (common — one shared
 `docker-compose.yml` fronting several homelab services), the snippets above
 will 502: `127.0.0.1` inside Caddy's container means *itself*, not your

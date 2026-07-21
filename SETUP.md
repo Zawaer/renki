@@ -124,6 +124,24 @@ To deploy a web change: `pnpm build` again, then `pm2 restart crc-web`.
 For local daemon development instead of pm2, `pnpm --filter @crc/daemon dev`
 (auto-reloads).
 
+### Shortcut: `crc init`
+
+Steps 4 and 5 below can mostly be automated once the service is running:
+
+```bash
+pnpm --filter @crc/daemon cli init
+# or, for Docker:
+docker compose exec daemon node dist/cli.js init
+```
+
+Reports your resolved token and the repos found under `CRC_REPOS_ROOT`,
+detects Tailscale and offers to run `tailscale serve` for you (printing the
+exact fix if the operator isn't set yet — see step 4), then prints your
+first pairing QR straight to the terminal. Scan it with **"Scan QR code"**
+on the mobile Setup screen and you're connected — no client needs to be
+configured by hand first. Still worth reading steps 4-5 once for what's
+actually happening underneath.
+
 ## 4. Reach it from anywhere with Tailscale
 
 The daemon stays bound to loopback — directly, or via Docker's published

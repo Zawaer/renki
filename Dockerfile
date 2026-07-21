@@ -1,5 +1,6 @@
-# Builds just @crc/daemon (+ its one workspace dep, @crc/protocol) for an
-# always-on host. Web/VS Code/mobile clients aren't part of this image.
+# Builds just @crc/daemon (+ its workspace deps, @crc/protocol and
+# @crc/client-core) for an always-on host. Web/VS Code/mobile clients aren't
+# part of this image.
 
 FROM node:20-bookworm-slim AS builder
 
@@ -20,7 +21,7 @@ ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 # dependency trees (and their install-time scripts) never run here.
 RUN pnpm install --frozen-lockfile --filter "@crc/daemon..."
 
-RUN pnpm --filter @crc/protocol build && pnpm --filter @crc/daemon build
+RUN pnpm --filter @crc/protocol build && pnpm --filter @crc/client-core build && pnpm --filter @crc/daemon build
 
 # Self-contained prod-only output: resolves the @crc/protocol workspace
 # dependency to its built dist rather than a symlink.

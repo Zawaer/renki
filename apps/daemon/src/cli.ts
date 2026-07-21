@@ -1,12 +1,20 @@
+import { execFile } from "node:child_process";
+import { createInterface } from "node:readline/promises";
+import { promisify } from "node:util";
 import { parseArgs } from "node:util";
+import { encodePairing } from "@crc/client-core";
 import type { SessionEvent } from "@crc/protocol";
+import QRCode from "qrcode";
 import { loadConfig } from "./config.js";
 import { openDb } from "./db/index.js";
 import { logger } from "./logger.js";
 import { scanRepos } from "./repos.js";
+import { getTailscaleStatus } from "./tailscale.js";
 import type { PermissionResolver } from "./claude/runner.js";
 import { SessionError } from "./sessions/errors.js";
 import { SessionManager } from "./sessions/manager.js";
+
+const execFileAsync = promisify(execFile);
 
 /**
  * Step-1 harness. NO networking — this drives the SessionManager directly so we
@@ -15,6 +23,7 @@ import { SessionManager } from "./sessions/manager.js";
  * entry point's role with a WebSocket/REST server calling the same manager.
  *
  * Usage:
+ *   crc init
  *   crc repos
  *   crc new <repoId> [--base <branch>] [--branch <name>] [--title <t>]
  *   crc sessions
@@ -45,6 +54,11 @@ async function main() {
     // Resolved the same way the running daemon resolves it: CRC_AUTH_TOKEN if
     // set, else the persisted (or just-minted) <dataDir>/auth-token.
     process.stdout.write(`${config.authToken}\n`);
+    return;
+  }
+
+  if (command === "init") {
+    await runInit(config);
     return;
   }
 
@@ -229,6 +243,89 @@ async function defaultBranchFor(config: ReturnType<typeof loadConfig>, repoId: s
   const repos = await scanRepos(config);
   const repo = repos.find((r) => r.id === repoId);
   return repo?.defaultBranch ?? "main";
+}
+
+/**
+ * One-shot bootstrap wizard: confirms repos are found, offers to run
+ * `tailscale serve` if Tailscale is detected, then prints the first pairing
+ * QR straight to the terminal. Closes the gap where today's QR pairing needs
+ * one client already configured by hand before it can onboard the rest.
+ * Never hard-fails — worst case it still prints a loopback QR + the manual
+ * values, same as a client with no Tailscale would show.
+ */
+async function runInit(config: ReturnType<typeof loadConfig>): Promise<void> {
+  console.log(`Auth token: ${config.authToken}\n`);
+
+  const repos = await scanRepos(config);
+  if (repos.length === 0) {
+    console.log(`No git repos found under ${config.reposRoot} (set CRC_REPOS_ROOT in .env if yours live elsewhere).\n`);
+  } else {
+    console.log(`Found ${repos.length} repo(s) under ${config.reposRoot}: ${repos.map((r) => r.id).join(", ")}\n`);
+  }
+
+  console.log("Checking Tailscale…");
+  const status = await getTailscaleStatus();
+
+  let baseUrl = `http://127.0.0.1:${config.port}`;
+  let loopback = true;
+
+  if (status.available && status.hostname) {
+    console.log(`Detected: ${status.hostname}`);
+    const proceed = await confirm(`Run "tailscale serve --bg ${config.port}" now?`);
+    if (proceed) {
+      const ok = await tryTailscaleServe(config.port);
+      if (ok) {
+        baseUrl = `https://${status.hostname}`;
+        loopback = false;
+        console.log(`"tailscale serve" running — ${baseUrl} now proxies to this daemon.\n`);
+      } else {
+        console.log(
+          `\nCouldn't run it automatically — this usually means the tailnet operator isn't set to your\n` +
+            `user yet. Run this once, then "crc init" again to pick up the real address:\n` +
+            `  sudo tailscale set --operator=$USER\n` +
+            `  tailscale serve --bg ${config.port}\n`,
+        );
+      }
+    } else {
+      console.log('Skipped. Run it yourself later, then "crc init" again to pick up the real address.\n');
+    }
+  } else {
+    console.log(
+      "Not detected (tailscale not installed, or not logged into a tailnet). Install it and run\n" +
+        '"tailscale up", then "crc init" again — see SETUP.md for other ways to reach the daemon.\n',
+    );
+  }
+
+  if (loopback) {
+    console.log(
+      `Showing a LOOPBACK-only QR (${baseUrl}) — it only works from this machine.\n` +
+        "Scan it now only if you're pairing a client on this same host; otherwise fix Tailscale above first.\n",
+    );
+  }
+
+  const payload = encodePairing({ baseUrl, token: config.authToken });
+  console.log(`Scan with the CRC app's "Scan QR code" (Setup screen) to connect:\n`);
+  console.log(await QRCode.toString(payload, { type: "terminal", small: true }));
+  console.log(`Or enter manually — Daemon URL: ${baseUrl}   Token: ${config.authToken}`);
+}
+
+async function confirm(question: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await rl.question(`${question} [Y/n] `);
+    return answer.trim() === "" || /^y(es)?$/i.test(answer.trim());
+  } finally {
+    rl.close();
+  }
+}
+
+async function tryTailscaleServe(port: number): Promise<boolean> {
+  try {
+    await execFileAsync("tailscale", ["serve", "--bg", String(port)], { timeout: 10_000 });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function fail(msg: string): void {

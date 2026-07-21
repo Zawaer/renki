@@ -27,15 +27,35 @@ features. The throughline for everything below: shrink "found the repo" →
       shows a QR of its own working `{ baseUrl, token }`
       (`packages/client-core/src/pairing.ts`); a new device scans it via
       "Scan QR code" on the mobile Setup screen instead of typing either value.
-  - [ ] **P1b — `crc init` wizard.** Still open: a CLI wizard that mints the
-        token, writes `.env`, detects Tailscale and offers to run
-        `tailscale serve`, then prints the *first* pairing QR to a terminal
-        (today's QR flow needs one client already configured manually to
-        onboard the rest — this closes that bootstrap gap).
-- [ ] **P2 — Distribution.** Prebuilt Android APK (EAS build or a GitHub release
-      artifact) + an Expo Go path, and a `docker run` / `npx` one-liner for the
-      daemon. Turns "clone the monorepo and fight Gradle" into "install, run,
-      scan." Without this, P1's polish is wasted because people never reach Setup.
+      Also detects a loopback-only connection (e.g. pairing from a browser on
+      `127.0.0.1:4517` itself) and offers the daemon's real Tailscale address
+      instead of showing a QR that would only ever point back at itself.
+  - [x] **P1b — `crc init` wizard.** Done, narrower than originally scoped:
+        writing `.env` turned out to be unnecessary — auto-generated tokens
+        and `CRC_REPOS_ROOT`'s `~/coding` default mean there's often nothing
+        to write. `crc init` (`apps/daemon/src/cli.ts`) reports the resolved
+        token + repos found, detects Tailscale and offers to run
+        `tailscale serve --bg <port>` (with a clear remediation message if
+        the operator isn't set), then prints the first pairing QR straight
+        to the terminal via `qrcode` — falling back to a clearly-labeled
+        loopback QR if Tailscale isn't available rather than dead-ending.
+        Closes the bootstrap gap where today's QR flow needs one client
+        already configured by hand to onboard the rest. Verified both
+        bare-metal and inside the Docker image.
+- [x] **P2a — Docker packaging.** Done: multi-stage `Dockerfile` +
+      `docker-compose.yml` for the daemon, scoped to just `@crc/daemon` +
+      `@crc/protocol` (`pnpm deploy` — web/mobile/vscode's dependency trees
+      never run in the image). Reuses the host's `~/.claude` and repos via
+      bind mounts; the auth token auto-generates the same way as bare-metal.
+      Verified end to end on a real Linux homeserver (build, `cli.js repos`
+      sanity check, `up -d`, `tailscale serve` in front). SETUP.md now leads
+      with this path over pm2/bare-metal.
+  - [ ] **P2b — Prebuilt image + Android APK.** Still open: no image
+        published to a registry yet — still `git clone` + a local
+        `docker build` (~1-2 min), not a true one-liner. Needs a GitHub
+        Actions publish workflow (deliberately deferred, bigger lift:
+        registry choice, versioning, CI changes). No prebuilt Android APK /
+        Expo Go path either.
 - [x] **P3a — README + architecture + security docs.** Done: README has a
       one-paragraph what/why, a features list, a Mermaid architecture diagram,
       a 3-step quickstart, and Contributing/Security/License pointers.

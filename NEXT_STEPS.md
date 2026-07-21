@@ -87,7 +87,7 @@ features. The throughline for everything below: shrink "found the repo" →
   a multi-tenant relay exists. Fix the token's *UX* (QR pairing, P1), not the
   mechanism.
 
-## 0. Test coverage (started)
+## 0. Test coverage (done)
 
 - [x] **Pure core unit tests.** Reducer determinism + replay==live, event-log
       seq/replay/gap-free handoff, `classifyRateLimit`, SessionManager guards.
@@ -100,8 +100,22 @@ features. The throughline for everything below: shrink "found the repo" →
       `@fastify/websocket`'s cleanup hook only runs if its own onRequest hook
       (registered after auth) got a chance to run first — fixed by
       registering the plugin before the auth hook.
-- [ ] **Reducer tests reused by clients.** The web/mobile views fold the same
-      reducer; a light render smoke test would guard the UI layer too.
+- [x] **Reducer tests reused by clients.** Done (`apps/web/test/SessionView.test.tsx`):
+      renders the real `SessionView` against real `applyEvents` output (a
+      `ClientContext.Provider` stub, never-connected `RealtimeClient` — no
+      mocked reducer or hand-typed fake state), covering a full transcript
+      (prompt, thinking, tool use + result, final text, cost, notice),
+      pending-permission actionability by controller, and the empty/unlocked
+      state. Web-only for now — mobile's React Native testing setup (jest-expo
+      + native mocks) is a heavier lift than this "light" scope called for.
+      Along the way, found and fixed a real pnpm/Vitest infra bug (not a code
+      bug): `node-linker=hoisted` (needed for Expo/Metro) was creating
+      separate physical React 19 copies for `react-dom` and
+      `@testing-library/react` instead of symlinking web's own — same
+      version everywhere, but genuinely different module instances, so any
+      hook crashed. Never affected the shipped app (Vite bundles its own
+      consistent graph) — only Node-based tooling. Fixed by
+      `scripts/dedupe-react-for-tests.mjs`, wired as `postinstall`.
 
 ## 1. Verify on real hardware (not yet done)
 

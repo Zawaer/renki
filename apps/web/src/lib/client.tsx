@@ -9,13 +9,16 @@ import type { AppConfig } from "./config.js";
  * reactively. This is the ONLY React-specific plumbing — the exact same
  * client-core stores get consumed by the React Native app later.
  */
-type ClientBundle = {
+export type ClientBundle = {
   rest: RestClient;
   realtime: RealtimeClient;
   config: AppConfig;
 };
 
-const ClientContext = createContext<ClientBundle | null>(null);
+// Exported so tests can supply a stub bundle directly (a real RealtimeClient
+// that's never .connect()-ed, seeded via its Store, works fine — no need to
+// mock the class) without going through ClientProvider's real WS connection.
+export const ClientContext = createContext<ClientBundle | null>(null);
 
 export function ClientProvider({ config, children }: { config: AppConfig; children: React.ReactNode }) {
   const bundle = useMemo<ClientBundle>(() => {

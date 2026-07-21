@@ -243,6 +243,17 @@ refuse to let its JS call anything served over plain HTTP ("mixed content"
 has to be HTTPS too, with a cert the browser actually trusts. Routing it
 through Caddy with `tls internal` is what gets you that.
 
+**Pairing an Android phone against a `tls internal` address?** A browser on
+that phone will happily prompt to trust the cert (or already does, if you
+installed your CA there for other `*.internal` sites). The CRC app itself
+also trusts user-installed CAs, not just system ones — same accommodation
+self-hosted apps like Immich make for exactly this setup. But that trust is
+still per-device: install your reverse proxy's root CA cert via Android
+Settings → Security → "Install a certificate" → CA certificate (however
+you already did it for your browser) before pairing, or the app's own
+network calls will fail with something like "Network request failed" even
+though the daemon is perfectly reachable.
+
 **If that Caddy runs in its own container** (common — one shared
 `docker-compose.yml` fronting several homelab services), the snippets above
 will 502: `127.0.0.1` inside Caddy's container means *itself*, not your
@@ -347,6 +358,25 @@ pnpm --filter @crc/mobile start        # Metro; scan the QR with Expo Go (Androi
 
 (That QR just loads the JS bundle — Metro's own dev-client QR, not the CRC
 pairing one below.)
+
+**"Unable to load script" / the app can't reach Metro?** This is a plain
+Metro-bundler connectivity problem, nothing CRC-specific. Metro defaults to
+advertising your Mac/PC's Wi-Fi IP (e.g. `192.168.1.104:8081`); if the phone
+can't actually reach that (different network, client isolation on the
+router, or it's plugged in via USB with Wi-Fi off), the bundle fetch just
+fails. Easiest fix if you have a USB cable handy — it sidesteps network
+topology entirely:
+
+```bash
+adb devices                              # confirm the phone shows up
+adb reverse tcp:8081 tcp:8081             # map the phone's localhost:8081 to this Metro
+REACT_NATIVE_PACKAGER_HOSTNAME=localhost npx expo start --dev-client   # from apps/mobile
+```
+
+That makes Metro advertise `localhost:8081` instead of the LAN IP, which the
+`adb reverse` tunnel actually maps. Reopen the app on the phone (or press
+`a` in the Metro terminal) afterwards. No Wi-Fi/Tailscale/router config
+required either way.
 
 On the app's Setup screen, either **tap "Scan QR code"** and scan the pairing
 QR from an already-connected client (see [§5](#pairing-additional-devices-qr-code)

@@ -3,6 +3,7 @@ import type { Options, PermissionResult } from "@anthropic-ai/claude-agent-sdk";
 import type { CapabilitiesResponse, EventPayload, PermissionDecision } from "@crc/protocol";
 import { logger } from "../logger.js";
 import { newTurnId } from "../ids.js";
+import { createRtkPreToolUseHook } from "./rtk.js";
 
 /**
  * Runs a single Claude turn via the Agent SDK and translates the SDK's typed
@@ -49,6 +50,10 @@ export type RunTurnArgs = {
   maxThinkingTokens?: number | null;
   /** If true, don't load ~/.claude settings so every gated tool asks the controller. */
   forcePermissionPrompts?: boolean;
+  /** If true, rewrite Bash commands through RTK (see ./rtk.ts) before they run. */
+  enableRtk?: boolean;
+  /** `rtk` executable to invoke when enableRtk is set (name on PATH or absolute path). */
+  rtkBin?: string;
   /**
    * Only obtainable from a live Query object, so the caller opts in (once,
    * when it doesn't already have this cached daemon-wide) rather than paying
@@ -89,6 +94,7 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
     ...(args.model ? { model: args.model } : {}),
     ...(args.maxThinkingTokens != null ? { maxThinkingTokens: args.maxThinkingTokens } : {}),
     ...(args.forcePermissionPrompts ? { settingSources: [] } : {}),
+    ...(args.enableRtk ? { hooks: { PreToolUse: [createRtkPreToolUseHook(args.rtkBin ?? "rtk")] } } : {}),
     // Route every permission decision through the caller's resolver. This only
     // fires for tools the permission system doesn't auto-resolve (edits, bash,
     // etc.), which is exactly the set a human controller should see.

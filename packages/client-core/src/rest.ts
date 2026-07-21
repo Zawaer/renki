@@ -7,6 +7,7 @@ import type {
   GetTranscriptResponse,
   ListReposResponse,
   ListSessionsResponse,
+  RtkGainResponse,
   Session,
   StatsResponse,
   SwitchAccountResponse,
@@ -104,6 +105,11 @@ export class RestClient {
    */
   async getCapabilities(): Promise<CapabilitiesResponse> {
     return this.get<CapabilitiesResponse>("/capabilities");
+  }
+
+  /** RTK (rtk-ai/rtk) token-savings stats — `enabled:false` when CRC_ENABLE_RTK is off for this daemon. */
+  async getRtkGain(): Promise<RtkGainResponse> {
+    return this.get<RtkGainResponse>("/rtk/gain");
   }
 
   // ── internals ──────────────────────────────────────────────────────────────

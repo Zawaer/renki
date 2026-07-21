@@ -518,6 +518,47 @@ Anthropic has confirmed is within the Consumer Terms.
 Pair this with `CRC_FORCE_PERMISSION_PROMPTS=1` if you want tool approvals to
 reach your phone rather than being auto-allowed.
 
+## RTK token-savings support (optional)
+
+If you use [RTK](https://github.com/rtk-ai/rtk) locally, the daemon can rewrite
+Bash commands through it too — same 60-90% output-shrinking, applied to every
+session CRC runs.
+
+Normal `rtk init -g` doesn't apply here: it wires up RTK via Claude Code's
+`settings.json` hook mechanism, but CRC's sessions run the Agent SDK in
+isolation (no filesystem settings are ever loaded, by design — so a repo's own
+`.claude/settings.json` can't smuggle in arbitrary hooks). Instead, set:
+
+```
+CRC_ENABLE_RTK=1
+```
+
+This calls RTK's own `rtk hook claude` binary in-process for every Bash tool
+call, the same one `rtk init -g` would otherwise install. **Install `rtk` on
+the daemon host** (not your laptop/phone) — that's where the `claude`
+subprocess actually runs. If `rtk` isn't found or errors, the daemon fails
+open: the command just runs unmodified, so a missing/broken install never
+blocks a session.
+
+If the daemon runs as a service (systemd, pm2, Docker) with a stripped-down
+`PATH` that doesn't include wherever `rtk` was installed (e.g. `~/.local/bin`
+via the quick-install script), point at it directly instead of relying on
+PATH lookup:
+
+```
+CRC_RTK_BIN=/home/you/.local/bin/rtk
+```
+
+**Seeing the savings:** once `CRC_ENABLE_RTK=1` is set, every connected client
+shows a small rocket badge in the header (next to the accounts badge) with
+RTK's own token-savings numbers for the daemon host — commands run, tokens
+saved, average savings %, and the last 30 days. It's a thin read-only view
+over `rtk gain --daily --format json`; the daemon computes nothing itself, so
+`rtk gain` on the host and the badge always agree. The badge stays hidden
+until `rtk` actually responds successfully, so a broken/missing install is
+silent there too — check the daemon logs if you expect it to show up and it
+doesn't.
+
 ## Security model (single-user v1)
 
 - **Tailscale (WireGuard)** is the network boundary — the daemon is never on the

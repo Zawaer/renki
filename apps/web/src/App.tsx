@@ -3,6 +3,7 @@ import { ClientProvider, useClient, useStoreValue } from "./lib/client.js";
 import { type AppConfig, clearConfig, loadConfig, saveConfig } from "./lib/config.js";
 import { AccountsBar } from "./components/AccountsBar.js";
 import { PairDevice } from "./components/PairDevice.js";
+import { RtkGainBadge } from "./components/RtkGainBadge.js";
 import { SessionList } from "./components/SessionList.js";
 import { SessionView } from "./components/SessionView.js";
 import { Setup } from "./components/Setup.js";
@@ -66,6 +67,7 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
             <span className="codicon codicon-graph-line" />
           </button>
           <AccountsBar />
+          <RtkGainBadge />
           {!managed && <PairDevice />}
           {!managed && (
             <button className="inline-flex items-center gap-1 hover:text-(--crc-fg)" onClick={onReset}>

@@ -6,6 +6,7 @@ import { loginAndExtractSessionKey, PlaywrightUnavailableError } from "../accoun
 import type { AccountRotator } from "../accounts/rotator.js";
 import type { UsageReader } from "../accounts/usage.js";
 import { getCapabilities } from "../claude/capabilities.js";
+import { readRtkGain } from "../claude/rtkStats.js";
 import type { Config } from "../config.js";
 import { logger } from "../logger.js";
 import type { DeviceRegistry } from "../push/devices.js";
@@ -84,6 +85,14 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
   // Empty until the first turn runs this process's lifetime — only obtainable
   // from a live SDK Query object (see claude/capabilities.ts).
   app.get("/capabilities", async () => getCapabilities());
+
+  // RTK (rtk-ai/rtk) token-savings stats, if CRC_ENABLE_RTK is on. Self-describing
+  // response (enabled/available) rather than a separate feature-flag endpoint —
+  // same idiom as /accounts.
+  app.get("/rtk/gain", async () => {
+    if (!config.enableRtk) return { enabled: false, available: false, error: null, summary: null, daily: [] };
+    return readRtkGain(config.rtkBin);
+  });
 
   app.post("/sessions", async (req, reply) => {
     const parsed = CreateSessionRequest.safeParse(req.body);

@@ -36,6 +36,15 @@ const Env = z.object({
    * off, the daemon inherits your normal Claude Code settings.
    */
   CRC_FORCE_PERMISSION_PROMPTS: z.string().optional(),
+  /**
+   * When "1"/"true", rewrite Bash commands through RTK (rtk-ai/rtk) before
+   * they run, shrinking their output before it reaches the model. Requires
+   * the `rtk` binary on PATH on the machine running the daemon; a missing or
+   * failing rtk fails open (command runs unmodified).
+   */
+  CRC_ENABLE_RTK: z.string().optional(),
+  /** `rtk` executable (name on PATH or absolute path) — set this if the daemon's process manager runs with a PATH that doesn't include it. */
+  CRC_RTK_BIN: z.string().min(1).default("rtk"),
   /** Expo push endpoint (override to a mock in tests). */
   CRC_EXPO_PUSH_URL: z.string().url().default("https://exp.host/--/api/v2/push/send"),
 
@@ -79,6 +88,8 @@ export type Config = {
   port: number;
   host: string;
   forcePermissionPrompts: boolean;
+  enableRtk: boolean;
+  rtkBin: string;
   expoPushUrl: string;
   rotation: {
     enabled: boolean;
@@ -162,6 +173,8 @@ export function loadConfig(): Config {
     port: env.CRC_PORT,
     host: env.CRC_HOST,
     forcePermissionPrompts: env.CRC_FORCE_PERMISSION_PROMPTS === "1" || env.CRC_FORCE_PERMISSION_PROMPTS === "true",
+    enableRtk: env.CRC_ENABLE_RTK === "1" || env.CRC_ENABLE_RTK === "true",
+    rtkBin: env.CRC_RTK_BIN,
     expoPushUrl: env.CRC_EXPO_PUSH_URL,
     rotation: {
       enabled: env.CRC_ACCOUNT_ROTATION === "1" || env.CRC_ACCOUNT_ROTATION === "true",

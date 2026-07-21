@@ -59,6 +59,11 @@ never touching tokens itself). See [SETUP.md](./SETUP.md).
   while the app is backgrounded.
 - **Optional multi-account rotation** — proactively (or on a real rate-limit
   failure) switches which Claude account the CLI uses next, via `cswap`.
+- **Optional [RTK](https://github.com/rtk-ai/rtk) support** — rewrites Bash
+  commands through RTK's compacting proxy to cut token usage 60-90% on common
+  dev operations (`git`, test runners, linters, etc), with its savings stats
+  surfaced live in every client. See
+  [SETUP.md](./SETUP.md#rtk-token-savings-support-optional).
 - **Tailscale-first security model** — no ports on the public internet, a
   constant-time bearer token on top, session isolation by construction.
 

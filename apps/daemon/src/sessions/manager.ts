@@ -197,6 +197,8 @@ export class SessionManager {
         model: input.model,
         maxThinkingTokens: input.maxThinkingTokens,
         forcePermissionPrompts: this.config.forcePermissionPrompts,
+        enableRtk: this.config.enableRtk,
+        rtkBin: this.config.rtkBin,
         emit: (payload) => this.events.append(input.sessionId, payload),
         resolvePermission: input.resolvePermission,
         // Cheap to skip once the daemon already knows this — it's static per

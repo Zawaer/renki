@@ -103,7 +103,7 @@ describe("per-event folding", () => {
       { kind: "assistant_delta", turnId: TURN, blockIndex: 0, blockKind: "text", text: "lo" },
     ));
     const turn = (s.timeline[0] as any).turn;
-    expect(turn.blocks[0]).toEqual({ kind: "text", text: "Hello" });
+    expect(turn.blocks[0]).toEqual({ kind: "text", text: "Hello", startedAtMs: 1000, endedAtMs: null });
     expect(turn.status).toBe("running");
   });
 
@@ -114,7 +114,28 @@ describe("per-event folding", () => {
       { kind: "assistant_block", turnId: TURN, blockIndex: 0, blockKind: "text", text: "final canonical", toolUseId: null, toolName: null, toolInput: null },
     ));
     const turn = (s.timeline[0] as any).turn;
-    expect(turn.blocks[0]).toEqual({ kind: "text", text: "final canonical" });
+    expect(turn.blocks[0]).toEqual({ kind: "text", text: "final canonical", startedAtMs: 1000, endedAtMs: 1002 });
+  });
+
+  it("a block's endedAtMs is back-filled from the next block's first delta, not its own (never-sent) close event", () => {
+    const s = fold(stream(
+      { kind: "assistant_delta", turnId: TURN, blockIndex: 0, blockKind: "thinking", text: "hm" },
+      { kind: "assistant_delta", turnId: TURN, blockIndex: 1, blockKind: "text", text: "ok" },
+    ));
+    const turn = (s.timeline[0] as any).turn;
+    expect(turn.blocks[0]).toEqual({ kind: "thinking", text: "hm", startedAtMs: 1000, endedAtMs: 1001 });
+    expect(turn.blocks[1]).toEqual({ kind: "text", text: "ok", startedAtMs: 1001, endedAtMs: null });
+  });
+
+  it("a block already closed by its own assistant_block isn't reopened when the next block starts", () => {
+    const s = fold(stream(
+      { kind: "assistant_delta", turnId: TURN, blockIndex: 0, blockKind: "thinking", text: "hm" },
+      { kind: "assistant_block", turnId: TURN, blockIndex: 0, blockKind: "thinking", text: "hm", toolUseId: null, toolName: null, toolInput: null },
+      { kind: "assistant_delta", turnId: TURN, blockIndex: 1, blockKind: "text", text: "ok" },
+    ));
+    const turn = (s.timeline[0] as any).turn;
+    // Closed by its own assistant_block (ts 1001) — the later block-1 delta (ts 1002) must not overwrite it.
+    expect(turn.blocks[0]).toEqual({ kind: "thinking", text: "hm", startedAtMs: 1000, endedAtMs: 1001 });
   });
 
   it("tool_use block plus tool_result attaches the result by toolUseId", () => {
@@ -218,6 +239,9 @@ describe("full scripted turn", () => {
     expect(turn.blocks[0].text).toBe("Let me look…");
     expect(turn.blocks[1].text).toBe("I'll edit it.");
     expect(turn.blocks[2].result).toEqual({ ok: true, summary: "edited a.ts" });
+    // Thinking ran from its first delta to its own assistant_block finalization.
+    expect(turn.blocks[0].startedAtMs).toBe(1005);
+    expect(turn.blocks[0].endedAtMs).toBe(1007);
   });
 });
 

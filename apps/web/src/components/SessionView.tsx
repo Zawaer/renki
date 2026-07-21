@@ -1,4 +1,4 @@
-import type { BlockView, PermissionView, TimelineItem, TurnView } from "@crc/client-core";
+import { THINKING_VERBS, type BlockView, type PermissionView, type TimelineItem, type TurnView } from "@crc/client-core";
 import { useEffect, useRef, useState } from "react";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { hostOpenFile, isHosted } from "../lib/host.js";
@@ -122,7 +122,7 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
   return (
     <div className="space-y-2">
       {turn.blocks.map((b, i) => (
-        <Block key={i} block={b} />
+        <Block key={i} block={b} turnRunning={turn.status === "running"} />
       ))}
       {turn.status === "running" && (
         <span className="codicon codicon-loading codicon-modifier-spin text-(--crc-fg-muted)" />
@@ -161,7 +161,7 @@ function toolIcon(name: string): string {
   return map[name] ?? "tools";
 }
 
-function Block({ block }: { block: BlockView }) {
+function Block({ block, turnRunning }: { block: BlockView; turnRunning: boolean }) {
   if (block.kind === "tool_use") {
     const filePath = extractFilePath(block.toolInput);
     return (
@@ -196,13 +196,69 @@ function Block({ block }: { block: BlockView }) {
     );
   }
   if (block.kind === "thinking") {
-    return (
-      <div className="border-l-2 border-(--crc-border) pl-3">
-        <Markdown content={block.text} muted />
-      </div>
-    );
+    return <ThinkingBlock block={block} live={turnRunning && block.endedAtMs == null} />;
   }
   return <Markdown content={block.text} />;
+}
+
+function ThinkingBlock({
+  block,
+  live,
+}: {
+  block: Extract<BlockView, { kind: "text" | "thinking" }>;
+  live: boolean;
+}) {
+  const elapsedSeconds = useElapsedSeconds(live ? block.startedAtMs : null);
+  const verb = useThinkingVerb(live);
+
+  return (
+    <div className="border-l-2 border-(--crc-border) pl-3">
+      <div className="mb-1 flex items-center gap-1.5 text-xs text-(--crc-fg-muted)">
+        {live ? (
+          <>
+            <span className="codicon codicon-loading codicon-modifier-spin" />
+            <span>
+              {verb}… {elapsedSeconds != null && `· ${elapsedSeconds}s`}
+            </span>
+          </>
+        ) : block.startedAtMs != null && block.endedAtMs != null ? (
+          <span>Thought for {formatDuration(block.endedAtMs - block.startedAtMs)}</span>
+        ) : (
+          <span>Thinking</span>
+        )}
+      </div>
+      <Markdown content={block.text} muted />
+    </div>
+  );
+}
+
+/** Ticks once a second while `startedAtMs` is set; null (no ticking) otherwise. */
+function useElapsedSeconds(startedAtMs: number | null): number | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (startedAtMs == null) return;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [startedAtMs]);
+  return startedAtMs == null ? null : Math.max(0, Math.round((now - startedAtMs) / 1000));
+}
+
+/** Rotates through THINKING_VERBS while `live`; holds still (and hides) otherwise. */
+function useThinkingVerb(live: boolean): string {
+  const [i, setI] = useState(() => Math.floor(Math.random() * THINKING_VERBS.length));
+  useEffect(() => {
+    if (!live) return;
+    const id = setInterval(() => setI((v) => (v + 1) % THINKING_VERBS.length), 2000);
+    return () => clearInterval(id);
+  }, [live]);
+  return THINKING_VERBS[i] ?? "Thinking";
+}
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  return `${Math.floor(totalSeconds / 60)}m ${totalSeconds % 60}s`;
 }
 
 function PermissionCard({

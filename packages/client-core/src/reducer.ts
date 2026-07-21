@@ -13,7 +13,7 @@ import type { SessionEvent, SessionStatus } from "@crc/protocol";
  */
 
 export type BlockView =
-  | { kind: "text" | "thinking"; text: string }
+  | { kind: "text" | "thinking"; text: string; startedAtMs: number | null; endedAtMs: number | null }
   | {
       kind: "tool_use";
       toolUseId: string;
@@ -102,9 +102,17 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
         const blocks = turn.blocks.slice();
         const existing = blocks[e.blockIndex];
         if (existing && existing.kind !== "tool_use") {
-          blocks[e.blockIndex] = { kind: existing.kind, text: existing.text + e.text };
+          blocks[e.blockIndex] = { ...existing, text: existing.text + e.text };
         } else if (!existing) {
-          blocks[e.blockIndex] = { kind: e.blockKind === "thinking" ? "thinking" : "text", text: e.text };
+          blocks[e.blockIndex] = {
+            kind: e.blockKind === "thinking" ? "thinking" : "text",
+            text: e.text,
+            startedAtMs: e.ts,
+            endedAtMs: null,
+          };
+          // The stream never tells us a block finished — only that the next one
+          // started. Seeing blockIndex N begin means N-1 (if still open) just did.
+          closePreviousBlock(blocks, e.blockIndex, e.ts);
         }
         return { ...turn, blocks };
       });
@@ -113,6 +121,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
     case "assistant_block":
       s.timeline = updateTurn(s.timeline, e.turnId, (turn) => {
         const blocks = turn.blocks.slice();
+        closePreviousBlock(blocks, e.blockIndex, e.ts);
         if (e.blockKind === "tool_use") {
           blocks[e.blockIndex] = {
             kind: "tool_use",
@@ -122,8 +131,17 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
             result: null,
           };
         } else {
-          // Canonical final text supersedes the streamed accumulation.
-          blocks[e.blockIndex] = { kind: e.blockKind === "thinking" ? "thinking" : "text", text: e.text ?? "" };
+          // Canonical final text supersedes the streamed accumulation; keep
+          // whatever startedAtMs the first delta recorded, or this event's own
+          // timestamp if no delta ever arrived for this block.
+          const existing = blocks[e.blockIndex];
+          const startedAtMs = existing && existing.kind !== "tool_use" ? existing.startedAtMs : e.ts;
+          blocks[e.blockIndex] = {
+            kind: e.blockKind === "thinking" ? "thinking" : "text",
+            text: e.text ?? "",
+            startedAtMs,
+            endedAtMs: e.ts,
+          };
         }
         return { ...turn, blocks };
       });
@@ -197,6 +215,19 @@ function updateTurn(
   const item = next[idx] as Extract<TimelineItem, { type: "turn" }>;
   next[idx] = { type: "turn", turn: fn(item.turn) };
   return next;
+}
+
+/**
+ * A block's own end is never signaled directly by the stream — only that the
+ * next block started. Back-fill the previous block's endedAtMs from the new
+ * block's timestamp if it's still open. No-op for tool_use (no duration shown)
+ * or a block that already closed itself via its own assistant_block.
+ */
+function closePreviousBlock(blocks: BlockView[], newIndex: number, ts: number): void {
+  const prev = blocks[newIndex - 1];
+  if (prev && prev.kind !== "tool_use" && prev.endedAtMs == null) {
+    blocks[newIndex - 1] = { ...prev, endedAtMs: ts };
+  }
 }
 
 function emptyTurn(turnId: string): TurnView {

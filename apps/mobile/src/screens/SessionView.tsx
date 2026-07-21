@@ -1,4 +1,4 @@
-import type { BlockView, PermissionView, TimelineItem, TurnView } from "@crc/client-core";
+import { THINKING_VERBS, type BlockView, type PermissionView, type TimelineItem, type TurnView } from "@crc/client-core";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -139,7 +139,7 @@ function AssistantTurn({ turn, colors, styles }: { turn: TurnView; colors: Theme
   return (
     <View style={styles.turn}>
       {turn.blocks.map((b, i) => (
-        <Block key={i} block={b} colors={colors} styles={styles} />
+        <Block key={i} block={b} colors={colors} styles={styles} turnRunning={turn.status === "running"} />
       ))}
       {turn.status === "running" && <Text style={styles.running}>▍</Text>}
       {turn.status === "done" && turn.costUsd != null && (
@@ -171,7 +171,17 @@ function toolIcon(name: string): keyof typeof Ionicons.glyphMap {
   return map[name] ?? "construct-outline";
 }
 
-function Block({ block, colors, styles }: { block: BlockView; colors: ThemeColors; styles: Styles }) {
+function Block({
+  block,
+  colors,
+  styles,
+  turnRunning,
+}: {
+  block: BlockView;
+  colors: ThemeColors;
+  styles: Styles;
+  turnRunning: boolean;
+}) {
   if (block.kind === "tool_use") {
     return (
       <View style={styles.toolCard}>
@@ -190,9 +200,66 @@ function Block({ block, colors, styles }: { block: BlockView; colors: ThemeColor
     );
   }
   if (block.kind === "thinking") {
-    return <Markdown content={block.text} muted />;
+    return <ThinkingBlock block={block} live={turnRunning && block.endedAtMs == null} colors={colors} styles={styles} />;
   }
   return <Markdown content={block.text} />;
+}
+
+function ThinkingBlock({
+  block,
+  live,
+  colors,
+  styles,
+}: {
+  block: Extract<BlockView, { kind: "text" | "thinking" }>;
+  live: boolean;
+  colors: ThemeColors;
+  styles: Styles;
+}) {
+  const elapsedSeconds = useElapsedSeconds(live ? block.startedAtMs : null);
+  const verb = useThinkingVerb(live);
+
+  return (
+    <View style={styles.thinkingWrap}>
+      <Text style={styles.thinkingHeader}>
+        {live
+          ? `${verb}…${elapsedSeconds != null ? ` · ${elapsedSeconds}s` : ""}`
+          : block.startedAtMs != null && block.endedAtMs != null
+            ? `Thought for ${formatDuration(block.endedAtMs - block.startedAtMs)}`
+            : "Thinking"}
+      </Text>
+      <Markdown content={block.text} muted />
+    </View>
+  );
+}
+
+/** Ticks once a second while `startedAtMs` is set; null (no ticking) otherwise. */
+function useElapsedSeconds(startedAtMs: number | null): number | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (startedAtMs == null) return;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [startedAtMs]);
+  return startedAtMs == null ? null : Math.max(0, Math.round((now - startedAtMs) / 1000));
+}
+
+/** Rotates through THINKING_VERBS while `live`; holds still otherwise. */
+function useThinkingVerb(live: boolean): string {
+  const [i, setI] = useState(() => Math.floor(Math.random() * THINKING_VERBS.length));
+  useEffect(() => {
+    if (!live) return;
+    const id = setInterval(() => setI((v) => (v + 1) % THINKING_VERBS.length), 2000);
+    return () => clearInterval(id);
+  }, [live]);
+  return THINKING_VERBS[i] ?? "Thinking";
+}
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  return `${Math.floor(totalSeconds / 60)}m ${totalSeconds % 60}s`;
 }
 
 function PermissionCard({
@@ -286,6 +353,8 @@ const makeStyles = (colors: ThemeColors) =>
     promptIcon: { marginTop: 2 },
     promptText: { flex: 1, color: colors.text, fontSize: 15 },
     turn: { gap: 8 },
+    thinkingWrap: { borderLeftWidth: 2, borderLeftColor: colors.border, paddingLeft: 10, gap: 2 },
+    thinkingHeader: { color: colors.faint, fontSize: 11 },
     running: { color: colors.dim, fontSize: 16 },
     meta: { color: colors.faint, fontSize: 11 },
     errText: { color: colors.danger },

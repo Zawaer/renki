@@ -1,4 +1,4 @@
-import { applyEvents, initialConversation, RealtimeClient, RestClient } from "@crc/client-core";
+import { applyEvents, initialConversation, RealtimeClient, RestClient, THINKING_VERBS } from "@crc/client-core";
 import type { SessionEvent } from "@crc/protocol";
 import { screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -177,5 +177,63 @@ describe("SessionView", () => {
     expect(screen.getByText("No messages yet. Take control and send a prompt.")).toBeInTheDocument();
     expect(screen.getByText("Unlocked")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Take control" })).toBeInTheDocument();
+  });
+
+  it("shows a rotating verb + elapsed seconds while a thinking block is still streaming", () => {
+    const sessionId = "s4";
+    const events = [
+      ev(sessionId, {
+        kind: "session_created",
+        repoId: "demo",
+        repoName: "demo",
+        baseBranch: "main",
+        branch: "crc/live",
+        worktreePath: "/tmp/wt",
+      }),
+      ev(sessionId, { kind: "status_changed", status: "busy" }),
+      ev(sessionId, { kind: "control_changed", controller: "d1", controllerName: "Web" }),
+      ev(sessionId, { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "Investigate" }),
+      // Explicit past ts (not the ev() helper's Date.now()) so elapsed is a real, non-zero, deterministic-ish value.
+      { seq: 100, sessionId, ts: Date.now() - 5000, kind: "assistant_delta", turnId: "t1", blockIndex: 0, blockKind: "thinking", text: "Hmm…" } as SessionEvent,
+    ];
+
+    renderSession(sessionId, events);
+
+    const verbPattern = new RegExp(`(${THINKING_VERBS.join("|")})…`);
+    expect(document.body.textContent).toMatch(verbPattern);
+    expect(document.body.textContent).toMatch(/·\s*\d+s/);
+  });
+
+  it("shows 'Thought for Xs' once the thinking block is finalized", () => {
+    const sessionId = "s5";
+    const events = [
+      ev(sessionId, {
+        kind: "session_created",
+        repoId: "demo",
+        repoName: "demo",
+        baseBranch: "main",
+        branch: "crc/done",
+        worktreePath: "/tmp/wt",
+      }),
+      { seq: 100, sessionId, ts: 1000, kind: "assistant_delta", turnId: "t1", blockIndex: 0, blockKind: "thinking", text: "Hmm…" } as SessionEvent,
+      {
+        seq: 101,
+        sessionId,
+        ts: 13000,
+        kind: "assistant_block",
+        turnId: "t1",
+        blockIndex: 0,
+        blockKind: "thinking",
+        text: "Hmm, worked out.",
+        toolUseId: null,
+        toolName: null,
+        toolInput: null,
+      } as SessionEvent,
+      ev(sessionId, { kind: "status_changed", status: "idle" }),
+    ];
+
+    renderSession(sessionId, events);
+
+    expect(screen.getByText("Thought for 12s")).toBeInTheDocument();
   });
 });

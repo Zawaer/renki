@@ -38,6 +38,7 @@ export class RealtimeClient {
   private ws: WebSocket | null = null;
   private readonly conversations = new Map<string, Store<ConversationState>>();
   private readonly watched = new Set<string>();
+  private readonly pendingUnwatch = new Map<string, ReturnType<typeof setTimeout>>();
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
@@ -55,6 +56,7 @@ export class RealtimeClient {
   close(): void {
     this.stopped = true;
     this.clearTimers();
+    this.clearPendingUnwatches();
     this.ws?.close();
     this.ws = null;
     this.status.set("closed");
@@ -105,17 +107,38 @@ export class RealtimeClient {
     return store;
   }
 
-  /** Begin receiving live events for a session (and replay what we missed). */
+  /**
+   * Begin receiving live events for a session (and replay what we missed).
+   *
+   * If an `unwatch` for this session is still pending (e.g. React StrictMode's
+   * mount → cleanup → mount double-invoke), cancel the teardown instead of
+   * tearing down and immediately resubscribing — otherwise the daemon would
+   * receive two overlapping `subscribe` requests carrying the same stale
+   * `lastSeq` and reply with two full replays, duplicating every event.
+   */
   watch(sessionId: string): Store<ConversationState> {
     const store = this.conversation(sessionId);
+    const pending = this.pendingUnwatch.get(sessionId);
+    if (pending !== undefined) {
+      clearTimeout(pending);
+      this.pendingUnwatch.delete(sessionId);
+      return store;
+    }
     this.watched.add(sessionId);
     if (this.isOpen()) this.sendSubscribe(sessionId);
     return store;
   }
 
+  /** Deferred so a same-tick `watch` (see above) can cancel the teardown. */
   unwatch(sessionId: string): void {
-    this.watched.delete(sessionId);
-    if (this.isOpen()) this.send({ type: "unsubscribe", sessionId });
+    const existing = this.pendingUnwatch.get(sessionId);
+    if (existing !== undefined) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      this.pendingUnwatch.delete(sessionId);
+      this.watched.delete(sessionId);
+      if (this.isOpen()) this.send({ type: "unsubscribe", sessionId });
+    }, 0);
+    this.pendingUnwatch.set(sessionId, timer);
   }
 
   // ── actions (controller-only ones are enforced server-side) ────────────────
@@ -204,6 +227,11 @@ export class RealtimeClient {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.pingTimer = null;
     this.reconnectTimer = null;
+  }
+
+  private clearPendingUnwatches(): void {
+    for (const timer of this.pendingUnwatch.values()) clearTimeout(timer);
+    this.pendingUnwatch.clear();
   }
 
   private wsUrl(): string {

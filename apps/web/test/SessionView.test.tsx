@@ -282,13 +282,13 @@ describe("SessionView", () => {
       return "p1";
     };
 
-    // Capabilities load asynchronously — wait for the fetched model to actually
-    // appear as an <option> before trying to select it.
-    await screen.findByText("Opus");
-    const selects = screen.getAllByRole("combobox");
-    const [modelSelect, effortSelect] = selects;
-    fireEvent.change(modelSelect, { target: { value: "claude-opus-4-8" } });
-    fireEvent.change(effortSelect, { target: { value: "xhigh" } });
+    // Capabilities load asynchronously — the sole model auto-selects once it
+    // arrives, so the model picker button's label becomes "Opus".
+    await screen.findByRole("button", { name: /Opus/ });
+
+    // Effort picker: open it, pick "Extra High" from the popover.
+    fireEvent.click(screen.getByRole("button", { name: /Medium/ }));
+    fireEvent.click(screen.getByText("Extra High"));
 
     fireEvent.change(screen.getByPlaceholderText(/Send a prompt/), { target: { value: "hello" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));

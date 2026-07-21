@@ -325,6 +325,7 @@ function Composer({
   const [effortKey, setEffortKey] = useState(DEFAULT_EFFORT_KEY);
   const [capabilities, setCapabilities] = useState<CapabilitiesResponse>({ models: [], commands: [] });
   const [suggestionIndex, setSuggestionIndex] = useState(0);
+  const [openMenu, setOpenMenu] = useState<"model" | "effort" | null>(null);
 
   useEffect(() => {
     rest.getCapabilities().then(setCapabilities).catch(() => {});
@@ -339,6 +340,7 @@ function Composer({
   }, [capabilities, model]);
 
   const effort = EFFORT_LEVELS.find((e) => e.key === effortKey) ?? EFFORT_LEVELS[0];
+  const selectedModel = capabilities.models.find((m) => m.value === model);
   const suggestions =
     text.startsWith("/") && text.length > 1 && !text.includes(" ")
       ? capabilities.commands.filter((c) => c.name.toLowerCase().startsWith(text.slice(1).toLowerCase()))
@@ -377,30 +379,58 @@ function Composer({
       )}
 
       <div className="mb-2 flex items-center gap-2 text-xs">
-        <select
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          className="rounded-sm border border-(--crc-border) bg-(--crc-input-bg) px-1.5 py-1 text-(--crc-fg)"
-        >
-          {capabilities.models.length === 0 && <option value="">Loading models…</option>}
-          {capabilities.models.map((m) => (
-            <option key={m.value} value={m.value} title={m.description}>
-              {m.displayName}
-            </option>
-          ))}
-        </select>
-        <select
-          value={effortKey}
-          onChange={(e) => setEffortKey(e.target.value)}
-          className="rounded-sm border border-(--crc-border) bg-(--crc-input-bg) px-1.5 py-1 text-(--crc-fg)"
-        >
-          {EFFORT_LEVELS.map((e) => (
-            <option key={e.key} value={e.key}>
-              {e.label}
-            </option>
-          ))}
-        </select>
+        <PickerButton
+          label={capabilities.models.length === 0 ? "Loading models…" : (selectedModel?.displayName ?? "Default")}
+          open={openMenu === "model"}
+          onToggle={() => setOpenMenu((v) => (v === "model" ? null : "model"))}
+        />
+        <PickerButton
+          label={effort?.label ?? "Medium"}
+          open={openMenu === "effort"}
+          onToggle={() => setOpenMenu((v) => (v === "effort" ? null : "effort"))}
+        />
       </div>
+
+      {openMenu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpenMenu(null)} />
+          <div
+            className="absolute bottom-full left-3 z-50 mb-1 max-h-72 w-72 overflow-y-auto rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) py-1 text-xs shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {openMenu === "model"
+              ? capabilities.models.map((m) => (
+                  <button
+                    key={m.value}
+                    onClick={() => {
+                      setModel(m.value);
+                      setOpenMenu(null);
+                    }}
+                    className="flex w-full items-start justify-between gap-2 px-3 py-1.5 text-left hover:bg-(--crc-hover)"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate font-medium text-(--crc-fg)">{m.displayName}</div>
+                      {m.description && <div className="truncate text-(--crc-fg-muted)">{m.description}</div>}
+                    </div>
+                    {m.value === model && <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />}
+                  </button>
+                ))
+              : EFFORT_LEVELS.map((e) => (
+                  <button
+                    key={e.key}
+                    onClick={() => {
+                      setEffortKey(e.key);
+                      setOpenMenu(null);
+                    }}
+                    className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left hover:bg-(--crc-hover)"
+                  >
+                    <span className="font-medium text-(--crc-fg)">{e.label}</span>
+                    {e.key === effortKey && <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />}
+                  </button>
+                ))}
+          </div>
+        </>
+      )}
 
       <div className="flex items-end gap-2">
         <textarea
@@ -447,6 +477,20 @@ function Composer({
         </Button>
       </div>
     </div>
+  );
+}
+
+function PickerButton({ label, open, onToggle }: { label: string; open: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      className={`flex items-center gap-1 rounded-sm border border-(--crc-border) bg-(--crc-input-bg) px-1.5 py-1 text-(--crc-fg) ${
+        open ? "border-(--crc-focus)" : ""
+      }`}
+    >
+      <span className="truncate">{label}</span>
+      <span className="codicon codicon-chevron-down text-(--crc-fg-muted)" />
+    </button>
   );
 }
 

@@ -34,3 +34,16 @@ services:
       # a mountable file; run `claude login` inside the container instead
       # (`docker compose exec daemon claude login`) if your host is a Mac.
       - ${HOME}/.claude:/root/.claude
+    # If you front this with a Caddy/Traefik/nginx CONTAINER instead of
+    # tailscale serve (see SETUP.md § Advanced networking), that reverse
+    # proxy's `127.0.0.1` means ITSELF, not this container — it has no route
+    # to the port published above unless they share a Docker network.
+    # Uncomment both blocks below, set the SAME network name your reverse
+    # proxy is already on, and point its site config at `crc-daemon:4517`
+    # (this container's name) instead of `127.0.0.1:4517`.
+    # networks:
+    #   - reverse-proxy
+
+# networks:
+#   reverse-proxy:
+#     external: true

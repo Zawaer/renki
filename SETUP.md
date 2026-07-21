@@ -124,24 +124,6 @@ To deploy a web change: `pnpm build` again, then `pm2 restart crc-web`.
 For local daemon development instead of pm2, `pnpm --filter @crc/daemon dev`
 (auto-reloads).
 
-### Shortcut: `crc init`
-
-Steps 4 and 5 below can mostly be automated once the service is running:
-
-```bash
-pnpm --filter @crc/daemon cli init
-# or, for Docker:
-docker compose exec daemon node dist/cli.js init
-```
-
-Reports your resolved token and the repos found under `CRC_REPOS_ROOT`,
-detects Tailscale and offers to run `tailscale serve` for you (printing the
-exact fix if the operator isn't set yet — see step 4), then prints your
-first pairing QR straight to the terminal. Scan it with **"Scan QR code"**
-on the mobile Setup screen and you're connected — no client needs to be
-configured by hand first. Still worth reading steps 4-5 once for what's
-actually happening underneath.
-
 ## 4. Reach it from anywhere with Tailscale
 
 The daemon stays bound to loopback — directly, or via Docker's published
@@ -200,7 +182,8 @@ about — not first-class, but documented so you're not guessing.
 **Reverse proxy (Caddy) for a real domain.** A separate concern from remote
 access: if you'd rather use a domain you own than a `*.ts.net` tailnet
 address, put [Caddy](https://caddyserver.com) in front — free automatic HTTPS
-in about two lines:
+in about two lines (if Caddy itself runs in a container, see the networking
+note below first):
 
 ```
 example.com {
@@ -224,6 +207,16 @@ crc.your-homelab.internal {
     reverse_proxy 127.0.0.1:4517
 }
 ```
+
+**If that Caddy runs in its own container** (common — one shared
+`docker-compose.yml` fronting several homelab services), the snippets above
+will 502: `127.0.0.1` inside Caddy's container means *itself*, not your
+host, so it has no route to the daemon's published port at all. Put the
+daemon on the same Docker network as Caddy instead and proxy to it by
+container name — uncomment the `networks:` blocks already sitting in CRC's
+own `docker-compose.yml` (see the comments there), point them at whatever
+network your reverse proxy already uses, then change `reverse_proxy` above
+to `crc-daemon:4517`.
 
 **Headscale** is a self-hosted, open-source implementation of Tailscale's
 coordination server — a drop-in alternative if you'd rather not depend on
@@ -261,6 +254,28 @@ a QR code encoding its own working `{ baseUrl, token }`. On the device you're
 adding, use **"Scan QR code"** on the Setup screen (Android) instead of typing
 — it runs the same connectivity test either way, so a stale or wrong QR still
 fails safely rather than "connecting" silently.
+
+### Alternative bootstrap: `crc init`
+
+The flow above assumes you open the web app first and type the daemon URL +
+token in once. If you'd rather skip that and onboard your **phone** directly
+— no browser needed, no typing a 43-character token on a phone keyboard —
+run this from the daemon host instead:
+
+```bash
+pnpm --filter @crc/daemon cli init
+# or, for Docker:
+docker compose exec daemon node dist/cli.js init
+```
+
+Reports your resolved token and the repos found under `CRC_REPOS_ROOT`,
+detects Tailscale and offers to run `tailscale serve` for you (printing the
+exact fix if the operator isn't set yet — see step 4), then prints a pairing
+QR straight to the terminal — scan *that* with the phone's **"Scan QR
+code"** and it's connected, no other device involved. This only helps the
+phone specifically: the web app and VS Code have no camera scanner, so they
+still need the manual URL + token entry above (or scanning a QR shown by
+whichever device you bootstrap first).
 
 ### VS Code extension
 

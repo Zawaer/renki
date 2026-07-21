@@ -14,6 +14,16 @@ config.resolver.nodeModulesPaths = [
   path.resolve(workspaceRoot, "node_modules"),
 ];
 // pnpm uses symlinks; keep resolution from wandering up the tree unpredictably.
-config.resolver.disableHierarchicalLookup = true;
+// Side effect: Metro only ever checks the two nodeModulesPaths above, never a
+// dependency's OWN nested node_modules (e.g. markdown-it/node_modules/entities,
+// where pnpm correctly resolves markdown-it's real `entities: ~2.0.0` need) —
+// so whatever version of a shared package like "entities" happens to land in
+// the flat root node_modules (hoisted there for some OTHER, unrelated
+// consumer) is the only one Metro can ever see, version mismatch or not. Fix
+// for a package hit by this: add it as a direct dependency of @crc/mobile
+// pinned to the version that package's actual consumer needs (see "entities"
+// in package.json) — that gives pnpm a reason to place a correctly-versioned
+// copy directly under apps/mobile/node_modules, which IS one of the two paths
+// above.
 
 module.exports = config;

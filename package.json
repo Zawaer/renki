@@ -28,10 +28,11 @@
     "vitest": "^2.1.8"
   },
   "pnpm": {
-    "comment": "React Native (mobile) pins React 18, while web runs React 19. Force ONE @types/react across the workspace so no package sees two unrelated React type copies (which broke the web + mobile typechecks). 18 is the common denominator: RN needs it, react-markdown accepts >=18, and web's standard component code typechecks fine against it. Separately, node-linker=hoisted (.npmrc, required for Expo/Metro) makes pnpm create SEPARATE physical react@19 copies for react-dom and @testing-library/react instead of symlinking web's own copy — even though the versions match, React's dispatcher lives on the module object, so multiple physical copies means multiple dispatchers and any hook crashes. See scripts/dedupe-react-for-tests.mjs (runs as postinstall) for the actual fix.",
+    "comment": "React Native (mobile) pins React 18, while web runs React 19. Force ONE @types/react across the workspace so no package sees two unrelated React type copies (which broke the web + mobile typechecks). 18 is the common denominator: RN needs it, react-markdown accepts >=18, and web's standard component code typechecks fine against it. Separately, node-linker=hoisted (.npmrc, required for Expo/Metro) makes pnpm create SEPARATE physical react@19 copies for react-dom and @testing-library/react instead of symlinking web's own copy — even though the versions match, React's dispatcher lives on the module object, so multiple physical copies means multiple dispatchers and any hook crashes. See scripts/dedupe-react-for-tests.mjs (runs as postinstall) for the actual fix. jsdom is forced to ONE version for a related reason: root vitest declares jsdom as an optional peer it never actually uses (root test configs are environment: 'node') but pnpm still resolves it — without this override that resolved to a DIFFERENT jsdom than apps/web's real one, dragging in a second parse5 -> entities@8.x that landed at the flat hoisted root and broke Metro's resolution of markdown-it's require('entities/lib/maps/entities.json') (only present in entities' old v2.x layout) for the mobile app.",
     "overrides": {
       "@types/react": "^18.3.12",
-      "@types/react-dom": "^18.3.0"
+      "@types/react-dom": "^18.3.0",
+      "jsdom": "^25.0.1"
     }
   }
 }

@@ -165,7 +165,7 @@ function rowToEvent(row: {
 }
 
 function emptyBucket(key: string): StatsBucket {
-  return { key, costUsd: 0, inputTokens: 0, outputTokens: 0, durationMs: 0, turnCount: 0 };
+  return { key, costUsd: 0, inputTokens: 0, outputTokens: 0, durationMs: 0, turnCount: 0, okCount: 0 };
 }
 
 function bucketFor(map: Map<string, StatsBucket>, key: string): StatsBucket {
@@ -180,14 +180,30 @@ function bucketFor(map: Map<string, StatsBucket>, key: string): StatsBucket {
 function repoBucketFor(map: Map<string, RepoStatsBucket>, repo: { repoId: string; repoName: string }): RepoStatsBucket {
   let bucket = map.get(repo.repoId);
   if (!bucket) {
-    bucket = { repoId: repo.repoId, repoName: repo.repoName, costUsd: 0, inputTokens: 0, outputTokens: 0, durationMs: 0, turnCount: 0 };
+    bucket = {
+      repoId: repo.repoId,
+      repoName: repo.repoName,
+      costUsd: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      durationMs: 0,
+      turnCount: 0,
+      okCount: 0,
+    };
     map.set(repo.repoId, bucket);
   }
   return bucket;
 }
 
 /** The numeric fields shared by every bucket shape (time-based or by-repo). */
-type Accumulable = { costUsd: number; inputTokens: number; outputTokens: number; durationMs: number; turnCount: number };
+type Accumulable = {
+  costUsd: number;
+  inputTokens: number;
+  outputTokens: number;
+  durationMs: number;
+  turnCount: number;
+  okCount: number;
+};
 
 function accumulate(bucket: Accumulable, payload: Extract<EventPayload, { kind: "turn_result" }>): void {
   bucket.costUsd += payload.costUsd ?? 0;
@@ -195,4 +211,5 @@ function accumulate(bucket: Accumulable, payload: Extract<EventPayload, { kind: 
   bucket.outputTokens += payload.outputTokens ?? 0;
   bucket.durationMs += payload.durationMs ?? 0;
   bucket.turnCount += 1;
+  if (payload.ok) bucket.okCount += 1;
 }

@@ -63,6 +63,8 @@ export const StatsBucket = z.object({
   outputTokens: z.number(),
   durationMs: z.number(),
   turnCount: z.number().int(),
+  /** How many of turnCount finished with ok:true (see EventPayload's turn_result). */
+  okCount: z.number().int(),
 });
 export type StatsBucket = z.infer<typeof StatsBucket>;
 
@@ -75,6 +77,7 @@ export const RepoStatsBucket = z.object({
   outputTokens: z.number(),
   durationMs: z.number(),
   turnCount: z.number().int(),
+  okCount: z.number().int(),
 });
 export type RepoStatsBucket = z.infer<typeof RepoStatsBucket>;
 

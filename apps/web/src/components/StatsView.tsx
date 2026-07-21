@@ -55,12 +55,13 @@ export function StatsView() {
     <div className="h-full overflow-y-auto p-6">
       <h1 className="mb-4 text-sm font-semibold text-(--crc-fg)">Stats</h1>
 
-      <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <StatTile label="Total cost" value={formatCost(data.lifetime.costUsd)} />
         <StatTile label="Input tokens" value={formatTokenCount(data.lifetime.inputTokens)} />
         <StatTile label="Output tokens" value={formatTokenCount(data.lifetime.outputTokens)} />
         <StatTile label="Time waited" value={formatDuration(data.lifetime.durationMs)} />
         <StatTile label="Replies received" value={`${data.lifetime.turnCount}`} />
+        <StatTile label="Success rate" value={formatSuccessRate(data.lifetime)} />
       </div>
 
       {data.byRepo.length > 1 && (
@@ -313,7 +314,7 @@ function RepoTable({ rows }: { rows: RepoStatsBucket[] }) {
       <table className="w-full text-left text-[11px]">
         <thead className="bg-(--crc-bg-elevated) text-(--crc-fg-muted)">
           <tr>
-            {["Repo", "Turns", "Input", "Output", "Cost", "Time waited"].map((h) => (
+            {["Repo", "Turns", "Success", "Input", "Output", "Cost", "Time waited"].map((h) => (
               <th key={h} className="px-2.5 py-1.5 font-medium">
                 {h}
               </th>
@@ -325,6 +326,7 @@ function RepoTable({ rows }: { rows: RepoStatsBucket[] }) {
             <tr key={r.repoId}>
               <td className="px-2.5 py-1 text-(--crc-fg)">{r.repoName}</td>
               <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{r.turnCount}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatSuccessRate(r)}</td>
               <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatTokenCount(r.inputTokens)}</td>
               <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatTokenCount(r.outputTokens)}</td>
               <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatCost(r.costUsd)}</td>
@@ -343,7 +345,7 @@ function DataTable({ rows, labelFor }: { rows: StatsBucket[]; labelFor: (key: st
       <table className="w-full text-left text-[11px]">
         <thead className="bg-(--crc-bg-elevated) text-(--crc-fg-muted)">
           <tr>
-            {["", "Turns", "Input", "Output", "Cost", "Time waited"].map((h) => (
+            {["", "Turns", "Success", "Input", "Output", "Cost", "Time waited"].map((h) => (
               <th key={h} className="px-2.5 py-1.5 font-medium">
                 {h}
               </th>
@@ -355,6 +357,7 @@ function DataTable({ rows, labelFor }: { rows: StatsBucket[]; labelFor: (key: st
             <tr key={r.key}>
               <td className="px-2.5 py-1 text-(--crc-fg)">{labelFor(r.key)}</td>
               <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{r.turnCount}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatSuccessRate(r)}</td>
               <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatTokenCount(r.inputTokens)}</td>
               <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatTokenCount(r.outputTokens)}</td>
               <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatCost(r.costUsd)}</td>
@@ -378,6 +381,11 @@ function CenteredNote({ icon, text, sub }: { icon?: string; text: string; sub?: 
 }
 
 // ── formatting & data helpers ────────────────────────────────────────────────
+
+function formatSuccessRate(bucket: { turnCount: number; okCount: number }): string {
+  if (bucket.turnCount === 0) return "—";
+  return `${Math.round((bucket.okCount / bucket.turnCount) * 100)}%`;
+}
 
 function formatCost(usd: number): string {
   if (usd === 0) return "$0.00";
@@ -415,7 +423,7 @@ function lastNDays(n: number, buckets: StatsBucket[]): StatsBucket[] {
   for (let i = n - 1; i >= 0; i--) {
     const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
     const key = d.toISOString().slice(0, 10);
-    out.push(byKey.get(key) ?? { key, costUsd: 0, inputTokens: 0, outputTokens: 0, durationMs: 0, turnCount: 0 });
+    out.push(byKey.get(key) ?? { key, costUsd: 0, inputTokens: 0, outputTokens: 0, durationMs: 0, turnCount: 0, okCount: 0 });
   }
   return out;
 }

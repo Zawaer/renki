@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Builds just @crc/web (+ its workspace deps, @crc/protocol and
 # @crc/client-core) as a static production build, served by nginx —
 # the Docker equivalent of the crc-web pm2 process for bare-metal setups.
@@ -8,11 +9,28 @@ FROM node:20-bookworm-slim AS builder
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 WORKDIR /app
-COPY . .
+
+# Manifests only, before any source — so `pnpm install` stays a cached layer
+# across ordinary source edits and only re-runs when a package.json/lockfile
+# changes. pnpm needs every workspace member's package.json to resolve the
+# graph, even though --filter below only installs @crc/web's slice of it.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY scripts ./scripts
+COPY packages/protocol/package.json packages/protocol/package.json
+COPY packages/client-core/package.json packages/client-core/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY apps/daemon/package.json apps/daemon/package.json
+COPY apps/mobile/package.json apps/mobile/package.json
+COPY apps/vscode/package.json apps/vscode/package.json
 
 # Scoped to @crc/web + its workspace deps, so the daemon/mobile/vscode
-# dependency trees never run here.
-RUN pnpm install --frozen-lockfile --filter "@crc/web..."
+# dependency trees never run here. The cache mount persists pnpm's package
+# store across builds on the same Docker host.
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile --filter "@crc/web..."
+
+# Now bring in the actual source and build.
+COPY . .
 
 RUN pnpm --filter @crc/protocol build && pnpm --filter @crc/client-core build && pnpm --filter @crc/web build
 

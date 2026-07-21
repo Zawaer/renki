@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Builds just @crc/daemon (+ its workspace deps, @crc/protocol and
 # @crc/client-core) for an always-on host. Web/VS Code/mobile clients aren't
 # part of this image.
@@ -11,15 +12,37 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 WORKDIR /app
-COPY . .
+
+# Manifests only, before any source — so `pnpm install` (registry downloads +
+# native module compilation, the actually slow part) is a Docker layer that
+# stays cached across ordinary source edits, and only re-runs when a
+# package.json/lockfile changes. pnpm needs every workspace member's
+# package.json present to resolve the graph, even though --filter below only
+# installs @crc/daemon's slice of it.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY scripts ./scripts
+COPY packages/protocol/package.json packages/protocol/package.json
+COPY packages/client-core/package.json packages/client-core/package.json
+COPY apps/daemon/package.json apps/daemon/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY apps/mobile/package.json apps/mobile/package.json
+COPY apps/vscode/package.json apps/vscode/package.json
 
 # Skip Chromium download for the optional Playwright-based "guided usage
 # login" — it's a Mac-only convenience feature, not needed for a headless image.
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
 # Scoped to @crc/daemon + its workspace deps, so web/mobile/vscode's
-# dependency trees (and their install-time scripts) never run here.
-RUN pnpm install --frozen-lockfile --filter "@crc/daemon..."
+# dependency trees (and their install-time scripts) never run here. The cache
+# mount persists pnpm's package store across builds on the same Docker host,
+# so even a genuine dependency change doesn't re-hit the registry for
+# packages you already have.
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile --filter "@crc/daemon..."
+
+# Now bring in the actual source and build — only these steps (fast tsc
+# compiles) re-run on an ordinary code change, not the install above.
+COPY . .
 
 RUN pnpm --filter @crc/protocol build && pnpm --filter @crc/client-core build && pnpm --filter @crc/daemon build
 

@@ -26,6 +26,9 @@ docker-compose.override.yml
 # OS
 .DS_Store
 
+# Local Claude Code permission/tool settings — personal, not a project convention
+.claude/
+
 # Personal research/decision notes — not project docs, not for the public repo
 research-notes.md
 

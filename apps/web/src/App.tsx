@@ -6,6 +6,7 @@ import { PairDevice } from "./components/PairDevice.js";
 import { SessionList } from "./components/SessionList.js";
 import { SessionView } from "./components/SessionView.js";
 import { Setup } from "./components/Setup.js";
+import { StatsView } from "./components/StatsView.js";
 import { injectedConfig } from "./lib/host.js";
 
 export function App() {
@@ -44,6 +45,7 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
   const status = useStoreValue(realtime.status);
   const lastError = useStoreValue(realtime.lastError);
   const [selected, setSelected] = useState<string | null>(null);
+  const [page, setPage] = useState<"sessions" | "stats">("sessions");
 
   return (
     <div className="flex h-full flex-col">
@@ -54,6 +56,15 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
         </div>
         <div className="flex items-center gap-3 text-xs text-(--crc-fg-muted)">
           <span>{config.deviceName}</span>
+          <button
+            onClick={() => setPage((p) => (p === "stats" ? "sessions" : "stats"))}
+            title="Stats"
+            className={`flex items-center gap-1 rounded-sm px-1.5 py-1 hover:bg-(--crc-hover) hover:text-(--crc-fg) ${
+              page === "stats" ? "text-(--crc-fg)" : "text-(--crc-fg-muted)"
+            }`}
+          >
+            <span className="codicon codicon-graph-line" />
+          </button>
           <AccountsBar />
           {!managed && <PairDevice />}
           {!managed && (
@@ -75,11 +86,19 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
       <div className="grid flex-1 grid-cols-[280px_1fr] overflow-hidden">
         <aside className="flex flex-col border-r border-(--crc-border) bg-(--crc-bg-elevated)">
           <div className="min-h-0 flex-1">
-            <SessionList selectedId={selected} onSelect={setSelected} />
+            <SessionList
+              selectedId={selected}
+              onSelect={(id) => {
+                setSelected(id);
+                setPage("sessions");
+              }}
+            />
           </div>
         </aside>
         <main className="overflow-hidden bg-(--crc-bg)">
-          {selected ? (
+          {page === "stats" ? (
+            <StatsView />
+          ) : selected ? (
             <SessionView key={selected} sessionId={selected} />
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-(--crc-fg-muted)">

@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { EventPayload, SessionEvent } from "@crc/protocol";
+import type { EventPayload, SessionEvent, StatsBucket, StatsResponse } from "@crc/protocol";
 import { and, asc, eq, gt, max } from "drizzle-orm";
 import type { DB } from "../db/index.js";
 import { events } from "../db/schema.js";
@@ -61,6 +61,38 @@ export class EventLog {
   }
 
   /**
+   * Cost/token/wait-time analytics across every session, built by scanning
+   * every stored `turn_result` event. Buckets by UTC day ("2026-07-22") and
+   * UTC month ("2026-07") so the grouping is stable regardless of viewer
+   * timezone. A turn contributes to `turnCount`/duration even if its cost or
+   * token fields came back null (e.g. an errored turn still cost wait time).
+   */
+  statsSummary(): StatsResponse {
+    const rows = this.db.select({ ts: events.ts, data: events.data }).from(events).where(eq(events.kind, "turn_result")).all();
+
+    const daily = new Map<string, StatsBucket>();
+    const monthly = new Map<string, StatsBucket>();
+    const lifetime = emptyBucket("lifetime");
+    let firstTurnAt: number | null = null;
+
+    for (const row of rows) {
+      const payload = JSON.parse(row.data) as Extract<EventPayload, { kind: "turn_result" }>;
+      const iso = new Date(row.ts).toISOString();
+      accumulate(bucketFor(daily, iso.slice(0, 10)), payload);
+      accumulate(bucketFor(monthly, iso.slice(0, 7)), payload);
+      accumulate(lifetime, payload);
+      if (firstTurnAt === null || row.ts < firstTurnAt) firstTurnAt = row.ts;
+    }
+
+    return {
+      daily: [...daily.values()].sort((a, b) => a.key.localeCompare(b.key)),
+      monthly: [...monthly.values()].sort((a, b) => a.key.localeCompare(b.key)),
+      lifetime,
+      firstTurnAt,
+    };
+  }
+
+  /**
    * Subscribe to live events for a session. Returns an unsubscribe function.
    * Note: this is LIVE only. Callers replay read() first, then subscribe, and
    * de-dup on seq to close the tiny gap between the two calls.
@@ -113,4 +145,25 @@ function rowToEvent(row: {
 }): SessionEvent {
   const payload = JSON.parse(row.data) as EventPayload;
   return { seq: row.seq, sessionId: row.sessionId, ts: row.ts, ...payload } as SessionEvent;
+}
+
+function emptyBucket(key: string): StatsBucket {
+  return { key, costUsd: 0, inputTokens: 0, outputTokens: 0, durationMs: 0, turnCount: 0 };
+}
+
+function bucketFor(map: Map<string, StatsBucket>, key: string): StatsBucket {
+  let bucket = map.get(key);
+  if (!bucket) {
+    bucket = emptyBucket(key);
+    map.set(key, bucket);
+  }
+  return bucket;
+}
+
+function accumulate(bucket: StatsBucket, payload: Extract<EventPayload, { kind: "turn_result" }>): void {
+  bucket.costUsd += payload.costUsd ?? 0;
+  bucket.inputTokens += payload.inputTokens ?? 0;
+  bucket.outputTokens += payload.outputTokens ?? 0;
+  bucket.durationMs += payload.durationMs ?? 0;
+  bucket.turnCount += 1;
 }

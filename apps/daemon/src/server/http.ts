@@ -78,6 +78,9 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
 
   app.get("/sessions", async () => ({ sessions: manager.listSessions() }));
 
+  // Cost/token/wait-time analytics across every session, for the Stats page.
+  app.get("/stats", async () => manager.events.statsSummary());
+
   // Empty until the first turn runs this process's lifetime — only obtainable
   // from a live SDK Query object (see claude/capabilities.ts).
   app.get("/capabilities", async () => getCapabilities());

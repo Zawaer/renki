@@ -8,6 +8,7 @@ import type {
   ListReposResponse,
   ListSessionsResponse,
   Session,
+  StatsResponse,
   SwitchAccountResponse,
   TailscaleStatusResponse,
   UsageLoginResponse,
@@ -89,6 +90,11 @@ export class RestClient {
   /** The daemon host's own Tailscale hostname, if it can detect one — used to suggest a pairing URL. */
   async getTailscaleStatus(): Promise<TailscaleStatusResponse> {
     return this.get<TailscaleStatusResponse>("/tailscale-status");
+  }
+
+  /** Cost/token/wait-time analytics across every session, for the Stats page. */
+  async getStats(): Promise<StatsResponse> {
+    return this.get<StatsResponse>("/stats");
   }
 
   /**

@@ -1,5 +1,5 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import type { Options, PermissionResult } from "@anthropic-ai/claude-agent-sdk";
+import type { Options, PermissionResult, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { CapabilitiesResponse, EventPayload, PermissionDecision } from "@crc/protocol";
 import { logger } from "../logger.js";
 import { newTurnId } from "../ids.js";
@@ -79,6 +79,22 @@ export function classifyRateLimit(text: string | null | undefined): boolean {
   return /rate.?limit|usage limit|limit reached|limit exceeded|exceeded your usage|too many requests|429/i.test(text);
 }
 
+/**
+ * The SDK's control-request channel (interrupt/setModel/supportedModels/
+ * supportedCommands/etc.) only works in "streaming input" mode — passing
+ * `prompt` as a plain string puts the query in a mode where those control
+ * requests are unsupported and their promises never resolve. Wrapping the
+ * same text as a single-item async generator gets streaming-input mode
+ * without changing anything else about a one-shot prompt.
+ */
+async function* singlePromptStream(text: string): AsyncGenerator<SDKUserMessage> {
+  yield {
+    type: "user",
+    message: { role: "user", content: text },
+    parent_tool_use_id: null,
+  };
+}
+
 export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
   const turnId = newTurnId();
   let claudeSessionId: string | null = args.resumeSessionId;
@@ -119,7 +135,7 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
   };
 
   try {
-    const q = query({ prompt: args.prompt, options });
+    const q = query({ prompt: singlePromptStream(args.prompt), options });
 
     // supportedModels()/supportedCommands() only exist on a LIVE Query object,
     // so this is the one place we can ever discover them. Runs concurrently
@@ -129,7 +145,7 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
       const onCapabilities = args.onCapabilities;
       Promise.all([q.supportedModels(), q.supportedCommands()])
         .then(([models, commands]) => onCapabilities({ models, commands }))
-        .catch((err) => logger.debug("supportedModels/supportedCommands failed", { err: String(err) }));
+        .catch((err) => logger.warn("supportedModels/supportedCommands failed", { err: String(err) }));
     }
 
     for await (const message of q) {

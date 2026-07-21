@@ -44,6 +44,26 @@ services:
     # networks:
     #   - reverse-proxy
 
+  # Optional: the actual web UI, statically built and served by nginx — the
+  # Docker equivalent of the crc-web pm2 process. Not required; the daemon on
+  # its own is enough if you'd rather just run `pnpm --filter @crc/web dev`
+  # locally on whichever device you're using at the moment. Reuses whatever
+  # Daemon URL + token you enter in its own Setup screen, so it doesn't need
+  # to know about the daemon container at build or run time.
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: crc-web
+    restart: unless-stopped
+    ports:
+      # Same port and loopback-only binding as the bare-metal crc-web pm2
+      # process — front it the same way (tailscale serve, or your own
+      # reverse-proxy container on the same network as above).
+      - "127.0.0.1:4173:80"
+    # networks:
+    #   - reverse-proxy
+
 # networks:
 #   reverse-proxy:
 #     external: true

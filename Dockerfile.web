@@ -1,0 +1,25 @@
+# Builds just @crc/web (+ its workspace deps, @crc/protocol and
+# @crc/client-core) as a static production build, served by nginx —
+# the Docker equivalent of the crc-web pm2 process for bare-metal setups.
+# Daemon/VS Code/mobile aren't part of this image.
+
+FROM node:20-bookworm-slim AS builder
+
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+
+WORKDIR /app
+COPY . .
+
+# Scoped to @crc/web + its workspace deps, so the daemon/mobile/vscode
+# dependency trees never run here.
+RUN pnpm install --frozen-lockfile --filter "@crc/web..."
+
+RUN pnpm --filter @crc/protocol build && pnpm --filter @crc/client-core build && pnpm --filter @crc/web build
+
+# No client-side routing (apps/web is a single conditional-render page, no
+# react-router), so nginx's stock config already does the right thing —
+# no SPA-fallback rewrite rule needed.
+FROM nginx:alpine AS runtime
+COPY --from=builder /app/apps/web/dist /usr/share/nginx/html
+
+EXPOSE 80

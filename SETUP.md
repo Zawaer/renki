@@ -88,11 +88,17 @@ docker compose up -d --build
 docker compose logs -f daemon
 ```
 
-Reuses your host's `claude` session (mounted from `~/.claude`) and your repos
+Brings up two containers: **`daemon`** (required) and **`web`** (optional —
+the actual UI, statically built and served by nginx, so it's reachable from
+any device without anyone needing a local dev environment or the repo
+cloned — the Docker equivalent of the `crc-web` pm2 process below). Reuses
+your host's `claude` session (mounted from `~/.claude`) and your repos
 (mounted from `CRC_REPOS_ROOT`) — see `docker-compose.yml` for exactly what's
 mounted and why. Re-run the same command any time you pull new code;
-`restart: unless-stopped` means it also survives a host reboot with no extra
-step.
+`restart: unless-stopped` means both survive a host reboot with no extra
+step. Only `daemon` is required if you'd rather just run
+`pnpm --filter @crc/web dev` locally instead — comment out the `web` service
+in `docker-compose.yml` if you don't want to build/run it at all.
 
 ### Without Docker (pm2)
 
@@ -198,25 +204,34 @@ containers and want Docker-label auto-discovery instead of a Caddyfile.
 
 **Already running Caddy for other internal sites (e.g. `*.internal`) bound to
 your tailnet IP?** Don't *also* run `tailscale serve` on that IP — see the
-warning in step 4, they'll fight over port 443. Add the daemon as another
-site in your existing Caddyfile instead, reusing whatever internal CA you
-already have trusted rather than `tailscale serve`'s own cert:
+warning in step 4, they'll fight over port 443. Add the daemon — and,
+if you're running the optional `web` container from step 3, the actual UI
+too — as more sites in your existing Caddyfile instead, reusing whatever
+internal CA you already have trusted rather than `tailscale serve`'s own
+cert. Keep them on separate hostnames: the UI is what you browse to, the
+daemon is what *it* talks to (enter the daemon's URL + token in the UI's own
+Setup screen, same as any other client):
 
 ```
 crc.your-homelab.internal {
-    reverse_proxy 127.0.0.1:4517
+    reverse_proxy 127.0.0.1:4517   # the daemon (API only — no page to browse)
+}
+
+crc-app.your-homelab.internal {
+    reverse_proxy 127.0.0.1:4173   # the actual web UI
 }
 ```
 
 **If that Caddy runs in its own container** (common — one shared
 `docker-compose.yml` fronting several homelab services), the snippets above
 will 502: `127.0.0.1` inside Caddy's container means *itself*, not your
-host, so it has no route to the daemon's published port at all. Put the
-daemon on the same Docker network as Caddy instead and proxy to it by
+host, so it has no route to either published port at all. Put both CRC
+containers on the same Docker network as Caddy instead and proxy to them by
 container name — uncomment the `networks:` blocks already sitting in CRC's
-own `docker-compose.yml` (see the comments there), point them at whatever
-network your reverse proxy already uses, then change `reverse_proxy` above
-to `crc-daemon:4517`.
+own `docker-compose.yml` for both the `daemon` and `web` services (see the
+comments there), point them at whatever network your reverse proxy already
+uses, then change the `reverse_proxy` lines above to `crc-daemon:4517` and
+`crc-web:80` respectively.
 
 **Headscale** is a self-hosted, open-source implementation of Tailscale's
 coordination server — a drop-in alternative if you'd rather not depend on
@@ -242,8 +257,8 @@ same care as an SSH private key.
 
 - **Web:** `pnpm --filter @crc/web dev` → open `http://127.0.0.1:5173`, and in
   the setup screen enter your daemon URL (the tailnet HTTPS URL) + token. (Or,
-  if you set up the always-on `crc-web` pm2 process in step 3, just open
-  `http://<tailnet-ip>:4173` from any device instead.)
+  if you set up the always-on web container/`crc-web` pm2 process in step 3,
+  just open `http://<tailnet-ip>:4173` from any device instead.)
 - Open a second browser/device to try the take-control handoff live.
 
 ### Pairing additional devices (QR code)

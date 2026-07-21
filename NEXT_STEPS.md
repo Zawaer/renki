@@ -49,7 +49,13 @@ features. The throughline for everything below: shrink "found the repo" →
       bind mounts; the auth token auto-generates the same way as bare-metal.
       Verified end to end on a real Linux homeserver (build, `cli.js repos`
       sanity check, `up -d`, `tailscale serve` in front). SETUP.md now leads
-      with this path over pm2/bare-metal.
+      with this path over pm2/bare-metal. Added a second `web` service
+      (`Dockerfile.web`, static build served by nginx) alongside it — one
+      `docker compose up` now brings up both the daemon and the actual UI,
+      matching what `ecosystem.config.cjs` already does for pm2 with
+      `crc-daemon` + `crc-web`. Prompted by a real homelab setup: someone
+      pointed their own Caddy at the daemon expecting a webpage and got a
+      bare `{"error":"unauthorized"}` — the daemon has no UI of its own.
   - [ ] **P2b — Prebuilt image + Android APK.** Still open: no image
         published to a registry yet — still `git clone` + a local
         `docker build` (~1-2 min), not a true one-liner. Needs a GitHub

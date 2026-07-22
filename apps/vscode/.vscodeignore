@@ -2,6 +2,7 @@
 src/**
 scripts/**
 tsconfig.json
+.turbo/**
 **/*.map
 **/*.ts
 node_modules/**

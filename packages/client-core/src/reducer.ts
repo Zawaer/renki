@@ -77,9 +77,20 @@ export function initialConversation(sessionId: string): ConversationState {
   };
 }
 
-/** Fold one event into state, returning a NEW state object (never mutates prev). */
+/**
+ * Fold one event into state, returning a NEW state object (never mutates prev).
+ *
+ * Events with `seq <= prev.lastSeq` are dropped as already-folded. This makes
+ * folding idempotent, which matters because seq is the only thing that lets a
+ * reconnect ask for "everything after lastSeq" — if the same event ever
+ * reaches a client twice (overlapping replay ranges from a double subscribe,
+ * a redelivered live event, etc.) re-applying it would double-count: an
+ * appended timeline item (prompt/notice) would render twice, and an
+ * accumulating block (assistant_delta) would append its text a second time.
+ */
 export function applyEvent(prev: ConversationState, e: SessionEvent): ConversationState {
-  const s: ConversationState = { ...prev, lastSeq: Math.max(prev.lastSeq, e.seq) };
+  if (e.seq <= prev.lastSeq) return prev;
+  const s: ConversationState = { ...prev, lastSeq: e.seq };
 
   switch (e.kind) {
     case "session_created":

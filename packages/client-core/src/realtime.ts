@@ -116,6 +116,13 @@ export class RealtimeClient {
    * tearing down and immediately resubscribing — otherwise the daemon would
    * receive two overlapping `subscribe` requests carrying the same stale
    * `lastSeq` and reply with two full replays, duplicating every event.
+   *
+   * Also a no-op (beyond returning the store) if we're already watching —
+   * e.g. two components watching the same session, or any other caller that
+   * invokes `watch` again without an intervening `unwatch`. Without this check
+   * every extra call would fire off another `subscribe` at the same stale
+   * `lastSeq`, and the daemon would happily reply with another full replay on
+   * top of what's already folded in.
    */
   watch(sessionId: string): Store<ConversationState> {
     const store = this.conversation(sessionId);
@@ -125,8 +132,9 @@ export class RealtimeClient {
       this.pendingUnwatch.delete(sessionId);
       return store;
     }
+    const alreadyWatching = this.watched.has(sessionId);
     this.watched.add(sessionId);
-    if (this.isOpen()) this.sendSubscribe(sessionId);
+    if (!alreadyWatching && this.isOpen()) this.sendSubscribe(sessionId);
     return store;
   }
 

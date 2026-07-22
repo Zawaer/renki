@@ -312,6 +312,23 @@ describe("replay == live (staleness is impossible)", () => {
   });
 });
 
+describe("idempotency (duplicate delivery is a no-op)", () => {
+  it("re-applying an already-folded event (seq <= lastSeq) changes nothing", () => {
+    const events = scriptedStream();
+    const once = fold(events);
+    // Simulate a redelivered event — e.g. an overlapping replay from a double
+    // subscribe — landing again after the client already folded it.
+    const twice = applyEvent(once, events[4]!); // the prompt_submitted event
+    expect(twice).toEqual(once);
+  });
+
+  it("folding the whole stream twice in a row doesn't duplicate timeline entries", () => {
+    const events = scriptedStream();
+    const s = applyEvents(applyEvents(initialConversation(SID), events), events);
+    expect(s.timeline).toEqual(fold(events).timeline);
+  });
+});
+
 describe("purity", () => {
   it("applyEvent never mutates the previous state", () => {
     const prev = fold(scriptedStream());

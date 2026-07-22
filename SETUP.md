@@ -540,14 +540,38 @@ subprocess actually runs. If `rtk` isn't found or errors, the daemon fails
 open: the command just runs unmodified, so a missing/broken install never
 blocks a session.
 
-If the daemon runs as a service (systemd, pm2, Docker) with a stripped-down
-`PATH` that doesn't include wherever `rtk` was installed (e.g. `~/.local/bin`
-via the quick-install script), point at it directly instead of relying on
-PATH lookup:
+If the daemon runs as a systemd/pm2 service with a stripped-down `PATH` that
+doesn't include wherever `rtk` was installed (e.g. `~/.local/bin` via the
+quick-install script), point at it directly instead of relying on PATH
+lookup:
 
 ```
 CRC_RTK_BIN=/home/you/.local/bin/rtk
 ```
+
+**Docker is a different problem, not just PATH.** The container has its own
+filesystem — `~/.local/bin/rtk` on the host doesn't exist inside it at all,
+so `CRC_RTK_BIN` pointing at a host path will always `ENOENT` no matter what
+you set. Install `rtk` on the host, then bind-mount that one binary into the
+container so `CRC_RTK_BIN` resolves at the same path on both sides — add this
+under the `daemon` service in `docker-compose.override.yml` (gitignored,
+stays local to this host; merge it into the `daemon:` block if you already
+have one for reverse-proxy network wiring, don't add a second file — Compose
+only reads one):
+
+```yaml
+services:
+  daemon:
+    volumes:
+      - ${HOME}/.local/bin/rtk:/home/you/.local/bin/rtk:ro
+```
+
+Then `docker compose up -d` and confirm with
+`docker compose exec daemon /home/you/.local/bin/rtk --version`. If that
+fails with something other than "not found" (e.g. a missing shared library),
+the host's `rtk` binary isn't compatible with the `node:20-bookworm-slim`
+image's libc — install a build of `rtk` linked against a compatible libc, or
+add an install step to the `Dockerfile` instead of bind-mounting.
 
 **Seeing the savings:** once `CRC_ENABLE_RTK=1` is set, every connected client
 shows a small rocket badge in the header (next to the accounts badge) with

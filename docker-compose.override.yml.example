@@ -1,7 +1,13 @@
 # Copy this to docker-compose.override.yml (gitignored — stays local to this
-# host) if a reverse proxy running in its own container needs to reach
-# crc-daemon / crc-web by name. Docker Compose merges an override.yml file in
-# automatically, no extra flags needed — `docker compose up -d` picks it up.
+# host). Docker Compose merges an override.yml file in automatically, no
+# extra flags needed — `docker compose up -d` picks it up. Only one override
+# file is read, so if you need it for more than one reason (e.g. reverse-proxy
+# networking below AND the RTK bind-mount from SETUP.md's RTK section), merge
+# them into the same `daemon:`/`web:` blocks here rather than keeping separate
+# files.
+#
+# The block below is for a reverse proxy running in its own container that
+# needs to reach crc-daemon / crc-web by name.
 #
 # Set the network name below to whatever your reverse proxy container is
 # already attached to (`docker inspect <proxy-container> --format

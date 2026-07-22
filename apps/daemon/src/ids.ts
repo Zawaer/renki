@@ -1,8 +1,17 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
-/** Full session id — stable, globally unique, safe as a directory name. */
+const BASE62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+function randomBase62(length: number): string {
+  const bytes = randomBytes(length);
+  let out = "";
+  for (let i = 0; i < length; i++) out += BASE62.charAt(bytes.readUInt8(i) % BASE62.length);
+  return out;
+}
+
+/** Full session id — stable, unique enough for local use, safe as a directory name and URL segment. */
 export function newSessionId(): string {
-  return `s_${randomUUID()}`;
+  return `s_${randomBase62(10)}`;
 }
 
 /** Short, human-scannable suffix for derived branch names (e.g. crc/3f9a2b). */

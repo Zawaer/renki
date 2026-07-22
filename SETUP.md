@@ -443,13 +443,21 @@ docker compose up -d --build
 ```
 
 `cswap`'s own account/credential state lives outside `~/.claude` though — in
-`~/.claude-swap-backup/` and `${XDG_DATA_HOME:-~/.local/share}/claude-swap/`
-on Linux — so if you already registered accounts with `cswap` on this host
-before adding Docker, also bind-mount those two directories (not read-only —
-`cswap` writes back to them on every switch/refresh) via
-`docker-compose.override.yml`; see the commented block in
+`${XDG_DATA_HOME:-~/.local/share}/claude-swap/` on Linux — so if you already
+registered accounts with `cswap` on this host before adding Docker, also
+bind-mount that directory (not read-only — `cswap` writes back to it on every
+switch/refresh) via `docker-compose.override.yml`; see the commented block in
 `docker-compose.override.yml.example`. Confirm it's working with
 `docker compose exec daemon cswap list --json`.
+
+**Only mount that one directory.** `cswap` also recognizes a legacy
+`~/.claude-swap-backup` path from older versions; if that path doesn't
+already exist with real data on your host, don't mount it — an empty
+`~/.claude-swap-backup` (which Docker will silently create on the host the
+moment you *do* bind-mount a path that isn't there yet) makes `cswap` see
+both a legacy and a new backup location at once and refuse to run at all
+(`MigrationError: Both legacy ... and new ... backup paths exist`), rather
+than guessing which one is authoritative.
 
 Then set in `.env`:
 

@@ -37,9 +37,15 @@ services:
     #   # work (the shim's shebang points at a host-only venv path). What you
     #   # still need to mount is cswap's own account/credential state, so the
     #   # container's cswap sees the same registered accounts as your host's
-    #   # `cswap list` — not read-only, since cswap writes back to these on
-    #   # every switch/refresh:
-    #   - ${HOME}/.claude-swap-backup:/root/.claude-swap-backup
+    #   # `cswap list` — not read-only, since cswap writes back to this on
+    #   # every switch/refresh. Only mount this ONE directory — cswap also
+    #   # recognizes a legacy `~/.claude-swap-backup` path from older
+    #   # versions, and if that path doesn't exist on your host yet, Docker
+    #   # will silently create it empty on first `up`, which then makes cswap
+    #   # see "both a legacy and a new backup path" and refuse to run at all
+    #   # (a migration-safety check, not a bug to work around by mounting it
+    #   # too — just don't mount it unless it already has real data on your
+    #   # host):
     #   - ${HOME}/.local/share/claude-swap:/root/.local/share/claude-swap
   web:
     networks:

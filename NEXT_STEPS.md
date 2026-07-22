@@ -56,12 +56,20 @@ features. The throughline for everything below: shrink "found the repo" →
       `crc-daemon` + `crc-web`. Prompted by a real homelab setup: someone
       pointed their own Caddy at the daemon expecting a webpage and got a
       bare `{"error":"unauthorized"}` — the daemon has no UI of its own.
-  - [ ] **P2b — Prebuilt image + Android APK.** Still open: no image
-        published to a registry yet — still `git clone` + a local
-        `docker build` (~1-2 min), not a true one-liner. Needs a GitHub
-        Actions publish workflow (deliberately deferred, bigger lift:
-        registry choice, versioning, CI changes). No prebuilt Android APK /
-        Expo Go path either.
+  - [x] **P2b (half) — Prebuilt image.** Done:
+        `.github/workflows/docker-publish.yml` builds both images
+        (`Dockerfile`'s `runtime` target for the daemon, `Dockerfile.web`'s
+        for the web UI) and pushes to GHCR
+        (`ghcr.io/zawaer/claude-remote-control` +
+        `…-web`) on every push to `main` (tag `latest` + `main-<sha>`) and on
+        `v*.*.*` tags (semver tags, no `latest`). Uses `GITHUB_TOKEN` only —
+        no registry secret to configure. Both Dockerfiles built locally
+        against the exact same target the workflow uses to confirm they're
+        green before relying on CI. Still needs: the repo flipped to public
+        (GHCR packages under a private repo aren't pullable without auth) and
+        `docker-compose.yml`/SETUP.md updated to offer `image:` as an
+        alternative to `build:` once a few tagged releases exist. No prebuilt
+        Android APK / Expo Go path yet — that half is still open.
 - [x] **P3a — README + architecture + security docs.** Done: README has a
       one-paragraph what/why, a features list, a Mermaid architecture diagram,
       a 3-step quickstart, and Contributing/Security/License pointers.
@@ -176,16 +184,34 @@ features. The throughline for everything below: shrink "found the repo" →
 
 ## 3. Deferred enhancements
 
-- [ ] **Live session-list updates.** The session list is REST-polled every 4s; a
-      dedicated `sessions` WS subscription would make it instant.
+- [x] **Live session-list updates.** Done (`125caaa`): a fleet-wide `session`/
+      `session_removed` WS push (`apps/daemon/src/server/connection.ts`,
+      `packages/protocol/src/ws.ts`) fires on every `SessionManager` mutation
+      via one `patch()` chokepoint, consumed by both web and mobile
+      (`realtime.onSessionChanged`/`onSessionRemoved`). The old 4s REST poll
+      is kept as a 30s safety net for changes missed during a disconnect.
 - [x] **Stop/interrupt button.** Done — `SessionManager.interruptSession`
       (`apps/daemon/src/sessions/manager.ts`) calls the live `Query`'s
       `interrupt()`, wired to a Stop control in both the web and mobile composers.
-- [ ] **Delta-event compaction.** Token deltas are persisted per-token for
-      faithful mid-turn replay; compact them once the final block lands to keep
-      the event log small.
-- [ ] **Usage reader org-id auto-resolve.** Today `orgId` is supplied manually in
-      `usage-accounts.json`; could auto-resolve it from the session key.
+- [x] **Delta-event compaction.** Done: `EventLog.compactBlock()`
+      (`apps/daemon/src/events/log.ts`) deletes a (turnId, blockIndex)'s
+      `assistant_delta` rows the instant its canonical `assistant_block`
+      lands, called from `SessionManager`'s single `emit` chokepoint
+      (`apps/daemon/src/sessions/manager.ts`). Safe because the reducer's
+      `applyBlock()` already overwrites accumulated delta text with the
+      block's canonical text, so replay is identical with or without the
+      deltas once the block exists. Doesn't touch `seq` allocation, so it
+      can't reopen the gap-free replay/live handoff. Covered by three new
+      tests in `test/event-log.test.ts`.
+- [x] **Usage reader org-id auto-resolve.** Done: `UsageReader.autoResolveOrgId()`
+      (`apps/daemon/src/accounts/usage.ts`) fires from `fetchEntry()` whenever
+      an entry has no `orgId` yet — e.g. a hand-edited `usage-accounts.json`
+      with just a `sessionKey` — and persists the resolved id back to the
+      file. Only auto-picks when the key sees exactly one org; a key on
+      multiple orgs still needs the UI's org picker (a real choice can't be
+      guessed), same as before. Covered by four new tests in
+      `test/usage.test.ts` (previously zero coverage on this module) via a
+      fake swapped in for the private `http` client.
 
 ## 4. Known fragilities
 
@@ -194,3 +220,14 @@ features. The throughline for everything below: shrink "found the repo" →
   not depend on it).
 - Multi-account rotation requires `cswap` installed with accounts added; the
   daemon degrades gracefully (no accounts → feature simply hidden).
+- **Node's own `localStorage` global can shadow jsdom's in `apps/web`'s Vitest
+  suite.** Hit on Node v25: `globalThis.localStorage` resolved to Node's own
+  experimental Web Storage implementation (present but non-functional without
+  a `--localstorage-file` path — `setItem`/`getItem` throw), so any component
+  reading it (`src/lib/permissionModePrefs.ts`) crashed mid-render and most of
+  `SessionView.test.tsx` failed with an empty rendered tree. Fixed by
+  `apps/web/test/setup.ts` installing its own in-memory `Storage` polyfill
+  over `globalThis.localStorage` (cleared after each test). Also surfaced (once
+  the crash stopped masking it) one genuinely stale assertion in the same file
+  — a `submitPrompt` opts expectation predating the `permissionMode` field
+  added by the "Persist permission mode…" commit — now fixed to match.

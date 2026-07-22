@@ -487,25 +487,68 @@ function readFileAsAttachment(file: File): Promise<PendingAttachment | { error: 
 /** One attached file: a thumbnail for images, a file chip otherwise. `onRemove` omitted renders it read-only (timeline history). */
 function AttachmentChip({ attachment, onRemove }: { attachment: Attachment; onRemove?: () => void }) {
   const isImage = attachment.mediaType.startsWith("image/");
+  const [previewing, setPreviewing] = useState(false);
   return (
-    <div className="flex items-center gap-1.5 rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) py-1 pl-1 pr-2 text-xs">
-      {isImage ? (
-        <img
-          src={`data:${attachment.mediaType};base64,${attachment.data}`}
-          alt={attachment.name}
-          className="h-6 w-6 rounded-sm object-cover"
-        />
-      ) : (
-        <span className="codicon codicon-file text-(--crc-fg-muted)" />
-      )}
-      <span className="max-w-40 truncate text-(--crc-fg)" title={attachment.name}>
-        {attachment.name}
-      </span>
-      {onRemove && (
-        <button onClick={onRemove} className="text-(--crc-fg-muted) hover:text-(--crc-danger)" title="Remove">
-          <span className="codicon codicon-close" />
-        </button>
-      )}
+    <>
+      <div
+        className={`flex items-center gap-1.5 rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) py-1 pl-1 pr-2 text-xs ${isImage ? "cursor-pointer" : ""}`}
+        onClick={isImage ? () => setPreviewing(true) : undefined}
+      >
+        {isImage ? (
+          <img
+            src={`data:${attachment.mediaType};base64,${attachment.data}`}
+            alt={attachment.name}
+            className="h-6 w-6 rounded-sm object-cover"
+          />
+        ) : (
+          <span className="codicon codicon-file text-(--crc-fg-muted)" />
+        )}
+        <span className="max-w-40 truncate text-(--crc-fg)" title={attachment.name}>
+          {attachment.name}
+        </span>
+        {onRemove && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            className="text-(--crc-fg-muted) hover:text-(--crc-danger)"
+            title="Remove"
+          >
+            <span className="codicon codicon-close" />
+          </button>
+        )}
+      </div>
+      {previewing && <ImagePreviewDialog attachment={attachment} onClose={() => setPreviewing(false)} />}
+    </>
+  );
+}
+
+/** Full-screen preview of an attached image, dismissed by backdrop click, X, or Escape. */
+function ImagePreviewDialog({ attachment, onClose }: { attachment: Attachment; onClose: () => void }) {
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/80 p-4" onClick={onClose}>
+      <button
+        onClick={onClose}
+        className="absolute top-4 right-4 text-white/80 hover:text-white"
+        title="Close"
+      >
+        <span className="codicon codicon-close text-2xl" />
+      </button>
+      <img
+        src={`data:${attachment.mediaType};base64,${attachment.data}`}
+        alt={attachment.name}
+        className="max-h-full max-w-full rounded-sm object-contain"
+        onClick={(e) => e.stopPropagation()}
+      />
     </div>
   );
 }

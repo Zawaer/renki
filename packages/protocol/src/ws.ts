@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PermissionDecision } from "./domain.js";
+import { PermissionDecision, Session } from "./domain.js";
 import { SessionEvent } from "./events.js";
 
 /**
@@ -110,6 +110,23 @@ export const ServerMessage = z.discriminatedUnion("type", [
     code: z.string(),
     message: z.string(),
     ref: z.string().nullable(),
+  }),
+
+  /**
+   * Fleet-wide push: some session's roster-relevant fields changed (status,
+   * hasPendingPermission, controller, etc). Sent to every connected client
+   * unconditionally — no subscribe needed — so a session list view can stay
+   * live without polling. Independent of the per-session event log/replay.
+   */
+  z.object({
+    type: z.literal("session"),
+    session: Session,
+  }),
+
+  /** A session was permanently deleted (not archived — that's a `session` update). */
+  z.object({
+    type: z.literal("session_removed"),
+    sessionId: z.string(),
   }),
 
   z.object({ type: z.literal("pong") }),

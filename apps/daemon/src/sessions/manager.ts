@@ -44,11 +44,21 @@ export type SubmitPromptInput = {
   permissionMode?: PermissionMode;
 };
 
+export type SessionBroadcast = {
+  /** A session's roster-relevant fields changed (status, controller, etc). */
+  onSessionChanged: (session: Session) => void;
+  /** A session was permanently deleted (archival is a status change, not this). */
+  onSessionRemoved: (sessionId: string) => void;
+};
+
 export class SessionManager {
   readonly events: EventLog;
   private autoSwitch: RateLimitAutoSwitch | null = null;
+  private broadcast: SessionBroadcast | null = null;
   /** sessionId -> prompts submitted while busy, FIFO; drained in submitPrompt's loop. */
   private readonly queues = new Map<string, SubmitPromptInput[]>();
+  /** sessionId -> requestIds of permission_requests awaiting a decision. */
+  private readonly pendingPermissions = new Map<string, Set<string>>();
 
   constructor(
     private readonly config: Config,
@@ -60,6 +70,11 @@ export class SessionManager {
   /** Wire the account rotator in (set once at startup; avoids a ctor cycle). */
   setAutoSwitch(autoSwitch: RateLimitAutoSwitch): void {
     this.autoSwitch = autoSwitch;
+  }
+
+  /** Wire the fleet-wide WS broadcaster in (set once at startup; avoids a ctor cycle). */
+  setBroadcast(broadcast: SessionBroadcast): void {
+    this.broadcast = broadcast;
   }
 
   // ── Creation / listing / teardown ──────────────────────────────────────────
@@ -91,6 +106,7 @@ export class SessionManager {
       branch,
       worktreePath,
       status: "idle" as SessionStatus,
+      hasPendingPermission: false,
       controller: null,
       claudeSessionId: null,
       title: input.title ?? null,
@@ -115,7 +131,9 @@ export class SessionManager {
     this.events.append(id, { kind: "status_changed", status: "idle" });
 
     logger.info("session created", { id, repo: repo.name, branch });
-    return rowToSession(row);
+    const session = rowToSession(row);
+    this.broadcast?.onSessionChanged(session);
+    return session;
   }
 
   listSessions(): Session[] {
@@ -139,6 +157,7 @@ export class SessionManager {
     this.patch(id, { status: "archived", controller: null });
     this.events.append(id, { kind: "status_changed", status: "archived" });
     this.events.append(id, { kind: "control_changed", controller: null, controllerName: null });
+    this.pendingPermissions.delete(id);
     logger.info("session archived", { id });
     return this.getSession(id);
   }
@@ -160,6 +179,8 @@ export class SessionManager {
     }
     this.events.deleteAll(id);
     this.db.delete(sessions).where(eq(sessions.id, id)).run();
+    this.pendingPermissions.delete(id);
+    this.broadcast?.onSessionRemoved(id);
     logger.info("session deleted", { id });
   }
 
@@ -256,7 +277,11 @@ export class SessionManager {
         forcePermissionPrompts: this.config.forcePermissionPrompts,
         enableRtk: this.config.enableRtk,
         rtkBin: this.config.rtkBin,
-        emit: (payload) => this.events.append(input.sessionId, payload),
+        emit: (payload) => {
+          if (payload.kind === "permission_request") this.trackPendingPermission(input.sessionId, payload.requestId, true);
+          else if (payload.kind === "permission_resolved") this.trackPendingPermission(input.sessionId, payload.requestId, false);
+          this.events.append(input.sessionId, payload);
+        },
         resolvePermission: input.resolvePermission,
         // Cheap to skip once the daemon already knows this — it's static per
         // `claude` install, not per-session.
@@ -297,12 +322,27 @@ export class SessionManager {
 
   // ── internals ────────────────────────────────────────────────────────────────
 
+  /** Keep `hasPendingPermission` in sync with the set of unresolved requestIds. */
+  private trackPendingPermission(sessionId: string, requestId: string, pending: boolean): void {
+    const set = this.pendingPermissions.get(sessionId) ?? new Set<string>();
+    const had = set.size > 0;
+    if (pending) set.add(requestId);
+    else set.delete(requestId);
+
+    if (set.size > 0) this.pendingPermissions.set(sessionId, set);
+    else this.pendingPermissions.delete(sessionId);
+
+    const has = set.size > 0;
+    if (has !== had) this.patch(sessionId, { hasPendingPermission: has });
+  }
+
   private patch(id: string, fields: Partial<typeof sessions.$inferInsert>): void {
     this.db
       .update(sessions)
       .set({ ...fields, updatedAt: Date.now() })
       .where(eq(sessions.id, id))
       .run();
+    this.broadcast?.onSessionChanged(this.getSession(id));
   }
 }
 
@@ -315,6 +355,7 @@ function rowToSession(row: typeof sessions.$inferSelect): Session {
     branch: row.branch,
     worktreePath: row.worktreePath,
     status: row.status as SessionStatus,
+    hasPendingPermission: row.hasPendingPermission,
     controller: row.controller,
     claudeSessionId: row.claudeSessionId,
     title: row.title,

@@ -28,6 +28,17 @@ export function openDb(config: Config) {
   // Bootstrap tables. The DDL is a multi-statement string; exec runs it whole.
   sqlite.exec(schema.DDL);
 
+  // `CREATE TABLE IF NOT EXISTS` above only helps fresh databases — a table
+  // that already exists keeps its old columns. Patch new ones in by hand.
+  ensureColumn(sqlite, "sessions", "has_pending_permission", "INTEGER NOT NULL DEFAULT 0");
+
   logger.info("database ready", { path: config.dbPath });
   return db;
+}
+
+function ensureColumn(sqlite: Database.Database, table: string, column: string, ddl: string): void {
+  const cols = sqlite.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!cols.some((c) => c.name === column)) {
+    sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+  }
 }

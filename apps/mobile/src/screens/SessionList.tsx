@@ -19,7 +19,7 @@ export function SessionList({
   const colors = useTheme();
   const statusColor = statusColorFor(colors);
   const styles = makeStyles(colors);
-  const { rest } = useClient();
+  const { rest, realtime } = useClient();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [creating, setCreating] = useState(false);
   const [pairing, setPairing] = useState(false);
@@ -30,9 +30,30 @@ export function SessionList({
 
   useEffect(() => {
     refresh();
-    const t = setInterval(refresh, 4000);
+    // Slow safety-net poll; the `session`/`session_removed` WS pushes below
+    // are what keep the list live between fetches.
+    const t = setInterval(refresh, 30_000);
     return () => clearInterval(t);
   }, [refresh]);
+
+  useEffect(() => {
+    const offChanged = realtime.onSessionChanged((session) => {
+      setSessions((prev) => {
+        const idx = prev.findIndex((s) => s.id === session.id);
+        if (idx === -1) return [session, ...prev];
+        const next = prev.slice();
+        next[idx] = session;
+        return next;
+      });
+    });
+    const offRemoved = realtime.onSessionRemoved((id) => {
+      setSessions((prev) => prev.filter((s) => s.id !== id));
+    });
+    return () => {
+      offChanged();
+      offRemoved();
+    };
+  }, [realtime]);
 
   return (
     <View style={styles.fill}>
@@ -63,13 +84,18 @@ export function SessionList({
         ListEmptyComponent={<Text style={styles.empty}>No sessions yet.</Text>}
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.row} onPress={() => onSelect(item.id)}>
-            <View style={[styles.dot, { backgroundColor: statusColor[item.status] ?? colors.faint }]} />
+            <View
+              style={[
+                styles.dot,
+                { backgroundColor: item.hasPendingPermission ? colors.danger : statusColor[item.status] ?? colors.faint },
+              ]}
+            />
             <View style={styles.rowText}>
               <Text style={styles.rowTitle} numberOfLines={1}>
                 {item.title || item.repoName}
               </Text>
               <Text style={styles.rowSub} numberOfLines={1}>
-                {item.repoName}:{item.branch} · {item.status}
+                {item.repoName}:{item.branch} · {item.hasPendingPermission ? "awaiting permission" : item.status}
               </Text>
             </View>
             {item.controller && <Ionicons name="lock-closed" size={12} color={colors.accent} />}

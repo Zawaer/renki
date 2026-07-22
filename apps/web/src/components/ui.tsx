@@ -27,15 +27,18 @@ const STATUS_COLOR: Record<SessionStatus, string> = {
   archived: "bg-(--crc-fg-muted)",
 };
 
-export function StatusDot({ status }: { status: SessionStatus }) {
+export function StatusDot({ status, pendingPermission }: { status: SessionStatus; pendingPermission?: boolean }) {
+  if (pendingPermission && status === "busy") {
+    return <span className="inline-block h-2 w-2 rounded-full bg-(--crc-danger) animate-pulse" />;
+  }
   return <span className={`inline-block h-2 w-2 rounded-full ${STATUS_COLOR[status]}`} />;
 }
 
-export function StatusBadge({ status }: { status: SessionStatus }) {
+export function StatusBadge({ status, pendingPermission }: { status: SessionStatus; pendingPermission?: boolean }) {
   return (
     <span className="inline-flex items-center gap-1.5 rounded-sm bg-(--crc-bg-elevated) px-2 py-0.5 text-xs text-(--crc-fg-muted)">
-      <StatusDot status={status} />
-      {status}
+      <StatusDot status={status} pendingPermission={pendingPermission} />
+      {pendingPermission && status === "busy" ? "awaiting permission" : status}
     </span>
   );
 }

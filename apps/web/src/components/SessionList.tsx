@@ -5,10 +5,11 @@ import { NewSessionDialog } from "./NewSessionDialog.js";
 import { Button, StatusDot } from "./ui.js";
 
 /**
- * Session list. Sourced from REST and polled every few seconds. (Per-session
- * status you're actively viewing updates live via WS; the list poll just keeps
- * the roster fresh across devices — a proper `sessions` subscription is a
- * future protocol addition.)
+ * Session list. Initial load (and an occasional slow re-fetch, as a safety
+ * net for anything missed mid-disconnect) comes from REST; after that it
+ * stays live off the daemon's fleet-wide `session`/`session_removed` WS
+ * pushes, so a status/permission change shows up immediately instead of
+ * waiting on a poll.
  */
 export function SessionList({
   selectedId,
@@ -19,7 +20,7 @@ export function SessionList({
   onSelect: (id: string) => void;
   onDeleted: (id: string) => void;
 }) {
-  const { rest } = useClient();
+  const { rest, realtime } = useClient();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [creating, setCreating] = useState(false);
 
@@ -29,9 +30,28 @@ export function SessionList({
 
   useEffect(() => {
     refresh();
-    const t = setInterval(refresh, 4000);
+    const t = setInterval(refresh, 30_000);
     return () => clearInterval(t);
   }, [refresh]);
+
+  useEffect(() => {
+    const offChanged = realtime.onSessionChanged((session) => {
+      setSessions((prev) => {
+        const idx = prev.findIndex((s) => s.id === session.id);
+        if (idx === -1) return [session, ...prev];
+        const next = prev.slice();
+        next[idx] = session;
+        return next;
+      });
+    });
+    const offRemoved = realtime.onSessionRemoved((id) => {
+      setSessions((prev) => prev.filter((s) => s.id !== id));
+    });
+    return () => {
+      offChanged();
+      offRemoved();
+    };
+  }, [realtime]);
 
   const active = sessions.filter((s) => s.status !== "archived");
   const archived = sessions.filter((s) => s.status === "archived");
@@ -122,7 +142,7 @@ function Row({
       }`}
     >
       <button onClick={onSelect} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-        <StatusDot status={session.status} />
+        <StatusDot status={session.status} pendingPermission={session.hasPendingPermission} />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm text-(--crc-fg)">{session.title || session.repoName}</div>
           <div className="truncate text-xs text-(--crc-fg-muted)">

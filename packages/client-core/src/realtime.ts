@@ -1,6 +1,7 @@
 import {
   type ClientMessage,
   type PermissionDecision,
+  type Session,
   type ServerMessage,
   ServerMessage as ServerMessageSchema,
 } from "@crc/protocol";
@@ -39,6 +40,8 @@ export class RealtimeClient {
   private ws: WebSocket | null = null;
   private readonly conversations = new Map<string, Store<ConversationState>>();
   private readonly watched = new Set<string>();
+  private readonly sessionListeners = new Set<(session: Session) => void>();
+  private readonly sessionRemovedListeners = new Set<(sessionId: string) => void>();
   private readonly pendingUnwatch = new Map<string, ReturnType<typeof setTimeout>>();
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -180,6 +183,25 @@ export class RealtimeClient {
     this.send({ type: "resolve_permission", sessionId, requestId, decision });
   }
 
+  /**
+   * Fleet-wide session-list pushes — a session's roster-relevant fields
+   * changed (status, controller, hasPendingPermission, etc). Unlike
+   * `conversation`/`watch`, no subscribe is needed: the daemon pushes every
+   * change to every connected client. A session list view should still do an
+   * initial REST fetch (and an occasional slow re-fetch as a safety net for
+   * anything missed during a disconnect) but can otherwise stay live off this.
+   */
+  onSessionChanged(cb: (session: Session) => void): () => void {
+    this.sessionListeners.add(cb);
+    return () => this.sessionListeners.delete(cb);
+  }
+
+  /** A session was permanently deleted (archival comes through `onSessionChanged`). */
+  onSessionRemoved(cb: (sessionId: string) => void): () => void {
+    this.sessionRemovedListeners.add(cb);
+    return () => this.sessionRemovedListeners.delete(cb);
+  }
+
   // ── internals ──────────────────────────────────────────────────────────────
 
   private sendSubscribe(sessionId: string): void {
@@ -213,6 +235,12 @@ export class RealtimeClient {
       }
       case "error":
         this.lastError.set({ code: msg.code, message: msg.message, ref: msg.ref });
+        return;
+      case "session":
+        for (const cb of this.sessionListeners) cb(msg.session);
+        return;
+      case "session_removed":
+        for (const cb of this.sessionRemovedListeners) cb(msg.sessionId);
         return;
       case "subscribed":
       case "pong":

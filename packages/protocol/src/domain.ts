@@ -55,6 +55,13 @@ export const Session = z.object({
   branch: z.string().min(1),
   worktreePath: z.string().min(1),
   status: SessionStatus,
+  /**
+   * True while a `permission_request` is awaiting a decision (see events.ts).
+   * Orthogonal to `status` — a session waiting on a permission is still
+   * "busy", but this flag is what a session-list UI needs to tell "actively
+   * generating" apart from "stalled on you".
+   */
+  hasPendingPermission: z.boolean(),
   controller: DeviceId.nullable(),
   claudeSessionId: z.string().nullable(),
   title: z.string().nullable(),

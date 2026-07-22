@@ -37,11 +37,17 @@ export class Connection {
     private readonly manager: SessionManager,
     private readonly broker: PermissionBroker,
     private readonly devices: DeviceRegistry,
+    private readonly onClosed?: () => void,
   ) {
     this.devices.connect(deviceId); // mark online so the notifier stays quiet
     socket.on("message", (raw) => this.onMessage(raw.toString()));
     socket.on("close", () => this.onClose());
     socket.on("error", (err) => logger.warn("socket error", { deviceId, err: String(err) }));
+  }
+
+  /** Fleet-wide push (session list changes) — independent of any per-session subscription. */
+  notify(msg: ServerMessage): void {
+    this.send(msg);
   }
 
   private send(msg: ServerMessage): void {
@@ -178,6 +184,7 @@ export class Connection {
     this.devices.disconnect(this.deviceId); // now push-eligible again
     for (const off of this.subs.values()) off();
     this.subs.clear();
+    this.onClosed?.();
     // NOTE: we deliberately do NOT release control here. On mobile a dropped
     // socket usually means "app backgrounded", not "done" — and releasing would
     // kill the very controller we need to push a permission request to. The lock

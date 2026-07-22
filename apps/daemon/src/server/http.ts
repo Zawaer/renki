@@ -41,6 +41,20 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
   const { manager, broker, pushTokens, devices, accounts, usage } = deps;
   const app = Fastify({ logger: false });
 
+  // Every live connection gets every session-roster change, unconditionally —
+  // single-user tool, cheap, and avoids a separate subscribe/unsubscribe
+  // handshake just for a list view. Per-session detail still goes through the
+  // event log/`subscribe` (see Connection.subscribe) — this is roster-only.
+  const liveConnections = new Set<Connection>();
+  manager.setBroadcast({
+    onSessionChanged: (session) => {
+      for (const conn of liveConnections) conn.notify({ type: "session", session });
+    },
+    onSessionRemoved: (sessionId) => {
+      for (const conn of liveConnections) conn.notify({ type: "session_removed", sessionId });
+    },
+  });
+
   // Registered before any hook that might short-circuit a request (CORS,
   // auth below): @fastify/websocket adds its own onRequest hook that flags
   // upgrade requests so its onResponse hook knows to destroy the raw socket
@@ -228,7 +242,8 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
         return;
       }
       const deviceName = req.query.deviceName?.trim() || null;
-      new Connection(socket, deviceId, deviceName, manager, broker, devices);
+      const conn = new Connection(socket, deviceId, deviceName, manager, broker, devices, () => liveConnections.delete(conn));
+      liveConnections.add(conn);
       logger.info("connection opened", { deviceId, deviceName });
     },
   );

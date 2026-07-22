@@ -1,5 +1,6 @@
+import type { EventPayload } from "@crc/protocol";
 import { describe, expect, it } from "vitest";
-import { classifyRateLimit, summarizeResultError } from "../src/claude/runner.js";
+import { classifyRateLimit, handleAssistantMessage, handleStreamEvent, summarizeResultError } from "../src/claude/runner.js";
 
 /**
  * classifyRateLimit is the trigger for automatic multi-account rotation: a turn
@@ -63,5 +64,86 @@ describe("summarizeResultError", () => {
 
   it("ignores a blank result string", () => {
     expect(summarizeResultError({ subtype: "success", result: "   " })).toBe("success");
+  });
+});
+
+/**
+ * handleStreamEvent numbers blocks from the raw Anthropic stream (which
+ * counts every content block, including thinking); handleAssistantMessage
+ * renumbers the SAME message's blocks from its own `content` array, which can
+ * omit a thinking block entirely. Left alone, that mismatch hands the same
+ * answer two different indices — one from the streamed deltas, one from the
+ * canonical finish — so both survive in the reducer's blocks array and the
+ * UI renders the answer twice. Regression coverage for that bug.
+ */
+describe("handleStreamEvent / handleAssistantMessage block indexing", () => {
+  function run(events: unknown[], finalMessage: unknown) {
+    const emitted: EventPayload[] = [];
+    const blockKinds = new Map<number, "text" | "thinking" | "tool_use">();
+    for (const e of events) handleStreamEvent(e, "t1", blockKinds, 0, (p) => emitted.push(p));
+    handleAssistantMessage(finalMessage, "t1", blockKinds, 0, (p) => emitted.push(p));
+    return emitted;
+  }
+
+  it("keeps a thinking-then-text message at one shared index, not two", () => {
+    const emitted = run(
+      [
+        { type: "content_block_start", index: 0, content_block: { type: "thinking" } },
+        { type: "content_block_start", index: 1, content_block: { type: "text" } },
+        { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "Full answer." } },
+      ],
+      // The finalized message omits the thinking block from `content` — this is
+      // the real shape that triggered the bug.
+      { content: [{ type: "text", text: "Full answer." }] },
+    );
+
+    const textIndices = new Set(
+      emitted.filter((e) => "blockKind" in e && e.blockKind === "text").map((e) => (e as { blockIndex: number }).blockIndex),
+    );
+    expect(textIndices).toEqual(new Set([1]));
+  });
+
+  it("gives each message in a multi-tool-call turn its own non-colliding indices", () => {
+    // Message A: a lone tool_use (local index 0, per Anthropic's per-message numbering).
+    const blockKindsA = new Map<number, "text" | "thinking" | "tool_use">();
+    const emittedA: EventPayload[] = [];
+    handleStreamEvent(
+      { type: "content_block_start", index: 0, content_block: { type: "tool_use" } },
+      "t1",
+      blockKindsA,
+      0,
+      (p) => emittedA.push(p),
+    );
+    handleAssistantMessage(
+      { content: [{ type: "tool_use", id: "tu_1", name: "Read", input: {} }] },
+      "t1",
+      blockKindsA,
+      0,
+      (p) => emittedA.push(p),
+    );
+    const offsetAfterA = (blockKindsA.size > 0 ? Math.max(...blockKindsA.keys()) : -1) + 1;
+
+    // Message B: another lone tool_use, ALSO at local index 0 — but this is a
+    // fresh message, so it must land at a NEW global index, not collide with A's.
+    const blockKindsB = new Map<number, "text" | "thinking" | "tool_use">();
+    const emittedB: EventPayload[] = [];
+    handleStreamEvent(
+      { type: "content_block_start", index: 0, content_block: { type: "tool_use" } },
+      "t1",
+      blockKindsB,
+      offsetAfterA,
+      (p) => emittedB.push(p),
+    );
+    handleAssistantMessage(
+      { content: [{ type: "tool_use", id: "tu_2", name: "Read", input: {} }] },
+      "t1",
+      blockKindsB,
+      offsetAfterA,
+      (p) => emittedB.push(p),
+    );
+
+    const indexA = emittedA.find((e) => e.kind === "assistant_block") as { blockIndex: number };
+    const indexB = emittedB.find((e) => e.kind === "assistant_block") as { blockIndex: number };
+    expect(indexA.blockIndex).not.toBe(indexB.blockIndex);
   });
 });

@@ -101,7 +101,14 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
   const turnId = newTurnId();
   let claudeSessionId: string | null = args.resumeSessionId;
   let sawRateLimitError = false;
-  const blockKinds = new Map<number, "text" | "thinking" | "tool_use">();
+  // Anthropic's raw stream numbers content blocks PER underlying model call —
+  // a tool round-trip starts a brand-new message whose own blocks count from
+  // 0 again. blockKinds tracks only the CURRENT message's local indices;
+  // globalOffset (bumped after each "assistant" message, see below) turns
+  // those into stable, turn-wide positions so a multi-message turn's blocks
+  // don't collide and overwrite each other.
+  let blockKinds = new Map<number, "text" | "thinking" | "tool_use">();
+  let globalOffset = 0;
 
   const options: Options = {
     cwd: args.cwd,
@@ -157,13 +164,20 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
 
       switch (message.type) {
         case "stream_event":
-          handleStreamEvent(message.event, turnId, blockKinds, args.emit);
+          handleStreamEvent(message.event, turnId, blockKinds, globalOffset, args.emit);
           break;
 
-        case "assistant":
+        case "assistant": {
           if ((message as { error?: string }).error === "rate_limit") sawRateLimitError = true;
-          handleAssistantMessage(message.message, turnId, args.emit);
+          handleAssistantMessage(message.message, turnId, blockKinds, globalOffset, args.emit);
+          // This message is done — its local indices are now spoken for.
+          // Shift the next message's (which will again start counting from 0)
+          // past them.
+          const maxLocal = blockKinds.size > 0 ? Math.max(...blockKinds.keys()) : -1;
+          globalOffset += maxLocal + 1;
+          blockKinds = new Map();
           break;
+        }
 
         case "user":
           handleToolResults(message.message, turnId, args.emit);
@@ -266,10 +280,11 @@ export async function warmUpCapabilities(cwd: string): Promise<CapabilitiesRespo
  * event-sourcing the stream. FUTURE: compact deltas away once the matching
  * assistant_block lands, to keep the log small.
  */
-function handleStreamEvent(
+export function handleStreamEvent(
   event: unknown,
   turnId: string,
   blockKinds: Map<number, "text" | "thinking" | "tool_use">,
+  globalOffset: number,
   emit: (p: EventPayload) => void,
 ): void {
   const e = event as {
@@ -289,17 +304,46 @@ function handleStreamEvent(
     const kind = blockKinds.get(e.index) ?? "text";
     const text = e.delta?.type === "text_delta" ? e.delta.text : e.delta?.type === "thinking_delta" ? e.delta.thinking : undefined;
     if (typeof text === "string" && text.length > 0) {
-      emit({ kind: "assistant_delta", turnId, blockIndex: e.index, blockKind: kind, text });
+      emit({ kind: "assistant_delta", turnId, blockIndex: globalOffset + e.index, blockKind: kind, text });
     }
   }
 }
 
-/** Emit a finished block per content item (canonical text / tool_use call). */
-function handleAssistantMessage(message: unknown, turnId: string, emit: (p: EventPayload) => void): void {
+/**
+ * Emit a finished block per content item (canonical text / tool_use call).
+ *
+ * `message.content` is NOT guaranteed to line up 1:1 with the raw stream's own
+ * content-block indices recorded in `blockKinds` — e.g. a thinking block can
+ * be counted by the raw stream but be absent from this finalized content
+ * array. Re-deriving indices via the array's own position (as opposed to
+ * matching back against `blockKinds`) would then hand the same content a
+ * DIFFERENT index than the one its streamed deltas already accumulated at,
+ * leaving both the streamed and the canonical copy sitting in the reducer's
+ * blocks array — i.e. the same answer rendered twice. Matching each content
+ * item, in order, to the next `blockKinds` entry of the same kind keeps the
+ * numbering identical to what handleStreamEvent already used.
+ */
+export function handleAssistantMessage(
+  message: unknown,
+  turnId: string,
+  blockKinds: Map<number, "text" | "thinking" | "tool_use">,
+  globalOffset: number,
+  emit: (p: EventPayload) => void,
+): void {
   const content = (message as { content?: unknown }).content;
   if (!Array.isArray(content)) return;
 
-  content.forEach((block: any, blockIndex: number) => {
+  const localIndices = [...blockKinds.keys()].sort((a, b) => a - b);
+  let cursor = 0;
+
+  content.forEach((block: any) => {
+    const kind: "text" | "thinking" | "tool_use" =
+      block?.type === "thinking" ? "thinking" : block?.type === "tool_use" ? "tool_use" : "text";
+    while (cursor < localIndices.length && blockKinds.get(localIndices[cursor]!) !== kind) cursor++;
+    const localIndex = cursor < localIndices.length ? localIndices[cursor]! : localIndices.length;
+    cursor++;
+    const blockIndex = globalOffset + localIndex;
+
     if (block?.type === "text") {
       emit({
         kind: "assistant_block",

@@ -75,6 +75,80 @@ export class SessionManager {
     this.events = new EventLog(db);
   }
 
+  /**
+   * Call once at boot. `activeQueries`/`pendingPermissions`/`queues` all start
+   * empty on a fresh process, so any session row still `busy` from before a
+   * hard restart (crash, `kill -9`, `pm2 restart` mid-turn) has no live Query
+   * backing it and never will again. Left alone it's wedged forever: Stop
+   * throws `not_busy` (no entry in `activeQueries`), and a new prompt just
+   * piles into the queue behind a turn that can never finish. Mark the
+   * dangling turn (and any dangling permission request) resolved so the
+   * session goes back to being usable.
+   *
+   * Doesn't touch any `prompt_queued` events left behind the dangling turn —
+   * those stay visible as "queued" in clients until the user resends; draining
+   * them automatically would mean re-running arbitrary prompts unattended at
+   * boot, which is out of scope for what's otherwise a display-only wedge.
+   */
+  reconcileOrphanedTurns(): void {
+    const stuck = this.db.select().from(sessions).where(eq(sessions.status, "busy")).all();
+    for (const row of stuck) {
+      const id = row.id;
+      const log = this.events.read(id);
+
+      // Walk the log to find the last prompt that never got a turn_result,
+      // and whatever turnId (if any) it had already started streaming under
+      // by the time the process died.
+      let orphanPromptId: string | null = null;
+      let orphanTurnId: string | null = null;
+      for (const e of log) {
+        if (e.kind === "prompt_submitted") {
+          orphanPromptId = e.promptId;
+          orphanTurnId = null;
+        } else if (e.kind === "turn_result" && e.promptId === orphanPromptId) {
+          orphanPromptId = null;
+          orphanTurnId = null;
+        } else if (
+          orphanPromptId &&
+          (e.kind === "assistant_delta" || e.kind === "assistant_block" || e.kind === "tool_result" || e.kind === "permission_request")
+        ) {
+          orphanTurnId = e.turnId;
+        }
+      }
+
+      if (orphanPromptId) {
+        this.events.append(id, {
+          kind: "turn_result",
+          turnId: orphanTurnId ?? `orphan-${orphanPromptId}`,
+          promptId: orphanPromptId,
+          ok: false,
+          costUsd: null,
+          durationMs: null,
+          errorMessage: "Daemon restarted while this turn was running — resend the prompt.",
+          inputTokens: null,
+          outputTokens: null,
+          interrupted: false,
+        });
+        logger.warn("reconciled orphaned turn on boot", { id, promptId: orphanPromptId });
+      }
+
+      // Any permission request left unresolved would keep hasPendingPermission
+      // stuck true for the same reason — deny rather than allow, since the
+      // gated tool call never got a live turn to actually run it.
+      const openRequestIds = new Set<string>();
+      for (const e of log) {
+        if (e.kind === "permission_request") openRequestIds.add(e.requestId);
+        else if (e.kind === "permission_resolved") openRequestIds.delete(e.requestId);
+      }
+      for (const requestId of openRequestIds) {
+        this.events.append(id, { kind: "permission_resolved", requestId, decision: "deny", byDeviceId: null });
+      }
+
+      this.patch(id, { status: "error", hasPendingPermission: false });
+      this.events.append(id, { kind: "status_changed", status: "error" });
+    }
+  }
+
   /** Wire the account rotator in (set once at startup; avoids a ctor cycle). */
   setAutoSwitch(autoSwitch: RateLimitAutoSwitch): void {
     this.autoSwitch = autoSwitch;

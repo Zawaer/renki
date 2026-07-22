@@ -23,6 +23,9 @@ async function main() {
   const db = openDb(config);
   await migrateSessionIds(config, db);
   const manager = new SessionManager(config, db);
+  // Any session left "busy" survived a hard restart mid-turn — see the
+  // method's own comment for why that otherwise wedges it forever.
+  manager.reconcileOrphanedTurns();
   const broker = new PermissionBroker(config.permissionTimeoutMs);
   const devices = new DeviceRegistry();
   const pushTokens = new PushTokenStore(db);

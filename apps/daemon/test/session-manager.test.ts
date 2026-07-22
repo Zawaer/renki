@@ -239,6 +239,72 @@ describe("interruptSession guards (no turn spawned)", () => {
   });
 });
 
+describe("reconcileOrphanedTurns", () => {
+  it("unwedges a session left busy by a simulated crash mid-turn", async () => {
+    const { manager, db, config, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+
+    // Simulate a turn that was streaming when the process died: busy, a
+    // prompt_submitted, and a block under some turnId — but no turn_result.
+    db.update(sessions).set({ status: "busy", hasPendingPermission: true }).where(eq(sessions.id, s.id)).run();
+    manager.events.append(s.id, { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "count to 300" });
+    manager.events.append(s.id, { kind: "assistant_delta", turnId: "t1", blockIndex: 0, blockKind: "text", text: "1\n2\n" });
+    manager.events.append(s.id, { kind: "permission_request", requestId: "r1", turnId: "t1", toolName: "Bash", toolInput: {} });
+
+    // Before reconciliation, the wedge is real: Stop and a new prompt both misbehave.
+    expect(() => manager.interruptSession(s.id, "d1")).toThrow(SessionError);
+
+    // A fresh SessionManager over the same DB simulates the daemon restart.
+    const restarted = new SessionManager(config, db);
+    restarted.reconcileOrphanedTurns();
+
+    const after = restarted.getSession(s.id);
+    expect(after.status).toBe("error");
+    expect(after.hasPendingPermission).toBe(false);
+
+    const events = restarted.events.read(s.id);
+    const turnResult = events.find((e) => e.kind === "turn_result");
+    expect(turnResult).toMatchObject({ turnId: "t1", promptId: "p1", ok: false, interrupted: false });
+    const permResolved = events.find((e) => e.kind === "permission_resolved");
+    expect(permResolved).toMatchObject({ requestId: "r1", decision: "deny" });
+
+    // The session is usable again: a new prompt runs instead of queuing.
+    vi.mocked(runTurn).mockResolvedValueOnce(okTurn);
+    restarted.takeControl(s.id, "d1");
+    await restarted.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p2", text: "hi", resolvePermission: noopResolve });
+    expect(restarted.events.read(s.id).map((e) => e.kind)).not.toContain("prompt_queued");
+  });
+
+  it("fabricates a turnId when the crash happened before any block streamed", async () => {
+    const { manager, db, config, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+
+    db.update(sessions).set({ status: "busy" }).where(eq(sessions.id, s.id)).run();
+    manager.events.append(s.id, { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "hi" });
+
+    const restarted = new SessionManager(config, db);
+    restarted.reconcileOrphanedTurns();
+
+    expect(restarted.getSession(s.id).status).toBe("error");
+    const turnResult = restarted.events.read(s.id).find((e) => e.kind === "turn_result");
+    expect(turnResult).toMatchObject({ promptId: "p1", ok: false });
+    expect((turnResult as { turnId: string }).turnId).toMatch(/^orphan-/);
+  });
+
+  it("leaves idle/archived sessions untouched", async () => {
+    const { manager, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    const before = kinds(manager, s.id);
+
+    manager.reconcileOrphanedTurns();
+
+    expect(kinds(manager, s.id)).toEqual(before);
+    expect(manager.getSession(s.id).status).toBe("idle");
+  });
+});
+
 describe("archive", () => {
   it("tears down the worktree and records archived + released control", async () => {
     const { manager, repoId } = setup();

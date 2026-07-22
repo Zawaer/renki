@@ -123,15 +123,34 @@ features. The throughline for everything below: shrink "found the repo" →
       consistent graph) — only Node-based tooling. Fixed by
       `scripts/dedupe-react-for-tests.mjs`, wired as `postinstall`.
 
-## 1. Verify on real hardware (not yet done)
+## 1. Verify on real hardware (partly done)
 
-- [ ] **Full stack once through.** Start the daemon (`pnpm --filter @crc/daemon dev`)
-      and the web app (`pnpm --filter @crc/web dev`), connect, create a session,
-      send a prompt, watch it stream. See [SETUP.md](./SETUP.md).
-- [ ] **Take-control handoff.** Open the web app in two browser windows and
-      confirm the lock hands off and viewers see the stream live.
-- [ ] **Reconnect resilience.** Kill/restart the daemon mid-session; the client
-      should replay and catch up with no "exit and rejoin".
+- [x] **Full stack once through.** Verified 2026-07-22 (Playwright driving the
+      real dev-server web app against a real local daemon): connect, create a
+      session in a real repo, send a prompt, watch it stream token-by-token,
+      turn completes with cost/duration. Also surfaced an undocumented-but-real
+      feature along the way: omitting `repoId` in `CreateSessionRequest`
+      creates a repo-less "just chat" session (`data/chats/<id>`, no worktree)
+      — see `packages/protocol/src/rest.ts`.
+- [x] **Take-control handoff.** Verified 2026-07-22 (two browser contexts, same
+      session): the second window's "Take control" correctly moves the lock,
+      and the first window updates live (`"Controlled by <name>"`, its own
+      composer disables) with no reload needed.
+- [x] **Reconnect resilience.** Verified 2026-07-22: kill `-9`'d the daemon
+      mid-turn (a streaming response, WS connection dropped) and restarted it.
+      The client correctly detected the drop (header → "offline"), then
+      auto-reconnected and replayed the full history with no manual reload.
+      This surfaced a real bug: the turn in flight at kill time was left
+      permanently wedged at `status: "busy"` (`SessionManager`'s `activeQueries`
+      map is in-memory only, so a restart lost all record of it with no
+      reconciliation on boot) — Stop errored `not_busy`, and a new prompt just
+      queued forever. **Fixed** the same day:
+      `SessionManager.reconcileOrphanedTurns()` (`apps/daemon/src/sessions/manager.ts`),
+      called once at boot from `index.ts`, scans for any session row left
+      `busy`, synthesizes a failed `turn_result` for the dangling turn (and
+      `permission_resolved: deny` for any dangling permission request), and
+      marks the session `error` so it's usable again. Covered by three new
+      tests in `test/session-manager.test.ts`.
 - [ ] **VS Code extension.** Open `apps/vscode`, press F5, set `crc.daemonUrl` +
       run "Set Auth Token", open the panel. Confirm file links open worktree files.
 - [ ] **Android app.** `pnpm --filter @crc/mobile start`, run on a device via
@@ -160,7 +179,7 @@ features. The throughline for everything below: shrink "found the repo" →
 - [ ] **Live session-list updates.** The session list is REST-polled every 4s; a
       dedicated `sessions` WS subscription would make it instant.
 - [x] **Stop/interrupt button.** Done — `SessionManager.interruptSession`
-      (`apps/daemon/src/claude/sessions/manager.ts`) calls the live `Query`'s
+      (`apps/daemon/src/sessions/manager.ts`) calls the live `Query`'s
       `interrupt()`, wired to a Stop control in both the web and mobile composers.
 - [ ] **Delta-event compaction.** Token deltas are persisted per-token for
       faithful mid-turn replay; compact them once the final block lands to keep

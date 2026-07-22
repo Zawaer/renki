@@ -35,6 +35,14 @@ services:
     #   # only the daemon's own hook invocation (which uses CRC_RTK_BIN's
     #   # absolute path directly and would work regardless of PATH).
     #   - ${HOME}/.local/bin/rtk:/root/.local/bin/rtk:ro
+    #   # RTK's own stats DB (history.db, read by `rtk gain` for the
+    #   # token-savings badge) lives under RTK's XDG data dir, NOT next to the
+    #   # binary above. Without this mount it's only in the container's
+    #   # writable layer, so a `docker compose up --build`/`--force-recreate`
+    #   # (anything that recreates the container, not just a restart) wipes it
+    #   # back to zero. Mounting the same path the host's native `rtk` already
+    #   # uses also means container and host-native usage share one history.
+    #   - ${HOME}/.local/share/rtk:/root/.local/share/rtk
     #   # cswap (multi-account usage rotation — see SETUP.md § Multi-account
     #   # usage rotation). cswap itself is already installed INTO the image by
     #   # the Dockerfile, unlike rtk above — it's a pipx-managed Python

@@ -633,11 +633,21 @@ services:
   daemon:
     volumes:
       - ${HOME}/.local/bin/rtk:/root/.local/bin/rtk:ro
+      - ${HOME}/.local/share/rtk:/root/.local/share/rtk
 ```
 
 `CRC_RTK_BIN` doesn't need to be set at all in this case — `/root/.local/bin`
 is already on `PATH`, so the default (bare `rtk`) resolves correctly both for
 the daemon's own hook invocation and for the rewritten command it produces.
+
+The second line matters even if you don't care about `PATH`: RTK's own stats
+(`history.db`, what `rtk gain` reads for the badge below) live under its XDG
+data dir, not next to the binary. Without that mount, the container only has
+that directory in its own writable layer — a plain `docker restart` leaves it
+alone, but anything that recreates the container (`docker compose up --build`,
+`down && up`, `--force-recreate`) wipes it back to zero. Bind-mounting the same
+path the host's native `rtk` already uses fixes that, and also means the
+container's usage and any host-native `rtk` usage share one running history.
 
 Then `docker compose up -d` and confirm with
 `docker compose exec daemon /root/.local/bin/rtk --version`. If that

@@ -135,9 +135,9 @@ function AccountRow({
       </View>
       {account.usage ? (
         <View style={styles.meters}>
-          <Meter label="5h" pct={account.usage.fiveHour.pct} resetsAt={account.usage.fiveHour.resetsAt} colors={colors} styles={styles} />
-          <Meter label="7d" pct={account.usage.sevenDay.pct} resetsAt={account.usage.sevenDay.resetsAt} colors={colors} styles={styles} />
-          {account.usage.extra && <ExtraUsageMeter extra={account.usage.extra} colors={colors} styles={styles} />}
+          <Meter label="5h" pct={account.usage.fiveHour.pct} resetsAt={account.usage.fiveHour.resetsAt} colors={colors} />
+          <Meter label="7d" pct={account.usage.sevenDay.pct} resetsAt={account.usage.sevenDay.resetsAt} colors={colors} />
+          {account.usage.extra && <ExtraUsageMeter extra={account.usage.extra} colors={colors} />}
         </View>
       ) : (
         <Text style={styles.na}>usage n/a</Text>
@@ -146,59 +146,60 @@ function AccountRow({
   );
 }
 
-function Meter({
+/** Self-contained (own inline styles, no shared StyleSheet) so it can be reused from Settings.tsx too. */
+export function Meter({
   label,
   pct,
   resetsAt,
   colors,
-  styles,
 }: {
   label: string;
   pct: number;
   resetsAt: string | null;
   colors: ThemeColors;
-  styles: Styles;
 }) {
   const clamped = Math.max(0, Math.min(100, pct));
   const color = clamped >= 90 ? colors.error : clamped >= 70 ? colors.busy : colors.ok;
   const resetIn = formatResetIn(resetsAt, Date.now());
   return (
     <View>
-      <View style={styles.meterRow}>
-        <Text style={styles.meterLabel}>{label}</Text>
-        <View style={styles.track}>
-          <View style={[styles.fillBar, { width: `${clamped}%`, backgroundColor: color }]} />
+      <View style={meterStyles.row}>
+        <Text style={[meterStyles.label, { color: colors.faint }]}>{label}</Text>
+        <View style={[meterStyles.track, { backgroundColor: colors.panel2 }]}>
+          <View style={[meterStyles.fillBar, { width: `${clamped}%`, backgroundColor: color }]} />
         </View>
-        <Text style={styles.meterPct}>{Math.round(clamped)}%</Text>
+        <Text style={[meterStyles.pct, { color: colors.faint }]}>{Math.round(clamped)}%</Text>
       </View>
-      {resetIn && <Text style={styles.resetIn}>resets in {resetIn}</Text>}
+      {resetIn && <Text style={[meterStyles.resetIn, { color: colors.faint }]}>resets in {resetIn}</Text>}
     </View>
   );
 }
 
-function ExtraUsageMeter({
-  extra,
-  colors,
-  styles,
-}: {
-  extra: AccountUsageExtra;
-  colors: ThemeColors;
-  styles: Styles;
-}) {
+export function ExtraUsageMeter({ extra, colors }: { extra: AccountUsageExtra; colors: ThemeColors }) {
   const clamped = Math.max(0, Math.min(100, extra.pct));
   const color = clamped >= 90 ? colors.error : clamped >= 70 ? colors.busy : colors.ok;
   return (
-    <View style={styles.meterRow}>
-      <Text style={styles.meterLabel}>extra</Text>
-      <View style={styles.track}>
-        <View style={[styles.fillBar, { width: `${clamped}%`, backgroundColor: color }]} />
+    <View style={meterStyles.row}>
+      <Text style={[meterStyles.label, { color: colors.faint }]}>extra</Text>
+      <View style={[meterStyles.track, { backgroundColor: colors.panel2 }]}>
+        <View style={[meterStyles.fillBar, { width: `${clamped}%`, backgroundColor: color }]} />
       </View>
-      <Text style={styles.extraAmount}>
+      <Text style={[meterStyles.extraAmount, { color: colors.faint }]}>
         {formatUsd(extra.usedDollars)} / {formatUsd(extra.limitDollars)}
       </Text>
     </View>
   );
 }
+
+const meterStyles = StyleSheet.create({
+  row: { flexDirection: "row", alignItems: "center", gap: 6 },
+  label: { fontSize: 10, width: 16 },
+  track: { flex: 1, height: 6, borderRadius: 3, overflow: "hidden" },
+  fillBar: { height: "100%" },
+  pct: { fontSize: 10, width: 32, textAlign: "right" },
+  resetIn: { fontSize: 9, marginLeft: 22 },
+  extraAmount: { fontSize: 10, width: 90, textAlign: "right" },
+});
 
 type Styles = ReturnType<typeof makeStyles>;
 
@@ -219,11 +220,4 @@ const makeStyles = (colors: ThemeColors) =>
   removeUsage: { color: colors.faint, fontSize: 13, paddingHorizontal: 4 },
   na: { color: colors.faint, fontSize: 11, marginLeft: 13 },
   meters: { marginLeft: 13, marginTop: 4, gap: 3 },
-  meterRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  meterLabel: { color: colors.faint, fontSize: 10, width: 16 },
-  track: { flex: 1, height: 6, borderRadius: 3, backgroundColor: colors.panel2, overflow: "hidden" },
-  fillBar: { height: "100%" },
-  meterPct: { color: colors.faint, fontSize: 10, width: 32, textAlign: "right" },
-  resetIn: { color: colors.faint, fontSize: 9, marginLeft: 22 },
-  extraAmount: { color: colors.faint, fontSize: 10, width: 90, textAlign: "right" },
 });

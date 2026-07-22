@@ -5,16 +5,15 @@ import { Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, Toucha
 import { useClient } from "../lib/client";
 import { statusColorFor, type ThemeColors, useTheme } from "../theme";
 import { AccountsBar } from "./AccountsBar";
-import { PairDevice } from "./PairDevice";
 
 export function SessionList({
   onSelect,
-  onReset,
-  onReconnect,
+  onOpenSettings,
+  onOpenStats,
 }: {
   onSelect: (id: string) => void;
-  onReset: () => void;
-  onReconnect: (baseUrl: string) => Promise<void>;
+  onOpenSettings: () => void;
+  onOpenStats: () => void;
 }) {
   const colors = useTheme();
   const statusColor = statusColorFor(colors);
@@ -22,7 +21,6 @@ export function SessionList({
   const { rest, realtime } = useClient();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [creating, setCreating] = useState(false);
-  const [pairing, setPairing] = useState(false);
 
   const refresh = useCallback(() => {
     rest.listSessions().then(setSessions).catch(() => {});
@@ -78,13 +76,11 @@ export function SessionList({
       <View style={styles.header}>
         <Text style={styles.title}>Sessions</Text>
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.iconLink} onPress={() => setPairing(true)}>
-            <Ionicons name="qr-code-outline" size={15} color={colors.dim} />
-            <Text style={styles.link}>Pair a device</Text>
+          <TouchableOpacity style={styles.iconLink} onPress={onOpenStats} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="stats-chart-outline" size={16} color={colors.dim} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.iconLink} onPress={onReset}>
-            <Ionicons name="log-out-outline" size={15} color={colors.dim} />
-            <Text style={styles.link}>Disconnect</Text>
+          <TouchableOpacity style={styles.iconLink} onPress={onOpenSettings} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="settings-outline" size={17} color={colors.dim} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.newBtn} onPress={() => setCreating(true)}>
             <Ionicons name="add" size={14} color={colors.accentFg} />
@@ -92,8 +88,6 @@ export function SessionList({
           </TouchableOpacity>
         </View>
       </View>
-
-      <PairDevice visible={pairing} onClose={() => setPairing(false)} onReconnect={onReconnect} />
 
       <ScrollView style={styles.list}>
         {active.length === 0 && <Text style={styles.empty}>No sessions yet.</Text>}

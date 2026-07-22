@@ -21,6 +21,8 @@ const darkColors = {
   busy: "#cca700",
   error: "#f14c4c",
   danger: "#f14c4c",
+  chartInput: "#3987e5",
+  chartOutput: "#d95926",
 };
 
 const lightColors = {
@@ -37,6 +39,8 @@ const lightColors = {
   busy: "#bf8803",
   error: "#cd3131",
   danger: "#cd3131",
+  chartInput: "#2a78d6",
+  chartOutput: "#eb6834",
 };
 
 export type ThemeColors = typeof darkColors;

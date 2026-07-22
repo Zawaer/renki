@@ -6,8 +6,10 @@ import { type AppConfig, clearConfig, loadConfig, saveConfig } from "./lib/confi
 import { ClientProvider } from "./lib/client";
 import { registerForPush } from "./lib/push";
 import { Setup } from "./screens/Setup";
+import { Settings } from "./screens/Settings";
 import { SessionList } from "./screens/SessionList";
 import { SessionView } from "./screens/SessionView";
+import { StatsView } from "./screens/StatsView";
 import { type ThemeColors, useTheme } from "./theme";
 
 // Show notifications while the app is foregrounded too.
@@ -72,6 +74,11 @@ export function App() {
           await saveConfig(next);
           setConfig(next);
         }}
+        onRenameDevice={async (deviceName) => {
+          const next = { ...config, deviceName };
+          await saveConfig(next);
+          setConfig(next);
+        }}
       />
     </ClientProvider>
   );
@@ -81,12 +88,16 @@ function Main({
   config,
   onReset,
   onReconnect,
+  onRenameDevice,
 }: {
   config: AppConfig;
   onReset: () => void;
   onReconnect: (baseUrl: string) => Promise<void>;
+  onRenameDevice: (name: string) => Promise<void>;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showStats, setShowStats] = useState(false);
   const selectedRef = useRef(setSelected);
   selectedRef.current = setSelected;
 
@@ -103,7 +114,26 @@ function Main({
   if (selected) {
     return <SessionView sessionId={selected} onBack={() => setSelected(null)} />;
   }
-  return <SessionList onSelect={setSelected} onReset={onReset} onReconnect={onReconnect} />;
+  if (showSettings) {
+    return (
+      <Settings
+        onBack={() => setShowSettings(false)}
+        onReset={onReset}
+        onReconnect={onReconnect}
+        onRenameDevice={onRenameDevice}
+      />
+    );
+  }
+  if (showStats) {
+    return <StatsView onBack={() => setShowStats(false)} />;
+  }
+  return (
+    <SessionList
+      onSelect={setSelected}
+      onOpenSettings={() => setShowSettings(true)}
+      onOpenStats={() => setShowStats(true)}
+    />
+  );
 }
 
 const makeStyles = (colors: ThemeColors) =>

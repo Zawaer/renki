@@ -184,6 +184,43 @@ features. The throughline for everything below: shrink "found the repo" →
 
 ## 3. Deferred enhancements
 
+- [x] **Mobile Stats screen.** Done: `apps/mobile/src/screens/StatsView.tsx`,
+      reachable from a stats-chart icon next to the new gear icon on the
+      session list — a mirror of web's `StatsView.tsx` (same `/stats` +
+      `/rtk/gain` REST calls, same lifetime tiles, by-repo/daily/monthly
+      token+cost+wait-time charts, and the RTK-savings section when
+      `CRC_ENABLE_RTK` is on). Two adaptations for touch/narrow-screen: web's
+      hover tooltips on each bar become tap-to-reveal (a bar chart column is a
+      `TouchableOpacity` that shows its tooltip text below the chart until
+      tapped again), and its side-by-side chart grid stacks into a single
+      column. The "view as table" toggle per section is a horizontally
+      scrollable fixed-width-column view (`SimpleTable`) standing in for
+      HTML's `<table>`. Added `chartInput`/`chartOutput` to
+      `apps/mobile/src/theme.ts`, matching web's `--crc-chart-input`/`-output`
+      hex values exactly, since no chart colors previously existed on mobile.
+      Verified with `tsc --noEmit` across the whole repo and an
+      `expo export --platform android` bundle build; not yet exercised on a
+      real device/simulator — same open "Android app" hardware-verification
+      item as the Settings screen above.
+- [x] **Mobile Settings screen.** Done: `apps/mobile/src/screens/Settings.tsx`,
+      reachable from a gear icon on the session list (replacing the header's
+      old standalone "Pair a device"/"Disconnect" links), mirroring web's
+      `Settings.tsx` — device name, connection info (daemon URL + token
+      show/hide), full account management (switch active account, connect/
+      disconnect usage tracking, add a coding account via `cswap add-token`,
+      auto-rotation enable + threshold), QR pairing, and disconnect. Before
+      this, mobile's one-time pre-auth `Setup` screen was the only place any
+      of this showed up, with no way back in short of clearing the app's
+      storage; account management was previously read/switch-only via the
+      session-list's compact `AccountsBar` (no way to add an account or
+      configure rotation from the phone). `Meter`/`ExtraUsageMeter` in
+      `AccountsBar.tsx` were made self-contained (own inline styles instead of
+      the parent screen's `StyleSheet`) so `Settings.tsx` could reuse them
+      directly, same as web's `Settings.tsx` importing them from its own
+      `AccountsBar.tsx`. Verified with `tsc --noEmit` across the whole repo
+      and an `expo export --platform android` bundle build (catches Metro
+      resolution errors); not yet exercised on a real device/simulator — that
+      falls under the open "Android app" hardware-verification item above.
 - [x] **Live session-list updates.** Done (`125caaa`): a fleet-wide `session`/
       `session_removed` WS push (`apps/daemon/src/server/connection.ts`,
       `packages/protocol/src/ws.ts`) fires on every `SessionManager` mutation

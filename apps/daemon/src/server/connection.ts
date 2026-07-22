@@ -101,10 +101,6 @@ export class Connection {
         return;
       }
 
-      case "release_control":
-        this.manager.releaseControl(msg.sessionId, this.deviceId);
-        return;
-
       case "submit_prompt": {
         // Fire-and-forget: the turn streams via the event log, and we must keep
         // processing this socket's messages (e.g. resolve_permission) WHILE the
@@ -187,10 +183,10 @@ export class Connection {
     this.onClosed?.();
     // NOTE: we deliberately do NOT release control here. On mobile a dropped
     // socket usually means "app backgrounded", not "done" — and releasing would
-    // kill the very controller we need to push a permission request to. The lock
-    // is released explicitly (release_control) or by the idle-timeout sweep, so
-    // it still can't get stuck, but a backgrounded phone keeps its lock long
-    // enough to receive a push, reopen, and approve.
+    // kill the very controller we need to push a permission request to. The
+    // idle-timeout sweep reclaims it eventually, so it still can't get stuck,
+    // but a backgrounded phone keeps its lock long enough to receive a push,
+    // reopen, and approve.
     logger.info("connection closed", { deviceId: this.deviceId });
   }
 }

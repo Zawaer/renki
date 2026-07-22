@@ -132,12 +132,11 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
             {conv.controller ? (isController ? " · you're in control" : ` · ${conv.controllerName ?? "other"}`) : " · unlocked"}
           </Text>
         </View>
-        <TouchableOpacity
-          style={styles.ctrlBtn}
-          onPress={() => (isController ? realtime.releaseControl(sessionId) : realtime.takeControl(sessionId))}
-        >
-          <Text style={styles.ctrlBtnText}>{isController ? "Release" : "Take"}</Text>
-        </TouchableOpacity>
+        {!isController && (
+          <TouchableOpacity style={styles.ctrlBtn} onPress={() => realtime.takeControl(sessionId)}>
+            <Text style={styles.ctrlBtnText}>Take</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Timeline */}

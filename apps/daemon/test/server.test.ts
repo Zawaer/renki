@@ -230,7 +230,7 @@ describe("WebSocket: subscribe -> replay -> live", () => {
     ws.close();
   });
 
-  it("take_control / release_control broadcast control_changed to subscribers", async () => {
+  it("take_control broadcasts control_changed to subscribers", async () => {
     const { wsBase, config, manager, repoId } = await startServer();
     const session = await manager.createSession({ repoId, baseBranch: "main" });
 
@@ -240,12 +240,6 @@ describe("WebSocket: subscribe -> replay -> live", () => {
     ws.send(JSON.stringify({ type: "take_control", sessionId: session.id }));
     const taken = await bus.next((m) => m.type === "event" && (m.event as { kind: string }).kind === "control_changed");
     expect(taken.event).toMatchObject({ controller: "d1" });
-
-    ws.send(JSON.stringify({ type: "release_control", sessionId: session.id }));
-    const released = await bus.next(
-      (m) => m.type === "event" && (m.event as { controller: string | null }).controller === null,
-    );
-    expect(released.event).toMatchObject({ kind: "control_changed", controller: null });
 
     ws.close();
   });

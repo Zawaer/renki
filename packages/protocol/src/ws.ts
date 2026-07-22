@@ -39,11 +39,6 @@ export const ClientMessage = z.discriminatedUnion("type", [
     sessionId: z.string(),
   }),
 
-  z.object({
-    type: z.literal("release_control"),
-    sessionId: z.string(),
-  }),
-
   /**
    * Submit a finished prompt. Rejected (via `error`) unless this device is the
    * current controller. If the session is mid-turn, the prompt is queued

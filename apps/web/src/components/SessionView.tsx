@@ -58,9 +58,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
         </div>
         <div className="flex items-center gap-2">
           <StatusBadge status={status} />
-          {isController ? (
-            <Button onClick={() => realtime.releaseControl(sessionId)}>Release</Button>
-          ) : (
+          {!isController && (
             <Button variant="primary" onClick={() => realtime.takeControl(sessionId)}>
               Take control
             </Button>

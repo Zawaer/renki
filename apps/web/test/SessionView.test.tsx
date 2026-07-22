@@ -127,8 +127,11 @@ describe("SessionView", () => {
     expect(screen.getByText("Done — added a README.")).toBeInTheDocument();
     expect(screen.getByText("$0.0123 · 4200ms · 1.5k tokens")).toBeInTheDocument();
     expect(screen.getByText("Switched account — retrying.")).toBeInTheDocument();
-    // Release button, not Take control — this device already holds the lock.
-    expect(screen.getByRole("button", { name: "Release" })).toBeInTheDocument();
+    // No control button at all — this device already holds the lock, and
+    // there's nothing useful to do about it (taking control is a unilateral
+    // steal from any device, so releasing wouldn't gate anything).
+    expect(screen.queryByRole("button", { name: "Release" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Take control" })).not.toBeInTheDocument();
   });
 
   it("shows a pending permission request, actionable only by the controller", () => {

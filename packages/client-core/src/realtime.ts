@@ -159,10 +159,6 @@ export class RealtimeClient {
     this.send({ type: "take_control", sessionId });
   }
 
-  releaseControl(sessionId: string): void {
-    this.send({ type: "release_control", sessionId });
-  }
-
   /**
    * Returns the client-generated promptId so the UI can correlate it.
    * `model`/`maxThinkingTokens`/`permissionMode` are a per-message override —

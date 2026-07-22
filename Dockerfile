@@ -3,7 +3,7 @@
 # @crc/client-core) for an always-on host. Web/VS Code/mobile clients aren't
 # part of this image.
 
-FROM node:20-bookworm-slim AS builder
+FROM node:20-bookworm-slim AS base
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 make g++ git ca-certificates \
@@ -39,6 +39,24 @@ ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 # packages you already have.
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --filter "@crc/daemon..."
+
+# Dev target: branches off here, before any source is copied in or built —
+# docker-compose.dev.yml bind-mounts live source over /app instead, and tsx
+# watches + recompiles in-process, so this target never needs rebuilding
+# after the first `--build` (only `base` reruns, and only on a
+# package.json/lockfile change). Still the real Debian image + real
+# node_modules (native deps like better-sqlite3 compiled for the container,
+# not the host) — just without the tsc/deploy steps or the runtime stage's
+# claude-swap install, which this target skips.
+FROM base AS dev
+RUN git config --system --add safe.directory '*'
+# Not inherited from `base` — only the `runtime` stage set this before, but a
+# host's docker-compose.override.yml (RTK's bind-mounted binary) expects it
+# here too, same as in runtime.
+ENV PATH="/root/.local/bin:${PATH}"
+CMD ["pnpm", "--filter", "@crc/daemon", "dev"]
+
+FROM base AS builder
 
 # Now bring in the actual source and build — only these steps (fast tsc
 # compiles) re-run on an ordinary code change, not the install above.

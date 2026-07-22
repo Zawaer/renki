@@ -493,4 +493,30 @@ describe("auto-titling", () => {
     expect(row.titleSource).toBe("placeholder");
     expect(row.titleGenAttempts).toBe(TITLE_UPGRADE_ATTEMPT_CAP);
   });
+
+  it("a manual rename overwrites the placeholder and permanently takes over from the auto-titler", async () => {
+    const { manager, db, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p1", text: "hey", resolvePermission: noopResolve });
+    await vi.waitFor(() => expect(titleRow(db, s.id).titleGenAttempts).toBe(1));
+
+    const renamed = manager.renameSession(s.id, "My chosen title");
+    expect(renamed.title).toBe("My chosen title");
+    expect(titleRow(db, s.id).titleSource).toBe("manual");
+
+    // A further turn must not touch it — the upgrade guard only fires for titleSource "placeholder".
+    const attemptsBeforeRename = vi.mocked(generateSessionTitle).mock.calls.length;
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p2", text: "hey again", resolvePermission: noopResolve });
+    await vi.waitFor(() => expect(runTurn).toHaveBeenCalledTimes(2));
+
+    expect(manager.getSession(s.id).title).toBe("My chosen title");
+    expect(vi.mocked(generateSessionTitle).mock.calls.length).toBe(attemptsBeforeRename);
+  });
+
+  it("renameSession throws for an unknown session", () => {
+    const { manager } = setup();
+    expect(() => manager.renameSession("s_nope", "New title")).toThrow();
+  });
 });

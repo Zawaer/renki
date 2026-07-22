@@ -296,6 +296,20 @@ export class SessionManager {
   }
 
   /**
+   * Manual rename — takes title ownership away from the auto-titler for
+   * good, the same way a `title` supplied at creation already does (see
+   * `finalizeNewSession`): `tryUpgradeTitle` only ever touches a title whose
+   * `titleSource` is still `"placeholder"`, so setting it to `"manual"` here
+   * makes this permanent regardless of how many upgrade attempts are left.
+   */
+  renameSession(id: string, title: string): Session {
+    this.getSession(id); // throws session_not_found if missing/deleted
+    this.patch(id, { title, titleSource: "manual" });
+    logger.info("session renamed", { id });
+    return this.getSession(id);
+  }
+
+  /**
    * Permanently remove a session: wipes its transcript and worktree — no
    * content or history kept, not shown or resumable. Unlike an old-style full
    * delete, the DB row itself survives as a tombstone (repoId/repoName plus

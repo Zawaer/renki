@@ -10,6 +10,7 @@ import type {
   GetTranscriptResponse,
   ListReposResponse,
   ListSessionsResponse,
+  RenameSessionResponse,
   RtkGainResponse,
   Session,
   StatsResponse,
@@ -63,6 +64,12 @@ export class RestClient {
 
   async archiveSession(sessionId: string): Promise<Session> {
     const res = await this.post<{ session: Session }>(`/sessions/${encodeURIComponent(sessionId)}/archive`, {});
+    return res.session;
+  }
+
+  /** Manual rename — permanently takes title ownership away from the auto-titler, even if it hasn't upgraded the placeholder yet. */
+  async renameSession(sessionId: string, title: string): Promise<Session> {
+    const res = await this.post<RenameSessionResponse>(`/sessions/${encodeURIComponent(sessionId)}/rename`, { title });
     return res.session;
   }
 

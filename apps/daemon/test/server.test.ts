@@ -102,9 +102,36 @@ describe("REST: sessions CRUD", () => {
     const transcript = await (await authed(`/sessions/${session.id}/transcript`)).json();
     expect(transcript.events.map((e: { kind: string }) => e.kind)).toEqual(["session_created", "status_changed"]);
 
+    const renameRes = await authed(`/sessions/${session.id}/rename`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "My chosen title" }),
+    });
+    expect(renameRes.status).toBe(200);
+    expect((await renameRes.json()).session.title).toBe("My chosen title");
+
     const archiveRes = await authed(`/sessions/${session.id}/archive`, { method: "POST" });
     expect(archiveRes.status).toBe(200);
     expect((await archiveRes.json()).session.status).toBe("archived");
+  });
+
+  it("400s an invalid rename body", async () => {
+    const { base, config, repoId } = await startServer();
+    const authed = authedFetch(base, config.authToken);
+    const { session } = await (
+      await authed("/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ repoId, baseBranch: "main" }),
+      })
+    ).json();
+
+    const res = await authed(`/sessions/${session.id}/rename`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "" }),
+    });
+    expect(res.status).toBe(400);
   });
 
   it("404s creating a session against an unknown repo", async () => {

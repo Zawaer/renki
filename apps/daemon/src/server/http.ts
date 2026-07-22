@@ -4,6 +4,7 @@ import {
   ConnectUsageKeyRequest,
   CreateSessionRequest,
   RegisterPushTokenRequest,
+  RenameSessionRequest,
   SwitchAccountRequest,
   UpdateRotationRequest,
 } from "@crc/protocol";
@@ -138,6 +139,16 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
   app.post<{ Params: { id: string } }>("/sessions/:id/archive", async (req, reply) => {
     try {
       return { session: await manager.archiveSession(req.params.id) };
+    } catch (err) {
+      return sendSessionError(reply, err);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/sessions/:id/rename", async (req, reply) => {
+    const parsed = RenameSessionRequest.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues });
+    try {
+      return { session: manager.renameSession(req.params.id, parsed.data.title) };
     } catch (err) {
       return sendSessionError(reply, err);
     }

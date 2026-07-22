@@ -48,6 +48,17 @@ export const DeleteSessionResponse = z.object({
 });
 export type DeleteSessionResponse = z.infer<typeof DeleteSessionResponse>;
 
+/** A manual rename takes title ownership away from the auto-titler for good (see SessionManager.renameSession). */
+export const RenameSessionRequest = z.object({
+  title: z.string().min(1).max(200),
+});
+export type RenameSessionRequest = z.infer<typeof RenameSessionRequest>;
+
+export const RenameSessionResponse = z.object({
+  session: Session,
+});
+export type RenameSessionResponse = z.infer<typeof RenameSessionResponse>;
+
 /** Full transcript for cold-loading a session outside the WS flow. */
 export const GetTranscriptResponse = z.object({
   session: Session,

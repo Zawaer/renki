@@ -61,6 +61,11 @@ export function SessionList({
     refresh();
   }
 
+  async function rename(id: string, title: string) {
+    await rest.renameSession(id, title);
+    refresh();
+  }
+
   async function del(id: string) {
     if (!confirm("Delete this session? Its transcript will be gone for good.")) return;
     await rest.deleteSession(id);
@@ -86,6 +91,7 @@ export function SessionList({
             selected={s.id === selectedId}
             onSelect={() => onSelect(s.id)}
             onArchive={() => archive(s.id)}
+            onRename={(title) => rename(s.id, title)}
             onDelete={() => del(s.id)}
           />
         ))}
@@ -99,6 +105,7 @@ export function SessionList({
             session={s}
             selected={s.id === selectedId}
             onSelect={() => onSelect(s.id)}
+            onRename={(title) => rename(s.id, title)}
             onDelete={() => del(s.id)}
           />
         ))}
@@ -124,15 +131,30 @@ function Row({
   selected,
   onSelect,
   onArchive,
+  onRename,
   onDelete,
 }: {
   session: Session;
   selected: boolean;
   onSelect: () => void;
   onArchive?: () => void;
+  onRename: (title: string) => void;
   onDelete: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  function startRename() {
+    setDraft(session.title ?? session.repoName);
+    setRenaming(true);
+  }
+
+  function commitRename() {
+    setRenaming(false);
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== session.title) onRename(trimmed);
+  }
 
   return (
     <div
@@ -142,16 +164,33 @@ function Row({
           : "border-transparent hover:bg-(--crc-hover)"
       }`}
     >
-      <button onClick={onSelect} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-        <StatusDot status={session.status} pendingPermission={session.hasPendingPermission} />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm text-(--crc-fg)">{session.title || session.repoName}</div>
-          <div className="truncate text-xs text-(--crc-fg-muted)">
-            {session.branch ? `${session.repoName}:${session.branch}` : session.repoName}
-          </div>
+      {renaming ? (
+        <div className="min-w-0 flex-1 py-px">
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.blur();
+              else if (e.key === "Escape") setRenaming(false);
+            }}
+            className="w-full rounded-sm border border-(--crc-focus) bg-(--crc-bg-inset) px-1.5 py-0.5 text-sm text-(--crc-fg) outline-none"
+          />
         </div>
-        {session.controller && <span className="codicon codicon-lock text-xs text-(--crc-link)" />}
-      </button>
+      ) : (
+        <button onClick={onSelect} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+          <StatusDot status={session.status} pendingPermission={session.hasPendingPermission} />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm text-(--crc-fg)">{session.title || session.repoName}</div>
+            <div className="truncate text-xs text-(--crc-fg-muted)">
+              {session.branch ? `${session.repoName}:${session.branch}` : session.repoName}
+            </div>
+          </div>
+          {session.controller && <span className="codicon codicon-lock text-xs text-(--crc-link)" />}
+        </button>
+      )}
 
       <div className="relative shrink-0">
         <button
@@ -182,6 +221,15 @@ function Row({
                   <span className="codicon codicon-archive" /> Archive
                 </button>
               )}
+              <button
+                onClick={() => {
+                  setMenuOpen(false);
+                  startRename();
+                }}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-(--crc-fg) hover:bg-(--crc-hover)"
+              >
+                <span className="codicon codicon-edit" /> Edit title
+              </button>
               <button
                 onClick={() => {
                   setMenuOpen(false);

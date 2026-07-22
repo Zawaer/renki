@@ -135,8 +135,8 @@ describe("handleStreamEvent / handleAssistantMessage block indexing", () => {
   function run(events: unknown[], finalMessage: unknown) {
     const emitted: EventPayload[] = [];
     const blockKinds = new Map<number, "text" | "thinking" | "tool_use">();
-    for (const e of events) handleStreamEvent(e, "t1", blockKinds, 0, (p) => emitted.push(p));
-    handleAssistantMessage(finalMessage, "t1", blockKinds, 0, (p) => emitted.push(p));
+    for (const e of events) handleStreamEvent(e, "t1", blockKinds, 0, null, (p) => emitted.push(p));
+    handleAssistantMessage(finalMessage, "t1", blockKinds, 0, { parentToolUseId: null }, (p) => emitted.push(p));
     return emitted;
   }
 
@@ -167,6 +167,7 @@ describe("handleStreamEvent / handleAssistantMessage block indexing", () => {
       "t1",
       blockKindsA,
       0,
+      null,
       (p) => emittedA.push(p),
     );
     handleAssistantMessage(
@@ -174,6 +175,7 @@ describe("handleStreamEvent / handleAssistantMessage block indexing", () => {
       "t1",
       blockKindsA,
       0,
+      { parentToolUseId: null },
       (p) => emittedA.push(p),
     );
     const offsetAfterA = (blockKindsA.size > 0 ? Math.max(...blockKindsA.keys()) : -1) + 1;
@@ -187,6 +189,7 @@ describe("handleStreamEvent / handleAssistantMessage block indexing", () => {
       "t1",
       blockKindsB,
       offsetAfterA,
+      null,
       (p) => emittedB.push(p),
     );
     handleAssistantMessage(
@@ -194,11 +197,80 @@ describe("handleStreamEvent / handleAssistantMessage block indexing", () => {
       "t1",
       blockKindsB,
       offsetAfterA,
+      { parentToolUseId: null },
       (p) => emittedB.push(p),
     );
 
     const indexA = emittedA.find((e) => e.kind === "assistant_block") as { blockIndex: number };
     const indexB = emittedB.find((e) => e.kind === "assistant_block") as { blockIndex: number };
     expect(indexA.blockIndex).not.toBe(indexB.blockIndex);
+  });
+});
+
+/**
+ * With forwardSubagentText on, a subagent's own messages arrive interleaved
+ * with the main agent's, tagged with parentToolUseId. Real runTurn gives each
+ * (sub)agent its own independent { blockKinds, globalOffset } tracker (see
+ * `agentTracking` there) precisely so this doesn't happen — this is the same
+ * scenario at the handleAssistantMessage level, one tracker per agent.
+ */
+describe("subagent-tagged blocks (forwardSubagentText)", () => {
+  it("carries parentToolUseId/subagentType/taskDescription only on the subagent's own blocks", () => {
+    const mainKinds = new Map<number, "text" | "thinking" | "tool_use">();
+    const mainEmitted: EventPayload[] = [];
+    // Main agent's turn opens with the Task tool_use call (global index 0).
+    handleAssistantMessage(
+      { content: [{ type: "tool_use", id: "tu_task", name: "Task", input: { description: "Explore the repo" } }] },
+      "t1",
+      mainKinds,
+      0,
+      { parentToolUseId: null },
+      (p) => mainEmitted.push(p),
+    );
+
+    const subKinds = new Map<number, "text" | "thinking" | "tool_use">();
+    const subEmitted: EventPayload[] = [];
+    // The subagent's own forwarded text, using a COMPLETELY SEPARATE tracker
+    // (its own globalOffset starts at 0, independent of the main agent's).
+    handleAssistantMessage(
+      { content: [{ type: "text", text: "Found 3 matching files." }] },
+      "t1",
+      subKinds,
+      0,
+      { parentToolUseId: "tu_task", subagentType: "Explore", taskDescription: "Explore the repo" },
+      (p) => subEmitted.push(p),
+    );
+
+    // Main agent continues (a new "assistant" message once the Task tool_result
+    // lands) — must pick up at global index 1, unaffected by the subagent's
+    // own block count.
+    handleAssistantMessage(
+      { content: [{ type: "text", text: "Here's what I found." }] },
+      "t1",
+      mainKinds,
+      1, // globalOffset as runTurn would compute it: max(mainKinds keys) + 1 = 1
+      { parentToolUseId: null },
+      (p) => mainEmitted.push(p),
+    );
+
+    expect(mainEmitted.every((e) => !("parentToolUseId" in e))).toBe(true);
+    const mainIndices = mainEmitted.map((e) => (e as { blockIndex: number }).blockIndex);
+    expect(mainIndices).toEqual([0, 1]);
+
+    expect(subEmitted).toEqual([
+      {
+        kind: "assistant_block",
+        turnId: "t1",
+        blockIndex: 0,
+        blockKind: "text",
+        text: "Found 3 matching files.",
+        toolUseId: null,
+        toolName: null,
+        toolInput: null,
+        parentToolUseId: "tu_task",
+        subagentType: "Explore",
+        taskDescription: "Explore the repo",
+      },
+    ]);
   });
 });

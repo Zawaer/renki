@@ -409,3 +409,103 @@ describe("purity", () => {
     expect(next.timeline).not.toBe(prev.timeline); // new array
   });
 });
+
+/**
+ * With the Agent SDK's forwardSubagentText on, a Task tool call's own subagent
+ * streams its thinking/text/tool-calls tagged with parentToolUseId — these
+ * must nest under that Task's tool_use block (`block.subagent.blocks`), not
+ * pollute the turn's own top-level blocks, and the Task's own tool_result
+ * should flip the subagent to "done".
+ */
+describe("subagent nesting (forwardSubagentText)", () => {
+  function turnOf(s: ConversationState) {
+    const item = s.timeline.find((it) => it.type === "turn");
+    if (!item || item.type !== "turn") throw new Error("no turn in timeline");
+    return item.turn;
+  }
+
+  it("routes subagent-tagged deltas/blocks into the Task block's nested subagent.blocks", () => {
+    const s = fold(stream(
+      { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "explore the repo" },
+      { kind: "assistant_block", turnId: TURN, blockIndex: 0, blockKind: "tool_use", text: null, toolUseId: "tu_task", toolName: "Task", toolInput: { description: "Explore" } },
+      { kind: "assistant_delta", turnId: TURN, blockIndex: 0, blockKind: "text", text: "Look", parentToolUseId: "tu_task" },
+      {
+        kind: "assistant_block",
+        turnId: TURN,
+        blockIndex: 0,
+        blockKind: "text",
+        text: "Looking around…",
+        toolUseId: null,
+        toolName: null,
+        toolInput: null,
+        parentToolUseId: "tu_task",
+        subagentType: "Explore",
+        taskDescription: "Explore the repo",
+      },
+    ));
+
+    const turn = turnOf(s);
+    expect(turn.blocks).toHaveLength(1); // the subagent's activity did NOT land as a sibling top-level block
+    const task = turn.blocks[0]!;
+    if (task.kind !== "tool_use") throw new Error("expected tool_use");
+    expect(task.toolUseId).toBe("tu_task");
+    expect(task.subagent).toMatchObject({
+      subagentType: "Explore",
+      taskDescription: "Explore the repo",
+      status: "running",
+    });
+    expect(task.subagent!.blocks).toEqual([{ kind: "text", text: "Looking around…", startedAtMs: 1002, endedAtMs: 1003 }]);
+  });
+
+  it("marks the subagent done when the Task's own tool_result arrives, and routes a nested tool_result to the right level", () => {
+    const s = fold(stream(
+      { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "explore the repo" },
+      { kind: "assistant_block", turnId: TURN, blockIndex: 0, blockKind: "tool_use", text: null, toolUseId: "tu_task", toolName: "Task", toolInput: {} },
+      // The subagent's OWN tool call (e.g. Read) nested one level under the Task.
+      {
+        kind: "assistant_block",
+        turnId: TURN,
+        blockIndex: 0,
+        blockKind: "tool_use",
+        text: null,
+        toolUseId: "tu_read",
+        toolName: "Read",
+        toolInput: { file_path: "/a.ts" },
+        parentToolUseId: "tu_task",
+      },
+      { kind: "tool_result", turnId: TURN, toolUseId: "tu_read", ok: true, summary: "file contents" },
+      { kind: "tool_result", turnId: TURN, toolUseId: "tu_task", ok: true, summary: "done exploring" },
+    ));
+
+    const task = turnOf(s).blocks[0]!;
+    if (task.kind !== "tool_use") throw new Error("expected tool_use");
+    expect(task.result).toEqual({ ok: true, summary: "done exploring" });
+    expect(task.subagent!.status).toBe("done");
+
+    const nestedRead = task.subagent!.blocks[0]!;
+    if (nestedRead.kind !== "tool_use") throw new Error("expected nested tool_use");
+    expect(nestedRead.toolUseId).toBe("tu_read");
+    expect(nestedRead.result).toEqual({ ok: true, summary: "file contents" }); // routed one level deep, not left null
+  });
+
+  it("keeps the main turn's own block indices independent of a subagent's, even interleaved", () => {
+    const s = fold(stream(
+      { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "go" },
+      { kind: "assistant_block", turnId: TURN, blockIndex: 0, blockKind: "tool_use", text: null, toolUseId: "tu_task", toolName: "Task", toolInput: {} },
+      { kind: "assistant_block", turnId: TURN, blockIndex: 0, blockKind: "text", text: "sub says hi", toolUseId: null, toolName: null, toolInput: null, parentToolUseId: "tu_task" },
+      { kind: "tool_result", turnId: TURN, toolUseId: "tu_task", ok: true, summary: "ok" },
+      // Main agent's own NEXT top-level block, also at local blockIndex 0 in the
+      // raw stream's per-message numbering — runner.ts's globalOffset is what
+      // keeps this from colliding with the Task block above; the reducer here
+      // just trusts blockIndex as given, so this pins that main-turn blockIndex
+      // 1 (assigned by the daemon) lands as its own distinct block.
+      { kind: "assistant_block", turnId: TURN, blockIndex: 1, blockKind: "text", text: "Here's what I found.", toolUseId: null, toolName: null, toolInput: null },
+    ));
+
+    const turn = turnOf(s);
+    expect(turn.blocks).toHaveLength(2);
+    expect(turn.blocks[1]).toMatchObject({ kind: "text", text: "Here's what I found." });
+    // The subagent's text never leaked into the top level.
+    expect(turn.blocks.some((b) => b.kind === "text" && b.text === "sub says hi")).toBe(false);
+  });
+});

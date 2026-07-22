@@ -86,6 +86,13 @@ const payloads = [
     blockIndex: z.number().int().nonnegative(),
     blockKind: AssistantBlockKind,
     text: z.string(),
+    /**
+     * Present only when this delta is a subagent's own forwarded text (the
+     * Agent SDK's `forwardSubagentText` option) — the tool_use id of the Task
+     * call that spawned it. Absent means it belongs to the turn's own
+     * top-level blocks, same as before subagent forwarding existed.
+     */
+    parentToolUseId: z.string().optional(),
   }),
 
   /** A completed assistant content block (final text of a block, or a tool_use call). */
@@ -98,6 +105,12 @@ const payloads = [
     toolUseId: z.string().nullable(),
     toolName: z.string().nullable(),
     toolInput: z.unknown().nullable(),
+    /** See assistant_delta's own doc — same meaning here. */
+    parentToolUseId: z.string().optional(),
+    /** Which subagent type produced this (e.g. "Explore") — only set alongside parentToolUseId. */
+    subagentType: z.string().optional(),
+    /** The task description the subagent was given — only set alongside parentToolUseId. */
+    taskDescription: z.string().optional(),
   }),
 
   /** Result of a tool the SDK executed on Claude's behalf. */

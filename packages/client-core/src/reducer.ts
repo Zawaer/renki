@@ -12,6 +12,19 @@ import type { Attachment, SessionEvent, SessionStatus } from "@crc/protocol";
  * all consume the same output.
  */
 
+/**
+ * A subagent's own nested activity (Agent SDK's `forwardSubagentText`) —
+ * attached to the `Task` tool_use block that spawned it. `status` flips to
+ * "done" the moment that same tool_use's own `tool_result` arrives (the
+ * subagent has nothing else to say once its Task call has returned).
+ */
+export type SubagentView = {
+  subagentType: string | null;
+  taskDescription: string | null;
+  blocks: BlockView[];
+  status: "running" | "done";
+};
+
 export type BlockView =
   | { kind: "text" | "thinking"; text: string; startedAtMs: number | null; endedAtMs: number | null }
   | {
@@ -20,6 +33,8 @@ export type BlockView =
       toolName: string;
       toolInput: unknown;
       result: { ok: boolean; summary: string } | null;
+      /** Present only for a Task call once its subagent starts forwarding activity. */
+      subagent?: SubagentView;
     };
 
 export type TurnView = {
@@ -147,61 +162,32 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       return s;
 
     case "assistant_delta":
-      s.timeline = updateTurn(s.timeline, e.turnId, (turn) => {
-        const blocks = turn.blocks.slice();
-        const existing = blocks[e.blockIndex];
-        if (existing && existing.kind !== "tool_use") {
-          blocks[e.blockIndex] = { ...existing, text: existing.text + e.text };
-        } else if (!existing) {
-          blocks[e.blockIndex] = {
-            kind: e.blockKind === "thinking" ? "thinking" : "text",
-            text: e.text,
-            startedAtMs: e.ts,
-            endedAtMs: null,
-          };
-          // The stream never tells us a block finished — only that the next one
-          // started. Seeing blockIndex N begin means N-1 (if still open) just did.
-          closePreviousBlock(blocks, e.blockIndex, e.ts);
-        }
-        return { ...turn, blocks };
-      });
+      s.timeline = updateTurn(s.timeline, e.turnId, (turn) => ({
+        ...turn,
+        blocks: e.parentToolUseId
+          ? updateSubagentBlocks(turn.blocks, e.parentToolUseId, (sub) => applyDelta(sub, e.blockIndex, e.blockKind, e.text, e.ts))
+          : applyDelta(turn.blocks, e.blockIndex, e.blockKind, e.text, e.ts),
+      }));
       return s;
 
     case "assistant_block":
-      s.timeline = updateTurn(s.timeline, e.turnId, (turn) => {
-        const blocks = turn.blocks.slice();
-        closePreviousBlock(blocks, e.blockIndex, e.ts);
-        if (e.blockKind === "tool_use") {
-          blocks[e.blockIndex] = {
-            kind: "tool_use",
-            toolUseId: e.toolUseId ?? "",
-            toolName: e.toolName ?? "",
-            toolInput: e.toolInput,
-            result: null,
-          };
-        } else {
-          // Canonical final text supersedes the streamed accumulation; keep
-          // whatever startedAtMs the first delta recorded, or this event's own
-          // timestamp if no delta ever arrived for this block.
-          const existing = blocks[e.blockIndex];
-          const startedAtMs = existing && existing.kind !== "tool_use" ? existing.startedAtMs : e.ts;
-          blocks[e.blockIndex] = {
-            kind: e.blockKind === "thinking" ? "thinking" : "text",
-            text: e.text ?? "",
-            startedAtMs,
-            endedAtMs: e.ts,
-          };
-        }
-        return { ...turn, blocks };
-      });
+      s.timeline = updateTurn(s.timeline, e.turnId, (turn) => ({
+        ...turn,
+        blocks: e.parentToolUseId
+          ? updateSubagentBlocks(
+              turn.blocks,
+              e.parentToolUseId,
+              (sub) => applyBlock(sub, e.blockIndex, e.blockKind, e.text, e.toolUseId, e.toolName, e.toolInput, e.ts),
+              { subagentType: e.subagentType ?? null, taskDescription: e.taskDescription ?? null },
+            )
+          : applyBlock(turn.blocks, e.blockIndex, e.blockKind, e.text, e.toolUseId, e.toolName, e.toolInput, e.ts),
+      }));
       return s;
 
     case "tool_result":
       s.timeline = updateTurn(s.timeline, e.turnId, (turn) => ({
         ...turn,
-        blocks: turn.blocks.map((b) =>
-          b.kind === "tool_use" && b.toolUseId === e.toolUseId ? { ...b, result: { ok: e.ok, summary: e.summary } } : b,
-        ),
+        blocks: applyToolResult(turn.blocks, e.toolUseId, e.ok, e.summary),
       }));
       return s;
 
@@ -288,6 +274,109 @@ function closePreviousBlock(blocks: BlockView[], newIndex: number, ts: number): 
   if (prev && prev.kind !== "tool_use" && prev.endedAtMs == null) {
     blocks[newIndex - 1] = { ...prev, endedAtMs: ts };
   }
+}
+
+/** Fold one assistant_delta into a plain block list — shared by the main turn's own blocks and a subagent's nested ones. */
+function applyDelta(
+  blocks: BlockView[],
+  blockIndex: number,
+  blockKind: "text" | "thinking" | "tool_use",
+  text: string,
+  ts: number,
+): BlockView[] {
+  const next = blocks.slice();
+  const existing = next[blockIndex];
+  if (existing && existing.kind !== "tool_use") {
+    next[blockIndex] = { ...existing, text: existing.text + text };
+  } else if (!existing) {
+    next[blockIndex] = { kind: blockKind === "thinking" ? "thinking" : "text", text, startedAtMs: ts, endedAtMs: null };
+    // The stream never tells us a block finished — only that the next one
+    // started. Seeing blockIndex N begin means N-1 (if still open) just did.
+    closePreviousBlock(next, blockIndex, ts);
+  }
+  return next;
+}
+
+/** Fold one assistant_block into a plain block list — shared by the main turn's own blocks and a subagent's nested ones. */
+function applyBlock(
+  blocks: BlockView[],
+  blockIndex: number,
+  blockKind: "text" | "thinking" | "tool_use",
+  text: string | null,
+  toolUseId: string | null,
+  toolName: string | null,
+  toolInput: unknown,
+  ts: number,
+): BlockView[] {
+  const next = blocks.slice();
+  closePreviousBlock(next, blockIndex, ts);
+  if (blockKind === "tool_use") {
+    next[blockIndex] = { kind: "tool_use", toolUseId: toolUseId ?? "", toolName: toolName ?? "", toolInput, result: null };
+  } else {
+    // Canonical final text supersedes the streamed accumulation; keep
+    // whatever startedAtMs the first delta recorded, or this event's own
+    // timestamp if no delta ever arrived for this block.
+    const existing = next[blockIndex];
+    const startedAtMs = existing && existing.kind !== "tool_use" ? existing.startedAtMs : ts;
+    next[blockIndex] = { kind: blockKind === "thinking" ? "thinking" : "text", text: text ?? "", startedAtMs, endedAtMs: ts };
+  }
+  return next;
+}
+
+/**
+ * Route an assistant_delta/assistant_block tagged with a subagent's
+ * parentToolUseId into that Task tool_use block's own nested `subagent.blocks`
+ * instead of the turn's top-level ones. Searches recursively (a subagent
+ * that itself spawns a subagent nests two deep) since the Task tool_use block
+ * in question might not be at this level — it's guaranteed to already exist
+ * SOMEWHERE in the tree by the time any of its subagent's messages arrive
+ * (the model can't invoke a tool before finishing the message that calls it).
+ */
+function updateSubagentBlocks(
+  blocks: BlockView[],
+  parentToolUseId: string,
+  fn: (subBlocks: BlockView[]) => BlockView[],
+  meta?: { subagentType: string | null; taskDescription: string | null },
+): BlockView[] {
+  return blocks.map((b) => {
+    if (b.kind !== "tool_use") return b;
+    if (b.toolUseId === parentToolUseId) {
+      const prev = b.subagent ?? { subagentType: null, taskDescription: null, blocks: [], status: "running" as const };
+      return {
+        ...b,
+        subagent: {
+          subagentType: meta?.subagentType ?? prev.subagentType,
+          taskDescription: meta?.taskDescription ?? prev.taskDescription,
+          blocks: fn(prev.blocks),
+          status: "running",
+        },
+      };
+    }
+    if (b.subagent) {
+      return { ...b, subagent: { ...b.subagent, blocks: updateSubagentBlocks(b.subagent.blocks, parentToolUseId, fn, meta) } };
+    }
+    return b;
+  });
+}
+
+/**
+ * Apply a tool_result by toolUseId, searching both the turn's top-level
+ * blocks and every subagent's nested ones — toolUseIds are unique regardless
+ * of nesting, so at most one block anywhere matches. Marks the matching
+ * Task's own subagent "done" too: its tool_result arriving means the
+ * subagent has nothing left to forward.
+ */
+function applyToolResult(blocks: BlockView[], toolUseId: string, ok: boolean, summary: string): BlockView[] {
+  return blocks.map((b) => {
+    if (b.kind !== "tool_use") return b;
+    if (b.toolUseId === toolUseId) {
+      return { ...b, result: { ok, summary }, subagent: b.subagent ? { ...b.subagent, status: "done" as const } : b.subagent };
+    }
+    if (b.subagent) {
+      return { ...b, subagent: { ...b.subagent, blocks: applyToolResult(b.subagent.blocks, toolUseId, ok, summary) } };
+    }
+    return b;
+  });
 }
 
 function emptyTurn(turnId: string): TurnView {

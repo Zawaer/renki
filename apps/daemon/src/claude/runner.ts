@@ -146,24 +146,41 @@ export async function* singlePromptStream(text: string, attachments?: Attachment
   };
 }
 
+/** Per-(sub)agent block-index bookkeeping — see the comment on `agentTracking` in runTurn. */
+type BlockTracking = { blockKinds: Map<number, "text" | "thinking" | "tool_use">; globalOffset: number };
+
 export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
   const turnId = newTurnId();
   let claudeSessionId: string | null = args.resumeSessionId;
   let sawRateLimitError = false;
   // Anthropic's raw stream numbers content blocks PER underlying model call —
   // a tool round-trip starts a brand-new message whose own blocks count from
-  // 0 again. blockKinds tracks only the CURRENT message's local indices;
-  // globalOffset (bumped after each "assistant" message, see below) turns
-  // those into stable, turn-wide positions so a multi-message turn's blocks
-  // don't collide and overwrite each other.
-  let blockKinds = new Map<number, "text" | "thinking" | "tool_use">();
-  let globalOffset = 0;
+  // 0 again. Each (sub)agent gets its OWN tracking, keyed by parent_tool_use_id
+  // (`""` for the main agent): a subagent's forwarded messages (see
+  // forwardSubagentText below) are a completely separate block-index space
+  // from the main turn's, arriving interleaved with it — sharing one tracker
+  // between them would corrupt the main turn's offsets with the subagent's
+  // block count and vice versa.
+  const agentTracking = new Map<string, BlockTracking>();
+  function trackingFor(parentToolUseId: string | null): BlockTracking {
+    const key = parentToolUseId ?? "";
+    let t = agentTracking.get(key);
+    if (!t) {
+      t = { blockKinds: new Map(), globalOffset: 0 };
+      agentTracking.set(key, t);
+    }
+    return t;
+  }
 
   const options: Options = {
     cwd: args.cwd,
     includePartialMessages: true,
     permissionMode: args.permissionMode ?? "default",
     abortController: args.abortController,
+    // Forward a subagent's own thinking/text as it happens (not just its
+    // final tool_result) so the UI can render a live nested transcript
+    // instead of a black-box spinner for the whole Task call.
+    forwardSubagentText: true,
     ...(args.resumeSessionId ? { resume: args.resumeSessionId } : {}),
     ...(args.model ? { model: args.model } : {}),
     ...(args.maxThinkingTokens != null ? { maxThinkingTokens: args.maxThinkingTokens } : {}),
@@ -213,19 +230,33 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
       if ("session_id" in message && message.session_id) claudeSessionId = message.session_id;
 
       switch (message.type) {
-        case "stream_event":
-          handleStreamEvent(message.event, turnId, blockKinds, globalOffset, args.emit);
+        case "stream_event": {
+          const t = trackingFor(message.parent_tool_use_id);
+          handleStreamEvent(message.event, turnId, t.blockKinds, t.globalOffset, message.parent_tool_use_id, args.emit);
           break;
+        }
 
         case "assistant": {
           if ((message as { error?: string }).error === "rate_limit") sawRateLimitError = true;
-          handleAssistantMessage(message.message, turnId, blockKinds, globalOffset, args.emit);
+          const t = trackingFor(message.parent_tool_use_id);
+          handleAssistantMessage(
+            message.message,
+            turnId,
+            t.blockKinds,
+            t.globalOffset,
+            {
+              parentToolUseId: message.parent_tool_use_id,
+              subagentType: (message as { subagent_type?: string }).subagent_type,
+              taskDescription: (message as { task_description?: string }).task_description,
+            },
+            args.emit,
+          );
           // This message is done — its local indices are now spoken for.
-          // Shift the next message's (which will again start counting from 0)
-          // past them.
-          const maxLocal = blockKinds.size > 0 ? Math.max(...blockKinds.keys()) : -1;
-          globalOffset += maxLocal + 1;
-          blockKinds = new Map();
+          // Shift the next message FROM THE SAME (sub)agent (which will again
+          // start counting from 0) past them.
+          const maxLocal = t.blockKinds.size > 0 ? Math.max(...t.blockKinds.keys()) : -1;
+          t.globalOffset += maxLocal + 1;
+          t.blockKinds.clear();
           break;
         }
 
@@ -340,6 +371,7 @@ export function handleStreamEvent(
   turnId: string,
   blockKinds: Map<number, "text" | "thinking" | "tool_use">,
   globalOffset: number,
+  parentToolUseId: string | null,
   emit: (p: EventPayload) => void,
 ): void {
   const e = event as {
@@ -359,7 +391,14 @@ export function handleStreamEvent(
     const kind = blockKinds.get(e.index) ?? "text";
     const text = e.delta?.type === "text_delta" ? e.delta.text : e.delta?.type === "thinking_delta" ? e.delta.thinking : undefined;
     if (typeof text === "string" && text.length > 0) {
-      emit({ kind: "assistant_delta", turnId, blockIndex: globalOffset + e.index, blockKind: kind, text });
+      emit({
+        kind: "assistant_delta",
+        turnId,
+        blockIndex: globalOffset + e.index,
+        blockKind: kind,
+        text,
+        ...(parentToolUseId ? { parentToolUseId } : {}),
+      });
     }
   }
 }
@@ -378,11 +417,19 @@ export function handleStreamEvent(
  * item, in order, to the next `blockKinds` entry of the same kind keeps the
  * numbering identical to what handleStreamEvent already used.
  */
+/** Identity of the (sub)agent a finalized assistant message came from — see handleAssistantMessage. */
+export type SubagentContext = {
+  parentToolUseId: string | null;
+  subagentType?: string;
+  taskDescription?: string;
+};
+
 export function handleAssistantMessage(
   message: unknown,
   turnId: string,
   blockKinds: Map<number, "text" | "thinking" | "tool_use">,
   globalOffset: number,
+  subagentCtx: SubagentContext,
   emit: (p: EventPayload) => void,
 ): void {
   const content = (message as { content?: unknown }).content;
@@ -390,6 +437,13 @@ export function handleAssistantMessage(
 
   const localIndices = [...blockKinds.keys()].sort((a, b) => a - b);
   let cursor = 0;
+  const subagentFields = subagentCtx.parentToolUseId
+    ? {
+        parentToolUseId: subagentCtx.parentToolUseId,
+        ...(subagentCtx.subagentType ? { subagentType: subagentCtx.subagentType } : {}),
+        ...(subagentCtx.taskDescription ? { taskDescription: subagentCtx.taskDescription } : {}),
+      }
+    : {};
 
   content.forEach((block: any) => {
     const kind: "text" | "thinking" | "tool_use" =
@@ -409,6 +463,7 @@ export function handleAssistantMessage(
         toolUseId: null,
         toolName: null,
         toolInput: null,
+        ...subagentFields,
       });
     } else if (block?.type === "thinking") {
       emit({
@@ -420,6 +475,7 @@ export function handleAssistantMessage(
         toolUseId: null,
         toolName: null,
         toolInput: null,
+        ...subagentFields,
       });
     } else if (block?.type === "tool_use") {
       emit({
@@ -431,6 +487,7 @@ export function handleAssistantMessage(
         toolUseId: String(block.id ?? ""),
         toolName: String(block.name ?? ""),
         toolInput: block.input ?? null,
+        ...subagentFields,
       });
     }
   });

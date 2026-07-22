@@ -17,6 +17,7 @@ import {
   type EditToolView,
   type PermissionModeKey,
   type PermissionView,
+  type SubagentView,
   type TimelineItem,
   type TodoItemView,
   type TurnView,
@@ -260,6 +261,7 @@ function Block({ block, turnRunning }: { block: BlockView; turnRunning: boolean 
             {truncate(block.result.summary, 800)}
           </pre>
         )}
+        {block.subagent && <SubagentActivity subagent={block.subagent} />}
       </div>
     );
   }
@@ -267,6 +269,40 @@ function Block({ block, turnRunning }: { block: BlockView; turnRunning: boolean 
     return <ThinkingBlock block={block} live={turnRunning && block.endedAtMs == null} />;
   }
   return <Markdown content={block.text} />;
+}
+
+/** A Task call's own nested activity, live-streamed via the Agent SDK's forwardSubagentText — collapsible, open by default while running. */
+function SubagentActivity({ subagent }: { subagent: SubagentView }) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const prevStatus = useRef(subagent.status);
+
+  useEffect(() => {
+    // Native <details>'s `open` attribute isn't reliably reactive as a React
+    // prop across re-renders (React applies it at mount but doesn't force-sync
+    // it on later updates) — drive the one transition we care about
+    // (running -> done) imperatively so it actually collapses once finished.
+    if (prevStatus.current === "running" && subagent.status === "done" && detailsRef.current) {
+      detailsRef.current.open = false;
+    }
+    prevStatus.current = subagent.status;
+  }, [subagent.status]);
+
+  return (
+    <details ref={detailsRef} className="border-t border-(--crc-border) px-3 py-2" open={subagent.status === "running"}>
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-(--crc-fg-muted)">
+        <span
+          className={`codicon ${subagent.status === "running" ? "codicon-loading codicon-modifier-spin" : "codicon-pass-filled text-(--crc-success)"}`}
+        />
+        <span className="font-medium text-(--crc-fg)">{subagent.subagentType ?? "Subagent"}</span>
+        {subagent.taskDescription && <span className="truncate">— {subagent.taskDescription}</span>}
+      </summary>
+      <div className="mt-1.5 space-y-1.5 border-l-2 border-(--crc-border) pl-3">
+        {subagent.blocks.map((b, i) => (
+          <Block key={i} block={b} turnRunning={subagent.status === "running"} />
+        ))}
+      </div>
+    </details>
+  );
 }
 
 /** Caps how many diff lines render before collapsing the rest into a note — a full-file Write can be thousands of lines. */

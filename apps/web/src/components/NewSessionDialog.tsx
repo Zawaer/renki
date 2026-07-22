@@ -3,7 +3,10 @@ import { useEffect, useState } from "react";
 import { useClient } from "../lib/client.js";
 import { Button } from "./ui.js";
 
-/** Create a session: pick a repo, base branch, optional new-branch name + title. */
+/** Sentinel repoId value for "no repo" — a real repo's id is never empty. */
+const NO_REPO = "";
+
+/** Create a session: pick a repo (or "No repo" for a plain scratch dir), base branch, optional new-branch name + title. */
 export function NewSessionDialog({
   onClose,
   onCreated,
@@ -13,7 +16,7 @@ export function NewSessionDialog({
 }) {
   const { rest } = useClient();
   const [repos, setRepos] = useState<Repo[]>([]);
-  const [repoId, setRepoId] = useState("");
+  const [repoId, setRepoId] = useState(NO_REPO);
   const [baseBranch, setBaseBranch] = useState("");
   const [newBranch, setNewBranch] = useState("");
   const [title, setTitle] = useState("");
@@ -36,19 +39,23 @@ export function NewSessionDialog({
   function pickRepo(id: string) {
     setRepoId(id);
     const repo = repos.find((r) => r.id === id);
-    if (repo) setBaseBranch(repo.defaultBranch);
+    setBaseBranch(repo?.defaultBranch ?? "");
   }
 
   async function create() {
     setBusy(true);
     setError(null);
     try {
-      const session = await rest.createSession({
-        repoId,
-        baseBranch,
-        newBranch: newBranch.trim() || undefined,
-        title: title.trim() || undefined,
-      });
+      const session = await rest.createSession(
+        repoId === NO_REPO
+          ? { title: title.trim() || undefined }
+          : {
+              repoId,
+              baseBranch,
+              newBranch: newBranch.trim() || undefined,
+              title: title.trim() || undefined,
+            },
+      );
       onCreated(session);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create session.");
@@ -67,6 +74,7 @@ export function NewSessionDialog({
         <label className="block space-y-1">
           <span className="text-xs text-(--crc-fg-muted)">Repository</span>
           <select value={repoId} onChange={(e) => pickRepo(e.target.value)} className="ns-input">
+            <option value={NO_REPO}>No repo (just chat)</option>
             {repos.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.name}
@@ -75,20 +83,24 @@ export function NewSessionDialog({
           </select>
         </label>
 
-        <label className="block space-y-1">
-          <span className="text-xs text-(--crc-fg-muted)">Base branch</span>
-          <input value={baseBranch} onChange={(e) => setBaseBranch(e.target.value)} className="ns-input" />
-        </label>
+        {repoId !== NO_REPO && (
+          <>
+            <label className="block space-y-1">
+              <span className="text-xs text-(--crc-fg-muted)">Base branch</span>
+              <input value={baseBranch} onChange={(e) => setBaseBranch(e.target.value)} className="ns-input" />
+            </label>
 
-        <label className="block space-y-1">
-          <span className="text-xs text-(--crc-fg-muted)">New branch (optional)</span>
-          <input
-            value={newBranch}
-            onChange={(e) => setNewBranch(e.target.value)}
-            placeholder="auto: crc/xxxxxx"
-            className="ns-input"
-          />
-        </label>
+            <label className="block space-y-1">
+              <span className="text-xs text-(--crc-fg-muted)">New branch (optional)</span>
+              <input
+                value={newBranch}
+                onChange={(e) => setNewBranch(e.target.value)}
+                placeholder="auto: crc/xxxxxx"
+                className="ns-input"
+              />
+            </label>
+          </>
+        )}
 
         <label className="block space-y-1">
           <span className="text-xs text-(--crc-fg-muted)">Title (optional)</span>
@@ -101,7 +113,7 @@ export function NewSessionDialog({
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" disabled={busy || !repoId || !baseBranch} onClick={create}>
+          <Button variant="primary" disabled={busy || (repoId !== NO_REPO && !baseBranch)} onClick={create}>
             {busy ? "Creating…" : "Create"}
           </Button>
         </div>

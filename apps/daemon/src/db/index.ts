@@ -31,6 +31,7 @@ export function openDb(config: Config) {
   // `CREATE TABLE IF NOT EXISTS` above only helps fresh databases — a table
   // that already exists keeps its old columns. Patch new ones in by hand.
   ensureColumn(sqlite, "sessions", "has_pending_permission", "INTEGER NOT NULL DEFAULT 0");
+  ensureSessionsRepoColumnsNullable(sqlite);
 
   logger.info("database ready", { path: config.dbPath });
   return db;
@@ -41,4 +42,44 @@ function ensureColumn(sqlite: Database.Database, table: string, column: string, 
   if (!cols.some((c) => c.name === column)) {
     sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
   }
+}
+
+/**
+ * `repo_id`/`base_branch`/`branch` used to be NOT NULL (every session was tied
+ * to a repo). Repo-less "just chat" sessions need them nullable, but SQLite
+ * can't drop a NOT NULL constraint with ALTER TABLE — the whole table has to
+ * be rebuilt. Only runs once per database: fresh ones already get the
+ * nullable columns straight from `DDL` above.
+ */
+function ensureSessionsRepoColumnsNullable(sqlite: Database.Database): void {
+  const cols = sqlite.prepare(`PRAGMA table_info(sessions)`).all() as { name: string; notnull: number }[];
+  const repoId = cols.find((c) => c.name === "repo_id");
+  if (!repoId || repoId.notnull === 0) return;
+
+  logger.info("migrating sessions table to allow repo-less sessions");
+  sqlite.exec(`
+    CREATE TABLE sessions_new (
+      id TEXT PRIMARY KEY,
+      repo_id TEXT,
+      repo_name TEXT NOT NULL,
+      base_branch TEXT,
+      branch TEXT,
+      worktree_path TEXT NOT NULL,
+      status TEXT NOT NULL,
+      has_pending_permission INTEGER NOT NULL DEFAULT 0,
+      controller TEXT,
+      claude_session_id TEXT,
+      title TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      last_activity_at INTEGER NOT NULL
+    );
+    INSERT INTO sessions_new SELECT
+      id, repo_id, repo_name, base_branch, branch, worktree_path, status,
+      has_pending_permission, controller, claude_session_id, title,
+      created_at, updated_at, last_activity_at
+    FROM sessions;
+    DROP TABLE sessions;
+    ALTER TABLE sessions_new RENAME TO sessions;
+  `);
 }

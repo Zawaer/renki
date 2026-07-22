@@ -2,6 +2,7 @@
 export type SessionErrorCode =
   | "session_not_found"
   | "repo_not_found"
+  | "invalid_request"
   | "not_controller"
   | "session_busy"
   | "session_archived"

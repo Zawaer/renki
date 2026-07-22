@@ -78,7 +78,7 @@ export class EventLog {
     // the "unknown" fallback below only guards against future data cleanup.
     const repoBySession = new Map<string, { repoId: string; repoName: string }>();
     for (const s of this.db.select({ id: sessions.id, repoId: sessions.repoId, repoName: sessions.repoName }).from(sessions).all()) {
-      repoBySession.set(s.id, { repoId: s.repoId, repoName: s.repoName });
+      repoBySession.set(s.id, { repoId: s.repoId ?? "none", repoName: s.repoName });
     }
 
     const rows = this.db

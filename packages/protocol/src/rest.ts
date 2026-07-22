@@ -17,13 +17,19 @@ export const ListReposResponse = z.object({
 });
 export type ListReposResponse = z.infer<typeof ListReposResponse>;
 
-export const CreateSessionRequest = z.object({
-  repoId: z.string().min(1),
-  baseBranch: z.string().min(1),
-  /** New branch to create for this session's worktree. Omit to derive one. */
-  newBranch: z.string().min(1).optional(),
-  title: z.string().min(1).max(200).optional(),
-});
+/** Omit `repoId` entirely for a repo-less session — just a plain directory to chat in, no git worktree. */
+export const CreateSessionRequest = z
+  .object({
+    repoId: z.string().min(1).optional(),
+    baseBranch: z.string().min(1).optional(),
+    /** New branch to create for this session's worktree. Omit to derive one. */
+    newBranch: z.string().min(1).optional(),
+    title: z.string().min(1).max(200).optional(),
+  })
+  .refine((v) => !v.repoId || !!v.baseBranch, {
+    message: "baseBranch is required when repoId is set",
+    path: ["baseBranch"],
+  });
 export type CreateSessionRequest = z.infer<typeof CreateSessionRequest>;
 
 export const CreateSessionResponse = z.object({

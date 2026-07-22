@@ -277,7 +277,12 @@ function tokenFrom(req: FastifyRequest): string | undefined {
 
 function sendSessionError(reply: FastifyReply, err: unknown) {
   if (err instanceof SessionError) {
-    const status = err.code === "session_not_found" || err.code === "repo_not_found" ? 404 : 409;
+    const status =
+      err.code === "session_not_found" || err.code === "repo_not_found"
+        ? 404
+        : err.code === "invalid_request"
+          ? 400
+          : 409;
     return reply.code(status).send({ error: err.code, message: err.message });
   }
   logger.error("request failed", { err: err instanceof Error ? err.stack : String(err) });

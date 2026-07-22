@@ -147,7 +147,7 @@ function Row({
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm text-(--crc-fg)">{session.title || session.repoName}</div>
           <div className="truncate text-xs text-(--crc-fg-muted)">
-            {session.repoName}:{session.branch}
+            {session.branch ? `${session.repoName}:${session.branch}` : session.repoName}
           </div>
         </div>
         {session.controller && <span className="codicon codicon-lock text-xs text-(--crc-link)" />}

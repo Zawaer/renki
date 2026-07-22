@@ -1,6 +1,8 @@
 import type { PermissionMode, Query } from "@anthropic-ai/claude-agent-sdk";
 import type { Session, SessionStatus } from "@crc/protocol";
 import { desc, eq } from "drizzle-orm";
+import { mkdirSync, rmSync } from "node:fs";
+import { resolve } from "node:path";
 import type { Config } from "../config.js";
 import type { DB } from "../db/index.js";
 import { sessions } from "../db/schema.js";
@@ -81,32 +83,22 @@ export class SessionManager {
 
   // ── Creation / listing / teardown ──────────────────────────────────────────
 
+  /** Omit `repoId` for a repo-less session: a plain scratch directory, no git worktree, just for chatting. */
   async createSession(input: {
-    repoId: string;
-    baseBranch: string;
+    repoId?: string;
+    baseBranch?: string;
     newBranch?: string;
     title?: string;
   }): Promise<Session> {
-    const repo = await findRepo(this.config, input.repoId);
-    if (!repo) throw new SessionError("repo_not_found", `Unknown repo: ${input.repoId}`);
-
     const id = newSessionId();
-    const { worktreePath, branch } = await createWorktree(
-      this.config,
-      repo.path,
-      id,
-      input.baseBranch,
-      input.newBranch,
-    );
+    const created = input.repoId
+      ? await this.createRepoSession(id, input.repoId, input.baseBranch, input.newBranch)
+      : this.createPlainSession(id);
 
     const now = Date.now();
     const row = {
       id,
-      repoId: repo.id,
-      repoName: repo.name,
-      baseBranch: input.baseBranch,
-      branch,
-      worktreePath,
+      ...created,
       status: "idle" as SessionStatus,
       hasPendingPermission: false,
       controller: null,
@@ -122,20 +114,29 @@ export class SessionManager {
     // status. Recording status here means the log fully describes state from
     // seq 0 — a client can fold it and know the session is idle without any
     // out-of-band snapshot.
-    this.events.append(id, {
-      kind: "session_created",
-      repoId: repo.id,
-      repoName: repo.name,
-      baseBranch: input.baseBranch,
-      branch,
-      worktreePath,
-    });
+    this.events.append(id, { kind: "session_created", ...created });
     this.events.append(id, { kind: "status_changed", status: "idle" });
 
-    logger.info("session created", { id, repo: repo.name, branch });
+    logger.info("session created", { id, repo: created.repoName, branch: created.branch });
     const session = rowToSession(row);
     this.broadcast?.onSessionChanged(session);
     return session;
+  }
+
+  private async createRepoSession(id: string, repoId: string, baseBranch: string | undefined, newBranch: string | undefined) {
+    const repo = await findRepo(this.config, repoId);
+    if (!repo) throw new SessionError("repo_not_found", `Unknown repo: ${repoId}`);
+    if (!baseBranch) throw new SessionError("invalid_request", "baseBranch is required when repoId is set");
+
+    const { worktreePath, branch } = await createWorktree(this.config, repo.path, id, baseBranch, newBranch);
+    return { repoId: repo.id, repoName: repo.name, baseBranch, branch, worktreePath };
+  }
+
+  /** A plain directory with nothing checked out — just somewhere for Claude to chat/scratch, no git involved. */
+  private createPlainSession(id: string) {
+    const worktreePath = resolve(this.config.dataDir, "chats", id);
+    mkdirSync(worktreePath, { recursive: true });
+    return { repoId: null, repoName: "No repo", baseBranch: null, branch: null, worktreePath };
   }
 
   listSessions(): Session[] {
@@ -149,13 +150,9 @@ export class SessionManager {
   }
 
   async archiveSession(id: string): Promise<Session> {
-    const repo = await findRepo(this.config, this.getSession(id).repoId);
-    const session = this.getSession(id);
-    if (repo) {
-      await removeWorktree(repo.path, session.worktreePath, session.branch).catch((err) =>
-        logger.warn("worktree cleanup failed during archive", { id, err: String(err) }),
-      );
-    }
+    await this.cleanUpWorkdir(this.getSession(id)).catch((err) =>
+      logger.warn("workdir cleanup failed during archive", { id, err: String(err) }),
+    );
     this.patch(id, { status: "archived", controller: null });
     this.events.append(id, { kind: "status_changed", status: "archived" });
     this.events.append(id, { kind: "control_changed", controller: null, controllerName: null });
@@ -172,18 +169,25 @@ export class SessionManager {
   async deleteSession(id: string): Promise<void> {
     const session = this.getSession(id);
     if (session.status !== "archived") {
-      const repo = await findRepo(this.config, session.repoId);
-      if (repo) {
-        await removeWorktree(repo.path, session.worktreePath, session.branch).catch((err) =>
-          logger.warn("worktree cleanup failed during delete", { id, err: String(err) }),
-        );
-      }
+      await this.cleanUpWorkdir(session).catch((err) =>
+        logger.warn("workdir cleanup failed during delete", { id, err: String(err) }),
+      );
     }
     this.events.deleteAll(id);
     this.db.delete(sessions).where(eq(sessions.id, id)).run();
     this.pendingPermissions.delete(id);
     this.broadcast?.onSessionRemoved(id);
     logger.info("session deleted", { id });
+  }
+
+  /** Tear down a session's on-disk working directory: a git worktree for a repo session, or just the plain scratch dir. */
+  private async cleanUpWorkdir(session: Session): Promise<void> {
+    if (!session.repoId) {
+      rmSync(session.worktreePath, { recursive: true, force: true });
+      return;
+    }
+    const repo = await findRepo(this.config, session.repoId);
+    if (repo && session.branch) await removeWorktree(repo.path, session.worktreePath, session.branch);
   }
 
   // ── Take-control locking ────────────────────────────────────────────────────

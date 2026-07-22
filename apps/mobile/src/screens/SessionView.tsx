@@ -125,7 +125,8 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle} numberOfLines={1}>
-            {conv.repoName ?? "…"}:{conv.branch ?? ""}
+            {conv.repoName ?? "…"}
+            {conv.branch ? `:${conv.branch}` : ""}
           </Text>
           <Text style={styles.headerSub}>
             <View style={[styles.dot, { backgroundColor: statusColor[status] ?? colors.faint }]} /> {status}

@@ -26,6 +26,7 @@ const execFileAsync = promisify(execFile);
  *   crc init
  *   crc repos
  *   crc new <repoId> [--base <branch>] [--branch <name>] [--title <t>]
+ *   crc new --plain [--title <t>]   (repo-less session, just a plain directory to chat in)
  *   crc sessions
  *   crc prompt <sessionId> <text...> [--model <m>]
  *   crc transcript <sessionId>
@@ -43,6 +44,7 @@ async function main() {
       branch: { type: "string" },
       title: { type: "string" },
       model: { type: "string" },
+      plain: { type: "boolean" },
     },
   });
 
@@ -139,8 +141,14 @@ async function main() {
 
   switch (command) {
     case "new": {
+      if (values.plain) {
+        const session = await manager.createSession({ title: values.title });
+        console.log(`created ${session.id}`);
+        console.log(`  cwd=${session.worktreePath}`);
+        break;
+      }
       const repoId = rest[0];
-      if (!repoId) return fail("usage: crc new <repoId> [--base <branch>]");
+      if (!repoId) return fail("usage: crc new <repoId> [--base <branch>]  |  crc new --plain [--title <t>]");
       const base = values.base ?? (await defaultBranchFor(config, repoId));
       const session = await manager.createSession({
         repoId,
@@ -159,7 +167,8 @@ async function main() {
       if (list.length === 0) console.log("no sessions");
       for (const s of list) {
         const ctrl = s.controller ? `controller=${s.controller}` : "unlocked";
-        console.log(`${s.id}\t${s.status}\t${s.repoName}:${s.branch}\t${ctrl}\t${s.title ?? ""}`);
+        const repo = s.branch ? `${s.repoName}:${s.branch}` : s.repoName;
+        console.log(`${s.id}\t${s.status}\t${repo}\t${ctrl}\t${s.title ?? ""}`);
       }
       break;
     }
@@ -207,7 +216,7 @@ async function main() {
 
     default:
       return fail(
-        "commands: token | repos | usage login|connect | new <repoId> | sessions | prompt <sessionId> <text> | transcript <sessionId> | archive <sessionId>",
+        "commands: token | repos | usage login|connect | new <repoId>|--plain | sessions | prompt <sessionId> <text> | transcript <sessionId> | archive <sessionId>",
       );
   }
 }

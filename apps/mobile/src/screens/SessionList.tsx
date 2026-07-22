@@ -95,7 +95,8 @@ export function SessionList({
                 {item.title || item.repoName}
               </Text>
               <Text style={styles.rowSub} numberOfLines={1}>
-                {item.repoName}:{item.branch} · {item.hasPendingPermission ? "awaiting permission" : item.status}
+                {item.branch ? `${item.repoName}:${item.branch}` : item.repoName} ·{" "}
+                {item.hasPendingPermission ? "awaiting permission" : item.status}
               </Text>
             </View>
             {item.controller && <Ionicons name="lock-closed" size={12} color={colors.accent} />}
@@ -135,6 +136,7 @@ function NewSessionModal({
 }) {
   const { rest } = useClient();
   const [repos, setRepos] = useState<Repo[]>([]);
+  /** null = "No repo" (a plain scratch dir, just for chatting) — a real repo's id is never empty/null. */
   const [repoId, setRepoId] = useState<string | null>(null);
   const [baseBranch, setBaseBranch] = useState("");
   const [title, setTitle] = useState("");
@@ -146,11 +148,14 @@ function NewSessionModal({
   }, [rest]);
 
   async function create() {
-    if (!repoId) return;
     setBusy(true);
     setError(null);
     try {
-      onCreated(await rest.createSession({ repoId, baseBranch, title: title.trim() || undefined }));
+      onCreated(
+        await rest.createSession(
+          repoId ? { repoId, baseBranch, title: title.trim() || undefined } : { title: title.trim() || undefined },
+        ),
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create.");
       setBusy(false);
@@ -163,6 +168,15 @@ function NewSessionModal({
         <View style={styles.modalCard}>
           <Text style={styles.modalTitle}>New session</Text>
           <Text style={styles.label}>Repository</Text>
+          <TouchableOpacity
+            style={[styles.repoRow, repoId === null && styles.repoRowSelected]}
+            onPress={() => {
+              setRepoId(null);
+              setBaseBranch("");
+            }}
+          >
+            <Text style={styles.repoName}>No repo (just chat)</Text>
+          </TouchableOpacity>
           <FlatList
             data={repos}
             keyExtractor={(r) => r.id}
@@ -180,8 +194,12 @@ function NewSessionModal({
               </TouchableOpacity>
             )}
           />
-          <Text style={styles.label}>Base branch</Text>
-          <TextInput style={styles.input} value={baseBranch} onChangeText={setBaseBranch} autoCapitalize="none" />
+          {repoId !== null && (
+            <>
+              <Text style={styles.label}>Base branch</Text>
+              <TextInput style={styles.input} value={baseBranch} onChangeText={setBaseBranch} autoCapitalize="none" />
+            </>
+          )}
           <Text style={styles.label}>Title (optional)</Text>
           <TextInput style={styles.input} value={title} onChangeText={setTitle} />
           {error && <Text style={styles.error}>{error}</Text>}
@@ -190,8 +208,8 @@ function NewSessionModal({
               <Text style={styles.link}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.newBtn, (!repoId || !baseBranch || busy) && styles.disabled]}
-              disabled={!repoId || !baseBranch || busy}
+              style={[styles.newBtn, ((repoId !== null && !baseBranch) || busy) && styles.disabled]}
+              disabled={(repoId !== null && !baseBranch) || busy}
               onPress={create}
             >
               <Text style={styles.newBtnText}>{busy ? "Creating…" : "Create"}</Text>

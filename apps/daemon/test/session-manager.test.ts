@@ -60,6 +60,23 @@ describe("createSession", () => {
       code: "repo_not_found",
     });
   });
+
+  it("rejects a repoId with no baseBranch", async () => {
+    const { manager, repoId } = setup();
+    await expect(manager.createSession({ repoId })).rejects.toMatchObject({ code: "invalid_request" });
+  });
+
+  it("creates a repo-less session in a plain scratch directory when repoId is omitted", async () => {
+    const { manager } = setup();
+    const session = await manager.createSession({ title: "Just chatting" });
+
+    expect(session.repoId).toBeNull();
+    expect(session.baseBranch).toBeNull();
+    expect(session.branch).toBeNull();
+    expect(session.repoName).toBe("No repo");
+    expect(existsSync(session.worktreePath)).toBe(true);
+    expect(kinds(manager, session.id)).toEqual(["session_created", "status_changed"]);
+  });
 });
 
 describe("take / release control", () => {

@@ -25,13 +25,16 @@ export const AssistantBlockKind = z.enum(["text", "thinking", "tool_use"]);
 export type AssistantBlockKind = z.infer<typeof AssistantBlockKind>;
 
 const payloads = [
-  /** Session was created against a repo/branch and given a worktree. */
+  /**
+   * Session was created, either against a repo/branch (with a worktree) or,
+   * if `repoId` is null, as a plain scratch directory with no git involved.
+   */
   z.object({
     kind: z.literal("session_created"),
-    repoId: z.string(),
+    repoId: z.string().nullable(),
     repoName: z.string(),
-    baseBranch: z.string(),
-    branch: z.string(),
+    baseBranch: z.string().nullable(),
+    branch: z.string().nullable(),
     worktreePath: z.string(),
   }),
 

@@ -16,10 +16,10 @@ import { integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core"
 
 export const sessions = sqliteTable("sessions", {
   id: text("id").primaryKey(),
-  repoId: text("repo_id").notNull(),
+  repoId: text("repo_id"),
   repoName: text("repo_name").notNull(),
-  baseBranch: text("base_branch").notNull(),
-  branch: text("branch").notNull(),
+  baseBranch: text("base_branch"),
+  branch: text("branch"),
   worktreePath: text("worktree_path").notNull(),
   status: text("status").notNull(),
   hasPendingPermission: integer("has_pending_permission", { mode: "boolean" }).notNull().default(false),
@@ -57,10 +57,10 @@ export const events = sqliteTable(
 export const DDL = `
   CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
-    repo_id TEXT NOT NULL,
+    repo_id TEXT,
     repo_name TEXT NOT NULL,
-    base_branch TEXT NOT NULL,
-    branch TEXT NOT NULL,
+    base_branch TEXT,
+    branch TEXT,
     worktree_path TEXT NOT NULL,
     status TEXT NOT NULL,
     has_pending_permission INTEGER NOT NULL DEFAULT 0,

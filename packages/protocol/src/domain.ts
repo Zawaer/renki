@@ -40,7 +40,9 @@ export type SessionStatus = z.infer<typeof SessionStatus>;
 
 /**
  * A single Claude Code session, pinned to a dedicated git worktree so parallel
- * sessions on the same repo never collide on file state.
+ * sessions on the same repo never collide on file state. A session can also
+ * be created with no repo at all (`repoId`/`baseBranch`/`branch` all null) —
+ * just a plain scratch directory for chatting, with no git involved.
  *
  * `claudeSessionId` is the id the Agent SDK gives us; we persist it so we can
  * `resume` the conversation on the next prompt even after a daemon restart.
@@ -49,10 +51,10 @@ export type SessionStatus = z.infer<typeof SessionStatus>;
  */
 export const Session = z.object({
   id: z.string().min(1),
-  repoId: z.string().min(1),
+  repoId: z.string().min(1).nullable(),
   repoName: z.string().min(1),
-  baseBranch: z.string().min(1),
-  branch: z.string().min(1),
+  baseBranch: z.string().min(1).nullable(),
+  branch: z.string().min(1).nullable(),
   worktreePath: z.string().min(1),
   status: SessionStatus,
   /**

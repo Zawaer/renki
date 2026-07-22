@@ -67,15 +67,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN git config --system --add safe.directory '*'
 
 # cswap (optional multi-account usage rotation — see SETUP.md § Multi-account
-# usage rotation) is a pipx-managed Python package on the host; its installed
-# shim script's shebang points at a host-only venv path
+# usage rotation) is normally a pipx-managed Python package on the host, but
+# its installed shim script's shebang points at a host-only venv path
 # (~/.local/share/pipx/venvs/claude-swap/bin/python), so bind-mounting just
 # that file the way RTK's single binary gets mounted doesn't work — it needs
-# installing into the image itself instead.
-RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv pipx \
+# installing into the image itself instead. It also requires Python 3.12+,
+# newer than bookworm-slim's system python3 (3.11), so plain
+# apt-get python3/pipx can't satisfy it — use uv instead, which downloads its
+# own standalone Python build rather than depending on the distro's version.
+ENV PATH="/root/.local/bin:${PATH}"
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
-    && pipx install claude-swap \
-    && ln -s /root/.local/bin/cswap /usr/local/bin/cswap
+    && curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && uv python install 3.12 \
+    && uv tool install claude-swap --python 3.12
 
 WORKDIR /app
 COPY --from=builder /app/deploy .

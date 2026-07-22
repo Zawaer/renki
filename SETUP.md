@@ -41,6 +41,16 @@ git clone <this-repo> && cd claude-remote-control
 That's it for this step — `docker compose up --build` (step 3) builds the
 image for you.
 
+**Sessions run inside this container**, not on the host — so a session's own
+Bash tool calls only have whatever CLI tools the `Dockerfile`'s `runtime`
+stage installs (currently `git`, plus `uv`/`claude-swap` if you set those up
+— see [Multi-account usage rotation](#multi-account-usage-rotation-optional)
+— and `python3`). If a session hits `<tool>: command not found` for something
+else (`jq`, `ripgrep`, ...), that's this: add it to the `apt-get install`
+line in the `runtime` stage and rebuild, the same fix as for `python3`. It
+isn't enough that the tool is installed on the host — only what's in this
+image is visible inside the container.
+
 ### Without Docker
 
 ```bash

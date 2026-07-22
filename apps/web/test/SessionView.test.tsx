@@ -296,7 +296,9 @@ describe("SessionView", () => {
     fireEvent.change(screen.getByPlaceholderText(/Send a prompt/), { target: { value: "hello" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
-    expect(calls).toEqual([{ sid: sessionId, text: "hello", opts: { model: "claude-opus-4-8", maxThinkingTokens: 32_000 } }]);
+    expect(calls).toEqual([
+      { sid: sessionId, text: "hello", opts: { model: "claude-opus-4-8", maxThinkingTokens: 32_000, permissionMode: "default" } },
+    ]);
   });
 
   it("lets you type a model ID directly when it isn't in the fetched list", async () => {

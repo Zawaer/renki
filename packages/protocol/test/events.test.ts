@@ -71,8 +71,14 @@ describe("WS messages", () => {
     expect(ClientMessage.safeParse({ type: "subscribe", sessionId: "s1", lastSeq: -2 }).success).toBe(false);
   });
 
-  it("rejects an empty submit_prompt", () => {
-    expect(ClientMessage.safeParse({ type: "submit_prompt", sessionId: "s1", promptId: "p1", text: "" }).success).toBe(false);
+  it("allows empty text at the schema layer (SessionManager enforces text-or-attachment)", () => {
+    // Per the doc comment on submit_prompt: an attachment-only prompt has no
+    // caption, so `text: ""` must parse here — a discriminated-union member
+    // can't carry a cross-field .refine() and stay a plain ZodObject. The
+    // actual "text or attachment" rule is runtime-enforced in
+    // SessionManager.submitPrompt (apps/daemon), covered by
+    // session-manager.test.ts's "refuses empty text with no attachments".
+    expect(ClientMessage.safeParse({ type: "submit_prompt", sessionId: "s1", promptId: "p1", text: "" }).success).toBe(true);
   });
 
   it("validates a replay server message carrying events", () => {

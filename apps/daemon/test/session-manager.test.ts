@@ -172,6 +172,37 @@ describe("submitPrompt guards (no turn spawned)", () => {
     ).rejects.toMatchObject({ code: "not_controller" });
   });
 
+  it("refuses empty text with no attachments as invalid_request", async () => {
+    const { manager, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+    await expect(
+      manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p1", text: "", resolvePermission: noopResolve }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    // Whitespace-only text is just as empty.
+    await expect(
+      manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p2", text: "   ", resolvePermission: noopResolve }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+  });
+
+  it("accepts empty text when at least one attachment is present", async () => {
+    const { manager, db, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+    // Force busy so this only exercises the guard, not a real claude spawn.
+    db.update(sessions).set({ status: "busy" }).where(eq(sessions.id, s.id)).run();
+    await expect(
+      manager.submitPrompt({
+        sessionId: s.id,
+        deviceId: "d1",
+        promptId: "p1",
+        text: "",
+        attachments: [{ name: "a.png", mediaType: "image/png", data: "AA==" }],
+        resolvePermission: noopResolve,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
   it("queues a second concurrent prompt instead of rejecting it", async () => {
     const { manager, db, repoId } = setup();
     const s = await newSession(manager, repoId);

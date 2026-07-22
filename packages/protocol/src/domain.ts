@@ -34,8 +34,11 @@ export type Repo = z.infer<typeof Repo>;
  *   busy     — a Claude turn is streaming right now; new prompts are rejected
  *   error    — last turn failed; still resumable
  *   archived — worktree cleaned up; kept for transcript history only
+ *   deleted  — hard-deleted by the user: transcript wiped, worktree gone, not
+ *              shown or resumable, but the row survives as a tombstone (repoId/
+ *              repoName only) so its turn_result stats keep counting forever
  */
-export const SessionStatus = z.enum(["idle", "busy", "error", "archived"]);
+export const SessionStatus = z.enum(["idle", "busy", "error", "archived", "deleted"]);
 export type SessionStatus = z.infer<typeof SessionStatus>;
 
 /** Distinguishes an ordinary session from one the daemon spawned itself to resolve a merge conflict. */

@@ -251,3 +251,43 @@ describe("archive", () => {
     }
   });
 });
+
+describe("delete", () => {
+  it("hides the session everywhere but keeps its turn_result stats attributed to the repo", async () => {
+    const { manager, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    manager.events.append(s.id, {
+      kind: "turn_result",
+      turnId: "t1",
+      promptId: "p1",
+      ok: true,
+      costUsd: 1.23,
+      durationMs: 1000,
+      errorMessage: null,
+      inputTokens: 10,
+      outputTokens: 20,
+    });
+
+    await manager.deleteSession(s.id);
+
+    expect(() => manager.getSession(s.id)).toThrow(SessionError);
+    expect(manager.listSessions().map((x) => x.id)).not.toContain(s.id);
+    expect(existsSync(s.worktreePath)).toBe(false);
+
+    // Transcript (session_created/status_changed/etc) is gone, but the
+    // turn_result itself survives so stats keep counting it.
+    expect(kinds(manager, s.id)).toEqual(["turn_result"]);
+
+    const stats = manager.events.statsSummary();
+    const repoBucket = stats.byRepo.find((r) => r.repoId === repoId);
+    expect(repoBucket?.turnCount).toBe(1);
+    expect(repoBucket?.costUsd).toBeCloseTo(1.23);
+  });
+
+  it("refuses any further operation on a deleted session", async () => {
+    const { manager, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    await manager.deleteSession(s.id);
+    expect(() => manager.takeControl(s.id, "d1")).toThrow(SessionError);
+  });
+});

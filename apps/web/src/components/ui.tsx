@@ -25,6 +25,8 @@ const STATUS_COLOR: Record<SessionStatus, string> = {
   busy: "bg-(--crc-warning) animate-pulse",
   error: "bg-(--crc-danger)",
   archived: "bg-(--crc-fg-muted)",
+  // Never actually rendered — deleted sessions are excluded from listSessions()/getSession().
+  deleted: "bg-(--crc-fg-muted)",
 };
 
 export function StatusDot({ status, pendingPermission }: { status: SessionStatus; pendingPermission?: boolean }) {

@@ -1,6 +1,6 @@
 import type { PermissionMode, Query } from "@anthropic-ai/claude-agent-sdk";
 import type { MergeConflictMeta, Session, SessionPurpose, SessionStatus } from "@crc/protocol";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, ne } from "drizzle-orm";
 import { mkdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Config } from "../config.js";
@@ -186,12 +186,18 @@ export class SessionManager {
   }
 
   listSessions(): Session[] {
-    return this.db.select().from(sessions).orderBy(desc(sessions.lastActivityAt)).all().map(rowToSession);
+    return this.db
+      .select()
+      .from(sessions)
+      .where(ne(sessions.status, "deleted"))
+      .orderBy(desc(sessions.lastActivityAt))
+      .all()
+      .map(rowToSession);
   }
 
   getSession(id: string): Session {
     const row = this.db.select().from(sessions).where(eq(sessions.id, id)).get();
-    if (!row) throw new SessionError("session_not_found", `Unknown session: ${id}`);
+    if (!row || row.status === "deleted") throw new SessionError("session_not_found", `Unknown session: ${id}`);
     return rowToSession(row);
   }
 
@@ -208,9 +214,13 @@ export class SessionManager {
   }
 
   /**
-   * Permanently remove a session: unlike archive, this drops the DB row and its
-   * whole event log too — no transcript history kept. Cleans up the worktree
-   * first if it hasn't already been (archived sessions have none left).
+   * Permanently remove a session: wipes its transcript and worktree — no
+   * content or history kept, not shown or resumable. Unlike an old-style full
+   * delete, the DB row itself survives as a tombstone (repoId/repoName plus
+   * status "deleted"), stripped of everything else, so its turn_result events
+   * (which we also keep, see EventLog.deleteTranscript) keep attributing to
+   * the right repo in stats forever. listSessions()/getSession() both exclude
+   * "deleted" rows, so tombstones are invisible everywhere except stats.
    */
   async deleteSession(id: string): Promise<void> {
     const session = this.getSession(id);
@@ -219,8 +229,20 @@ export class SessionManager {
         logger.warn("workdir cleanup failed during delete", { id, err: String(err) }),
       );
     }
-    this.events.deleteAll(id);
-    this.db.delete(sessions).where(eq(sessions.id, id)).run();
+    this.events.deleteTranscript(id);
+    this.db
+      .update(sessions)
+      .set({
+        status: "deleted",
+        controller: null,
+        claudeSessionId: null,
+        title: null,
+        hasPendingPermission: false,
+        worktreePath: "",
+        updatedAt: Date.now(),
+      })
+      .where(eq(sessions.id, id))
+      .run();
     this.pendingPermissions.delete(id);
     this.broadcast?.onSessionRemoved(id);
     logger.info("session deleted", { id });

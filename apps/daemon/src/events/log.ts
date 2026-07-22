@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { EventPayload, RepoStatsBucket, SessionEvent, StatsBucket, StatsResponse } from "@crc/protocol";
-import { and, asc, eq, gt, max } from "drizzle-orm";
+import { and, asc, eq, gt, max, ne } from "drizzle-orm";
 import type { DB } from "../db/index.js";
 import { events, sessions } from "../db/schema.js";
 
@@ -60,9 +60,14 @@ export class EventLog {
     return this.nextSeq(sessionId, /* peek */ true) - 1;
   }
 
-  /** Permanently remove all stored events for a session (used when hard-deleting a session). */
-  deleteAll(sessionId: string): void {
-    this.db.delete(events).where(eq(events.sessionId, sessionId)).run();
+  /**
+   * Wipe a session's transcript on hard delete, but keep its `turn_result`
+   * events so the numbers they carry (cost/tokens/duration) keep contributing
+   * to stats forever — deleteSession() turns the session row into a
+   * repoId/repoName-only tombstone to match.
+   */
+  deleteTranscript(sessionId: string): void {
+    this.db.delete(events).where(and(eq(events.sessionId, sessionId), ne(events.kind, "turn_result"))).run();
     this.heads.delete(sessionId);
   }
 
@@ -74,8 +79,10 @@ export class EventLog {
    * token fields came back null (e.g. an errored turn still cost wait time).
    */
   statsSummary(): StatsResponse {
-    // Sessions are never hard-deleted, so this should resolve for every turn —
-    // the "unknown" fallback below only guards against future data cleanup.
+    // Hard-deleted sessions stick around as repoId/repoName-only tombstones
+    // (status "deleted", excluded from listSessions/getSession) precisely so
+    // this join keeps resolving for their turn_result events. The "unknown"
+    // fallback below is now just a defensive guard, not the expected path.
     const repoBySession = new Map<string, { repoId: string; repoName: string }>();
     for (const s of this.db.select({ id: sessions.id, repoId: sessions.repoId, repoName: sessions.repoName }).from(sessions).all()) {
       repoBySession.set(s.id, { repoId: s.repoId ?? "none", repoName: s.repoName });

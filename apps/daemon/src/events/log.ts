@@ -60,6 +60,12 @@ export class EventLog {
     return this.nextSeq(sessionId, /* peek */ true) - 1;
   }
 
+  /** Permanently remove all stored events for a session (used when hard-deleting a session). */
+  deleteAll(sessionId: string): void {
+    this.db.delete(events).where(eq(events.sessionId, sessionId)).run();
+    this.heads.delete(sessionId);
+  }
+
   /**
    * Cost/token/wait-time analytics across every session, built by scanning
    * every stored `turn_result` event. Buckets by UTC day ("2026-07-22") and

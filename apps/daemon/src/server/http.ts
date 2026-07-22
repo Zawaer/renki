@@ -54,7 +54,7 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
   // need per-origin rules — the web/VS Code clients just need to reach it.
   app.addHook("onRequest", async (req, reply) => {
     reply.header("access-control-allow-origin", req.headers.origin ?? "*");
-    reply.header("access-control-allow-methods", "GET,POST,OPTIONS");
+    reply.header("access-control-allow-methods", "GET,POST,DELETE,OPTIONS");
     reply.header("access-control-allow-headers", "authorization,content-type");
     if (req.method === "OPTIONS") return reply.code(204).send();
   });
@@ -117,6 +117,15 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
   app.post<{ Params: { id: string } }>("/sessions/:id/archive", async (req, reply) => {
     try {
       return { session: await manager.archiveSession(req.params.id) };
+    } catch (err) {
+      return sendSessionError(reply, err);
+    }
+  });
+
+  app.delete<{ Params: { id: string } }>("/sessions/:id", async (req, reply) => {
+    try {
+      await manager.deleteSession(req.params.id);
+      return { ok: true };
     } catch (err) {
       return sendSessionError(reply, err);
     }

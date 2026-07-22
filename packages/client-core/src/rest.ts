@@ -4,6 +4,7 @@ import type {
   ConnectUsageKeyResponse,
   CreateSessionRequest,
   CreateSessionResponse,
+  DeleteSessionResponse,
   GetTranscriptResponse,
   ListReposResponse,
   ListSessionsResponse,
@@ -59,6 +60,11 @@ export class RestClient {
   async archiveSession(sessionId: string): Promise<Session> {
     const res = await this.post<{ session: Session }>(`/sessions/${encodeURIComponent(sessionId)}/archive`, {});
     return res.session;
+  }
+
+  /** Permanently removes the session and its transcript — unlike archive, there's no history left behind. */
+  async deleteSession(sessionId: string): Promise<void> {
+    await this.request<DeleteSessionResponse>("DELETE", `/sessions/${encodeURIComponent(sessionId)}`);
   }
 
   async listAccounts(): Promise<AccountsResponse> {

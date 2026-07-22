@@ -17,7 +17,7 @@ import { Markdown } from "./Markdown.js";
 import { Button, StatusBadge } from "./ui.js";
 
 export function SessionView({ sessionId }: { sessionId: string }) {
-  const { realtime, rest, config } = useClient();
+  const { realtime, config } = useClient();
   const store = realtime.conversation(sessionId);
   const conv = useStoreValue(store);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -60,11 +60,6 @@ export function SessionView({ sessionId }: { sessionId: string }) {
           ) : (
             <Button variant="primary" onClick={() => realtime.takeControl(sessionId)}>
               Take control
-            </Button>
-          )}
-          {status !== "archived" && (
-            <Button variant="danger" onClick={() => void rest.archiveSession(sessionId)}>
-              Archive
             </Button>
           )}
         </div>

@@ -103,6 +103,7 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
                 setSelected(id);
                 navigate("/");
               }}
+              onDeleted={(id) => setSelected((cur) => (cur === id ? null : cur))}
             />
           </div>
         </aside>

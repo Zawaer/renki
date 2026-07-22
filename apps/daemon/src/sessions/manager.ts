@@ -126,6 +126,26 @@ export class SessionManager {
     return this.getSession(id);
   }
 
+  /**
+   * Permanently remove a session: unlike archive, this drops the DB row and its
+   * whole event log too — no transcript history kept. Cleans up the worktree
+   * first if it hasn't already been (archived sessions have none left).
+   */
+  async deleteSession(id: string): Promise<void> {
+    const session = this.getSession(id);
+    if (session.status !== "archived") {
+      const repo = await findRepo(this.config, session.repoId);
+      if (repo) {
+        await removeWorktree(repo.path, session.worktreePath, session.branch).catch((err) =>
+          logger.warn("worktree cleanup failed during delete", { id, err: String(err) }),
+        );
+      }
+    }
+    this.events.deleteAll(id);
+    this.db.delete(sessions).where(eq(sessions.id, id)).run();
+    logger.info("session deleted", { id });
+  }
+
   // ── Take-control locking ────────────────────────────────────────────────────
 
   takeControl(id: string, deviceId: string, deviceName?: string): Session {

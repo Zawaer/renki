@@ -36,6 +36,12 @@ export const ListSessionsResponse = z.object({
 });
 export type ListSessionsResponse = z.infer<typeof ListSessionsResponse>;
 
+/** Permanently removes the session's row and event log (unlike archive, which keeps history). */
+export const DeleteSessionResponse = z.object({
+  ok: z.boolean(),
+});
+export type DeleteSessionResponse = z.infer<typeof DeleteSessionResponse>;
+
 /** Full transcript for cold-loading a session outside the WS flow. */
 export const GetTranscriptResponse = z.object({
   session: Session,

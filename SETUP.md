@@ -606,25 +606,41 @@ lookup:
 CRC_RTK_BIN=/home/you/.local/bin/rtk
 ```
 
+Note that `CRC_RTK_BIN` only changes how the daemon invokes RTK's own `rtk
+hook claude` binary to decide the rewrite — the rewritten Bash command that
+actually runs afterward is just plain text RTK's hook produced (e.g. `rtk
+find . -maxdepth 2 -type f`), with no path baked in. That bare `rtk` still
+gets resolved via the shell's own `PATH` when the command executes, so the
+directory `CRC_RTK_BIN` points at must ALSO be on `PATH` for this to work
+end-to-end — otherwise the permission prompt shows the rewritten command
+just fine (since that step uses `CRC_RTK_BIN` directly), but running it fails
+with "rtk: not found" once approved.
+
 **Docker is a different problem, not just PATH.** The container has its own
 filesystem — `~/.local/bin/rtk` on the host doesn't exist inside it at all,
 so `CRC_RTK_BIN` pointing at a host path will always `ENOENT` no matter what
 you set. Install `rtk` on the host, then bind-mount that one binary into the
-container so `CRC_RTK_BIN` resolves at the same path on both sides — add this
-under the `daemon` service in `docker-compose.override.yml` (gitignored,
-stays local to this host; merge it into the `daemon:` block if you already
-have one for reverse-proxy network wiring, don't add a second file — Compose
-only reads one):
+container at `/root/.local/bin/rtk` specifically — not an arbitrary path —
+since that's the one directory the `Dockerfile` already adds to `PATH` (for
+cswap; see its own comment there), which is exactly what the note above means
+by "must ALSO be on PATH": add this under the `daemon` service in
+`docker-compose.override.yml` (gitignored, stays local to this host; merge it
+into the `daemon:` block if you already have one for reverse-proxy network
+wiring, don't add a second file — Compose only reads one):
 
 ```yaml
 services:
   daemon:
     volumes:
-      - ${HOME}/.local/bin/rtk:/home/you/.local/bin/rtk:ro
+      - ${HOME}/.local/bin/rtk:/root/.local/bin/rtk:ro
 ```
 
+`CRC_RTK_BIN` doesn't need to be set at all in this case — `/root/.local/bin`
+is already on `PATH`, so the default (bare `rtk`) resolves correctly both for
+the daemon's own hook invocation and for the rewritten command it produces.
+
 Then `docker compose up -d` and confirm with
-`docker compose exec daemon /home/you/.local/bin/rtk --version`. If that
+`docker compose exec daemon /root/.local/bin/rtk --version`. If that
 fails with something other than "not found" (e.g. a missing shared library),
 the host's `rtk` binary isn't compatible with the `node:20-bookworm-slim`
 image's libc — install a build of `rtk` linked against a compatible libc, or

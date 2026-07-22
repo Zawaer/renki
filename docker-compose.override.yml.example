@@ -27,9 +27,14 @@ services:
     # Uncomment whichever of these you need — both live under the SAME
     # `volumes:` key, so uncomment that key once and pick your lines under it.
     # volumes:
-    #   # RTK token-savings support — see SETUP.md's RTK section. Replace
-    #   # /home/you with the actual path rtk was installed to on this host.
-    #   - ${HOME}/.local/bin/rtk:/home/you/.local/bin/rtk:ro
+    #   # RTK token-savings support — see SETUP.md's RTK section. The
+    #   # container-side path must be /root/.local/bin/rtk specifically — that
+    #   # directory (not the host-style ~/.local/bin) is the one the Dockerfile
+    #   # already adds to PATH, so the *rewritten* Bash commands RTK's hook
+    #   # produces (which just say bare `rtk ...`) can actually find it, not
+    #   # only the daemon's own hook invocation (which uses CRC_RTK_BIN's
+    #   # absolute path directly and would work regardless of PATH).
+    #   - ${HOME}/.local/bin/rtk:/root/.local/bin/rtk:ro
     #   # cswap (multi-account usage rotation — see SETUP.md § Multi-account
     #   # usage rotation). cswap itself is already installed INTO the image by
     #   # the Dockerfile, unlike rtk above — it's a pipx-managed Python

@@ -20,6 +20,12 @@
         }
       ],
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Used to attach a photo to a prompt — sent to Claude the same as any other attachment, never stored elsewhere."
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {

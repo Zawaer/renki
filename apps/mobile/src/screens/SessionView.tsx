@@ -4,11 +4,13 @@ import {
   EFFORT_LEVELS,
   estimateTokens,
   formatTokenCount,
+  MAX_ATTACHMENTS_PER_PROMPT,
   parseEditView,
   parsePlan,
   parseTodos,
   PERMISSION_MODES,
   THINKING_VERBS,
+  type Attachment,
   type BlockView,
   type EditToolView,
   type PermissionModeKey,
@@ -21,7 +23,9 @@ import type { CapabilitiesResponse } from "@crc/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import {
+  Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -31,6 +35,7 @@ import {
   View,
 } from "react-native";
 import { Markdown } from "../components/Markdown";
+import { pickDocumentAttachments, pickImageAttachments, type PendingAttachment } from "../lib/attachments";
 import { useClient, useStoreValue } from "../lib/client";
 import { statusColorFor, type ThemeColors, useTheme, withAlpha } from "../theme";
 
@@ -48,6 +53,10 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const [effortKey, setEffortKey] = useState(DEFAULT_EFFORT_KEY);
   const [permissionMode, setPermissionMode] = useState<PermissionModeKey>(DEFAULT_PERMISSION_MODE);
   const [capabilities, setCapabilities] = useState<CapabilitiesResponse>({ models: [], commands: [] });
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
 
   useEffect(() => {
     realtime.watch(sessionId);
@@ -82,13 +91,42 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
 
   function send() {
     const t = text.trim();
-    if (!t || !canSend) return;
+    if ((!t && attachments.length === 0) || !canSend) return;
     realtime.submitPrompt(sessionId, t, {
       model: model || undefined,
       maxThinkingTokens: effort?.maxThinkingTokens ?? undefined,
       permissionMode,
+      attachments: attachments.length > 0 ? attachments.map(({ id: _id, ...a }) => a) : undefined,
     });
     setText("");
+    setAttachments([]);
+    setAttachError(null);
+  }
+
+  /** Appends whatever came back from a picker, surfacing the first error (if any) below the composer. */
+  function addPicked(results: Array<PendingAttachment | { error: string }>) {
+    const accepted = results.filter((r): r is PendingAttachment => !("error" in r));
+    const errors = results.filter((r): r is { error: string } => "error" in r).map((r) => r.error);
+    if (accepted.length > 0) setAttachments((prev) => [...prev, ...accepted]);
+    setAttachError(errors[0] ?? null);
+  }
+
+  async function attachPhoto() {
+    setAttachMenuOpen(false);
+    const room = MAX_ATTACHMENTS_PER_PROMPT - attachments.length;
+    if (room <= 0) return setAttachError(`Up to ${MAX_ATTACHMENTS_PER_PROMPT} attachments per message.`);
+    addPicked(await pickImageAttachments(room));
+  }
+
+  async function attachDocument() {
+    setAttachMenuOpen(false);
+    const room = MAX_ATTACHMENTS_PER_PROMPT - attachments.length;
+    if (room <= 0) return setAttachError(`Up to ${MAX_ATTACHMENTS_PER_PROMPT} attachments per message.`);
+    addPicked(await pickDocumentAttachments(room));
+  }
+
+  function removeAttachment(id: string) {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
   }
 
   function cycleModel() {
@@ -154,7 +192,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
       >
         {conv.timeline.length === 0 && <Text style={styles.empty}>No messages yet.</Text>}
         {conv.timeline.map((item, i) => (
-          <TimelineRow key={i} item={item} colors={colors} styles={styles} />
+          <TimelineRow key={i} item={item} colors={colors} styles={styles} onPreview={setPreviewAttachment} />
         ))}
       </ScrollView>
 
@@ -209,7 +247,25 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
           <Text style={styles.optionPillText}>Mode: {mode?.label ?? "Manual"}</Text>
         </TouchableOpacity>
       </View>
+      {attachments.length > 0 && (
+        <View style={styles.pendingAttachRow}>
+          {attachments.map((a) => (
+            <AttachmentChip
+              key={a.id}
+              attachment={a}
+              colors={colors}
+              styles={styles}
+              onRemove={() => removeAttachment(a.id)}
+              onPreview={setPreviewAttachment}
+            />
+          ))}
+        </View>
+      )}
+      {attachError && <Text style={styles.attachError}>{attachError}</Text>}
       <View style={styles.composer}>
+        <TouchableOpacity style={styles.attachBtn} disabled={!canSend} onPress={() => setAttachMenuOpen(true)}>
+          <Ionicons name="attach" size={20} color={canSend ? colors.dim : colors.faint} />
+        </TouchableOpacity>
         <TextInput
           ref={inputRef}
           style={styles.composerInput}
@@ -227,21 +283,126 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
             <Text style={styles.stopBtnText}>Stop</Text>
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity style={[styles.sendBtn, (!canSend || !text.trim()) && styles.disabled]} disabled={!canSend || !text.trim()} onPress={send}>
+          <TouchableOpacity
+            style={[styles.sendBtn, (!canSend || (!text.trim() && attachments.length === 0)) && styles.disabled]}
+            disabled={!canSend || (!text.trim() && attachments.length === 0)}
+            onPress={send}
+          >
             <Text style={styles.sendBtnText}>Send</Text>
           </TouchableOpacity>
         )}
       </View>
+
+      <Modal transparent visible={attachMenuOpen} animationType="fade" onRequestClose={() => setAttachMenuOpen(false)}>
+        <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={() => setAttachMenuOpen(false)}>
+          <TouchableOpacity activeOpacity={1} style={styles.sheetCard}>
+            <TouchableOpacity style={styles.sheetRow} onPress={attachPhoto}>
+              <Ionicons name="image-outline" size={17} color={colors.text} />
+              <Text style={styles.sheetRowText}>Photo</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.sheetRow} onPress={attachDocument}>
+              <Ionicons name="document-outline" size={17} color={colors.text} />
+              <Text style={styles.sheetRowText}>File (PDF or text)</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      <ImagePreviewModal attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} />
     </KeyboardAvoidingView>
   );
 }
 
-function TimelineRow({ item, colors, styles }: { item: TimelineItem; colors: ThemeColors; styles: Styles }) {
+/** One attached file: a thumbnail for images, a file chip otherwise. `onRemove` omitted renders it read-only (timeline history). */
+function AttachmentChip({
+  attachment,
+  colors,
+  styles,
+  onRemove,
+  onPreview,
+}: {
+  attachment: Attachment;
+  colors: ThemeColors;
+  styles: Styles;
+  onRemove?: () => void;
+  onPreview?: (a: Attachment) => void;
+}) {
+  const isImage = attachment.mediaType.startsWith("image/");
+  return (
+    <TouchableOpacity
+      style={styles.attachChip}
+      activeOpacity={isImage ? 0.7 : 1}
+      disabled={!isImage}
+      onPress={isImage ? () => onPreview?.(attachment) : undefined}
+    >
+      {isImage ? (
+        <Image source={{ uri: `data:${attachment.mediaType};base64,${attachment.data}` }} style={styles.attachThumb} />
+      ) : (
+        <Ionicons name="document-outline" size={14} color={colors.faint} />
+      )}
+      <Text style={styles.attachName} numberOfLines={1}>
+        {attachment.name}
+      </Text>
+      {onRemove && (
+        <TouchableOpacity onPress={onRemove} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+          <Ionicons name="close" size={14} color={colors.faint} />
+        </TouchableOpacity>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+/** Full-screen preview of an attached image, dismissed by backdrop or the close button. */
+function ImagePreviewModal({ attachment, onClose }: { attachment: Attachment | null; onClose: () => void }) {
+  return (
+    <Modal transparent visible={attachment != null} animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={previewStyles.backdrop} activeOpacity={1} onPress={onClose}>
+        {attachment && (
+          <Image
+            source={{ uri: `data:${attachment.mediaType};base64,${attachment.data}` }}
+            style={previewStyles.image}
+            resizeMode="contain"
+          />
+        )}
+        <TouchableOpacity style={previewStyles.close} onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <Ionicons name="close" size={26} color="#fff" />
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+const previewStyles = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", alignItems: "center", justifyContent: "center" },
+  image: { width: "100%", height: "80%" },
+  close: { position: "absolute", top: 48, right: 20 },
+});
+
+function TimelineRow({
+  item,
+  colors,
+  styles,
+  onPreview,
+}: {
+  item: TimelineItem;
+  colors: ThemeColors;
+  styles: Styles;
+  onPreview: (a: Attachment) => void;
+}) {
   if (item.type === "prompt") {
     return (
       <View style={styles.promptWrap}>
         <Ionicons name="person-outline" size={14} color={colors.accent} style={styles.promptIcon} />
-        <Text style={styles.promptText}>{item.text}</Text>
+        <View style={styles.promptBody}>
+          {item.text.length > 0 && <Text style={styles.promptText}>{item.text}</Text>}
+          {item.attachments && item.attachments.length > 0 && (
+            <View style={styles.attachRow}>
+              {item.attachments.map((a, i) => (
+                <AttachmentChip key={i} attachment={a} colors={colors} styles={styles} onPreview={onPreview} />
+              ))}
+            </View>
+          )}
+        </View>
       </View>
     );
   }
@@ -576,7 +737,36 @@ const makeStyles = (colors: ThemeColors) =>
       paddingVertical: 8,
     },
     promptIcon: { marginTop: 2 },
-    promptText: { flex: 1, color: colors.text, fontSize: 15 },
+    promptBody: { flex: 1, gap: 6 },
+    promptText: { color: colors.text, fontSize: 15 },
+    attachRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+    pendingAttachRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingHorizontal: 10 },
+    attachChip: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.panel2,
+      borderRadius: 2,
+      paddingVertical: 4,
+      paddingHorizontal: 6,
+      maxWidth: 160,
+    },
+    attachThumb: { width: 20, height: 20, borderRadius: 2 },
+    attachName: { flex: 1, color: colors.text, fontSize: 11 },
+    attachError: { color: colors.danger, fontSize: 12, paddingHorizontal: 10, paddingTop: 4 },
+    attachBtn: { paddingVertical: 9, paddingHorizontal: 2 },
+    sheetBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
+    sheetCard: {
+      backgroundColor: colors.panel,
+      borderTopLeftRadius: 8,
+      borderTopRightRadius: 8,
+      paddingVertical: 8,
+      paddingBottom: 24,
+    },
+    sheetRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 20, paddingVertical: 14 },
+    sheetRowText: { color: colors.text, fontSize: 15 },
     turn: { gap: 8 },
     thinkingWrap: { borderLeftWidth: 2, borderLeftColor: colors.border, paddingLeft: 10, gap: 2 },
     thinkingHeader: { color: colors.faint, fontSize: 11 },

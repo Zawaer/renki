@@ -428,19 +428,6 @@ export class SessionManager {
       this.patch(input.sessionId, { title: derivePlaceholderTitle(input.text), titleSource: "placeholder", titleGenAttempts: 0 });
     }
 
-    // Fire-and-forget, started now rather than after the turn resolves: a
-    // real Claude turn can run for a long time (tool use, edits, ...), and if
-    // THIS prompt already gives the model enough to write a good title, there's
-    // no reason to make the user stare at the raw-text placeholder for the
-    // whole turn just to get it. Capped so a session that never gives the
-    // model "enough" just keeps its placeholder for good.
-    {
-      const { titleSource, titleGenAttempts } = this.titleState(input.sessionId);
-      if (titleSource === "placeholder" && titleGenAttempts < TITLE_UPGRADE_ATTEMPT_CAP) {
-        this.tryUpgradeTitle(input.sessionId, session.worktreePath);
-      }
-    }
-
     let resumeId = session.claudeSessionId;
     const runOnce = () =>
       runTurn({
@@ -507,6 +494,21 @@ export class SessionManager {
       lastActivityAt: Date.now(),
     });
     this.events.append(input.sessionId, { kind: "status_changed", status: nextStatus });
+
+    // Fire-and-forget, started only now that the turn's own assistant text is
+    // already in the log: attempting this BEFORE the turn ran (the previous
+    // approach) meant the very first attempt ever had nothing but the user's
+    // raw prompt to go on — for a vague first message ("what does this do?")
+    // that's indistinguishable from no context at all, so the model bailed
+    // every time and the session was stuck on its placeholder for good.
+    // Capped so a session that never gives the model "enough" (e.g. genuinely
+    // contentless turns) just keeps its placeholder for good.
+    {
+      const { titleSource, titleGenAttempts } = this.titleState(input.sessionId);
+      if (titleSource === "placeholder" && titleGenAttempts < TITLE_UPGRADE_ATTEMPT_CAP) {
+        this.tryUpgradeTitle(input.sessionId, session.worktreePath);
+      }
+    }
   }
 
   /** Raw title bookkeeping columns — internal only, not part of the public `Session` type. */

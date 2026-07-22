@@ -71,6 +71,46 @@ describe("read", () => {
   });
 });
 
+describe("compactBlock", () => {
+  it("deletes only the deltas for the given (turnId, blockIndex), leaving the block and other blocks intact", () => {
+    const log = new EventLog(makeTestDb());
+    log.append("s1", { kind: "assistant_delta", turnId: "t1", blockIndex: 0, blockKind: "text", text: "Hel" });
+    log.append("s1", { kind: "assistant_delta", turnId: "t1", blockIndex: 0, blockKind: "text", text: "lo" });
+    // A concurrent second block (e.g. a parallel subagent) must survive untouched.
+    log.append("s1", { kind: "assistant_delta", turnId: "t1", blockIndex: 1, blockKind: "text", text: "other" });
+    log.append("s1", {
+      kind: "assistant_block",
+      turnId: "t1",
+      blockIndex: 0,
+      blockKind: "text",
+      text: "Hello",
+      toolUseId: null,
+      toolName: null,
+      toolInput: null,
+    });
+
+    log.compactBlock("s1", "t1", 0);
+
+    const remaining = log.read("s1");
+    expect(remaining.map((e) => e.kind)).toEqual(["assistant_delta", "assistant_block"]);
+    expect((remaining[0] as Extract<SessionEvent, { kind: "assistant_delta" }>).blockIndex).toBe(1);
+  });
+
+  it("is a no-op when there are no matching deltas", () => {
+    const log = new EventLog(makeTestDb());
+    log.append("s1", { kind: "status_changed", status: "idle" });
+    expect(() => log.compactBlock("s1", "nope", 0)).not.toThrow();
+    expect(log.read("s1")).toHaveLength(1);
+  });
+
+  it("does not disturb seq allocation for subsequent appends", () => {
+    const log = new EventLog(makeTestDb());
+    log.append("s1", { kind: "assistant_delta", turnId: "t1", blockIndex: 0, blockKind: "text", text: "x" });
+    log.compactBlock("s1", "t1", 0);
+    expect(log.append("s1", { kind: "status_changed", status: "idle" }).seq).toBe(1);
+  });
+});
+
 describe("subscribe", () => {
   it("delivers live events and stops after unsubscribe", () => {
     const log = new EventLog(makeTestDb());

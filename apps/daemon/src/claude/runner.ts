@@ -363,8 +363,9 @@ export async function warmUpCapabilities(cwd: string): Promise<CapabilitiesRespo
  *
  * We persist deltas (not just finished blocks) so a viewer who connects
  * mid-turn still replays the partial text token-by-token — that's the point of
- * event-sourcing the stream. FUTURE: compact deltas away once the matching
- * assistant_block lands, to keep the log small.
+ * event-sourcing the stream. The caller's `emit` (SessionManager) compacts
+ * these away once the matching assistant_block lands, so they don't bloat the
+ * log — see EventLog.compactBlock.
  */
 export function handleStreamEvent(
   event: unknown,

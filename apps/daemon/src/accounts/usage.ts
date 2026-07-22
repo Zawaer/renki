@@ -191,10 +191,39 @@ export class UsageReader {
     return usage;
   }
 
-  /** Fetch usage for an entry. Entries with no chosen org read as unavailable. */
+  /**
+   * Fetch usage for an entry. An entry loaded with no `orgId` (e.g. a
+   * hand-edited usage-accounts.json with just a `sessionKey`) gets one
+   * auto-resolved first; still-unresolvable entries (key sees zero or
+   * multiple orgs) read as unavailable.
+   */
   private async fetchEntry(entry: UsageEntry): Promise<AccountUsage | null> {
-    if (!entry.orgId) return null; // org not picked yet — connect via the UI to choose one
-    return this.fetchUsage(entry.sessionKey, entry.orgId);
+    if (!entry.orgId && !(await this.autoResolveOrgId(entry))) return null;
+    return this.fetchUsage(entry.sessionKey, entry.orgId!);
+  }
+
+  /**
+   * Auto-resolve and persist `orgId` for an entry that doesn't have one yet —
+   * only when the key sees EXACTLY one org, since a real choice among several
+   * can't be guessed (those still need the UI's org picker, same as before).
+   * Mutates `entry` in place on success.
+   */
+  private async autoResolveOrgId(entry: UsageEntry): Promise<boolean> {
+    const raw = await this.getJson<Array<{ uuid?: string }>>(entry.sessionKey, "/api/organizations").catch((err) => {
+      logger.warn("could not auto-resolve org for usage key", { email: entry.email, err: String(err) });
+      return null;
+    });
+    const orgIds = Array.isArray(raw) ? raw.map((o) => o?.uuid).filter((id): id is string => Boolean(id)) : [];
+    if (orgIds.length !== 1) {
+      if (orgIds.length > 1) {
+        logger.warn("usage key sees multiple orgs; connect via the UI to pick one", { email: entry.email ?? "(unknown)" });
+      }
+      return false;
+    }
+    entry.orgId = orgIds[0]!;
+    this.persist();
+    logger.info("auto-resolved org for usage key", { email: entry.email ?? "(unknown)", orgId: entry.orgId });
+    return true;
   }
 
   private async fetchUsage(sessionKey: string, orgId: string): Promise<AccountUsage | null> {

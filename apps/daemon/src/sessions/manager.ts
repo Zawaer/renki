@@ -467,6 +467,7 @@ export class SessionManager {
           if (payload.kind === "permission_request") this.trackPendingPermission(input.sessionId, payload.requestId, true);
           else if (payload.kind === "permission_resolved") this.trackPendingPermission(input.sessionId, payload.requestId, false);
           this.events.append(input.sessionId, payload);
+          if (payload.kind === "assistant_block") this.events.compactBlock(input.sessionId, payload.turnId, payload.blockIndex);
         },
         resolvePermission: input.resolvePermission,
         // Cheap to skip once the daemon already knows this — it's static per

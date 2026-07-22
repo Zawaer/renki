@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { EventPayload, RepoStatsBucket, SessionEvent, StatsBucket, StatsResponse } from "@crc/protocol";
-import { and, asc, eq, gt, max, ne } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, max, ne } from "drizzle-orm";
 import type { DB } from "../db/index.js";
 import { events, sessions } from "../db/schema.js";
 
@@ -69,6 +69,33 @@ export class EventLog {
   deleteTranscript(sessionId: string): void {
     this.db.delete(events).where(and(eq(events.sessionId, sessionId), ne(events.kind, "turn_result"))).run();
     this.heads.delete(sessionId);
+  }
+
+  /**
+   * Delete the now-dead-weight `assistant_delta` rows for one (turnId,
+   * blockIndex) once its canonical `assistant_block` has landed — see the
+   * FUTURE note this replaces in claude/runner.ts's handleStreamEvent. Safe
+   * because the reducer's applyBlock() overwrites the accumulated delta text
+   * with the block's own canonical text regardless of how many deltas (if
+   * any) preceded it, so replay is identical either way. Never touches `seq`
+   * allocation, so live seq numbers keep climbing past the gap this leaves.
+   */
+  compactBlock(sessionId: string, turnId: string, blockIndex: number): void {
+    const rows = this.db
+      .select({ seq: events.seq, data: events.data })
+      .from(events)
+      .where(and(eq(events.sessionId, sessionId), eq(events.kind, "assistant_delta")))
+      .all();
+
+    const staleSeqs = rows
+      .filter((row) => {
+        const payload = JSON.parse(row.data) as Extract<EventPayload, { kind: "assistant_delta" }>;
+        return payload.turnId === turnId && payload.blockIndex === blockIndex;
+      })
+      .map((row) => row.seq);
+
+    if (staleSeqs.length === 0) return;
+    this.db.delete(events).where(and(eq(events.sessionId, sessionId), inArray(events.seq, staleSeqs))).run();
   }
 
   /**

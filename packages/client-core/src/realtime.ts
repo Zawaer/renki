@@ -1,4 +1,5 @@
 import {
+  type Attachment,
   type ClientMessage,
   type PermissionDecision,
   type Session,
@@ -163,12 +164,19 @@ export class RealtimeClient {
    * Returns the client-generated promptId so the UI can correlate it.
    * `model`/`maxThinkingTokens`/`permissionMode` are a per-message override —
    * omit for the daemon's own default, matching every call site before these
-   * options existed.
+   * options existed. `attachments` travel inline as base64 (see
+   * `@crc/protocol`'s `Attachment`) and become real image/document content
+   * blocks for the model — `text` may be empty if at least one is present.
    */
   submitPrompt(
     sessionId: string,
     text: string,
-    opts?: { model?: string; maxThinkingTokens?: number | null; permissionMode?: PermissionModeKey },
+    opts?: {
+      model?: string;
+      maxThinkingTokens?: number | null;
+      permissionMode?: PermissionModeKey;
+      attachments?: Attachment[];
+    },
   ): string {
     const promptId = genId("p");
     this.send({ type: "submit_prompt", sessionId, promptId, text, ...opts });

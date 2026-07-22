@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Attachment } from "./attachments.js";
 import { DeviceId, MergeConflictMeta, PermissionDecision, SessionPurpose, SessionStatus } from "./domain.js";
 
 /**
@@ -62,6 +63,7 @@ const payloads = [
     promptId: z.string(),
     deviceId: DeviceId,
     text: z.string(),
+    attachments: z.array(Attachment).optional(),
   }),
 
   /**

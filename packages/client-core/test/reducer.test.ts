@@ -98,6 +98,12 @@ describe("per-event folding", () => {
     expect(s.timeline).toEqual([{ type: "prompt", promptId: "p1", deviceId: "d1", text: "hi" }]);
   });
 
+  it("prompt_submitted carries attachments through onto the timeline item", () => {
+    const attachments = [{ name: "shot.png", mediaType: "image/png" as const, data: "cGFrZQ==" }];
+    const s = fold(stream({ kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "what is this?", attachments }));
+    expect(s.timeline).toEqual([{ type: "prompt", promptId: "p1", deviceId: "d1", text: "what is this?", attachments }]);
+  });
+
   it("prompt_queued lands in queuedPrompts, not timeline", () => {
     const s = fold(stream({ kind: "prompt_queued", promptId: "p2", deviceId: "d1", text: "queued question" }));
     expect(s.timeline).toEqual([]);

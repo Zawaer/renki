@@ -1,4 +1,4 @@
-import type { SessionEvent, SessionStatus } from "@crc/protocol";
+import type { Attachment, SessionEvent, SessionStatus } from "@crc/protocol";
 
 /**
  * The event-log → view-state reducer. This is the piece that makes every client
@@ -40,7 +40,7 @@ export type TurnView = {
 
 /** A prompt the controller sent, an assistant turn, or a system notice. */
 export type TimelineItem =
-  | { type: "prompt"; promptId: string; deviceId: string; text: string }
+  | { type: "prompt"; promptId: string; deviceId: string; text: string; attachments?: Attachment[] }
   | { type: "turn"; turn: TurnView }
   | { type: "notice"; text: string; level: "info" | "warn" };
 
@@ -140,7 +140,10 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       // prompt and its turn are always adjacent regardless of how fast
       // follow-ups were typed.
       s.queuedPrompts = s.queuedPrompts.filter((q) => q.promptId !== e.promptId);
-      s.timeline = [...s.timeline, { type: "prompt", promptId: e.promptId, deviceId: e.deviceId, text: e.text }];
+      s.timeline = [
+        ...s.timeline,
+        { type: "prompt", promptId: e.promptId, deviceId: e.deviceId, text: e.text, attachments: e.attachments },
+      ];
       return s;
 
     case "assistant_delta":

@@ -1,6 +1,6 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Options, PermissionResult, Query, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { CapabilitiesResponse, EventPayload, PermissionDecision } from "@crc/protocol";
+import type { Attachment, CapabilitiesResponse, EventPayload, PermissionDecision } from "@crc/protocol";
 import { logger } from "../logger.js";
 import { newTurnId } from "../ids.js";
 import { createRtkPreToolUseHook } from "./rtk.js";
@@ -40,6 +40,8 @@ export type RunTurnArgs = {
   /** Prior Claude session id to resume, or null to start a fresh conversation. */
   resumeSessionId: string | null;
   prompt: string;
+  /** Images/PDFs/text files attached to this prompt, if any — see singlePromptStream. */
+  attachments?: Attachment[];
   promptId: string;
   /** Append an event to the session's log (the runner's only output channel). */
   emit: (payload: EventPayload) => void;
@@ -95,18 +97,51 @@ export function classifyRateLimit(text: string | null | undefined): boolean {
   return /rate.?limit|usage limit|limit reached|limit exceeded|exceeded your usage|too many requests|429/i.test(text);
 }
 
+/** The non-string half of a user message's `content` — one image/document/text block. */
+type UserContentBlock = Exclude<SDKUserMessage["message"]["content"], string>[number];
+
+/**
+ * Turns one wire-format `Attachment` (always base64 on the wire, regardless of
+ * kind) into the content block shape the Messages API expects. Images and PDFs
+ * stay base64 (that's what their `source.type: "base64"` wants); a text file's
+ * `PlainTextSource.data` wants the actual text, not base64, so that one case
+ * decodes first.
+ */
+function attachmentToContentBlock(a: Attachment): UserContentBlock {
+  if (a.mediaType === "text/plain") {
+    return {
+      type: "document",
+      source: { type: "text", media_type: "text/plain", data: Buffer.from(a.data, "base64").toString("utf-8") },
+      title: a.name,
+    };
+  }
+  if (a.mediaType === "application/pdf") {
+    return {
+      type: "document",
+      source: { type: "base64", media_type: "application/pdf", data: a.data },
+      title: a.name,
+    };
+  }
+  return { type: "image", source: { type: "base64", media_type: a.mediaType, data: a.data } };
+}
+
 /**
  * The SDK's control-request channel (interrupt/setModel/supportedModels/
  * supportedCommands/etc.) only works in "streaming input" mode — passing
  * `prompt` as a plain string puts the query in a mode where those control
  * requests are unsupported and their promises never resolve. Wrapping the
- * same text as a single-item async generator gets streaming-input mode
- * without changing anything else about a one-shot prompt.
+ * same text (optionally preceded by attachment content blocks) as a
+ * single-item async generator gets streaming-input mode without changing
+ * anything else about a one-shot prompt.
  */
-export async function* singlePromptStream(text: string): AsyncGenerator<SDKUserMessage> {
+export async function* singlePromptStream(text: string, attachments?: Attachment[]): AsyncGenerator<SDKUserMessage> {
+  const blocks = attachments?.map(attachmentToContentBlock) ?? [];
+  // Images/documents before the text that references them, per Anthropic's own
+  // guidance — matters for citations/grounding, not just cosmetics.
+  const content = blocks.length === 0 ? text : text ? [...blocks, { type: "text" as const, text }] : blocks;
   yield {
     type: "user",
-    message: { role: "user", content: text },
+    message: { role: "user", content },
     parent_tool_use_id: null,
   };
 }
@@ -158,7 +193,7 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
   };
 
   try {
-    const q = query({ prompt: singlePromptStream(args.prompt), options });
+    const q = query({ prompt: singlePromptStream(args.prompt, args.attachments), options });
     args.onQuery?.(q);
 
     // supportedModels()/supportedCommands() only exist on a LIVE Query object,

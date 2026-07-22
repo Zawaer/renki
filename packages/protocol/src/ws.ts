@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Attachment, MAX_ATTACHMENTS_PER_PROMPT } from "./attachments.js";
 import { PermissionDecision, Session } from "./domain.js";
 import { SessionEvent } from "./events.js";
 
@@ -48,13 +49,18 @@ export const ClientMessage = z.discriminatedUnion("type", [
    * resulting `prompt_submitted` event. `model`/`maxThinkingTokens`/
    * `permissionMode` are a per-message override (omit for the daemon's own
    * default); a fresh SDK query starts per prompt anyway, so there's no
-   * mid-turn switch to support.
+   * mid-turn switch to support. `text` may be empty only if `attachments`
+   * carries at least one file (SessionManager enforces this — not expressible
+   * as a plain discriminated-union member's schema); `attachments` travel
+   * inline as base64 and become real image/document content blocks for the
+   * model, not a message about a file path.
    */
   z.object({
     type: z.literal("submit_prompt"),
     sessionId: z.string(),
     promptId: z.string(),
-    text: z.string().min(1),
+    text: z.string(),
+    attachments: z.array(Attachment).max(MAX_ATTACHMENTS_PER_PROMPT).optional(),
     model: z.string().optional(),
     maxThinkingTokens: z.number().int().nullable().optional(),
     permissionMode: z.enum(["default", "acceptEdits", "plan", "auto"]).optional(),

@@ -1,5 +1,5 @@
 import type { PermissionMode, Query } from "@anthropic-ai/claude-agent-sdk";
-import type { MergeConflictMeta, Session, SessionPurpose, SessionStatus } from "@crc/protocol";
+import type { Attachment, MergeConflictMeta, Session, SessionPurpose, SessionStatus } from "@crc/protocol";
 import { desc, eq, ne } from "drizzle-orm";
 import { mkdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
@@ -44,6 +44,7 @@ export type SubmitPromptInput = {
   deviceId: string;
   promptId: string;
   text: string;
+  attachments?: Attachment[];
   resolvePermission: PermissionResolver;
   model?: string;
   maxThinkingTokens?: number | null;
@@ -397,6 +398,8 @@ export class SessionManager {
     if (session.status === "archived") throw new SessionError("session_archived", "Session is archived.");
     if (session.controller !== input.deviceId)
       throw new SessionError("not_controller", "Only the controlling device can send prompts.");
+    if (!input.text.trim() && !input.attachments?.length)
+      throw new SessionError("invalid_request", "Prompt text or at least one attachment is required.");
 
     if (session.status === "busy") {
       const queue = this.queues.get(input.sessionId) ?? [];
@@ -433,13 +436,17 @@ export class SessionManager {
       promptId: input.promptId,
       deviceId: input.deviceId,
       text: input.text,
+      attachments: input.attachments,
     });
 
     // Instant, LLM-free placeholder — shown right away (same idea as the
     // VSCode extension's "title = your first message" before it upgrades it).
     // Only the very first prompt of a session ever sees `title === null` here.
+    // An attachment-only prompt (no caption) falls back to the file's own
+    // name rather than titler's generic "New session".
     if (session.title == null) {
-      this.patch(input.sessionId, { title: derivePlaceholderTitle(input.text), titleSource: "placeholder", titleGenAttempts: 0 });
+      const placeholderSource = input.text || input.attachments?.[0]?.name || "";
+      this.patch(input.sessionId, { title: derivePlaceholderTitle(placeholderSource), titleSource: "placeholder", titleGenAttempts: 0 });
     }
 
     let resumeId = session.claudeSessionId;
@@ -448,6 +455,7 @@ export class SessionManager {
         cwd: session.worktreePath,
         resumeSessionId: resumeId,
         prompt: input.text,
+        attachments: input.attachments,
         promptId: input.promptId,
         model: input.model,
         maxThinkingTokens: input.maxThinkingTokens,

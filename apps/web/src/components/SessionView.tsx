@@ -1,14 +1,18 @@
 import {
+  classifyAttachment,
   DEFAULT_EFFORT_KEY,
   DEFAULT_PERMISSION_MODE,
   EFFORT_LEVELS,
   estimateTokens,
   formatTokenCount,
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENTS_PER_PROMPT,
   parseEditView,
   parsePlan,
   parseTodos,
   PERMISSION_MODES,
   THINKING_VERBS,
+  type Attachment,
   type BlockView,
   type EditToolView,
   type PermissionModeKey,
@@ -132,7 +136,16 @@ function TimelineRow({ item }: { item: TimelineItem }) {
     return (
       <div className="flex gap-2 border-l-2 border-(--crc-accent) bg-(--crc-bg-elevated) px-3 py-2">
         <span className="codicon codicon-account mt-0.5 text-(--crc-accent)" />
-        <div className="whitespace-pre-wrap text-sm text-(--crc-fg)">{item.text}</div>
+        <div className="min-w-0 flex-1">
+          {item.text && <div className="whitespace-pre-wrap text-sm text-(--crc-fg)">{item.text}</div>}
+          {item.attachments && item.attachments.length > 0 && (
+            <div className={`flex flex-wrap gap-1.5 ${item.text ? "mt-1.5" : ""}`}>
+              {item.attachments.map((a, i) => (
+                <AttachmentChip key={i} attachment={a} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -447,6 +460,56 @@ function PermissionCard({
   );
 }
 
+/** A picked attachment before it's sent — same wire shape as `Attachment` plus client-only bookkeeping. */
+type PendingAttachment = Attachment & { id: string };
+
+/** Reads a File into wire-format base64, or an error message if it's an unsupported type or too large. */
+function readFileAsAttachment(file: File): Promise<PendingAttachment | { error: string }> {
+  const mediaType = classifyAttachment(file);
+  if (!mediaType) {
+    return Promise.resolve({ error: `${file.name}: unsupported file type — reference it by its path in the prompt instead.` });
+  }
+  if (file.size > MAX_ATTACHMENT_BYTES) {
+    return Promise.resolve({ error: `${file.name}: too large (max ${Math.floor(MAX_ATTACHMENT_BYTES / (1024 * 1024))}MB).` });
+  }
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string; // "data:<mediaType>;base64,<data>"
+      const data = result.slice(result.indexOf(",") + 1);
+      resolve({ id: crypto.randomUUID(), name: file.name, mediaType, data });
+    };
+    reader.onerror = () => resolve({ error: `${file.name}: couldn't read file.` });
+    reader.readAsDataURL(file);
+  });
+}
+
+/** One attached file: a thumbnail for images, a file chip otherwise. `onRemove` omitted renders it read-only (timeline history). */
+function AttachmentChip({ attachment, onRemove }: { attachment: Attachment; onRemove?: () => void }) {
+  const isImage = attachment.mediaType.startsWith("image/");
+  return (
+    <div className="flex items-center gap-1.5 rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) py-1 pl-1 pr-2 text-xs">
+      {isImage ? (
+        <img
+          src={`data:${attachment.mediaType};base64,${attachment.data}`}
+          alt={attachment.name}
+          className="h-6 w-6 rounded-sm object-cover"
+        />
+      ) : (
+        <span className="codicon codicon-file text-(--crc-fg-muted)" />
+      )}
+      <span className="max-w-40 truncate text-(--crc-fg)" title={attachment.name}>
+        {attachment.name}
+      </span>
+      {onRemove && (
+        <button onClick={onRemove} className="text-(--crc-fg-muted) hover:text-(--crc-danger)" title="Remove">
+          <span className="codicon codicon-close" />
+        </button>
+      )}
+    </div>
+  );
+}
+
 function Composer({
   sessionId,
   disabled,
@@ -460,14 +523,18 @@ function Composer({
   reason: string;
   onSend: (
     text: string,
-    opts?: { model?: string; maxThinkingTokens?: number | null; permissionMode?: PermissionModeKey },
+    opts?: { model?: string; maxThinkingTokens?: number | null; permissionMode?: PermissionModeKey; attachments?: Attachment[] },
   ) => void;
   busy: boolean;
   onStop: () => void;
 }) {
   const { rest, realtime } = useClient();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState("");
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const [model, setModel] = useState(""); // "" until capabilities load and pick the SDK's own default
   const [effortKey, setEffortKey] = useState(DEFAULT_EFFORT_KEY);
   // Persisted across refreshes/reopens so the picked mode doesn't silently
@@ -519,13 +586,51 @@ function Composer({
 
   function send() {
     const t = text.trim();
-    if (!t || disabled) return;
+    if ((!t && attachments.length === 0) || disabled) return;
     onSend(t, {
       model: model || undefined,
       maxThinkingTokens: effort?.maxThinkingTokens ?? undefined,
       permissionMode,
+      attachments: attachments.length > 0 ? attachments.map(({ id: _id, ...a }) => a) : undefined,
     });
     setText("");
+    setAttachments([]);
+    setAttachError(null);
+  }
+
+  /** Reads and validates dropped/picked/pasted files, appending whatever's accepted. */
+  async function addFiles(files: FileList | File[]) {
+    const list = Array.from(files);
+    if (list.length === 0) return;
+
+    const room = MAX_ATTACHMENTS_PER_PROMPT - attachments.length;
+    if (room <= 0) {
+      setAttachError(`Up to ${MAX_ATTACHMENTS_PER_PROMPT} attachments per message.`);
+      return;
+    }
+
+    const results = await Promise.all(list.slice(0, room).map(readFileAsAttachment));
+    const accepted = results.filter((r): r is PendingAttachment => !("error" in r));
+    const errors = results.filter((r): r is { error: string } => "error" in r).map((r) => r.error);
+    if (list.length > room) errors.push(`Only ${room} more attachment${room === 1 ? "" : "s"} allowed — dropped the rest.`);
+
+    if (accepted.length > 0) setAttachments((prev) => [...prev, ...accepted]);
+    setAttachError(errors[0] ?? null);
+  }
+
+  function removeAttachment(id: string) {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  }
+
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const files = Array.from(e.clipboardData.items)
+      .filter((item) => item.kind === "file")
+      .map((item) => item.getAsFile())
+      .filter((f): f is File => f != null);
+    if (files.length > 0) {
+      e.preventDefault(); // a pasted screenshot has no useful text fallback
+      void addFiles(files);
+    }
   }
 
   function pickSuggestion(name: string) {
@@ -542,7 +647,19 @@ function Composer({
   }
 
   return (
-    <div className="relative border-t border-(--crc-border) p-3">
+    <div
+      className={`relative border-t p-3 ${dragOver ? "border-(--crc-accent) bg-(--crc-accent)/5" : "border-(--crc-border)"}`}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragOver(true);
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        if (e.dataTransfer.files.length > 0) void addFiles(e.dataTransfer.files);
+      }}
+    >
       {suggestions.length > 0 && (
         <div className="absolute bottom-full left-3 right-3 z-10 mb-1 max-h-48 overflow-y-auto rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) shadow-lg">
           {suggestions.map((c, i) => (
@@ -662,7 +779,36 @@ function Composer({
         </>
       )}
 
+      {attachments.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {attachments.map((a) => (
+            <AttachmentChip key={a.id} attachment={a} onRemove={() => removeAttachment(a.id)} />
+          ))}
+        </div>
+      )}
+      {attachError && <div className="mb-2 text-xs text-(--crc-danger)">{attachError}</div>}
+
       <div className="flex items-end gap-2">
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,.md,.json,.csv,.log,.yaml,.yml"
+          className="hidden"
+          onChange={(e) => {
+            if (e.target.files) void addFiles(e.target.files);
+            e.target.value = ""; // allow re-picking the same file
+          }}
+        />
+        <Button
+          variant="default"
+          disabled={disabled}
+          onClick={() => fileInputRef.current?.click()}
+          title="Attach images, PDFs, or text files"
+          className="shrink-0 px-2"
+        >
+          <span className="codicon codicon-attach" />
+        </Button>
         <textarea
           ref={textareaRef}
           value={text}
@@ -670,6 +816,7 @@ function Composer({
             setText(e.target.value);
             setSuggestionIndex(0);
           }}
+          onPaste={handlePaste}
           onKeyDown={(e) => {
             if (suggestions.length > 0) {
               if (e.key === "ArrowDown") {
@@ -708,7 +855,7 @@ function Composer({
             <span className="codicon codicon-debug-stop" /> Stop
           </Button>
         ) : (
-          <Button variant="primary" disabled={disabled || !text.trim()} onClick={send}>
+          <Button variant="primary" disabled={disabled || (!text.trim() && attachments.length === 0)} onClick={send}>
             Send
           </Button>
         )}

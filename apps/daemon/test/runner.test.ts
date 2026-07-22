@@ -1,6 +1,18 @@
-import type { EventPayload } from "@crc/protocol";
+import type { Attachment, EventPayload } from "@crc/protocol";
 import { describe, expect, it } from "vitest";
-import { classifyRateLimit, handleAssistantMessage, handleStreamEvent, summarizeResultError } from "../src/claude/runner.js";
+import {
+  classifyRateLimit,
+  handleAssistantMessage,
+  handleStreamEvent,
+  singlePromptStream,
+  summarizeResultError,
+} from "../src/claude/runner.js";
+
+async function firstMessage(text: string, attachments?: Attachment[]) {
+  const gen = singlePromptStream(text, attachments);
+  const { value } = await gen.next();
+  return value!;
+}
 
 /**
  * classifyRateLimit is the trigger for automatic multi-account rotation: a turn
@@ -64,6 +76,49 @@ describe("summarizeResultError", () => {
 
   it("ignores a blank result string", () => {
     expect(summarizeResultError({ subtype: "success", result: "   " })).toBe("success");
+  });
+});
+
+/**
+ * singlePromptStream builds the actual Messages-API content the model sees.
+ * Attachments are always base64 on the wire regardless of kind, but only
+ * images/PDFs want base64 in the content block itself — a text/plain
+ * attachment's DocumentBlockParam wants the decoded text, so that's the one
+ * shape worth pinning down here.
+ */
+describe("singlePromptStream", () => {
+  it("sends a plain string when there are no attachments (preserves streaming-input-mode-only behavior)", async () => {
+    const msg = await firstMessage("hello");
+    expect(msg.message.content).toBe("hello");
+  });
+
+  it("puts image/PDF attachments before the text block, base64 untouched", async () => {
+    const png: Attachment = { name: "shot.png", mediaType: "image/png", data: "cGFrZQ==" };
+    const pdf: Attachment = { name: "doc.pdf", mediaType: "application/pdf", data: "cGFrZQ==" };
+    const msg = await firstMessage("what is this?", [png, pdf]);
+
+    expect(msg.message.content).toEqual([
+      { type: "image", source: { type: "base64", media_type: "image/png", data: "cGFrZQ==" } },
+      { type: "document", source: { type: "base64", media_type: "application/pdf", data: "cGFrZQ==" }, title: "doc.pdf" },
+      { type: "text", text: "what is this?" },
+    ]);
+  });
+
+  it("decodes a text/plain attachment's base64 into the document block's plain-text source", async () => {
+    const text: Attachment = { name: "notes.txt", mediaType: "text/plain", data: Buffer.from("hello world").toString("base64") };
+    const msg = await firstMessage("summarize", [text]);
+
+    expect(msg.message.content).toEqual([
+      { type: "document", source: { type: "text", media_type: "text/plain", data: "hello world" }, title: "notes.txt" },
+      { type: "text", text: "summarize" },
+    ]);
+  });
+
+  it("omits the text block entirely for an attachment-only prompt (no caption)", async () => {
+    const png: Attachment = { name: "shot.png", mediaType: "image/png", data: "cGFrZQ==" };
+    const msg = await firstMessage("", [png]);
+
+    expect(msg.message.content).toEqual([{ type: "image", source: { type: "base64", media_type: "image/png", data: "cGFrZQ==" } }]);
   });
 });
 

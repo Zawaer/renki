@@ -1,3 +1,4 @@
+export * from "./attachments.js";
 export * from "./domain.js";
 export * from "./events.js";
 export * from "./ws.js";

@@ -111,6 +111,7 @@ export class Connection {
             deviceId: this.deviceId,
             promptId: msg.promptId,
             text: msg.text,
+            attachments: msg.attachments,
             model: msg.model,
             maxThinkingTokens: msg.maxThinkingTokens,
             permissionMode: msg.permissionMode,

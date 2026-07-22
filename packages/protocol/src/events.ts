@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DeviceId, PermissionDecision, SessionStatus } from "./domain.js";
+import { DeviceId, MergeConflictMeta, PermissionDecision, SessionPurpose, SessionStatus } from "./domain.js";
 
 /**
  * THE EVENT LOG — this is the mechanism that makes staleness structurally
@@ -36,6 +36,8 @@ const payloads = [
     baseBranch: z.string().nullable(),
     branch: z.string().nullable(),
     worktreePath: z.string(),
+    purpose: SessionPurpose.optional(),
+    mergeMeta: MergeConflictMeta.nullable().optional(),
   }),
 
   /** Lifecycle transition (idle/busy/error/archived). */

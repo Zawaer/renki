@@ -29,6 +29,10 @@ export const sessions = sqliteTable("sessions", {
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
   lastActivityAt: integer("last_activity_at").notNull(),
+  /** "normal" or "merge_conflict" — see MergeConflictMeta in @crc/protocol. */
+  purpose: text("purpose").notNull().default("normal"),
+  /** JSON-encoded MergeConflictMeta, only set when purpose = "merge_conflict". */
+  mergeMeta: text("merge_meta"),
 });
 
 export const pushTokens = sqliteTable("push_tokens", {
@@ -69,7 +73,9 @@ export const DDL = `
     title TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
-    last_activity_at INTEGER NOT NULL
+    last_activity_at INTEGER NOT NULL,
+    purpose TEXT NOT NULL DEFAULT 'normal',
+    merge_meta TEXT
   );
 
   CREATE TABLE IF NOT EXISTS events (

@@ -13,6 +13,7 @@ import { checkTailscaleServeConflict, getTailscaleStatus } from "./tailscale.js"
 import type { PermissionResolver } from "./claude/runner.js";
 import { SessionError } from "./sessions/errors.js";
 import { SessionManager } from "./sessions/manager.js";
+import { mergeSessionBranch } from "./sessions/mergeFlow.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -31,6 +32,12 @@ const execFileAsync = promisify(execFile);
  *   crc prompt <sessionId> <text...> [--model <m>]
  *   crc transcript <sessionId>
  *   crc archive <sessionId>
+ *   crc merge <sourceSessionId> --into <targetBranch>
+ *     Attempts a plain git merge of that session's branch into <targetBranch>
+ *     in a scratch worktree. Clean -> fast-forwards <targetBranch>, no Claude
+ *     involved. Conflict -> spawns a new session pre-loaded with the
+ *     conflicted worktree and a seeded first prompt asking Claude to resolve
+ *     it (and ask you about anything ambiguous) rather than rejecting outright.
  */
 
 const DEVICE_ID = "cli";
@@ -45,6 +52,7 @@ async function main() {
       title: { type: "string" },
       model: { type: "string" },
       plain: { type: "boolean" },
+      into: { type: "string" },
     },
   });
 
@@ -214,9 +222,26 @@ async function main() {
       break;
     }
 
+    case "merge": {
+      const sourceSessionId = rest[0];
+      const targetBranch = values.into;
+      if (!sourceSessionId || !targetBranch) return fail("usage: crc merge <sourceSessionId> --into <targetBranch>");
+
+      const source = manager.getSession(sourceSessionId);
+      if (!source.repoId || !source.branch) return fail("session has no repo/branch to merge");
+
+      const outcome = await mergeSessionBranch(config, manager, source.repoId, source.branch, targetBranch, source.id);
+      if (outcome.status === "merged") {
+        console.log(`merged ${source.branch} into ${targetBranch}`);
+      } else {
+        console.log(`conflict — spawned session ${outcome.conflictSessionId} to resolve it`);
+      }
+      break;
+    }
+
     default:
       return fail(
-        "commands: token | repos | usage login|connect | new <repoId>|--plain | sessions | prompt <sessionId> <text> | transcript <sessionId> | archive <sessionId>",
+        "commands: token | repos | usage login|connect | new <repoId>|--plain | sessions | prompt <sessionId> <text> | transcript <sessionId> | archive <sessionId> | merge <sessionId> --into <branch>",
       );
   }
 }

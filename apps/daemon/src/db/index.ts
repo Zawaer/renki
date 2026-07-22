@@ -31,6 +31,8 @@ export function openDb(config: Config) {
   // `CREATE TABLE IF NOT EXISTS` above only helps fresh databases — a table
   // that already exists keeps its old columns. Patch new ones in by hand.
   ensureColumn(sqlite, "sessions", "has_pending_permission", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(sqlite, "sessions", "purpose", "TEXT NOT NULL DEFAULT 'normal'");
+  ensureColumn(sqlite, "sessions", "merge_meta", "TEXT");
   ensureSessionsRepoColumnsNullable(sqlite);
 
   logger.info("database ready", { path: config.dbPath });
@@ -72,12 +74,14 @@ function ensureSessionsRepoColumnsNullable(sqlite: Database.Database): void {
       title TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
-      last_activity_at INTEGER NOT NULL
+      last_activity_at INTEGER NOT NULL,
+      purpose TEXT NOT NULL DEFAULT 'normal',
+      merge_meta TEXT
     );
     INSERT INTO sessions_new SELECT
       id, repo_id, repo_name, base_branch, branch, worktree_path, status,
       has_pending_permission, controller, claude_session_id, title,
-      created_at, updated_at, last_activity_at
+      created_at, updated_at, last_activity_at, purpose, merge_meta
     FROM sessions;
     DROP TABLE sessions;
     ALTER TABLE sessions_new RENAME TO sessions;

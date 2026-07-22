@@ -38,6 +38,20 @@ export type Repo = z.infer<typeof Repo>;
 export const SessionStatus = z.enum(["idle", "busy", "error", "archived"]);
 export type SessionStatus = z.infer<typeof SessionStatus>;
 
+/** Distinguishes an ordinary session from one the daemon spawned itself to resolve a merge conflict. */
+export const SessionPurpose = z.enum(["normal", "merge_conflict"]);
+export type SessionPurpose = z.infer<typeof SessionPurpose>;
+
+/** Attached to a `merge_conflict` session: which branches it's reconciling and which files git left unresolved. */
+export const MergeConflictMeta = z.object({
+  sourceBranch: z.string().min(1),
+  targetBranch: z.string().min(1),
+  /** The session whose branch was being merged, if the merge was triggered from one (null for ad-hoc branch names). */
+  sourceSessionId: z.string().min(1).nullable(),
+  conflictedFiles: z.array(z.string()),
+});
+export type MergeConflictMeta = z.infer<typeof MergeConflictMeta>;
+
 /**
  * A single Claude Code session, pinned to a dedicated git worktree so parallel
  * sessions on the same repo never collide on file state. A session can also
@@ -70,6 +84,9 @@ export const Session = z.object({
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
   lastActivityAt: z.number().int(),
+  /** Optional/absent means "normal" — kept optional so older events/fixtures without it still parse. */
+  purpose: SessionPurpose.optional(),
+  mergeMeta: MergeConflictMeta.nullable().optional(),
 });
 export type Session = z.infer<typeof Session>;
 

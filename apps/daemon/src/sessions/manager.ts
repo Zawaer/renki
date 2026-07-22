@@ -1,5 +1,5 @@
 import type { PermissionMode, Query } from "@anthropic-ai/claude-agent-sdk";
-import type { Session, SessionStatus } from "@crc/protocol";
+import type { MergeConflictMeta, Session, SessionPurpose, SessionStatus } from "@crc/protocol";
 import { desc, eq } from "drizzle-orm";
 import { mkdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
@@ -95,15 +95,70 @@ export class SessionManager {
       ? await this.createRepoSession(id, input.repoId, input.baseBranch, input.newBranch)
       : this.createPlainSession(id);
 
+    return this.finalizeNewSession(id, { ...created, purpose: "normal", mergeMeta: null }, input.title);
+  }
+
+  /**
+   * Attach a new session to a worktree that ALREADY exists on disk, instead of
+   * having createWorktree make one — used when an automated merge conflicts:
+   * the scratch worktree from `attemptMerge` (git/merge.ts), conflict markers
+   * and all, becomes this session's live workspace so Claude can resolve the
+   * conflict in place rather than being handed a diff to reason about blind.
+   */
+  async createConflictResolutionSession(input: {
+    repoId: string;
+    repoName: string;
+    branch: string;
+    worktreePath: string;
+    mergeMeta: MergeConflictMeta;
+    title?: string;
+  }): Promise<Session> {
+    const id = newSessionId();
+    const created = {
+      repoId: input.repoId,
+      repoName: input.repoName,
+      baseBranch: input.mergeMeta.targetBranch,
+      branch: input.branch,
+      worktreePath: input.worktreePath,
+      purpose: "merge_conflict" as const,
+      mergeMeta: input.mergeMeta,
+    };
+    return this.finalizeNewSession(id, created, input.title);
+  }
+
+  private async createRepoSession(id: string, repoId: string, baseBranch: string | undefined, newBranch: string | undefined) {
+    const repo = await findRepo(this.config, repoId);
+    if (!repo) throw new SessionError("repo_not_found", `Unknown repo: ${repoId}`);
+    if (!baseBranch) throw new SessionError("invalid_request", "baseBranch is required when repoId is set");
+
+    const { worktreePath, branch } = await createWorktree(this.config, repo.path, id, baseBranch, newBranch);
+    return { repoId: repo.id, repoName: repo.name, baseBranch, branch, worktreePath };
+  }
+
+  /** Shared tail of session creation: persist the row, seed the log's birth certificate, broadcast. */
+  private finalizeNewSession(
+    id: string,
+    created: {
+      repoId: string | null;
+      repoName: string;
+      baseBranch: string | null;
+      branch: string | null;
+      worktreePath: string;
+      purpose: SessionPurpose;
+      mergeMeta: MergeConflictMeta | null;
+    },
+    title: string | undefined,
+  ): Session {
     const now = Date.now();
     const row = {
       id,
       ...created,
+      mergeMeta: created.mergeMeta ? JSON.stringify(created.mergeMeta) : null,
       status: "idle" as SessionStatus,
       hasPendingPermission: false,
       controller: null,
       claudeSessionId: null,
-      title: input.title ?? null,
+      title: title ?? null,
       createdAt: now,
       updatedAt: now,
       lastActivityAt: now,
@@ -117,19 +172,10 @@ export class SessionManager {
     this.events.append(id, { kind: "session_created", ...created });
     this.events.append(id, { kind: "status_changed", status: "idle" });
 
-    logger.info("session created", { id, repo: created.repoName, branch: created.branch });
+    logger.info("session created", { id, repo: created.repoName, branch: created.branch, purpose: created.purpose });
     const session = rowToSession(row);
     this.broadcast?.onSessionChanged(session);
     return session;
-  }
-
-  private async createRepoSession(id: string, repoId: string, baseBranch: string | undefined, newBranch: string | undefined) {
-    const repo = await findRepo(this.config, repoId);
-    if (!repo) throw new SessionError("repo_not_found", `Unknown repo: ${repoId}`);
-    if (!baseBranch) throw new SessionError("invalid_request", "baseBranch is required when repoId is set");
-
-    const { worktreePath, branch } = await createWorktree(this.config, repo.path, id, baseBranch, newBranch);
-    return { repoId: repo.id, repoName: repo.name, baseBranch, branch, worktreePath };
   }
 
   /** A plain directory with nothing checked out — just somewhere for Claude to chat/scratch, no git involved. */
@@ -394,5 +440,7 @@ function rowToSession(row: typeof sessions.$inferSelect): Session {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     lastActivityAt: row.lastActivityAt,
+    purpose: row.purpose as SessionPurpose,
+    mergeMeta: row.mergeMeta ? (JSON.parse(row.mergeMeta) as MergeConflictMeta) : null,
   };
 }

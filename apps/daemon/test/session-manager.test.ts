@@ -79,6 +79,42 @@ describe("createSession", () => {
   });
 });
 
+describe("createConflictResolutionSession", () => {
+  it("defaults an ordinary session's purpose to normal with no merge metadata", async () => {
+    const { manager, repoId } = setup();
+    const session = await newSession(manager, repoId);
+    expect(session.purpose).toBe("normal");
+    expect(session.mergeMeta).toBeNull();
+  });
+
+  it("attaches to an existing worktree instead of creating a new one, tagged merge_conflict", async () => {
+    const { manager, repoId } = setup();
+    const first = await newSession(manager, repoId);
+
+    const mergeMeta = {
+      sourceBranch: "feature-x",
+      targetBranch: "main",
+      sourceSessionId: null,
+      conflictedFiles: ["shared.txt"],
+    };
+    const session = await manager.createConflictResolutionSession({
+      repoId,
+      repoName: "demo",
+      branch: first.branch!,
+      worktreePath: first.worktreePath,
+      mergeMeta,
+      title: "Merge conflict",
+    });
+
+    expect(session.purpose).toBe("merge_conflict");
+    expect(session.mergeMeta).toEqual(mergeMeta);
+    // Reused the SAME worktree path passed in — no new one was provisioned.
+    expect(session.worktreePath).toBe(first.worktreePath);
+    expect(existsSync(session.worktreePath)).toBe(true);
+    expect(kinds(manager, session.id)).toEqual(["session_created", "status_changed"]);
+  });
+});
+
 describe("take / release control", () => {
   it("takeControl sets the controller and emits control_changed once", async () => {
     const { manager, repoId } = setup();

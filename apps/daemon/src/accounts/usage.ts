@@ -26,7 +26,7 @@ import { logger } from "../logger.js";
  */
 type UsageEntry = { email: string | null; sessionKey: string; orgId: string | null };
 
-const CACHE_MS = 25_000;
+const CACHE_MS = 15_000;
 const HTTP_TIMEOUT_MS = 15_000;
 
 export type ResolvedIdentity = { email: string | null; orgId: string; usage: AccountUsage };

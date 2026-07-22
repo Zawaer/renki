@@ -21,7 +21,7 @@ export function AccountsBar() {
 
   useEffect(() => {
     refresh();
-    const t = setInterval(refresh, 30_000);
+    const t = setInterval(refresh, 15_000);
     return () => clearInterval(t);
   }, [refresh]);
 

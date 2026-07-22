@@ -37,6 +37,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const store = realtime.conversation(sessionId);
   const conv = useStoreValue(store);
   const scrollRef = useRef<ScrollView>(null);
+  const inputRef = useRef<TextInput>(null);
   const [text, setText] = useState("");
   const [model, setModel] = useState(""); // "" until capabilities load and pick the SDK's own default
   const [effortKey, setEffortKey] = useState(DEFAULT_EFFORT_KEY);
@@ -61,6 +62,12 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const isController = conv.controller === config.deviceId;
   const status = conv.status ?? "idle";
   const canSend = isController && status !== "busy";
+
+  // Pop the keyboard to the composer as soon as this device gains control
+  // (whether by taking it explicitly or via auto-claim on session creation).
+  useEffect(() => {
+    if (isController) inputRef.current?.focus();
+  }, [isController]);
   const effort = EFFORT_LEVELS.find((e) => e.key === effortKey) ?? EFFORT_LEVELS[0];
   const mode = PERMISSION_MODES.find((m) => m.key === permissionMode) ?? PERMISSION_MODES[0];
   const suggestions =
@@ -199,6 +206,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
       </View>
       <View style={styles.composer}>
         <TextInput
+          ref={inputRef}
           style={styles.composerInput}
           value={text}
           onChangeText={setText}

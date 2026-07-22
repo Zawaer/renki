@@ -110,6 +110,7 @@ export function SessionList({
           onCreated={(session) => {
             setCreating(false);
             refresh();
+            realtime.takeControl(session.id);
             onSelect(session.id);
           }}
         />

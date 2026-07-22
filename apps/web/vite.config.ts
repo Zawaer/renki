@@ -18,7 +18,9 @@ export default defineConfig({
     port: 4173,
     host: "0.0.0.0",
   },
-  // Relative base so the same build can be loaded from a VS Code webview URI
-  // (Step 5), not just an absolute web root.
-  base: "./",
+  // Absolute base: a browser hard-loading a nested route like /session/:id
+  // resolves "./assets/..." against that path, not the site root, and 404s.
+  // The VS Code webview build (apps/vscode/src/html.ts) rewrites these
+  // absolute-rooted asset paths to its own webview URI base instead.
+  base: "/",
 });

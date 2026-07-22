@@ -30,7 +30,7 @@ export function renderWebviewHtml(input: RenderInput): string {
     `<script nonce="${nonce}">window.__CRC_CONFIG__=${JSON.stringify(input.config)};</script>`;
 
   return input.rawHtml
-    .replace(/(src|href)="\.\//g, `$1="${input.assetsBase}/`)
+    .replace(/(src|href)="\//g, `$1="${input.assetsBase}/`)
     .replace(/<script /g, `<script nonce="${nonce}" `)
     .replace("</head>", `${inject}</head>`);
 }

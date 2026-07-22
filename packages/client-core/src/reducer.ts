@@ -181,6 +181,14 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
         inputTokens: e.inputTokens,
         outputTokens: e.outputTokens,
       }));
+      // The rate-limit auto-retry (manager.submitPrompt) reruns a failed prompt as a
+      // brand-new turn with the SAME promptId. Events are strictly ordered, so by the
+      // time this retry's own turn_result lands, the attempt it replaced is guaranteed
+      // to already be sitting in the timeline with status "error" — drop it so its
+      // already-streamed (but superseded) answer doesn't render twice.
+      s.timeline = s.timeline.filter(
+        (it) => !(it.type === "turn" && it.turn.turnId !== e.turnId && it.turn.promptId === e.promptId && it.turn.status === "error"),
+      );
       return s;
 
     case "notice":

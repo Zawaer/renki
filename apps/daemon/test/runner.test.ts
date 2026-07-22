@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyRateLimit } from "../src/claude/runner.js";
+import { classifyRateLimit, summarizeResultError } from "../src/claude/runner.js";
 
 /**
  * classifyRateLimit is the trigger for automatic multi-account rotation: a turn
@@ -37,5 +37,31 @@ describe("classifyRateLimit", () => {
       "syntax error near unexpected token",
     ];
     for (const text of misses) expect(classifyRateLimit(text), text).toBe(false);
+  });
+});
+
+/**
+ * The SDK's error-shaped result variant carries `errors: string[]`, but
+ * account-level failures (e.g. hitting a spend limit) arrive on the
+ * "success"-shaped variant instead: subtype "success", is_error true, no
+ * `errors` array — only a `result` string with the actual message.
+ */
+describe("summarizeResultError", () => {
+  it("prefers errors[] when present", () => {
+    expect(summarizeResultError({ subtype: "error_during_execution", errors: ["boom", "again"] })).toBe("boom; again");
+  });
+
+  it("falls back to result text on the success-shaped error variant", () => {
+    expect(
+      summarizeResultError({ subtype: "success", result: "You've hit your monthly spend limit. /model to switch models." }),
+    ).toBe("You've hit your monthly spend limit. /model to switch models.");
+  });
+
+  it("falls back to the bare subtype only when neither errors nor result is present", () => {
+    expect(summarizeResultError({ subtype: "success" })).toBe("success");
+  });
+
+  it("ignores a blank result string", () => {
+    expect(summarizeResultError({ subtype: "success", result: "   " })).toBe("success");
   });
 });

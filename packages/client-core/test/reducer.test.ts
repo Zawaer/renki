@@ -209,6 +209,36 @@ describe("per-event folding", () => {
     expect(turn.outputTokens).toBeNull();
   });
 
+  it("a rate-limit retry (same promptId, new turnId) drops the failed attempt it replaced", () => {
+    const RETRY = "t_2";
+    const s = fold(stream(
+      { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "go" },
+      { kind: "assistant_block", turnId: TURN, blockIndex: 0, blockKind: "text", text: "partial answer", toolUseId: null, toolName: null, toolInput: null },
+      { kind: "turn_result", turnId: TURN, promptId: "p1", ok: false, costUsd: null, durationMs: null, errorMessage: "usage limit", inputTokens: null, outputTokens: null },
+      { kind: "notice", text: "Usage limit hit — switching account…", level: "warn" },
+      { kind: "assistant_block", turnId: RETRY, blockIndex: 0, blockKind: "text", text: "final answer", toolUseId: null, toolName: null, toolInput: null },
+      { kind: "turn_result", turnId: RETRY, promptId: "p1", ok: true, costUsd: 0.1, durationMs: 900, errorMessage: null, inputTokens: 10, outputTokens: 5 },
+    ));
+    const turns = s.timeline.filter((it) => it.type === "turn").map((it) => (it as any).turn);
+    expect(turns).toHaveLength(1);
+    expect(turns[0].turnId).toBe(RETRY);
+    expect(turns[0].status).toBe("done");
+    expect(turns[0].blocks[0].text).toBe("final answer");
+  });
+
+  it("if the retry ALSO fails, only the retry's failure is shown (not both)", () => {
+    const RETRY = "t_2";
+    const s = fold(stream(
+      { kind: "assistant_block", turnId: TURN, blockIndex: 0, blockKind: "text", text: "partial", toolUseId: null, toolName: null, toolInput: null },
+      { kind: "turn_result", turnId: TURN, promptId: "p1", ok: false, costUsd: null, durationMs: null, errorMessage: "usage limit", inputTokens: null, outputTokens: null },
+      { kind: "turn_result", turnId: RETRY, promptId: "p1", ok: false, costUsd: null, durationMs: null, errorMessage: "usage limit again", inputTokens: null, outputTokens: null },
+    ));
+    const turns = s.timeline.filter((it) => it.type === "turn").map((it) => (it as any).turn);
+    expect(turns).toHaveLength(1);
+    expect(turns[0].turnId).toBe(RETRY);
+    expect(turns[0].errorMessage).toBe("usage limit again");
+  });
+
   it("notice appends an inline timeline notice", () => {
     const s = fold(stream({ kind: "notice", text: "switched account", level: "warn" }));
     expect(s.timeline).toEqual([{ type: "notice", text: "switched account", level: "warn" }]);

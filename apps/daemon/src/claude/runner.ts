@@ -360,7 +360,12 @@ function summarizeToolResult(content: unknown): string {
   return text.length > 2000 ? `${text.slice(0, 2000)}…` : text;
 }
 
-function summarizeResultError(message: { subtype: string; errors?: string[] }): string {
+export function summarizeResultError(message: { subtype: string; errors?: string[]; result?: string }): string {
   if (message.errors && message.errors.length > 0) return message.errors.join("; ");
+  // The "success"-shaped result variant (subtype: "success", is_error: true) has no
+  // `errors` array — e.g. account-level failures like hitting a spend limit — but its
+  // `result` field carries the human-readable message. Falling through to `subtype`
+  // there would just render the literal string "success" as the error.
+  if (typeof message.result === "string" && message.result.trim().length > 0) return message.result;
   return message.subtype;
 }

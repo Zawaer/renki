@@ -46,7 +46,9 @@ export const ClientMessage = z.discriminatedUnion("type", [
 
   /**
    * Submit a finished prompt. Rejected (via `error`) unless this device is the
-   * current controller AND the session is idle (not mid-turn). `promptId` is a
+   * current controller. If the session is mid-turn, the prompt is queued
+   * (see `prompt_queued`) and runs automatically as its own turn the instant
+   * the session goes idle, rather than being rejected. `promptId` is a
    * client-generated id so the client can correlate its optimistic UI with the
    * resulting `prompt_submitted` event. `model`/`maxThinkingTokens`/
    * `permissionMode` are a per-message override (omit for the daemon's own
@@ -121,5 +123,7 @@ export const WsErrorCode = {
   SessionNotFound: "session_not_found",
   BadMessage: "bad_message",
   Unauthorized: "unauthorized",
+  /** Daemon-side prompt queue for this session is already at its cap. */
+  QueueFull: "queue_full",
 } as const;
 export type WsErrorCode = (typeof WsErrorCode)[keyof typeof WsErrorCode];

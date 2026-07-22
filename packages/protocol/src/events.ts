@@ -59,6 +59,19 @@ const payloads = [
     text: z.string(),
   }),
 
+  /**
+   * The controller submitted a prompt while the session was busy. It's held
+   * daemon-side and will become a `prompt_submitted` turn automatically the
+   * instant the current turn finishes — no separate "queued" session status,
+   * this is just a visible record of what's waiting.
+   */
+  z.object({
+    kind: z.literal("prompt_queued"),
+    promptId: z.string(),
+    deviceId: DeviceId,
+    text: z.string(),
+  }),
+
   /** A streamed token/chunk of an assistant turn. Concatenate deltas per (turnId, blockIndex). */
   z.object({
     kind: z.literal("assistant_delta"),

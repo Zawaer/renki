@@ -30,9 +30,25 @@ export type RateLimitAutoSwitch = {
   rateLimitSwitch: () => Promise<{ switched: boolean; active: number | null }>;
 };
 
+/** Cap on how many prompts can pile up behind a busy session before we push back. */
+export const MAX_QUEUED_PROMPTS = 20;
+
+export type SubmitPromptInput = {
+  sessionId: string;
+  deviceId: string;
+  promptId: string;
+  text: string;
+  resolvePermission: PermissionResolver;
+  model?: string;
+  maxThinkingTokens?: number | null;
+  permissionMode?: PermissionMode;
+};
+
 export class SessionManager {
   readonly events: EventLog;
   private autoSwitch: RateLimitAutoSwitch | null = null;
+  /** sessionId -> prompts submitted while busy, FIFO; drained in submitPrompt's loop. */
+  private readonly queues = new Map<string, SubmitPromptInput[]>();
 
   constructor(
     private readonly config: Config,
@@ -176,30 +192,48 @@ export class SessionManager {
   // ── Prompting ────────────────────────────────────────────────────────────────
 
   /**
-   * Submit a finished prompt and run one Claude turn. Enforces the lock and the
-   * single-writer invariant, then streams the turn to the event log. Returns
-   * when the turn completes. The `resolvePermission` policy decides tool-use
-   * requests (in Step 2 this asks the controller over WS).
+   * Submit a finished prompt. Enforces the lock; if the session is idle, runs
+   * it as a turn immediately (and keeps draining anything queued behind it —
+   * each queued prompt becomes its own ordinary turn the instant the previous
+   * one finishes). If the session is busy, the prompt is held in a per-session
+   * FIFO queue instead of being rejected — this is the only difference from
+   * before, not a new execution model. The `resolvePermission` policy decides
+   * tool-use requests (in Step 2 this asks the controller over WS).
    */
-  async submitPrompt(input: {
-    sessionId: string;
-    deviceId: string;
-    promptId: string;
-    text: string;
-    resolvePermission: PermissionResolver;
-    model?: string;
-    maxThinkingTokens?: number | null;
-    permissionMode?: PermissionMode;
-  }): Promise<void> {
+  async submitPrompt(input: SubmitPromptInput): Promise<void> {
     const session = this.getSession(input.sessionId);
     if (session.status === "archived") throw new SessionError("session_archived", "Session is archived.");
     if (session.controller !== input.deviceId)
       throw new SessionError("not_controller", "Only the controlling device can send prompts.");
-    if (session.status === "busy")
-      throw new SessionError("session_busy", "A turn is already running for this session.");
+
+    if (session.status === "busy") {
+      const queue = this.queues.get(input.sessionId) ?? [];
+      if (queue.length >= MAX_QUEUED_PROMPTS)
+        throw new SessionError("queue_full", "Too many prompts queued for this session.");
+      queue.push(input);
+      this.queues.set(input.sessionId, queue);
+      this.events.append(input.sessionId, {
+        kind: "prompt_queued",
+        promptId: input.promptId,
+        deviceId: input.deviceId,
+        text: input.text,
+      });
+      return;
+    }
+
+    let next: SubmitPromptInput | undefined = input;
+    while (next) {
+      await this.runOneTurn(next);
+      next = this.queues.get(next.sessionId)?.shift();
+    }
+  }
+
+  /** Runs exactly one Claude turn for an already-idle session. */
+  private async runOneTurn(input: SubmitPromptInput): Promise<void> {
+    const session = this.getSession(input.sessionId);
 
     // Flip to busy and record the prompt BEFORE any await, so a concurrent
-    // submit for the same session loses the race and gets session_busy.
+    // submit for the same session loses the race and gets queued instead.
     this.patch(input.sessionId, { status: "busy", lastActivityAt: Date.now() });
     this.events.append(input.sessionId, { kind: "status_changed", status: "busy" });
     this.events.append(input.sessionId, {

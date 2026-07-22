@@ -38,7 +38,7 @@ export type TurnView = {
 
 /** A prompt the controller sent, an assistant turn, or a system notice. */
 export type TimelineItem =
-  | { type: "prompt"; promptId: string; deviceId: string; text: string }
+  | { type: "prompt"; promptId: string; deviceId: string; text: string; queued: boolean }
   | { type: "turn"; turn: TurnView }
   | { type: "notice"; text: string; level: "info" | "warn" };
 
@@ -107,9 +107,20 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       s.controllerName = e.controllerName;
       return s;
 
-    case "prompt_submitted":
-      s.timeline = [...s.timeline, { type: "prompt", promptId: e.promptId, deviceId: e.deviceId, text: e.text }];
+    case "prompt_queued":
+      s.timeline = [...s.timeline, { type: "prompt", promptId: e.promptId, deviceId: e.deviceId, text: e.text, queued: true }];
       return s;
+
+    case "prompt_submitted": {
+      // A prompt that was queued (rendered eagerly on prompt_queued) just
+      // started running as its own turn — flip its existing timeline item
+      // rather than appending a duplicate. Otherwise this is a normal
+      // immediate submit and gets appended fresh.
+      const idx = s.timeline.findIndex((it) => it.type === "prompt" && it.promptId === e.promptId);
+      const item: TimelineItem = { type: "prompt", promptId: e.promptId, deviceId: e.deviceId, text: e.text, queued: false };
+      s.timeline = idx === -1 ? [...s.timeline, item] : s.timeline.map((it, i) => (i === idx ? item : it));
+      return s;
+    }
 
     case "assistant_delta":
       s.timeline = updateTurn(s.timeline, e.turnId, (turn) => {

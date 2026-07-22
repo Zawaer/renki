@@ -92,9 +92,14 @@ export function SessionView({ sessionId }: { sessionId: string }) {
         </div>
       )}
 
+      {isController && status === "busy" && (
+        <div className="border-t border-(--crc-border) px-4 py-1.5 text-xs text-(--crc-fg-muted)">
+          Claude is working — sending now will queue this message.
+        </div>
+      )}
       <Composer
-        disabled={!isController || status === "busy"}
-        reason={!isController ? "Take control to send prompts" : status === "busy" ? "Claude is working…" : ""}
+        disabled={!isController}
+        reason={!isController ? "Take control to send prompts" : ""}
         onSend={(text, opts) => realtime.submitPrompt(sessionId, text, opts)}
       />
     </div>
@@ -104,9 +109,14 @@ export function SessionView({ sessionId }: { sessionId: string }) {
 function TimelineRow({ item }: { item: TimelineItem }) {
   if (item.type === "prompt") {
     return (
-      <div className="flex gap-2 border-l-2 border-(--crc-accent) bg-(--crc-bg-elevated) px-3 py-2">
-        <span className="codicon codicon-account mt-0.5 text-(--crc-accent)" />
+      <div
+        className={`flex gap-2 border-l-2 px-3 py-2 ${
+          item.queued ? "border-(--crc-fg-muted) bg-(--crc-bg-elevated)/50" : "border-(--crc-accent) bg-(--crc-bg-elevated)"
+        }`}
+      >
+        <span className={`codicon mt-0.5 ${item.queued ? "codicon-history text-(--crc-fg-muted)" : "codicon-account text-(--crc-accent)"}`} />
         <div className="whitespace-pre-wrap text-sm text-(--crc-fg)">{item.text}</div>
+        {item.queued && <span className="ml-auto shrink-0 text-[11px] text-(--crc-fg-muted)">queued…</span>}
       </div>
     );
   }

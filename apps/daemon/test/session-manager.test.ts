@@ -6,7 +6,7 @@ import type { Config } from "../src/config.js";
 import type { DB } from "../src/db/index.js";
 import { sessions } from "../src/db/schema.js";
 import { SessionError } from "../src/sessions/errors.js";
-import { SessionManager } from "../src/sessions/manager.js";
+import { MAX_QUEUED_PROMPTS, SessionManager } from "../src/sessions/manager.js";
 import { cleanupConfig, makeTestConfig, makeTestDb, makeTestRepo } from "./helpers.js";
 
 /**
@@ -102,16 +102,42 @@ describe("submitPrompt guards (no turn spawned)", () => {
     ).rejects.toMatchObject({ code: "not_controller" });
   });
 
-  it("refuses a second concurrent prompt with session_busy", async () => {
+  it("queues a second concurrent prompt instead of rejecting it", async () => {
     const { manager, db, repoId } = setup();
     const s = await newSession(manager, repoId);
     manager.takeControl(s.id, "d1");
     // Force the session into a running turn without spawning claude.
     db.update(sessions).set({ status: "busy" }).where(eq(sessions.id, s.id)).run();
 
+    // Resolves (doesn't throw) — the prompt is held, not rejected.
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p1", text: "hi", resolvePermission: noopResolve });
+
+    expect(kinds(manager, s.id)).toContain("prompt_queued");
+    const queued = manager.events.read(s.id).find((e) => e.kind === "prompt_queued");
+    expect(queued).toMatchObject({ promptId: "p1", deviceId: "d1", text: "hi" });
+    // Still busy — queueing doesn't touch session status or start a turn.
+    expect(manager.getSession(s.id).status).toBe("busy");
+  });
+
+  it("rejects with queue_full once the per-session queue cap is hit", async () => {
+    const { manager, db, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+    db.update(sessions).set({ status: "busy" }).where(eq(sessions.id, s.id)).run();
+
+    for (let i = 0; i < MAX_QUEUED_PROMPTS; i++) {
+      await manager.submitPrompt({
+        sessionId: s.id,
+        deviceId: "d1",
+        promptId: `p${i}`,
+        text: "hi",
+        resolvePermission: noopResolve,
+      });
+    }
+
     await expect(
-      manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p1", text: "hi", resolvePermission: noopResolve }),
-    ).rejects.toMatchObject({ code: "session_busy" });
+      manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "overflow", text: "hi", resolvePermission: noopResolve }),
+    ).rejects.toMatchObject({ code: "queue_full" });
   });
 });
 

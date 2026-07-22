@@ -4,7 +4,8 @@ export type SessionErrorCode =
   | "repo_not_found"
   | "not_controller"
   | "session_busy"
-  | "session_archived";
+  | "session_archived"
+  | "queue_full";
 
 export class SessionError extends Error {
   constructor(

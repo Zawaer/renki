@@ -20,6 +20,7 @@ const SAMPLES: Record<EventKind, unknown> = {
   status_changed: { kind: "status_changed", status: "idle" },
   control_changed: { kind: "control_changed", controller: "d1", controllerName: "Mac" },
   prompt_submitted: { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "hi" },
+  prompt_queued: { kind: "prompt_queued", promptId: "p1", deviceId: "d1", text: "hi" },
   assistant_delta: { kind: "assistant_delta", turnId: "t1", blockIndex: 0, blockKind: "text", text: "hey" },
   assistant_block: { kind: "assistant_block", turnId: "t1", blockIndex: 0, blockKind: "tool_use", text: null, toolUseId: "tu", toolName: "Edit", toolInput: { a: 1 } },
   tool_result: { kind: "tool_result", turnId: "t1", toolUseId: "tu", ok: true, summary: "done" },

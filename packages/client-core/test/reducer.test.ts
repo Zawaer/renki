@@ -63,6 +63,7 @@ describe("initialConversation", () => {
       branch: null,
       timeline: [],
       pending: [],
+      queuedPrompts: [],
       lastSeq: -1,
     });
   });
@@ -95,6 +96,45 @@ describe("per-event folding", () => {
   it("prompt_submitted appends a prompt item", () => {
     const s = fold(stream({ kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "hi" }));
     expect(s.timeline).toEqual([{ type: "prompt", promptId: "p1", deviceId: "d1", text: "hi" }]);
+  });
+
+  it("prompt_queued lands in queuedPrompts, not timeline", () => {
+    const s = fold(stream({ kind: "prompt_queued", promptId: "p2", deviceId: "d1", text: "queued question" }));
+    expect(s.timeline).toEqual([]);
+    expect(s.queuedPrompts).toEqual([{ promptId: "p2", deviceId: "d1", text: "queued question" }]);
+  });
+
+  it("prompt_submitted moves a queued prompt out of queuedPrompts and into timeline", () => {
+    const s = fold(stream(
+      { kind: "prompt_queued", promptId: "p2", deviceId: "d1", text: "queued question" },
+      { kind: "prompt_submitted", promptId: "p2", deviceId: "d1", text: "queued question" },
+    ));
+    expect(s.queuedPrompts).toEqual([]);
+    expect(s.timeline).toEqual([{ type: "prompt", promptId: "p2", deviceId: "d1", text: "queued question" }]);
+  });
+
+  it("keeps every prompt/answer pair adjacent in timeline even when a follow-up is queued before the prior turn finishes", () => {
+    // Regression case: a fast follow-up used to get an eager timeline bubble
+    // ahead of the turn it was replying to, permanently desyncing every
+    // prompt/answer pair after it. Queued prompts must stay out of `timeline`
+    // until their own turn actually starts.
+    const s = fold(stream(
+      { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "2348594353+403" },
+      // The user types a follow-up before p1's answer streams back at all.
+      { kind: "prompt_queued", promptId: "p2", deviceId: "d1", text: "2423+2" },
+      { kind: "assistant_block", turnId: "t1", blockIndex: 0, blockKind: "text", text: "2348594756", toolUseId: null, toolName: null, toolInput: null },
+      { kind: "turn_result", turnId: "t1", promptId: "p1", ok: true, costUsd: 0.01, durationMs: 100, errorMessage: null, inputTokens: 1, outputTokens: 1 },
+      { kind: "prompt_submitted", promptId: "p2", deviceId: "d1", text: "2423+2" },
+      { kind: "assistant_block", turnId: "t2", blockIndex: 0, blockKind: "text", text: "2425", toolUseId: null, toolName: null, toolInput: null },
+      { kind: "turn_result", turnId: "t2", promptId: "p2", ok: true, costUsd: 0.01, durationMs: 100, errorMessage: null, inputTokens: 1, outputTokens: 1 },
+    ));
+    expect(s.queuedPrompts).toEqual([]);
+    expect(s.timeline.map((it) => (it.type === "prompt" ? it.text : (it as any).turn.blocks[0].text))).toEqual([
+      "2348594353+403",
+      "2348594756",
+      "2423+2",
+      "2425",
+    ]);
   });
 
   it("assistant_delta accumulates text across chunks within a block", () => {

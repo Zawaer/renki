@@ -38,7 +38,7 @@ export type TurnView = {
 
 /** A prompt the controller sent, an assistant turn, or a system notice. */
 export type TimelineItem =
-  | { type: "prompt"; promptId: string; deviceId: string; text: string; queued: boolean }
+  | { type: "prompt"; promptId: string; deviceId: string; text: string }
   | { type: "turn"; turn: TurnView }
   | { type: "notice"; text: string; level: "info" | "warn" };
 
@@ -47,6 +47,13 @@ export type PermissionView = {
   turnId: string;
   toolName: string;
   toolInput: unknown;
+};
+
+/** A prompt sent while the session was busy, waiting its turn — not yet running. */
+export type QueuedPromptView = {
+  promptId: string;
+  deviceId: string;
+  text: string;
 };
 
 export type ConversationState = {
@@ -59,6 +66,18 @@ export type ConversationState = {
   timeline: TimelineItem[];
   /** Permission requests awaiting a decision, in arrival order. */
   pending: PermissionView[];
+  /**
+   * Prompts queued behind a busy turn, in send order. Deliberately kept OUT of
+   * `timeline` — a queued prompt renders eagerly (this list) the instant it's
+   * sent, but its own turn doesn't start until earlier ones finish. If a
+   * follow-up got typed faster than the model replies, appending it straight
+   * into `timeline` would put its bubble ahead of the turn it's replying to,
+   * desyncing every prompt/answer pair after it. Keeping queued prompts in
+   * their own list — and only moving one into `timeline` (see
+   * `prompt_submitted`) once it actually starts running — means `timeline`
+   * stays what it always was: strictly ordered prompt/answer pairs.
+   */
+  queuedPrompts: QueuedPromptView[];
   /** Highest seq folded in — sent as lastSeq on (re)subscribe. */
   lastSeq: number;
 };
@@ -73,6 +92,7 @@ export function initialConversation(sessionId: string): ConversationState {
     branch: null,
     timeline: [],
     pending: [],
+    queuedPrompts: [],
     lastSeq: -1,
   };
 }
@@ -108,19 +128,18 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       return s;
 
     case "prompt_queued":
-      s.timeline = [...s.timeline, { type: "prompt", promptId: e.promptId, deviceId: e.deviceId, text: e.text, queued: true }];
+      s.queuedPrompts = [...s.queuedPrompts, { promptId: e.promptId, deviceId: e.deviceId, text: e.text }];
       return s;
 
-    case "prompt_submitted": {
-      // A prompt that was queued (rendered eagerly on prompt_queued) just
-      // started running as its own turn — flip its existing timeline item
-      // rather than appending a duplicate. Otherwise this is a normal
-      // immediate submit and gets appended fresh.
-      const idx = s.timeline.findIndex((it) => it.type === "prompt" && it.promptId === e.promptId);
-      const item: TimelineItem = { type: "prompt", promptId: e.promptId, deviceId: e.deviceId, text: e.text, queued: false };
-      s.timeline = idx === -1 ? [...s.timeline, item] : s.timeline.map((it, i) => (i === idx ? item : it));
+    case "prompt_submitted":
+      // If this was sitting in the queue, it's no longer waiting — it's
+      // starting now. Either way it enters `timeline` fresh, at the position
+      // that reflects when it actually started (not when it was sent), so a
+      // prompt and its turn are always adjacent regardless of how fast
+      // follow-ups were typed.
+      s.queuedPrompts = s.queuedPrompts.filter((q) => q.promptId !== e.promptId);
+      s.timeline = [...s.timeline, { type: "prompt", promptId: e.promptId, deviceId: e.deviceId, text: e.text }];
       return s;
-    }
 
     case "assistant_delta":
       s.timeline = updateTurn(s.timeline, e.turnId, (turn) => {

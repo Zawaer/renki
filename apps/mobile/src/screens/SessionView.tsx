@@ -158,6 +158,21 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
         />
       ))}
 
+      {/* Queued prompts — kept out of the timeline so a fast follow-up can't
+          render ahead of the turn it's replying to; shown here as "up next". */}
+      {conv.queuedPrompts.length > 0 && (
+        <View style={styles.queueWrap}>
+          <Text style={styles.queueLabel}>
+            {conv.queuedPrompts.length === 1 ? "1 message queued" : `${conv.queuedPrompts.length} messages queued`}
+          </Text>
+          {conv.queuedPrompts.map((q) => (
+            <Text key={q.promptId} style={styles.queueItem} numberOfLines={1}>
+              {q.text}
+            </Text>
+          ))}
+        </View>
+      )}
+
       {/* Composer */}
       {suggestions.length > 0 && (
         <View style={styles.suggestBox}>
@@ -458,6 +473,16 @@ const makeStyles = (colors: ThemeColors) =>
     permTitle: { color: colors.busy, fontSize: 14, fontWeight: "600" },
     permBody: { color: colors.dim, fontSize: 12 },
     permActions: { flexDirection: "row", gap: 10, marginTop: 4 },
+    queueWrap: {
+      backgroundColor: colors.panel2,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      gap: 2,
+    },
+    queueLabel: { color: colors.faint, fontSize: 11 },
+    queueItem: { color: colors.faint, fontSize: 12 },
     allowBtn: { backgroundColor: colors.accent, borderRadius: 2, paddingHorizontal: 18, paddingVertical: 8 },
     allowText: { color: colors.accentFg, fontWeight: "600" },
     denyBtn: { borderColor: colors.danger, borderWidth: 1, borderRadius: 2, paddingHorizontal: 18, paddingVertical: 8 },

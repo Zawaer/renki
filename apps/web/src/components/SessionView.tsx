@@ -92,6 +92,24 @@ export function SessionView({ sessionId }: { sessionId: string }) {
         </div>
       )}
 
+      {/* Queued prompts — kept out of the timeline itself so a fast follow-up
+          can't render ahead of the turn it's replying to (see client-core's
+          QueuedPromptView). Shown here as "up next", separate from the
+          strictly-ordered conversation above. */}
+      {conv.queuedPrompts.length > 0 && (
+        <div className="space-y-1 border-t border-(--crc-border) bg-(--crc-bg-elevated)/50 px-4 py-2">
+          <div className="text-[11px] text-(--crc-fg-muted)">
+            {conv.queuedPrompts.length === 1 ? "1 message queued" : `${conv.queuedPrompts.length} messages queued`} — will send once the current turn finishes
+          </div>
+          {conv.queuedPrompts.map((q) => (
+            <div key={q.promptId} className="flex items-center gap-1.5 truncate text-xs text-(--crc-fg-muted)">
+              <span className="codicon codicon-history shrink-0" />
+              <span className="truncate">{q.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <Composer
         disabled={!isController}
         reason={!isController ? "Take control to send prompts" : ""}
@@ -104,14 +122,9 @@ export function SessionView({ sessionId }: { sessionId: string }) {
 function TimelineRow({ item }: { item: TimelineItem }) {
   if (item.type === "prompt") {
     return (
-      <div
-        className={`flex gap-2 border-l-2 px-3 py-2 ${
-          item.queued ? "border-(--crc-fg-muted) bg-(--crc-bg-elevated)/50" : "border-(--crc-accent) bg-(--crc-bg-elevated)"
-        }`}
-      >
-        <span className={`codicon mt-0.5 ${item.queued ? "codicon-history text-(--crc-fg-muted)" : "codicon-account text-(--crc-accent)"}`} />
+      <div className="flex gap-2 border-l-2 border-(--crc-accent) bg-(--crc-bg-elevated) px-3 py-2">
+        <span className="codicon codicon-account mt-0.5 text-(--crc-accent)" />
         <div className="whitespace-pre-wrap text-sm text-(--crc-fg)">{item.text}</div>
-        {item.queued && <span className="ml-auto shrink-0 text-[11px] text-(--crc-fg-muted)">queued…</span>}
       </div>
     );
   }

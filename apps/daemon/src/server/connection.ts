@@ -111,6 +111,7 @@ export class Connection {
             text: msg.text,
             model: msg.model,
             maxThinkingTokens: msg.maxThinkingTokens,
+            permissionMode: msg.permissionMode,
             resolvePermission: this.broker.resolverFor(msg.sessionId),
           })
           .catch((err) => {

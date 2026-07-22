@@ -4,6 +4,7 @@ import {
   type ServerMessage,
   ServerMessage as ServerMessageSchema,
 } from "@crc/protocol";
+import type { PermissionModeKey } from "./permissionMode.js";
 import { type ConversationState, applyEvent, applyEvents, initialConversation } from "./reducer.js";
 import { Store } from "./store.js";
 
@@ -153,13 +154,14 @@ export class RealtimeClient {
 
   /**
    * Returns the client-generated promptId so the UI can correlate it.
-   * `model`/`maxThinkingTokens` are a per-message override — omit for the
-   * daemon's own default, matching every call site before this option existed.
+   * `model`/`maxThinkingTokens`/`permissionMode` are a per-message override —
+   * omit for the daemon's own default, matching every call site before these
+   * options existed.
    */
   submitPrompt(
     sessionId: string,
     text: string,
-    opts?: { model?: string; maxThinkingTokens?: number | null },
+    opts?: { model?: string; maxThinkingTokens?: number | null; permissionMode?: PermissionModeKey },
   ): string {
     const promptId = genId("p");
     this.send({ type: "submit_prompt", sessionId, promptId, text, ...opts });

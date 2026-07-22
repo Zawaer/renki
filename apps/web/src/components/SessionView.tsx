@@ -1,10 +1,13 @@
 import {
   DEFAULT_EFFORT_KEY,
+  DEFAULT_PERMISSION_MODE,
   EFFORT_LEVELS,
   estimateTokens,
   formatTokenCount,
+  PERMISSION_MODES,
   THINKING_VERBS,
   type BlockView,
+  type PermissionModeKey,
   type PermissionView,
   type TimelineItem,
   type TurnView,
@@ -312,15 +315,19 @@ function Composer({
 }: {
   disabled: boolean;
   reason: string;
-  onSend: (text: string, opts?: { model?: string; maxThinkingTokens?: number | null }) => void;
+  onSend: (
+    text: string,
+    opts?: { model?: string; maxThinkingTokens?: number | null; permissionMode?: PermissionModeKey },
+  ) => void;
 }) {
   const { rest } = useClient();
   const [text, setText] = useState("");
   const [model, setModel] = useState(""); // "" until capabilities load and pick the SDK's own default
   const [effortKey, setEffortKey] = useState(DEFAULT_EFFORT_KEY);
+  const [permissionMode, setPermissionMode] = useState<PermissionModeKey>(DEFAULT_PERMISSION_MODE);
   const [capabilities, setCapabilities] = useState<CapabilitiesResponse>({ models: [], commands: [] });
   const [suggestionIndex, setSuggestionIndex] = useState(0);
-  const [openMenu, setOpenMenu] = useState<"model" | "effort" | null>(null);
+  const [openMenu, setOpenMenu] = useState<"model" | "effort" | "mode" | null>(null);
   const [customModel, setCustomModel] = useState("");
 
   useEffect(() => {
@@ -336,6 +343,7 @@ function Composer({
   }, [capabilities, model]);
 
   const effort = EFFORT_LEVELS.find((e) => e.key === effortKey) ?? EFFORT_LEVELS[0];
+  const mode = PERMISSION_MODES.find((m) => m.key === permissionMode) ?? PERMISSION_MODES[0];
   const selectedModel = capabilities.models.find((m) => m.value === model);
   const suggestions =
     text.startsWith("/") && text.length > 1 && !text.includes(" ")
@@ -345,7 +353,11 @@ function Composer({
   function send() {
     const t = text.trim();
     if (!t || disabled) return;
-    onSend(t, { model: model || undefined, maxThinkingTokens: effort?.maxThinkingTokens ?? undefined });
+    onSend(t, {
+      model: model || undefined,
+      maxThinkingTokens: effort?.maxThinkingTokens ?? undefined,
+      permissionMode,
+    });
     setText("");
   }
 
@@ -397,6 +409,11 @@ function Composer({
           open={openMenu === "effort"}
           onToggle={() => setOpenMenu((v) => (v === "effort" ? null : "effort"))}
         />
+        <PickerButton
+          label={mode?.label ?? "Manual"}
+          open={openMenu === "mode"}
+          onToggle={() => setOpenMenu((v) => (v === "mode" ? null : "mode"))}
+        />
       </div>
 
       {openMenu && (
@@ -444,19 +461,36 @@ function Composer({
                     </div>
                   </div>,
                 ]
-              : EFFORT_LEVELS.map((e) => (
-                  <button
-                    key={e.key}
-                    onClick={() => {
-                      setEffortKey(e.key);
-                      setOpenMenu(null);
-                    }}
-                    className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left hover:bg-(--crc-hover)"
-                  >
-                    <span className="font-medium text-(--crc-fg)">{e.label}</span>
-                    {e.key === effortKey && <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />}
-                  </button>
-                ))}
+              : openMenu === "effort"
+                ? EFFORT_LEVELS.map((e) => (
+                    <button
+                      key={e.key}
+                      onClick={() => {
+                        setEffortKey(e.key);
+                        setOpenMenu(null);
+                      }}
+                      className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left hover:bg-(--crc-hover)"
+                    >
+                      <span className="font-medium text-(--crc-fg)">{e.label}</span>
+                      {e.key === effortKey && <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />}
+                    </button>
+                  ))
+                : PERMISSION_MODES.map((m) => (
+                    <button
+                      key={m.key}
+                      onClick={() => {
+                        setPermissionMode(m.key);
+                        setOpenMenu(null);
+                      }}
+                      className="flex w-full items-start justify-between gap-2 px-3 py-1.5 text-left hover:bg-(--crc-hover)"
+                    >
+                      <div className="min-w-0">
+                        <div className="font-medium text-(--crc-fg)">{m.label}</div>
+                        <div className="truncate text-(--crc-fg-muted)">{m.description}</div>
+                      </div>
+                      {m.key === permissionMode && <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />}
+                    </button>
+                  ))}
           </div>
         </>
       )}

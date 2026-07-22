@@ -1,10 +1,13 @@
 import {
   DEFAULT_EFFORT_KEY,
+  DEFAULT_PERMISSION_MODE,
   EFFORT_LEVELS,
   estimateTokens,
   formatTokenCount,
+  PERMISSION_MODES,
   THINKING_VERBS,
   type BlockView,
+  type PermissionModeKey,
   type PermissionView,
   type TimelineItem,
   type TurnView,
@@ -37,6 +40,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const [text, setText] = useState("");
   const [model, setModel] = useState(""); // "" until capabilities load and pick the SDK's own default
   const [effortKey, setEffortKey] = useState(DEFAULT_EFFORT_KEY);
+  const [permissionMode, setPermissionMode] = useState<PermissionModeKey>(DEFAULT_PERMISSION_MODE);
   const [capabilities, setCapabilities] = useState<CapabilitiesResponse>({ models: [], commands: [] });
 
   useEffect(() => {
@@ -58,6 +62,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const status = conv.status ?? "idle";
   const canSend = isController && status !== "busy";
   const effort = EFFORT_LEVELS.find((e) => e.key === effortKey) ?? EFFORT_LEVELS[0];
+  const mode = PERMISSION_MODES.find((m) => m.key === permissionMode) ?? PERMISSION_MODES[0];
   const suggestions =
     text.startsWith("/") && text.length > 1 && !text.includes(" ")
       ? capabilities.commands.filter((c) => c.name.toLowerCase().startsWith(text.slice(1).toLowerCase()))
@@ -66,7 +71,11 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   function send() {
     const t = text.trim();
     if (!t || !canSend) return;
-    realtime.submitPrompt(sessionId, t, { model: model || undefined, maxThinkingTokens: effort?.maxThinkingTokens ?? undefined });
+    realtime.submitPrompt(sessionId, t, {
+      model: model || undefined,
+      maxThinkingTokens: effort?.maxThinkingTokens ?? undefined,
+      permissionMode,
+    });
     setText("");
   }
 
@@ -81,6 +90,12 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
     const idx = EFFORT_LEVELS.findIndex((e) => e.key === effortKey);
     const next = EFFORT_LEVELS[(idx + 1) % EFFORT_LEVELS.length];
     if (next) setEffortKey(next.key);
+  }
+
+  function cyclePermissionMode() {
+    const idx = PERMISSION_MODES.findIndex((m) => m.key === permissionMode);
+    const next = PERMISSION_MODES[(idx + 1) % PERMISSION_MODES.length];
+    if (next) setPermissionMode(next.key);
   }
 
   function pickSuggestion(name: string) {
@@ -162,6 +177,9 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
         </TouchableOpacity>
         <TouchableOpacity style={styles.optionPill} onPress={cycleEffort}>
           <Text style={styles.optionPillText}>Effort: {effort?.label ?? "Medium"}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.optionPill} onPress={cyclePermissionMode}>
+          <Text style={styles.optionPillText}>Mode: {mode?.label ?? "Manual"}</Text>
         </TouchableOpacity>
       </View>
       <View style={styles.composer}>

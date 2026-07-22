@@ -1,3 +1,4 @@
+import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk";
 import type { Session, SessionStatus } from "@crc/protocol";
 import { desc, eq } from "drizzle-orm";
 import type { Config } from "../config.js";
@@ -188,6 +189,7 @@ export class SessionManager {
     resolvePermission: PermissionResolver;
     model?: string;
     maxThinkingTokens?: number | null;
+    permissionMode?: PermissionMode;
   }): Promise<void> {
     const session = this.getSession(input.sessionId);
     if (session.status === "archived") throw new SessionError("session_archived", "Session is archived.");
@@ -216,6 +218,7 @@ export class SessionManager {
         promptId: input.promptId,
         model: input.model,
         maxThinkingTokens: input.maxThinkingTokens,
+        permissionMode: input.permissionMode,
         forcePermissionPrompts: this.config.forcePermissionPrompts,
         enableRtk: this.config.enableRtk,
         rtkBin: this.config.rtkBin,

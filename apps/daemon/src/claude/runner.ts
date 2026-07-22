@@ -48,6 +48,8 @@ export type RunTurnArgs = {
   model?: string;
   /** Thinking-token budget for this turn; omit/null for the SDK's own default. */
   maxThinkingTokens?: number | null;
+  /** SDK permission mode for this turn; omit for `"default"` (ask for every gated tool). */
+  permissionMode?: Options["permissionMode"];
   /** If true, don't load ~/.claude settings so every gated tool asks the controller. */
   forcePermissionPrompts?: boolean;
   /** If true, rewrite Bash commands through RTK (see ./rtk.ts) before they run. */
@@ -104,7 +106,7 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
   const options: Options = {
     cwd: args.cwd,
     includePartialMessages: true,
-    permissionMode: "default",
+    permissionMode: args.permissionMode ?? "default",
     abortController: args.abortController,
     ...(args.resumeSessionId ? { resume: args.resumeSessionId } : {}),
     ...(args.model ? { model: args.model } : {}),

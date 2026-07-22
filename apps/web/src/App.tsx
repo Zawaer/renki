@@ -52,11 +52,12 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
   const { realtime, config } = useClient();
   const status = useStoreValue(realtime.status);
   const lastError = useStoreValue(realtime.lastError);
-  const [selected, setSelected] = useState<string | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
   const onStats = location.pathname === "/stats";
   const onSettings = location.pathname === "/settings";
+  const sessionMatch = location.pathname.match(/^\/session\/(.+)$/);
+  const selected = sessionMatch ? decodeURIComponent(sessionMatch[1]!) : null;
 
   return (
     <div className="flex h-full flex-col">
@@ -102,11 +103,10 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
           <div className="min-h-0 flex-1">
             <SessionList
               selectedId={selected}
-              onSelect={(id) => {
-                setSelected(id);
-                navigate("/");
+              onSelect={(id) => navigate(`/session/${encodeURIComponent(id)}`)}
+              onDeleted={(id) => {
+                if (selected === id) navigate("/");
               }}
-              onDeleted={(id) => setSelected((cur) => (cur === id ? null : cur))}
             />
           </div>
         </aside>
@@ -115,15 +115,15 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
             <Route path="/stats" element={<StatsView />} />
             <Route path="/settings" element={<Settings onReset={onReset} managed={managed} />} />
             <Route
+              path="/session/:id"
+              element={selected ? <SessionView key={selected} sessionId={selected} /> : null}
+            />
+            <Route
               path="*"
               element={
-                selected ? (
-                  <SessionView key={selected} sessionId={selected} />
-                ) : (
-                  <div className="flex h-full items-center justify-center text-sm text-(--crc-fg-muted)">
-                    Select or create a session.
-                  </div>
-                )
+                <div className="flex h-full items-center justify-center text-sm text-(--crc-fg-muted)">
+                  Select or create a session.
+                </div>
               }
             />
           </Routes>

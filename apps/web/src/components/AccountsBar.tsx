@@ -79,7 +79,7 @@ export function AccountsBar() {
                 <AccountRow key={a.number} account={a} onSwitch={switchTo} switching={switching} />
               ))}
             </div>
-            {data.rotation.lastHoldReason && (
+            {data.rotation.enabled && data.rotation.lastHoldReason && (
               <div className="text-[11px] text-(--crc-fg-muted)">holding: {data.rotation.lastHoldReason}</div>
             )}
             <button

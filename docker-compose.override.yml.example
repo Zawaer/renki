@@ -24,6 +24,11 @@ services:
   daemon:
     networks:
       - reverse-proxy
+    # Uncomment if you're also bind-mounting rtk for RTK token-savings
+    # support — see SETUP.md's RTK section. Replace /home/you with the
+    # actual path rtk was installed to on this host.
+    # volumes:
+    #   - ${HOME}/.local/bin/rtk:/home/you/.local/bin/rtk:ro
   web:
     networks:
       - reverse-proxy

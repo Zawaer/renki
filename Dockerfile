@@ -66,6 +66,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # no privilege boundary being crossed here — trust the whole tree.
 RUN git config --system --add safe.directory '*'
 
+# cswap (optional multi-account usage rotation — see SETUP.md § Multi-account
+# usage rotation) is a pipx-managed Python package on the host; its installed
+# shim script's shebang points at a host-only venv path
+# (~/.local/share/pipx/venvs/claude-swap/bin/python), so bind-mounting just
+# that file the way RTK's single binary gets mounted doesn't work — it needs
+# installing into the image itself instead.
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv pipx \
+    && rm -rf /var/lib/apt/lists/* \
+    && pipx install claude-swap \
+    && ln -s /root/.local/bin/cswap /usr/local/bin/cswap
+
 WORKDIR /app
 COPY --from=builder /app/deploy .
 

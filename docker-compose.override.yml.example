@@ -24,11 +24,23 @@ services:
   daemon:
     networks:
       - reverse-proxy
-    # Uncomment if you're also bind-mounting rtk for RTK token-savings
-    # support — see SETUP.md's RTK section. Replace /home/you with the
-    # actual path rtk was installed to on this host.
+    # Uncomment whichever of these you need — both live under the SAME
+    # `volumes:` key, so uncomment that key once and pick your lines under it.
     # volumes:
+    #   # RTK token-savings support — see SETUP.md's RTK section. Replace
+    #   # /home/you with the actual path rtk was installed to on this host.
     #   - ${HOME}/.local/bin/rtk:/home/you/.local/bin/rtk:ro
+    #   # cswap (multi-account usage rotation — see SETUP.md § Multi-account
+    #   # usage rotation). cswap itself is already installed INTO the image by
+    #   # the Dockerfile, unlike rtk above — it's a pipx-managed Python
+    #   # package on the host, so bind-mounting just its shim binary wouldn't
+    #   # work (the shim's shebang points at a host-only venv path). What you
+    #   # still need to mount is cswap's own account/credential state, so the
+    #   # container's cswap sees the same registered accounts as your host's
+    #   # `cswap list` — not read-only, since cswap writes back to these on
+    #   # every switch/refresh:
+    #   - ${HOME}/.claude-swap-backup:/root/.claude-swap-backup
+    #   - ${HOME}/.local/share/claude-swap:/root/.local/share/claude-swap
   web:
     networks:
       - reverse-proxy

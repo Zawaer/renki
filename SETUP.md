@@ -426,6 +426,31 @@ All three coexist fine — mix and match per account in the same `cswap`
 install. Rotation, usage %, and the take-control lock all work identically
 regardless of which kind an account uses.
 
+**Docker:** the account list and usage % stay invisible in every client until
+`cswap` is actually reachable *from inside the `daemon` container* — `GET
+/accounts` calls `cswap list` unconditionally (not just when rotation is
+enabled), and the UI shows nothing at all when that comes back empty. `cswap`
+is a pipx-managed Python package on the host, so — unlike RTK, which is a
+single binary you can bind-mount straight into the container (see the RTK
+section below) — bind-mounting just its `~/.local/bin/cswap` shim doesn't
+work: that shim's shebang points at a host-only venv path
+(`~/.local/share/pipx/venvs/claude-swap/bin/python`) that doesn't exist in the
+container. This repo's `Dockerfile` installs `cswap` directly into the image
+instead, so a rebuild is all `cswap` itself needs:
+
+```bash
+docker compose up -d --build
+```
+
+`cswap`'s own account/credential state lives outside `~/.claude` though — in
+`~/.claude-swap-backup/` and `${XDG_DATA_HOME:-~/.local/share}/claude-swap/`
+on Linux — so if you already registered accounts with `cswap` on this host
+before adding Docker, also bind-mount those two directories (not read-only —
+`cswap` writes back to them on every switch/refresh) via
+`docker-compose.override.yml`; see the commented block in
+`docker-compose.override.yml.example`. Confirm it's working with
+`docker compose exec daemon cswap list --json`.
+
 Then set in `.env`:
 
 ```

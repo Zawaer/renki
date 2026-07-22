@@ -5,7 +5,8 @@ export type SessionErrorCode =
   | "not_controller"
   | "session_busy"
   | "session_archived"
-  | "queue_full";
+  | "queue_full"
+  | "not_busy";
 
 export class SessionError extends Error {
   constructor(

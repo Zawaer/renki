@@ -247,6 +247,27 @@ describe("per-event folding", () => {
     expect(turn.errorMessage).toBe("boom");
     expect(turn.inputTokens).toBeNull();
     expect(turn.outputTokens).toBeNull();
+    expect(turn.interrupted).toBe(false);
+  });
+
+  it("an interrupted turn_result (the stop button) flags the turn as interrupted", () => {
+    const s = fold(stream(
+      {
+        kind: "turn_result",
+        turnId: TURN,
+        promptId: "p1",
+        ok: false,
+        costUsd: null,
+        durationMs: null,
+        errorMessage: "Stopped by controller.",
+        inputTokens: null,
+        outputTokens: null,
+        interrupted: true,
+      },
+    ));
+    const turn = (s.timeline[0] as any).turn;
+    expect(turn.status).toBe("error");
+    expect(turn.interrupted).toBe(true);
   });
 
   it("a rate-limit retry (same promptId, new turnId) drops the failed attempt it replaced", () => {

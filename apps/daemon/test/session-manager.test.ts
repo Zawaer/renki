@@ -141,6 +141,34 @@ describe("submitPrompt guards (no turn spawned)", () => {
   });
 });
 
+describe("interruptSession guards (no turn spawned)", () => {
+  it("refuses a non-controller with not_controller", async () => {
+    const { manager, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+
+    expect(() => manager.interruptSession(s.id, "d_someone_else")).toThrow(SessionError);
+    try {
+      manager.interruptSession(s.id, "d_someone_else");
+    } catch (err) {
+      expect((err as SessionError).code).toBe("not_controller");
+    }
+  });
+
+  it("refuses to interrupt an idle session with not_busy", async () => {
+    const { manager, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+
+    try {
+      manager.interruptSession(s.id, "d1");
+      throw new Error("expected interruptSession to throw");
+    } catch (err) {
+      expect((err as SessionError).code).toBe("not_busy");
+    }
+  });
+});
+
 describe("archive", () => {
   it("tears down the worktree and records archived + released control", async () => {
     const { manager, repoId } = setup();

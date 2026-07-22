@@ -133,6 +133,8 @@ const payloads = [
     errorMessage: z.string().nullable(),
     inputTokens: z.number().int().nullable(),
     outputTokens: z.number().int().nullable(),
+    /** True when this failure is the controller stopping the turn (the "stop" button), not a real error. */
+    interrupted: z.boolean().optional(),
   }),
 
   /** A non-turn error (spawn failure, worktree problem, etc.). */

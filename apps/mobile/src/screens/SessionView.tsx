@@ -216,9 +216,15 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
           }
           placeholderTextColor={colors.faint}
         />
-        <TouchableOpacity style={[styles.sendBtn, (!canSend || !text.trim()) && styles.disabled]} disabled={!canSend || !text.trim()} onPress={send}>
-          <Text style={styles.sendBtnText}>Send</Text>
-        </TouchableOpacity>
+        {isController && status === "busy" ? (
+          <TouchableOpacity style={styles.stopBtn} onPress={() => realtime.interrupt(sessionId)}>
+            <Text style={styles.stopBtnText}>Stop</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={[styles.sendBtn, (!canSend || !text.trim()) && styles.disabled]} disabled={!canSend || !text.trim()} onPress={send}>
+            <Text style={styles.sendBtnText}>Send</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </KeyboardAvoidingView>
   );
@@ -257,7 +263,12 @@ function AssistantTurn({ turn, colors, styles }: { turn: TurnView; colors: Theme
             ` · ${formatTokenCount((turn.inputTokens ?? 0) + (turn.outputTokens ?? 0))} tokens`}
         </Text>
       )}
-      {turn.status === "error" && <Text style={styles.errText}>Turn failed: {turn.errorMessage}</Text>}
+      {turn.status === "error" &&
+        (turn.interrupted ? (
+          <Text style={styles.meta}>Stopped</Text>
+        ) : (
+          <Text style={styles.errText}>Turn failed: {turn.errorMessage}</Text>
+        ))}
     </View>
   );
 }
@@ -546,5 +557,7 @@ const makeStyles = (colors: ThemeColors) =>
     },
     sendBtn: { backgroundColor: colors.accent, borderRadius: 2, paddingHorizontal: 16, paddingVertical: 11 },
     sendBtnText: { color: colors.accentFg, fontWeight: "600" },
+    stopBtn: { borderColor: colors.danger, borderWidth: 1, borderRadius: 2, paddingHorizontal: 16, paddingVertical: 11 },
+    stopBtnText: { color: colors.danger, fontWeight: "600" },
     disabled: { opacity: 0.4 },
   });

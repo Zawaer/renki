@@ -1,4 +1,4 @@
-import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk";
+import type { PermissionMode, Query } from "@anthropic-ai/claude-agent-sdk";
 import type { Session, SessionStatus } from "@crc/protocol";
 import { desc, eq } from "drizzle-orm";
 import type { Config } from "../config.js";
@@ -59,6 +59,8 @@ export class SessionManager {
   private readonly queues = new Map<string, SubmitPromptInput[]>();
   /** sessionId -> requestIds of permission_requests awaiting a decision. */
   private readonly pendingPermissions = new Map<string, Set<string>>();
+  /** sessionId -> the live Query for its currently-running turn, if any (see interruptSession). */
+  private readonly activeQueries = new Map<string, Query>();
 
   constructor(
     private readonly config: Config,
@@ -286,9 +288,17 @@ export class SessionManager {
         // Cheap to skip once the daemon already knows this — it's static per
         // `claude` install, not per-session.
         onCapabilities: hasCapabilities() ? undefined : setCapabilities,
+        onQuery: (q) => this.activeQueries.set(input.sessionId, q),
       });
 
-    let result = await runOnce();
+    // Cleared as soon as each attempt settles so interruptSession can never act
+    // on a stale Query from a turn that's already finished.
+    let result: Awaited<ReturnType<typeof runOnce>>;
+    try {
+      result = await runOnce();
+    } finally {
+      this.activeQueries.delete(input.sessionId);
+    }
     resumeId = result.claudeSessionId ?? resumeId;
 
     // Rate-limit auto-rotation: if the turn failed because the account hit its
@@ -304,7 +314,11 @@ export class SessionManager {
           text: `Switched account${sw.active ? ` (now #${sw.active})` : ""} — retrying.`,
           level: "info",
         });
-        result = await runOnce();
+        try {
+          result = await runOnce();
+        } finally {
+          this.activeQueries.delete(input.sessionId);
+        }
         resumeId = result.claudeSessionId ?? resumeId;
       } else {
         this.events.append(input.sessionId, { kind: "notice", text: "No other account available to switch to.", level: "warn" });
@@ -318,6 +332,20 @@ export class SessionManager {
       lastActivityAt: Date.now(),
     });
     this.events.append(input.sessionId, { kind: "status_changed", status: nextStatus });
+  }
+
+  /**
+   * Stop the turn currently running for this session (the "stop" button).
+   * Sends the SDK's graceful interrupt control request — the turn still ends
+   * through the normal `runTurn` result path (a `turn_result` with
+   * `interrupted: true`), just early, so no separate event kind is needed here.
+   */
+  interruptSession(id: string, deviceId: string): void {
+    const session = this.getSession(id);
+    if (session.controller !== deviceId) throw new SessionError("not_controller", "Only the controller can stop a turn.");
+    const q = this.activeQueries.get(id);
+    if (!q) throw new SessionError("not_busy", "No turn is running to stop.");
+    q.interrupt().catch((err) => logger.warn("interrupt failed", { id, err: String(err) }));
   }
 
   // ── internals ────────────────────────────────────────────────────────────────

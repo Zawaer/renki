@@ -179,6 +179,11 @@ export class RealtimeClient {
     this.send({ type: "resolve_permission", sessionId, requestId, decision });
   }
 
+  /** Stop the turn currently running for this session (the "stop" button). */
+  interrupt(sessionId: string): void {
+    this.send({ type: "interrupt", sessionId });
+  }
+
   /**
    * Fleet-wide session-list pushes — a session's roster-relevant fields
    * changed (status, controller, hasPendingPermission, etc). Unlike

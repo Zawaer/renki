@@ -68,6 +68,17 @@ export const ClientMessage = z.discriminatedUnion("type", [
     decision: PermissionDecision,
   }),
 
+  /**
+   * Stop the turn currently running for this session (the "stop" button).
+   * Only honored from the controller, and only while a turn is actually
+   * running — the daemon sends the SDK's graceful interrupt control request,
+   * which lands as an ordinary `turn_result` (ok: false, interrupted: true).
+   */
+  z.object({
+    type: z.literal("interrupt"),
+    sessionId: z.string(),
+  }),
+
   z.object({ type: z.literal("ping") }),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessage>;
@@ -137,5 +148,7 @@ export const WsErrorCode = {
   Unauthorized: "unauthorized",
   /** Daemon-side prompt queue for this session is already at its cap. */
   QueueFull: "queue_full",
+  /** `interrupt` sent while no turn was running for this session. */
+  NotBusy: "not_busy",
 } as const;
 export type WsErrorCode = (typeof WsErrorCode)[keyof typeof WsErrorCode];

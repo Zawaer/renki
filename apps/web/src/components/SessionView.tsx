@@ -112,6 +112,8 @@ export function SessionView({ sessionId }: { sessionId: string }) {
         disabled={!isController}
         reason={!isController ? "Take control to send prompts" : ""}
         onSend={(text, opts) => realtime.submitPrompt(sessionId, text, opts)}
+        busy={isController && status === "busy"}
+        onStop={() => realtime.interrupt(sessionId)}
       />
     </div>
   );
@@ -159,7 +161,12 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
             ` · ${formatTokenCount((turn.inputTokens ?? 0) + (turn.outputTokens ?? 0))} tokens`}
         </div>
       )}
-      {turn.status === "error" && (
+      {turn.status === "error" && turn.interrupted && (
+        <div className="flex items-center gap-1 text-xs text-(--crc-fg-muted)">
+          <span className="codicon codicon-debug-stop" /> Stopped
+        </div>
+      )}
+      {turn.status === "error" && !turn.interrupted && (
         <div className="flex items-center gap-1 text-xs text-(--crc-danger)">
           <span className="codicon codicon-error" /> Turn failed: {turn.errorMessage}
         </div>
@@ -328,6 +335,8 @@ function Composer({
   disabled,
   reason,
   onSend,
+  busy,
+  onStop,
 }: {
   disabled: boolean;
   reason: string;
@@ -335,6 +344,8 @@ function Composer({
     text: string,
     opts?: { model?: string; maxThinkingTokens?: number | null; permissionMode?: PermissionModeKey },
   ) => void;
+  busy: boolean;
+  onStop: () => void;
 }) {
   const { rest } = useClient();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -559,9 +570,15 @@ function Composer({
           placeholder={disabled ? reason : "Send a prompt… (Enter to send, Shift+Enter for newline, / for commands)"}
           className="flex-1 resize-none rounded-sm border border-(--crc-border) bg-(--crc-input-bg) px-3 py-2 text-sm text-(--crc-fg) outline-none placeholder:text-(--crc-fg-muted) focus:border-(--crc-focus) disabled:opacity-50"
         />
-        <Button variant="primary" disabled={disabled || !text.trim()} onClick={send}>
-          Send
-        </Button>
+        {busy ? (
+          <Button variant="danger" onClick={onStop}>
+            <span className="codicon codicon-debug-stop" /> Stop
+          </Button>
+        ) : (
+          <Button variant="primary" disabled={disabled || !text.trim()} onClick={send}>
+            Send
+          </Button>
+        )}
       </div>
     </div>
   );

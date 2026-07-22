@@ -126,6 +126,13 @@ export class Connection {
         return;
       }
 
+      case "interrupt": {
+        this.manager.interruptSession(msg.sessionId, this.deviceId);
+        // No direct reply: the resulting turn_result/status_changed events are
+        // the truth and reach every subscriber (including this one) via the log.
+        return;
+      }
+
       case "resolve_permission": {
         // Only the current controller may answer a permission request.
         const session = this.manager.getSession(msg.sessionId);

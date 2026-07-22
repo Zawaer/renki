@@ -1,5 +1,5 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import type { Options, PermissionResult, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { Options, PermissionResult, Query, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { CapabilitiesResponse, EventPayload, PermissionDecision } from "@crc/protocol";
 import { logger } from "../logger.js";
 import { newTurnId } from "../ids.js";
@@ -62,6 +62,13 @@ export type RunTurnArgs = {
    * for the extra control-request round-trip on every single turn.
    */
   onCapabilities?: (caps: CapabilitiesResponse) => void;
+  /**
+   * Handed the live Query object the instant it's created (before any message
+   * is consumed), so the caller can stash it and later call `.interrupt()` —
+   * the only way to stop a turn already in flight. Called synchronously, so
+   * the caller never has to worry about racing a turn's start.
+   */
+  onQuery?: (q: Query) => void;
 };
 
 export type RunTurnResult = {
@@ -73,7 +80,14 @@ export type RunTurnResult = {
   errorMessage: string | null;
   /** True when the failure looks like an account usage/rate limit. */
   rateLimited: boolean;
+  /** True when this failure is the controller stopping the turn, not a real error. */
+  interrupted: boolean;
 };
+
+/** Terminal reasons the SDK uses for a turn cut short by `Query.interrupt()`. */
+function isInterruptedTerminalReason(reason: unknown): boolean {
+  return reason === "aborted_streaming" || reason === "aborted_tools";
+}
 
 /** Pure heuristic: does this error text/flag indicate a usage/rate limit? */
 export function classifyRateLimit(text: string | null | undefined): boolean {
@@ -145,6 +159,7 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
 
   try {
     const q = query({ prompt: singlePromptStream(args.prompt), options });
+    args.onQuery?.(q);
 
     // supportedModels()/supportedCommands() only exist on a LIVE Query object,
     // so this is the one place we can ever discover them. Runs concurrently
@@ -185,7 +200,8 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
 
         case "result": {
           const ok = message.subtype === "success" && !message.is_error;
-          const errorMessage = ok ? null : summarizeResultError(message);
+          const interrupted = !ok && isInterruptedTerminalReason((message as { terminal_reason?: unknown }).terminal_reason);
+          const errorMessage = ok ? null : interrupted ? "Stopped by controller." : summarizeResultError(message);
           args.emit({
             kind: "turn_result",
             turnId,
@@ -196,6 +212,7 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
             errorMessage,
             inputTokens: message.usage?.input_tokens ?? null,
             outputTokens: message.usage?.output_tokens ?? null,
+            interrupted,
           });
           return {
             claudeSessionId,
@@ -204,6 +221,7 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
             durationMs: message.duration_ms ?? null,
             errorMessage,
             rateLimited: !ok && (sawRateLimitError || classifyRateLimit(errorMessage)),
+            interrupted,
           };
         }
 
@@ -233,6 +251,7 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
       durationMs: null,
       errorMessage: msg,
       rateLimited: sawRateLimitError || classifyRateLimit(msg),
+      interrupted: false,
     };
   }
 
@@ -244,6 +263,7 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
     durationMs: null,
     errorMessage: "no result message",
     rateLimited: false,
+    interrupted: false,
   };
 }
 

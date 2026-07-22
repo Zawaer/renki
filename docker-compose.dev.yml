@@ -1,13 +1,14 @@
-# Dev override: runs the daemon off the `dev` build target (tsx watch)
-# instead of the compiled `runtime` image, with live source bind-mounted in.
+# Dev override: runs daemon + web off their `dev` build targets (tsx watch /
+# vite dev server) instead of the compiled `runtime` images, with live source
+# bind-mounted in.
 #
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 #
 # After that first build, source edits hot-reload with no rebuild and no
-# `up` needed — just save the file and watch `docker compose logs -f daemon`.
-# Only re-run the command above (still needs --build) when a package.json or
-# the lockfile changes, since that invalidates the cached `pnpm install`
-# layer.
+# `up` needed — just save the file (daemon restarts via tsx; web HMRs
+# in-place via vite, watch `docker compose logs -f daemon` / `web`). Only
+# re-run the command above (still needs --build) when a package.json or the
+# lockfile changes, since that invalidates the cached `pnpm install` layer.
 services:
   daemon:
     build:
@@ -28,3 +29,22 @@ services:
       - /app/packages/protocol/node_modules
       - /app/packages/client-core/node_modules
       - /app/apps/daemon/node_modules
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      target: dev
+    # vite.config.ts already binds dev to 0.0.0.0:5173 — a separate port from
+    # the runtime image's nginx-on-80 (published as 4173), so this doesn't
+    # collide with it.
+    ports:
+      - "127.0.0.1:5173:5173"
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/packages/protocol/node_modules
+      - /app/packages/client-core/node_modules
+      - /app/apps/web/node_modules

@@ -4,7 +4,7 @@
 # the Docker equivalent of the crc-web pm2 process for bare-metal setups.
 # Daemon/VS Code/mobile aren't part of this image.
 
-FROM node:20-bookworm-slim AS builder
+FROM node:20-bookworm-slim AS base
 
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
@@ -28,6 +28,16 @@ COPY apps/vscode/package.json apps/vscode/package.json
 # store across builds on the same Docker host.
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --filter "@crc/web..."
+
+# Dev target: branches off here, before any source is copied in or built —
+# docker-compose.dev.yml bind-mounts live source over /app instead, and
+# vite's own dev server serves + HMRs straight from TS/TSX, so this target
+# never needs rebuilding after the first `--build` (only `base` reruns, and
+# only on a package.json/lockfile change).
+FROM base AS dev
+CMD ["pnpm", "--filter", "@crc/web", "dev"]
+
+FROM base AS builder
 
 # Now bring in the actual source and build.
 COPY . .

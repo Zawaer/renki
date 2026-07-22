@@ -1,4 +1,5 @@
-import type { Account, AccountsResponse, UsageOrg } from "@crc/protocol";
+import type { Account, AccountsResponse, AccountUsageExtra, UsageOrg } from "@crc/protocol";
+import { formatResetIn, formatUsd } from "@crc/client-core";
 import { useCallback, useEffect, useState } from "react";
 import { useClient } from "../lib/client.js";
 
@@ -133,9 +134,12 @@ function AccountRow({
         )}
       </div>
       {account.usage ? (
-        <div className="mt-1 flex gap-2 pl-3">
-          <Meter label="5h" pct={account.usage.fiveHour.pct} />
-          <Meter label="7d" pct={account.usage.sevenDay.pct} />
+        <div className="mt-1 space-y-1 pl-3">
+          <div className="flex gap-2">
+            <Meter label="5h" pct={account.usage.fiveHour.pct} resetsAt={account.usage.fiveHour.resetsAt} />
+            <Meter label="7d" pct={account.usage.sevenDay.pct} resetsAt={account.usage.sevenDay.resetsAt} />
+          </div>
+          {account.usage.extra && <ExtraUsageMeter extra={account.usage.extra} />}
         </div>
       ) : (
         <div className="pl-3 text-[11px] text-(--crc-fg-muted)">usage n/a</div>
@@ -144,16 +148,36 @@ function AccountRow({
   );
 }
 
-function Meter({ label, pct }: { label: string; pct: number }) {
+function Meter({ label, pct, resetsAt }: { label: string; pct: number; resetsAt: string | null }) {
   const clamped = Math.max(0, Math.min(100, pct));
   const color = clamped >= 90 ? "bg-(--crc-danger)" : clamped >= 70 ? "bg-(--crc-warning)" : "bg-(--crc-success)";
+  const resetIn = formatResetIn(resetsAt, Date.now());
   return (
-    <div className="flex flex-1 items-center gap-1">
-      <span className="text-[10px] text-(--crc-fg-muted)">{label}</span>
+    <div className="flex-1">
+      <div className="flex items-center gap-1">
+        <span className="text-[10px] text-(--crc-fg-muted)">{label}</span>
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-(--crc-bg-elevated)">
+          <div className={`h-full ${color}`} style={{ width: `${clamped}%` }} />
+        </div>
+        <span className="w-8 text-right text-[10px] text-(--crc-fg-muted)">{Math.round(clamped)}%</span>
+      </div>
+      {resetIn && <div className="pl-4 text-[9px] text-(--crc-fg-muted)">resets in {resetIn}</div>}
+    </div>
+  );
+}
+
+function ExtraUsageMeter({ extra }: { extra: AccountUsageExtra }) {
+  const clamped = Math.max(0, Math.min(100, extra.pct));
+  const color = clamped >= 90 ? "bg-(--crc-danger)" : clamped >= 70 ? "bg-(--crc-warning)" : "bg-(--crc-success)";
+  return (
+    <div className="flex items-center gap-1">
+      <span className="text-[10px] text-(--crc-fg-muted)">extra</span>
       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-(--crc-bg-elevated)">
         <div className={`h-full ${color}`} style={{ width: `${clamped}%` }} />
       </div>
-      <span className="w-8 text-right text-[10px] text-(--crc-fg-muted)">{Math.round(clamped)}%</span>
+      <span className="w-24 text-right text-[10px] text-(--crc-fg-muted)">
+        {formatUsd(extra.usedDollars)} / {formatUsd(extra.limitDollars)}
+      </span>
     </div>
   );
 }

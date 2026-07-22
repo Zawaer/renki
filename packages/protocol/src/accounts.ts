@@ -18,9 +18,24 @@ export const AccountUsageWindow = z.object({
 });
 export type AccountUsageWindow = z.infer<typeof AccountUsageWindow>;
 
+/**
+ * Pay-as-you-go overage ("Extra usage" / usage credits) beyond the plan's
+ * included 5h/7d limits. Only present once a plan has that enabled — most
+ * accounts have neither `extra_usage` nor `spend` enabled on claude.ai's
+ * usage response, in which case this is null and the UI hides it.
+ */
+export const AccountUsageExtra = z.object({
+  pct: z.number(),
+  usedDollars: z.number(),
+  limitDollars: z.number(),
+  currency: z.string(),
+});
+export type AccountUsageExtra = z.infer<typeof AccountUsageExtra>;
+
 export const AccountUsage = z.object({
   fiveHour: AccountUsageWindow,
   sevenDay: AccountUsageWindow,
+  extra: AccountUsageExtra.nullable(),
 });
 export type AccountUsage = z.infer<typeof AccountUsage>;
 

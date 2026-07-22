@@ -68,6 +68,15 @@ function normalizeAccount(a: any): Account {
       ? {
           fiveHour: { pct: Number(a.usage.fiveHour.pct ?? 0), resetsAt: a.usage.fiveHour.resetsAt ?? null },
           sevenDay: { pct: Number(a.usage.sevenDay.pct ?? 0), resetsAt: a.usage.sevenDay.resetsAt ?? null },
+          extra:
+            a.usage.extra && typeof a.usage.extra.pct === "number"
+              ? {
+                  pct: Number(a.usage.extra.pct),
+                  usedDollars: Number(a.usage.extra.usedDollars ?? 0),
+                  limitDollars: Number(a.usage.extra.limitDollars ?? 0),
+                  currency: String(a.usage.extra.currency ?? "USD"),
+                }
+              : null,
         }
       : null;
   return {

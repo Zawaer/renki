@@ -26,6 +26,7 @@ const SAMPLE: AccountsResponse = {
       usage: {
         fiveHour: { pct: 42, resetsAt: null },
         sevenDay: { pct: 18, resetsAt: null },
+        extra: null,
       },
     },
   ],
@@ -61,6 +62,28 @@ describe("AccountsBar", () => {
     expect(screen.getByText("42%")).toBeInTheDocument();
     expect(screen.getByText("18%")).toBeInTheDocument();
     expect(screen.getByText(/auto @ 90%/)).toBeInTheDocument();
+  });
+
+  it("shows reset countdowns and extra (overage) usage when present", async () => {
+    const resetsAt = new Date(Date.now() + 3 * 60 * 60_000 + 12 * 60_000).toISOString();
+    renderAccountsBar({
+      ...SAMPLE,
+      accounts: [
+        {
+          ...SAMPLE.accounts[0],
+          usage: {
+            fiveHour: { pct: 42, resetsAt },
+            sevenDay: { pct: 18, resetsAt: null },
+            extra: { pct: 79, usedDollars: 39.53, limitDollars: 50, currency: "USD" },
+          },
+        },
+      ],
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Accounts & usage" }));
+
+    expect(screen.getByText("resets in 3h 12m")).toBeInTheDocument();
+    expect(screen.getByText("$39.53 / $50.00")).toBeInTheDocument();
   });
 
   it("renders nothing when there are no configured accounts (by design)", async () => {

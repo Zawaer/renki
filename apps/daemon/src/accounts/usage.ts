@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { Impit } from "impit";
-import type { AccountUsage, UsageOrg } from "@crc/protocol";
+import type { AccountUsage, AccountUsageExtra, UsageOrg } from "@crc/protocol";
 import { logger } from "../logger.js";
 
 /**
@@ -215,7 +215,39 @@ export class UsageReader {
     return {
       fiveHour: fiveHour ?? { pct: 0, resetsAt: null },
       sevenDay: sevenDay ?? { pct: 0, resetsAt: null },
+      extra: this.parseExtra(body),
     };
+  }
+
+  /**
+   * Pay-as-you-go overage, once a plan has it enabled. `spend` is the newer,
+   * more explicit shape (amount_minor/exponent + an `enabled` flag); older
+   * responses only carry `extra_usage` (used_credits/monthly_limit scaled by
+   * decimal_places). Both are undocumented/reverse-engineered, so either can
+   * disappear — absence of both just means "no overage to show".
+   */
+  private parseExtra(body: any): AccountUsageExtra | null {
+    const toDollars = (minor: unknown, exponent: unknown) => Number(minor ?? 0) / 10 ** Number(exponent ?? 2);
+    const spend = body?.spend;
+    if (spend?.enabled && typeof spend.percent === "number") {
+      return {
+        pct: Number(spend.percent),
+        usedDollars: toDollars(spend.used?.amount_minor, spend.used?.exponent),
+        limitDollars: spend.limit ? toDollars(spend.limit.amount_minor, spend.limit.exponent) : 0,
+        currency: spend.used?.currency ?? spend.limit?.currency ?? "USD",
+      };
+    }
+    const extraUsage = body?.extra_usage;
+    if (extraUsage?.is_enabled && typeof extraUsage.utilization === "number") {
+      const scale = 10 ** Number(extraUsage.decimal_places ?? 2);
+      return {
+        pct: Number(extraUsage.utilization),
+        usedDollars: Number(extraUsage.used_credits ?? 0) / scale,
+        limitDollars: Number(extraUsage.monthly_limit ?? 0) / scale,
+        currency: extraUsage.currency ?? "USD",
+      };
+    }
+    return null;
   }
 
   /** Best-effort account email. Never throws — a null just means "unknown". */

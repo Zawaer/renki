@@ -79,6 +79,20 @@ export const ClientMessage = z.discriminatedUnion("type", [
     sessionId: z.string(),
   }),
 
+  /**
+   * Push a live permission-mode change to the turn currently running for this
+   * session, if any — lets the controller flip modes (e.g. right after
+   * resolving a pending approval) without waiting for the next prompt. Only
+   * honored from the controller; a silent no-op daemon-side when the session
+   * is idle, since the next `submit_prompt`'s own `permissionMode` already
+   * carries the choice for that turn.
+   */
+  z.object({
+    type: z.literal("set_permission_mode"),
+    sessionId: z.string(),
+    mode: z.enum(["default", "acceptEdits", "plan", "auto"]),
+  }),
+
   z.object({ type: z.literal("ping") }),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessage>;

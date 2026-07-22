@@ -21,6 +21,7 @@ import type { CapabilitiesResponse } from "@crc/protocol";
 import { useEffect, useRef, useState } from "react";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { hostOpenFile, isHosted } from "../lib/host.js";
+import { loadPermissionMode, savePermissionMode } from "../lib/permissionModePrefs.js";
 import { Markdown } from "./Markdown.js";
 import { Button, StatusBadge } from "./ui.js";
 
@@ -115,6 +116,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
       )}
 
       <Composer
+        sessionId={sessionId}
         disabled={!isController}
         reason={!isController ? "Take control to send prompts" : ""}
         onSend={(text, opts) => realtime.submitPrompt(sessionId, text, opts)}
@@ -446,12 +448,14 @@ function PermissionCard({
 }
 
 function Composer({
+  sessionId,
   disabled,
   reason,
   onSend,
   busy,
   onStop,
 }: {
+  sessionId: string;
   disabled: boolean;
   reason: string;
   onSend: (
@@ -461,12 +465,14 @@ function Composer({
   busy: boolean;
   onStop: () => void;
 }) {
-  const { rest } = useClient();
+  const { rest, realtime } = useClient();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState("");
   const [model, setModel] = useState(""); // "" until capabilities load and pick the SDK's own default
   const [effortKey, setEffortKey] = useState(DEFAULT_EFFORT_KEY);
-  const [permissionMode, setPermissionMode] = useState<PermissionModeKey>(DEFAULT_PERMISSION_MODE);
+  // Persisted across refreshes/reopens so the picked mode doesn't silently
+  // reset to Manual every time.
+  const [permissionMode, setPermissionModeState] = useState<PermissionModeKey>(loadPermissionMode);
   const [capabilities, setCapabilities] = useState<CapabilitiesResponse>({ models: [], commands: [] });
   const [suggestionIndex, setSuggestionIndex] = useState(0);
   const [openMenu, setOpenMenu] = useState<"model" | "effort" | "mode" | null>(null);
@@ -497,6 +503,19 @@ function Composer({
     text.startsWith("/") && text.length > 1 && !text.includes(" ")
       ? capabilities.commands.filter((c) => c.name.toLowerCase().startsWith(text.slice(1).toLowerCase()))
       : [];
+
+  /**
+   * Persist the pick, and — if a turn is running right now — push it live via
+   * the SDK's mid-session control request instead of only taking effect on
+   * the next prompt. This is what makes flipping Manual -> Auto while a
+   * permission request is sitting there actually stop the rest of that turn
+   * from asking again, instead of only changing what the NEXT turn does.
+   */
+  function setPermissionMode(next: PermissionModeKey) {
+    setPermissionModeState(next);
+    savePermissionMode(next);
+    if (busy) realtime.setPermissionMode(sessionId, next);
+  }
 
   function send() {
     const t = text.trim();

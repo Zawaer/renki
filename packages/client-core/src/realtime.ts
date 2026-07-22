@@ -185,6 +185,15 @@ export class RealtimeClient {
   }
 
   /**
+   * Push a live permission-mode change to the turn currently running for
+   * this session, if any (a no-op daemon-side when idle — the next
+   * `submitPrompt`'s own `permissionMode` already carries the new choice).
+   */
+  setPermissionMode(sessionId: string, mode: PermissionModeKey): void {
+    this.send({ type: "set_permission_mode", sessionId, mode });
+  }
+
+  /**
    * Fleet-wide session-list pushes — a session's roster-relevant fields
    * changed (status, controller, hasPendingPermission, etc). Unlike
    * `conversation`/`watch`, no subscribe is needed: the daemon pushes every

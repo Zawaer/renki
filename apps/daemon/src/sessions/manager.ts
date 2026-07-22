@@ -566,6 +566,23 @@ export class SessionManager {
     q.interrupt().catch((err) => logger.warn("interrupt failed", { id, err: String(err) }));
   }
 
+  /**
+   * Push a live permission-mode change to the turn currently running for this
+   * session, if any, via the SDK's mid-session control request. Lets a
+   * controller flip e.g. Manual -> Auto right after answering a pending
+   * approval, so the rest of that same turn stops asking instead of only
+   * affecting the NEXT `submitPrompt`. Silently a no-op when idle — nothing
+   * live to update, and the next turn already carries the new mode itself.
+   */
+  setPermissionMode(id: string, deviceId: string, mode: PermissionMode): void {
+    const session = this.getSession(id);
+    if (session.controller !== deviceId)
+      throw new SessionError("not_controller", "Only the controller can change permission mode.");
+    const q = this.activeQueries.get(id);
+    if (!q) return;
+    q.setPermissionMode(mode).catch((err) => logger.warn("setPermissionMode failed", { id, err: String(err) }));
+  }
+
   // ── internals ────────────────────────────────────────────────────────────────
 
   /** Keep `hasPendingPermission` in sync with the set of unresolved requestIds. */

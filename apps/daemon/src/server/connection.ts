@@ -133,6 +133,13 @@ export class Connection {
         return;
       }
 
+      case "set_permission_mode": {
+        this.manager.setPermissionMode(msg.sessionId, this.deviceId, msg.mode);
+        // No direct reply: this only affects the live turn's next tool checks;
+        // there's no event to broadcast for it.
+        return;
+      }
+
       case "resolve_permission": {
         // Only the current controller may answer a permission request.
         const session = this.manager.getSession(msg.sessionId);

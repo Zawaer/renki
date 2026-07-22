@@ -1,5 +1,5 @@
 import type { PermissionMode, Query } from "@anthropic-ai/claude-agent-sdk";
-import type { MergeConflictMeta, Session, SessionPurpose, SessionStatus } from "@crc/protocol";
+import type { MergeConflictMeta, Session, SessionEvent, SessionPurpose, SessionStatus } from "@crc/protocol";
 import { desc, eq, ne } from "drizzle-orm";
 import { mkdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
@@ -13,6 +13,7 @@ import { logger } from "../logger.js";
 import { findRepo } from "../repos.js";
 import { hasCapabilities, setCapabilities } from "../claude/capabilities.js";
 import { type PermissionResolver, runTurn } from "../claude/runner.js";
+import { derivePlaceholderTitle, generateSessionTitle } from "../claude/titler.js";
 import { SessionError } from "./errors.js";
 
 /**
@@ -34,6 +35,9 @@ export type RateLimitAutoSwitch = {
 
 /** Cap on how many prompts can pile up behind a busy session before we push back. */
 export const MAX_QUEUED_PROMPTS = 20;
+
+/** Cap on how many turns we'll keep trying to upgrade a placeholder title before giving up on it for good. */
+export const TITLE_UPGRADE_ATTEMPT_CAP = 6;
 
 export type SubmitPromptInput = {
   sessionId: string;
@@ -159,6 +163,10 @@ export class SessionManager {
       controller: null,
       claudeSessionId: null,
       title: title ?? null,
+      // A manual title here is never touched by the auto-titler (see runOneTurn),
+      // so it doesn't need "manual" bookkeeping — null just means "not a placeholder".
+      titleSource: null,
+      titleGenAttempts: 0,
       createdAt: now,
       updatedAt: now,
       lastActivityAt: now,
@@ -237,6 +245,7 @@ export class SessionManager {
         controller: null,
         claudeSessionId: null,
         title: null,
+        titleSource: null,
         hasPendingPermission: false,
         worktreePath: "",
         updatedAt: Date.now(),
@@ -338,6 +347,26 @@ export class SessionManager {
       text: input.text,
     });
 
+    // Instant, LLM-free placeholder — shown right away (same idea as the
+    // VSCode extension's "title = your first message" before it upgrades it).
+    // Only the very first prompt of a session ever sees `title === null` here.
+    if (session.title == null) {
+      this.patch(input.sessionId, { title: derivePlaceholderTitle(input.text), titleSource: "placeholder", titleGenAttempts: 0 });
+    }
+
+    // Fire-and-forget, started now rather than after the turn resolves: a
+    // real Claude turn can run for a long time (tool use, edits, ...), and if
+    // THIS prompt already gives the model enough to write a good title, there's
+    // no reason to make the user stare at the raw-text placeholder for the
+    // whole turn just to get it. Capped so a session that never gives the
+    // model "enough" just keeps its placeholder for good.
+    {
+      const { titleSource, titleGenAttempts } = this.titleState(input.sessionId);
+      if (titleSource === "placeholder" && titleGenAttempts < TITLE_UPGRADE_ATTEMPT_CAP) {
+        this.tryUpgradeTitle(input.sessionId, session.worktreePath);
+      }
+    }
+
     let resumeId = session.claudeSessionId;
     const runOnce = () =>
       runTurn({
@@ -404,6 +433,35 @@ export class SessionManager {
       lastActivityAt: Date.now(),
     });
     this.events.append(input.sessionId, { kind: "status_changed", status: nextStatus });
+  }
+
+  /** Raw title bookkeeping columns — internal only, not part of the public `Session` type. */
+  private titleState(id: string): { titleSource: string | null; titleGenAttempts: number } {
+    const row = this.db
+      .select({ titleSource: sessions.titleSource, titleGenAttempts: sessions.titleGenAttempts })
+      .from(sessions)
+      .where(eq(sessions.id, id))
+      .get();
+    return row ?? { titleSource: null, titleGenAttempts: 0 };
+  }
+
+  /** One attempt at upgrading a placeholder title using the user's messages so far; a no-op once a manual rename or a prior success has taken title ownership away from "placeholder". */
+  private async tryUpgradeTitle(sessionId: string, cwd: string): Promise<void> {
+    const transcript = this.events
+      .read(sessionId)
+      .filter((e): e is Extract<SessionEvent, { kind: "prompt_submitted" }> => e.kind === "prompt_submitted")
+      .map((e) => e.text)
+      .join("\n");
+
+    const title = await generateSessionTitle(cwd, transcript);
+    try {
+      const state = this.titleState(sessionId);
+      if (state.titleSource !== "placeholder") return;
+      if (title) this.patch(sessionId, { title, titleSource: "generated" });
+      else this.patch(sessionId, { titleGenAttempts: state.titleGenAttempts + 1 });
+    } catch (err) {
+      logger.warn("title upgrade failed to apply", { sessionId, err: String(err) });
+    }
   }
 
   /**

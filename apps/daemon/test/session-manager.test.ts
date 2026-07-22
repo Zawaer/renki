@@ -1,13 +1,30 @@
 import { existsSync } from "node:fs";
 import type { EventPayload } from "@crc/protocol";
 import { eq } from "drizzle-orm";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Config } from "../src/config.js";
+import type { RunTurnResult } from "../src/claude/runner.js";
+import { runTurn } from "../src/claude/runner.js";
+import { generateSessionTitle } from "../src/claude/titler.js";
 import type { DB } from "../src/db/index.js";
 import { sessions } from "../src/db/schema.js";
 import { SessionError } from "../src/sessions/errors.js";
-import { MAX_QUEUED_PROMPTS, SessionManager } from "../src/sessions/manager.js";
+import { MAX_QUEUED_PROMPTS, SessionManager, TITLE_UPGRADE_ATTEMPT_CAP } from "../src/sessions/manager.js";
 import { cleanupConfig, makeTestConfig, makeTestDb, makeTestRepo } from "./helpers.js";
+
+// Auto-titling (see "auto-titling" describe block below) needs to drive a real
+// happy-path turn without spawning a live `claude` process, so runTurn and
+// generateSessionTitle are mocked at the module boundary manager.ts calls
+// through. Every other describe block avoids the happy path entirely instead
+// (forcing status "busy" directly), so these mocks never affect them.
+vi.mock("../src/claude/runner.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/claude/runner.js")>();
+  return { ...actual, runTurn: vi.fn() };
+});
+vi.mock("../src/claude/titler.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/claude/titler.js")>();
+  return { ...actual, generateSessionTitle: vi.fn() };
+});
 
 /**
  * SessionManager is where every session invariant is enforced in one place:
@@ -289,5 +306,125 @@ describe("delete", () => {
     const s = await newSession(manager, repoId);
     await manager.deleteSession(s.id);
     expect(() => manager.takeControl(s.id, "d1")).toThrow(SessionError);
+  });
+});
+
+/** `title`/`titleSource`/`titleGenAttempts` bookkeeping straight from the DB — titleSource/titleGenAttempts aren't on the public `Session` type. */
+function titleRow(db: DB, id: string) {
+  return db
+    .select({ title: sessions.title, titleSource: sessions.titleSource, titleGenAttempts: sessions.titleGenAttempts })
+    .from(sessions)
+    .where(eq(sessions.id, id))
+    .get()!;
+}
+
+const okTurn: RunTurnResult = {
+  claudeSessionId: "claude-1",
+  ok: true,
+  costUsd: 0,
+  durationMs: 1,
+  errorMessage: null,
+  rateLimited: false,
+  interrupted: false,
+};
+
+describe("auto-titling", () => {
+  beforeEach(() => {
+    vi.mocked(runTurn).mockReset().mockResolvedValue(okTurn);
+    vi.mocked(generateSessionTitle).mockReset().mockResolvedValue(null);
+  });
+
+  it("sets an instant, LLM-free placeholder from the first prompt", async () => {
+    const { manager, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+
+    await manager.submitPrompt({
+      sessionId: s.id,
+      deviceId: "d1",
+      promptId: "p1",
+      text: "fix the login bug please",
+      resolvePermission: noopResolve,
+    });
+
+    // This is set before the (mocked) turn is even invoked, so it's safe to
+    // assert immediately rather than waiting for the upgrade attempt below.
+    expect(manager.getSession(s.id).title).toBe("fix the login bug please");
+  });
+
+  it("does not touch a title set explicitly at session creation", async () => {
+    const { manager, db, repoId } = setup();
+    const s = await manager.createSession({ repoId, baseBranch: "main", title: "My custom title" });
+    manager.takeControl(s.id, "d1");
+
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p1", text: "hey", resolvePermission: noopResolve });
+    await vi.waitFor(() => expect(runTurn).toHaveBeenCalledTimes(1));
+
+    expect(manager.getSession(s.id).title).toBe("My custom title");
+    expect(titleRow(db, s.id).titleSource).toBeNull();
+    expect(generateSessionTitle).not.toHaveBeenCalled();
+  });
+
+  it("keeps the placeholder and counts the attempt when the model says there isn't enough context yet", async () => {
+    const { manager, db, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p1", text: "hey", resolvePermission: noopResolve });
+    await vi.waitFor(() => expect(titleRow(db, s.id).titleGenAttempts).toBe(1));
+
+    const row = titleRow(db, s.id);
+    expect(row.title).toBe("hey");
+    expect(row.titleSource).toBe("placeholder");
+  });
+
+  it("upgrades the placeholder into a generated title once the model has enough context", async () => {
+    const { manager, db, repoId } = setup();
+    vi.mocked(generateSessionTitle).mockResolvedValueOnce(null).mockResolvedValueOnce("Fix login bug");
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p1", text: "hey", resolvePermission: noopResolve });
+    await vi.waitFor(() => expect(titleRow(db, s.id).titleGenAttempts).toBe(1));
+
+    await manager.submitPrompt({
+      sessionId: s.id,
+      deviceId: "d1",
+      promptId: "p2",
+      text: "the login page 500s on submit",
+      resolvePermission: noopResolve,
+    });
+    await vi.waitFor(() => expect(titleRow(db, s.id).titleSource).toBe("generated"));
+
+    expect(manager.getSession(s.id).title).toBe("Fix login bug");
+  });
+
+  it("stops trying once the attempt cap is hit, leaving the placeholder in place", async () => {
+    const { manager, db, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+
+    for (let i = 0; i < TITLE_UPGRADE_ATTEMPT_CAP; i++) {
+      await manager.submitPrompt({
+        sessionId: s.id,
+        deviceId: "d1",
+        promptId: `p${i}`,
+        text: "hey",
+        resolvePermission: noopResolve,
+      });
+      // Wait for each turn's upgrade attempt to land before starting the next,
+      // so mockResolvedValue(null) calls line up 1:1 with submitted prompts.
+      await vi.waitFor(() => expect(titleRow(db, s.id).titleGenAttempts).toBe(i + 1));
+    }
+    expect(generateSessionTitle).toHaveBeenCalledTimes(TITLE_UPGRADE_ATTEMPT_CAP);
+
+    // One more turn past the cap: the guard is a synchronous DB read before any
+    // async work starts, so no attempt is made at all — safe to assert right away.
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "extra", text: "hey", resolvePermission: noopResolve });
+    expect(generateSessionTitle).toHaveBeenCalledTimes(TITLE_UPGRADE_ATTEMPT_CAP);
+
+    const row = titleRow(db, s.id);
+    expect(row.titleSource).toBe("placeholder");
+    expect(row.titleGenAttempts).toBe(TITLE_UPGRADE_ATTEMPT_CAP);
   });
 });

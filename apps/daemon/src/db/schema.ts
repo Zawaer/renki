@@ -26,6 +26,16 @@ export const sessions = sqliteTable("sessions", {
   controller: text("controller"),
   claudeSessionId: text("claude_session_id"),
   title: text("title"),
+  /**
+   * How `title` got its value — internal bookkeeping for the auto-titler, not
+   * exposed on the protocol's `Session` type: "manual" (user set it at
+   * creation, never touched again), "placeholder" (the raw first prompt,
+   * set instantly, still eligible for an LLM upgrade), "generated" (an LLM
+   * title accepted — terminal, we stop trying), or null (no title yet).
+   */
+  titleSource: text("title_source"),
+  /** How many times we've tried upgrading a placeholder title; capped so a session that never gives the model "enough" just keeps its placeholder forever. */
+  titleGenAttempts: integer("title_gen_attempts").notNull().default(0),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
   lastActivityAt: integer("last_activity_at").notNull(),
@@ -71,6 +81,8 @@ export const DDL = `
     controller TEXT,
     claude_session_id TEXT,
     title TEXT,
+    title_source TEXT,
+    title_gen_attempts INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     last_activity_at INTEGER NOT NULL,

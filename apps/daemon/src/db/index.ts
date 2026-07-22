@@ -33,6 +33,8 @@ export function openDb(config: Config) {
   ensureColumn(sqlite, "sessions", "has_pending_permission", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn(sqlite, "sessions", "purpose", "TEXT NOT NULL DEFAULT 'normal'");
   ensureColumn(sqlite, "sessions", "merge_meta", "TEXT");
+  ensureColumn(sqlite, "sessions", "title_source", "TEXT");
+  ensureColumn(sqlite, "sessions", "title_gen_attempts", "INTEGER NOT NULL DEFAULT 0");
   ensureSessionsRepoColumnsNullable(sqlite);
 
   logger.info("database ready", { path: config.dbPath });

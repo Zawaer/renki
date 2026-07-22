@@ -1,7 +1,7 @@
 import type { Repo, Session } from "@crc/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
-import { FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useClient } from "../lib/client";
 import { statusColorFor, type ThemeColors, useTheme } from "../theme";
 import { AccountsBar } from "./AccountsBar";
@@ -55,6 +55,24 @@ export function SessionList({
     };
   }, [realtime]);
 
+  async function archive(id: string) {
+    await rest.archiveSession(id);
+    refresh();
+  }
+
+  async function rename(id: string, title: string) {
+    await rest.renameSession(id, title);
+    refresh();
+  }
+
+  async function del(id: string) {
+    await rest.deleteSession(id);
+    refresh();
+  }
+
+  const active = sessions.filter((s) => s.status !== "archived");
+  const archived = sessions.filter((s) => s.status === "archived");
+
   return (
     <View style={styles.fill}>
       <View style={styles.header}>
@@ -77,32 +95,36 @@ export function SessionList({
 
       <PairDevice visible={pairing} onClose={() => setPairing(false)} onReconnect={onReconnect} />
 
-      <FlatList
-        data={sessions}
-        style={styles.list}
-        keyExtractor={(s) => s.id}
-        ListEmptyComponent={<Text style={styles.empty}>No sessions yet.</Text>}
-        renderItem={({ item }) => (
-          <TouchableOpacity style={styles.row} onPress={() => onSelect(item.id)}>
-            <View
-              style={[
-                styles.dot,
-                { backgroundColor: item.hasPendingPermission ? colors.danger : statusColor[item.status] ?? colors.faint },
-              ]}
-            />
-            <View style={styles.rowText}>
-              <Text style={styles.rowTitle} numberOfLines={1}>
-                {item.title || item.repoName}
-              </Text>
-              <Text style={styles.rowSub} numberOfLines={1}>
-                {item.branch ? `${item.repoName}:${item.branch}` : item.repoName} ·{" "}
-                {item.hasPendingPermission ? "awaiting permission" : item.status}
-              </Text>
-            </View>
-            {item.controller && <Ionicons name="lock-closed" size={12} color={colors.accent} />}
-          </TouchableOpacity>
-        )}
-      />
+      <ScrollView style={styles.list}>
+        {active.length === 0 && <Text style={styles.empty}>No sessions yet.</Text>}
+        {active.map((s) => (
+          <Row
+            key={s.id}
+            session={s}
+            colors={colors}
+            styles={styles}
+            statusColor={statusColor}
+            onSelect={() => onSelect(s.id)}
+            onArchive={() => archive(s.id)}
+            onRename={(title) => rename(s.id, title)}
+            onDelete={() => del(s.id)}
+          />
+        ))}
+
+        {archived.length > 0 && <Text style={styles.archivedHeader}>Archived</Text>}
+        {archived.map((s) => (
+          <Row
+            key={s.id}
+            session={s}
+            colors={colors}
+            styles={styles}
+            statusColor={statusColor}
+            onSelect={() => onSelect(s.id)}
+            onRename={(title) => rename(s.id, title)}
+            onDelete={() => del(s.id)}
+          />
+        ))}
+      </ScrollView>
 
       <AccountsBar />
 
@@ -120,6 +142,127 @@ export function SessionList({
         />
       )}
     </View>
+  );
+}
+
+function Row({
+  session,
+  colors,
+  styles,
+  statusColor,
+  onSelect,
+  onArchive,
+  onRename,
+  onDelete,
+}: {
+  session: Session;
+  colors: ThemeColors;
+  styles: Styles;
+  statusColor: Record<string, string>;
+  onSelect: () => void;
+  onArchive?: () => void;
+  onRename: (title: string) => void;
+  onDelete: () => void;
+}) {
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState(session.title ?? session.repoName);
+
+  function confirmDelete() {
+    setActionsOpen(false);
+    Alert.alert("Delete this session?", "Its transcript will be gone for good.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: onDelete },
+    ]);
+  }
+
+  function commitRename() {
+    setRenaming(false);
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== session.title) onRename(trimmed);
+  }
+
+  return (
+    <>
+      <TouchableOpacity style={styles.row} onPress={onSelect}>
+        <View
+          style={[
+            styles.dot,
+            { backgroundColor: session.hasPendingPermission ? colors.danger : statusColor[session.status] ?? colors.faint },
+          ]}
+        />
+        <View style={styles.rowText}>
+          <Text style={styles.rowTitle} numberOfLines={1}>
+            {session.title || session.repoName}
+          </Text>
+          <Text style={styles.rowSub} numberOfLines={1}>
+            {session.branch ? `${session.repoName}:${session.branch}` : session.repoName} ·{" "}
+            {session.hasPendingPermission ? "awaiting permission" : session.status}
+          </Text>
+        </View>
+        {session.controller && <Ionicons name="lock-closed" size={12} color={colors.accent} />}
+        <TouchableOpacity
+          style={styles.kebab}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          onPress={() => {
+            setDraft(session.title ?? session.repoName);
+            setActionsOpen(true);
+          }}
+        >
+          <Ionicons name="ellipsis-vertical" size={16} color={colors.faint} />
+        </TouchableOpacity>
+      </TouchableOpacity>
+
+      <Modal transparent visible={actionsOpen} animationType="fade" onRequestClose={() => setActionsOpen(false)}>
+        <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={() => setActionsOpen(false)}>
+          <TouchableOpacity activeOpacity={1} style={styles.sheetCard}>
+            {onArchive && (
+              <TouchableOpacity
+                style={styles.sheetRow}
+                onPress={() => {
+                  setActionsOpen(false);
+                  onArchive();
+                }}
+              >
+                <Ionicons name="archive-outline" size={17} color={colors.text} />
+                <Text style={styles.sheetRowText}>Archive</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={styles.sheetRow}
+              onPress={() => {
+                setActionsOpen(false);
+                setRenaming(true);
+              }}
+            >
+              <Ionicons name="create-outline" size={17} color={colors.text} />
+              <Text style={styles.sheetRowText}>Edit title</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.sheetRow} onPress={confirmDelete}>
+              <Ionicons name="trash-outline" size={17} color={colors.danger} />
+              <Text style={[styles.sheetRowText, { color: colors.danger }]}>Delete</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      <Modal transparent visible={renaming} animationType="fade" onRequestClose={() => setRenaming(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Rename session</Text>
+            <TextInput style={styles.input} value={draft} onChangeText={setDraft} autoFocus onSubmitEditing={commitRename} />
+            <View style={styles.modalActions}>
+              <TouchableOpacity onPress={() => setRenaming(false)}>
+                <Text style={styles.link}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.newBtn} onPress={commitRename}>
+                <Text style={styles.newBtnText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
@@ -257,6 +400,26 @@ const makeStyles = (colors: ThemeColors) =>
     rowText: { flex: 1 },
     rowTitle: { color: colors.text, fontSize: 15 },
     rowSub: { color: colors.faint, fontSize: 12, marginTop: 2 },
+    kebab: { padding: 6, marginRight: -6 },
+    archivedHeader: {
+      color: colors.faint,
+      fontSize: 11,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      paddingBottom: 4,
+    },
+    sheetBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
+    sheetCard: {
+      backgroundColor: colors.panel,
+      borderTopLeftRadius: 8,
+      borderTopRightRadius: 8,
+      paddingVertical: 8,
+      paddingBottom: 24,
+    },
+    sheetRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 20, paddingVertical: 14 },
+    sheetRowText: { color: colors.text, fontSize: 15 },
     modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
     modalCard: {
       backgroundColor: colors.panel,

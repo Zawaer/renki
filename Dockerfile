@@ -71,9 +71,11 @@ RUN pnpm --filter @crc/daemon deploy --prod /app/deploy
 FROM node:20-bookworm-slim AS runtime
 
 # git: the daemon shells out to it (via simple-git) to create a worktree per
-# session against your mounted repos.
+# session against your mounted repos. python3: sessions run inside this
+# container (not the host), so a Claude session's own Bash tool calls need it
+# on PATH too, same as it'd be on a normal dev machine.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git ca-certificates \
+      git ca-certificates python3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Your repos are bind-mounted from the host, so they're owned by your host

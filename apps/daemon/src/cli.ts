@@ -7,6 +7,7 @@ import type { SessionEvent } from "@crc/protocol";
 import QRCode from "qrcode";
 import { loadConfig } from "./config.js";
 import { openDb } from "./db/index.js";
+import { migrateSessionIds } from "./db/migrateSessionIds.js";
 import { logger } from "./logger.js";
 import { scanRepos } from "./repos.js";
 import { checkTailscaleServeConflict, getTailscaleStatus } from "./tailscale.js";
@@ -145,6 +146,7 @@ async function main() {
   }
 
   const db = openDb(config);
+  await migrateSessionIds(config, db);
   const manager = new SessionManager(config, db);
 
   switch (command) {

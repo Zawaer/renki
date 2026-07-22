@@ -4,6 +4,7 @@ import { hasCapabilities, setCapabilities } from "./claude/capabilities.js";
 import { warmUpCapabilities } from "./claude/runner.js";
 import { loadConfig } from "./config.js";
 import { openDb } from "./db/index.js";
+import { migrateSessionIds } from "./db/migrateSessionIds.js";
 import { logger } from "./logger.js";
 import { DeviceRegistry } from "./push/devices.js";
 import { Notifier } from "./push/notifier.js";
@@ -20,6 +21,7 @@ import { PermissionBroker } from "./server/permissions.js";
 async function main() {
   const config = loadConfig();
   const db = openDb(config);
+  await migrateSessionIds(config, db);
   const manager = new SessionManager(config, db);
   const broker = new PermissionBroker(config.permissionTimeoutMs);
   const devices = new DeviceRegistry();

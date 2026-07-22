@@ -4,12 +4,17 @@ import {
   EFFORT_LEVELS,
   estimateTokens,
   formatTokenCount,
+  parseEditView,
+  parsePlan,
+  parseTodos,
   PERMISSION_MODES,
   THINKING_VERBS,
   type BlockView,
+  type EditToolView,
   type PermissionModeKey,
   type PermissionView,
   type TimelineItem,
+  type TodoItemView,
   type TurnView,
 } from "@crc/client-core";
 import type { CapabilitiesResponse } from "@crc/protocol";
@@ -199,6 +204,9 @@ function toolIcon(name: string): string {
 function Block({ block, turnRunning }: { block: BlockView; turnRunning: boolean }) {
   if (block.kind === "tool_use") {
     const filePath = extractFilePath(block.toolInput);
+    const editView = parseEditView(block.toolName, block.toolInput);
+    const todos = block.toolName === "TodoWrite" ? parseTodos(block.toolInput) : null;
+    const plan = parsePlan(block.toolName, block.toolInput);
     return (
       <div className="rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) text-xs">
         <div className="flex items-center gap-2 px-3 py-1.5 font-mono text-(--crc-fg)">
@@ -214,9 +222,19 @@ function Block({ block, turnRunning }: { block: BlockView; turnRunning: boolean 
             </button>
           )}
         </div>
-        <pre className="overflow-x-auto border-t border-(--crc-border) px-3 py-1.5 font-mono text-(--crc-fg-muted)">
-          {truncate(JSON.stringify(block.toolInput, null, 2), 800)}
-        </pre>
+        {editView ? (
+          <DiffView view={editView} />
+        ) : todos ? (
+          <TodoChecklist todos={todos} />
+        ) : plan ? (
+          <div className="border-t border-(--crc-border) px-3 py-2">
+            <Markdown content={plan} />
+          </div>
+        ) : (
+          <pre className="overflow-x-auto border-t border-(--crc-border) px-3 py-1.5 font-mono text-(--crc-fg-muted)">
+            {truncate(JSON.stringify(block.toolInput, null, 2), 800)}
+          </pre>
+        )}
         {block.result && (
           <pre
             className={`overflow-x-auto border-t border-(--crc-border) px-3 py-1.5 font-mono ${
@@ -234,6 +252,77 @@ function Block({ block, turnRunning }: { block: BlockView; turnRunning: boolean 
     return <ThinkingBlock block={block} live={turnRunning && block.endedAtMs == null} />;
   }
   return <Markdown content={block.text} />;
+}
+
+/** Caps how many diff lines render before collapsing the rest into a note — a full-file Write can be thousands of lines. */
+const MAX_DIFF_LINES_SHOWN = 400;
+
+function DiffView({ view }: { view: EditToolView }) {
+  const totalLines = view.hunks.reduce((n, h) => n + h.lines.length, 0);
+  let shown = 0;
+  return (
+    <div className="overflow-x-auto border-t border-(--crc-border) font-mono">
+      {view.hunks.map((hunk, hi) => {
+        if (shown >= MAX_DIFF_LINES_SHOWN) return null;
+        const remaining = MAX_DIFF_LINES_SHOWN - shown;
+        const lines = hunk.lines.slice(0, remaining);
+        shown += lines.length;
+        return (
+          <div key={hi} className={hi > 0 ? "border-t border-dashed border-(--crc-border)" : ""}>
+            {lines.map((line, li) => (
+              <div
+                key={li}
+                className={`whitespace-pre px-3 py-0.5 ${
+                  line.type === "add"
+                    ? "bg-(--crc-success)/10 text-(--crc-success)"
+                    : line.type === "del"
+                      ? "bg-(--crc-danger)/10 text-(--crc-danger)"
+                      : "text-(--crc-fg-muted)"
+                }`}
+              >
+                {line.type === "add" ? "+ " : line.type === "del" ? "- " : "  "}
+                {line.text}
+              </div>
+            ))}
+          </div>
+        );
+      })}
+      {totalLines > MAX_DIFF_LINES_SHOWN && (
+        <div className="px-3 py-1 text-(--crc-fg-muted)">… {totalLines - MAX_DIFF_LINES_SHOWN} more lines</div>
+      )}
+    </div>
+  );
+}
+
+function TodoChecklist({ todos }: { todos: TodoItemView[] }) {
+  return (
+    <div className="border-t border-(--crc-border) px-3 py-1.5">
+      {todos.map((t, i) => (
+        <div key={i} className="flex items-start gap-2 py-0.5">
+          <span
+            className={`codicon mt-0.5 shrink-0 ${
+              t.status === "completed"
+                ? "codicon-pass-filled text-(--crc-success)"
+                : t.status === "in_progress"
+                  ? "codicon-sync codicon-modifier-spin text-(--crc-warning)"
+                  : "codicon-circle-large-outline text-(--crc-fg-muted)"
+            }`}
+          />
+          <span
+            className={
+              t.status === "completed"
+                ? "text-(--crc-fg-muted) line-through"
+                : t.status === "in_progress"
+                  ? "font-medium text-(--crc-fg)"
+                  : "text-(--crc-fg)"
+            }
+          >
+            {t.status === "in_progress" && t.activeForm ? t.activeForm : t.content}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function ThinkingBlock({
@@ -307,22 +396,46 @@ function PermissionCard({
   canAct: boolean;
   onDecide: (d: "allow" | "deny") => void;
 }) {
+  const plan = parsePlan(perm.toolName, perm.toolInput);
+  const editView = plan == null ? parseEditView(perm.toolName, perm.toolInput) : null;
+  const todos = plan == null && perm.toolName === "TodoWrite" ? parseTodos(perm.toolInput) : null;
+
   return (
     <div className="rounded-sm border-l-2 border-(--crc-warning) bg-(--crc-warning)/10 p-3">
       <div className="flex items-center gap-1.5 text-sm text-(--crc-warning)">
-        <span className="codicon codicon-shield" />
-        Permission requested: <span className="font-mono">{perm.toolName}</span>
+        <span className={`codicon ${plan != null ? "codicon-checklist" : "codicon-shield"}`} />
+        {plan != null ? (
+          "Plan ready for review"
+        ) : (
+          <>
+            Permission requested: <span className="font-mono">{perm.toolName}</span>
+          </>
+        )}
       </div>
-      <pre className="mt-1 max-h-24 overflow-auto text-xs text-(--crc-fg-muted)">
-        {truncate(JSON.stringify(perm.toolInput, null, 2), 500)}
-      </pre>
+      {plan != null ? (
+        <div className="mt-2 max-h-64 overflow-auto rounded-sm bg-(--crc-bg-elevated) p-2 text-xs">
+          <Markdown content={plan} />
+        </div>
+      ) : editView ? (
+        <div className="mt-1 max-h-64 overflow-auto rounded-sm bg-(--crc-bg-elevated) text-xs">
+          <DiffView view={editView} />
+        </div>
+      ) : todos ? (
+        <div className="mt-1 max-h-48 overflow-auto rounded-sm bg-(--crc-bg-elevated) text-xs">
+          <TodoChecklist todos={todos} />
+        </div>
+      ) : (
+        <pre className="mt-1 max-h-24 overflow-auto text-xs text-(--crc-fg-muted)">
+          {truncate(JSON.stringify(perm.toolInput, null, 2), 500)}
+        </pre>
+      )}
       {canAct ? (
         <div className="mt-2 flex gap-2">
           <Button variant="primary" onClick={() => onDecide("allow")}>
-            <span className="codicon codicon-check" /> Allow
+            <span className="codicon codicon-check" /> {plan != null ? "Approve plan" : "Allow"}
           </Button>
           <Button variant="danger" onClick={() => onDecide("deny")}>
-            <span className="codicon codicon-close" /> Deny
+            <span className="codicon codicon-close" /> {plan != null ? "Keep planning" : "Deny"}
           </Button>
         </div>
       ) : (

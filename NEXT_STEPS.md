@@ -159,8 +159,9 @@ features. The throughline for everything below: shrink "found the repo" →
 
 - [ ] **Live session-list updates.** The session list is REST-polled every 4s; a
       dedicated `sessions` WS subscription would make it instant.
-- [ ] **Stop/interrupt button.** The Agent SDK supports `interrupt()`; wire a
-      "stop turn" control.
+- [x] **Stop/interrupt button.** Done — `SessionManager.interruptSession`
+      (`apps/daemon/src/claude/sessions/manager.ts`) calls the live `Query`'s
+      `interrupt()`, wired to a Stop control in both the web and mobile composers.
 - [ ] **Delta-event compaction.** Token deltas are persisted per-token for
       faithful mid-turn replay; compact them once the final block lands to keep
       the event log small.

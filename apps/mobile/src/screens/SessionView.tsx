@@ -4,12 +4,17 @@ import {
   EFFORT_LEVELS,
   estimateTokens,
   formatTokenCount,
+  parseEditView,
+  parsePlan,
+  parseTodos,
   PERMISSION_MODES,
   THINKING_VERBS,
   type BlockView,
+  type EditToolView,
   type PermissionModeKey,
   type PermissionView,
   type TimelineItem,
+  type TodoItemView,
   type TurnView,
 } from "@crc/client-core";
 import type { CapabilitiesResponse } from "@crc/protocol";
@@ -27,7 +32,7 @@ import {
 } from "react-native";
 import { Markdown } from "../components/Markdown";
 import { useClient, useStoreValue } from "../lib/client";
-import { statusColorFor, type ThemeColors, useTheme } from "../theme";
+import { statusColorFor, type ThemeColors, useTheme, withAlpha } from "../theme";
 
 export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: () => void }) {
   const colors = useTheme();
@@ -305,13 +310,24 @@ function Block({
   turnRunning: boolean;
 }) {
   if (block.kind === "tool_use") {
+    const editView = parseEditView(block.toolName, block.toolInput);
+    const todos = block.toolName === "TodoWrite" ? parseTodos(block.toolInput) : null;
+    const plan = parsePlan(block.toolName, block.toolInput);
     return (
       <View style={styles.toolCard}>
         <View style={styles.toolHeader}>
           <Ionicons name={toolIcon(block.toolName)} size={13} color={colors.busy} />
           <Text style={styles.toolName}>{block.toolName}</Text>
         </View>
-        <Text style={styles.toolBody}>{truncate(JSON.stringify(block.toolInput), 300)}</Text>
+        {editView ? (
+          <DiffView view={editView} colors={colors} styles={styles} />
+        ) : todos ? (
+          <TodoChecklist todos={todos} colors={colors} styles={styles} />
+        ) : plan ? (
+          <Markdown content={plan} />
+        ) : (
+          <Text style={styles.toolBody}>{truncate(JSON.stringify(block.toolInput), 300)}</Text>
+        )}
         {block.result && (
           <Text style={[styles.toolBody, !block.result.ok && styles.errText]}>
             {block.result.ok ? "" : "error: "}
@@ -400,27 +416,111 @@ function PermissionCard({
   colors: ThemeColors;
   styles: Styles;
 }) {
+  const plan = parsePlan(perm.toolName, perm.toolInput);
+  const editView = plan == null ? parseEditView(perm.toolName, perm.toolInput) : null;
+  const todos = plan == null && perm.toolName === "TodoWrite" ? parseTodos(perm.toolInput) : null;
+
   return (
     <View style={styles.permCard}>
       <View style={styles.permHeader}>
-        <Ionicons name="shield-checkmark-outline" size={14} color={colors.busy} />
-        <Text style={styles.permTitle}>Permission: {perm.toolName}</Text>
+        <Ionicons name={plan != null ? "list-outline" : "shield-checkmark-outline"} size={14} color={colors.busy} />
+        <Text style={styles.permTitle}>{plan != null ? "Plan ready for review" : `Permission: ${perm.toolName}`}</Text>
       </View>
-      <Text style={styles.permBody} numberOfLines={4}>
-        {truncate(JSON.stringify(perm.toolInput), 240)}
-      </Text>
+      {plan != null ? (
+        <ScrollView style={styles.permDetailScroll}>
+          <Markdown content={plan} muted />
+        </ScrollView>
+      ) : editView ? (
+        <ScrollView style={styles.permDetailScroll}>
+          <DiffView view={editView} colors={colors} styles={styles} />
+        </ScrollView>
+      ) : todos ? (
+        <ScrollView style={styles.permDetailScroll}>
+          <TodoChecklist todos={todos} colors={colors} styles={styles} />
+        </ScrollView>
+      ) : (
+        <Text style={styles.permBody} numberOfLines={4}>
+          {truncate(JSON.stringify(perm.toolInput), 240)}
+        </Text>
+      )}
       {canAct ? (
         <View style={styles.permActions}>
           <TouchableOpacity style={styles.allowBtn} onPress={() => onDecide("allow")}>
-            <Text style={styles.allowText}>Allow</Text>
+            <Text style={styles.allowText}>{plan != null ? "Approve plan" : "Allow"}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.denyBtn} onPress={() => onDecide("deny")}>
-            <Text style={styles.denyText}>Deny</Text>
+            <Text style={styles.denyText}>{plan != null ? "Keep planning" : "Deny"}</Text>
           </TouchableOpacity>
         </View>
       ) : (
         <Text style={styles.permBody}>Only the controller can respond.</Text>
       )}
+    </View>
+  );
+}
+
+/** Caps how many diff lines render before collapsing the rest into a note — a full-file Write can be thousands of lines. */
+const MAX_DIFF_LINES_SHOWN = 200;
+
+function DiffView({ view, colors, styles }: { view: EditToolView; colors: ThemeColors; styles: Styles }) {
+  const totalLines = view.hunks.reduce((n, h) => n + h.lines.length, 0);
+  let shown = 0;
+  return (
+    <View>
+      {view.hunks.map((hunk, hi) => {
+        if (shown >= MAX_DIFF_LINES_SHOWN) return null;
+        const remaining = MAX_DIFF_LINES_SHOWN - shown;
+        const lines = hunk.lines.slice(0, remaining);
+        shown += lines.length;
+        return (
+          <View key={hi}>
+            {lines.map((line, li) => (
+              <Text
+                key={li}
+                style={[
+                  styles.toolBody,
+                  line.type === "add"
+                    ? { backgroundColor: withAlpha(colors.ok, 0.12), color: colors.ok }
+                    : line.type === "del"
+                      ? { backgroundColor: withAlpha(colors.danger, 0.12), color: colors.danger }
+                      : undefined,
+                ]}
+              >
+                {line.type === "add" ? "+ " : line.type === "del" ? "- " : "  "}
+                {line.text}
+              </Text>
+            ))}
+          </View>
+        );
+      })}
+      {totalLines > MAX_DIFF_LINES_SHOWN && (
+        <Text style={styles.meta}>… {totalLines - MAX_DIFF_LINES_SHOWN} more lines</Text>
+      )}
+    </View>
+  );
+}
+
+function TodoChecklist({ todos, colors, styles }: { todos: TodoItemView[]; colors: ThemeColors; styles: Styles }) {
+  return (
+    <View>
+      {todos.map((t, i) => (
+        <View key={i} style={styles.todoRow}>
+          <Ionicons
+            name={t.status === "completed" ? "checkmark-circle" : t.status === "in_progress" ? "sync-outline" : "ellipse-outline"}
+            size={13}
+            color={t.status === "completed" ? colors.ok : t.status === "in_progress" ? colors.busy : colors.faint}
+          />
+          <Text
+            style={[
+              styles.todoText,
+              t.status === "completed" && styles.todoDone,
+              t.status === "in_progress" && styles.todoActive,
+            ]}
+          >
+            {t.status === "in_progress" && t.activeForm ? t.activeForm : t.content}
+          </Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -491,7 +591,12 @@ const makeStyles = (colors: ThemeColors) =>
     permHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
     permTitle: { color: colors.busy, fontSize: 14, fontWeight: "600" },
     permBody: { color: colors.dim, fontSize: 12 },
+    permDetailScroll: { maxHeight: 220, backgroundColor: colors.panel, borderRadius: 2 },
     permActions: { flexDirection: "row", gap: 10, marginTop: 4 },
+    todoRow: { flexDirection: "row", alignItems: "flex-start", gap: 6, paddingVertical: 2 },
+    todoText: { flex: 1, color: colors.text, fontSize: 12 },
+    todoDone: { color: colors.faint, textDecorationLine: "line-through" },
+    todoActive: { fontWeight: "600" },
     queueWrap: {
       backgroundColor: colors.panel2,
       borderTopWidth: 1,

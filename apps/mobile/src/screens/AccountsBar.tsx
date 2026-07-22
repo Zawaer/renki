@@ -1,6 +1,6 @@
 import type { Account, AccountsResponse } from "@crc/protocol";
 import { useCallback, useEffect, useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useClient } from "../lib/client";
 import { type ThemeColors, useTheme } from "../theme";
 import { ConnectUsage } from "./ConnectUsage";
@@ -47,7 +47,14 @@ export function AccountsBar() {
         </TouchableOpacity>
       </View>
       {data.accounts.map((a) => (
-        <AccountRow key={a.number} account={a} colors={colors} styles={styles} />
+        <AccountRow
+          key={a.number}
+          account={a}
+          usageConnected={data.usageConnectedEmails.includes(a.email.toLowerCase())}
+          onUsageDisconnected={refresh}
+          colors={colors}
+          styles={styles}
+        />
       ))}
       <TouchableOpacity onPress={() => setConnecting(true)} style={styles.connectBtn}>
         <Text style={styles.connect}>{data.usageConfigured ? "+ Add usage account" : "Connect usage %"}</Text>
@@ -57,7 +64,41 @@ export function AccountsBar() {
   );
 }
 
-function AccountRow({ account, colors, styles }: { account: Account; colors: ThemeColors; styles: Styles }) {
+function AccountRow({
+  account,
+  usageConnected,
+  onUsageDisconnected,
+  colors,
+  styles,
+}: {
+  account: Account;
+  usageConnected: boolean;
+  onUsageDisconnected: () => void;
+  colors: ThemeColors;
+  styles: Styles;
+}) {
+  const { rest } = useClient();
+  const [removing, setRemoving] = useState(false);
+
+  function confirmDisconnect() {
+    Alert.alert("Stop tracking usage?", `Stop tracking usage % for ${account.email}?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Stop tracking",
+        style: "destructive",
+        onPress: async () => {
+          setRemoving(true);
+          try {
+            await rest.disconnectUsageKey(account.email);
+            onUsageDisconnected();
+          } finally {
+            setRemoving(false);
+          }
+        },
+      },
+    ]);
+  }
+
   return (
     <View style={styles.acct}>
       <View style={styles.acctHead}>
@@ -65,6 +106,11 @@ function AccountRow({ account, colors, styles }: { account: Account; colors: The
         <Text style={styles.email} numberOfLines={1}>
           {account.email}
         </Text>
+        {usageConnected && (
+          <TouchableOpacity onPress={confirmDisconnect} disabled={removing}>
+            <Text style={styles.removeUsage}>{removing ? "…" : "✕"}</Text>
+          </TouchableOpacity>
+        )}
       </View>
       {account.usage ? (
         <View style={styles.meters}>
@@ -106,6 +152,7 @@ const makeStyles = (colors: ThemeColors) =>
   acctHead: { flexDirection: "row", alignItems: "center", gap: 6 },
   dot: { width: 7, height: 7, borderRadius: 4 },
   email: { color: colors.text, fontSize: 12, flex: 1 },
+  removeUsage: { color: colors.faint, fontSize: 13, paddingHorizontal: 4 },
   na: { color: colors.faint, fontSize: 11, marginLeft: 13 },
   meters: { marginLeft: 13, marginTop: 4, gap: 3 },
   meterRow: { flexDirection: "row", alignItems: "center", gap: 6 },

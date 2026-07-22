@@ -125,6 +125,18 @@ export class UsageReader {
     return { email, orgId, usage };
   }
 
+  /** Remove a connected usage key by email (case-insensitive). Returns whether one was found. */
+  removeKey(email: string): boolean {
+    const target = email.trim().toLowerCase();
+    const idx = this.entries.findIndex((e) => e.email?.toLowerCase() === target);
+    if (idx < 0) return false;
+    this.entries.splice(idx, 1);
+    this.cache.delete(target);
+    this.persist();
+    logger.info("usage key disconnected", { email: target, accounts: this.entries.length });
+    return true;
+  }
+
   /**
    * List every org this key can see, each with its current usage, for the user
    * to pick from. Does NOT persist — selection happens via `addKey(orgId)`.

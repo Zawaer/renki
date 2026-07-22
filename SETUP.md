@@ -512,21 +512,45 @@ personal org next to the one that actually carries your subscription), so the
 daemon never guesses — it lists every org the key can see, with each org's
 live usage, and you tap the right one.
 
+- **Paste (recommended — works everywhere, including a headless daemon).**
+  The web UI's "Connect usage %" panel has a **How to find the key** link
+  that walks through this inline; the steps are:
+  1. Open `https://claude.ai` in any browser (your phone, laptop, whatever —
+     it doesn't need to be on the daemon host) and make sure you're signed in.
+  2. Open DevTools: `Cmd+Option+I` on Mac, `F12` on Windows/Linux, or
+     right-click → Inspect.
+  3. Go to the **Application** tab (Chrome/Edge) or **Storage** tab (Firefox).
+  4. In the left sidebar expand **Cookies** → `https://claude.ai`.
+  5. Find the row named `sessionKey` and copy its **Value** — it starts with
+     `sk-ant-sid…`.
+  6. Paste that value into the panel (or the Claude Usage app has the same
+     cookie, if you already use that).
+
+  This is the only option that works if the daemon runs on a headless/
+  terminal-only box (e.g. a homelab server with no display) — guided login
+  below needs an actual display to render the browser and will fail there
+  with a Playwright/Chrome launch error.
 - **Phone (native login):** a WebView opens claude.ai; sign in and the session
   cookie is captured automatically (no Cloudflare challenge — it's a real
   browser session, not an automated one). Needs a custom dev build — see the
   mobile note below (you already build outside Expo Go for push).
-- **Mac (guided login):** the daemon opens a real browser on its host; sign in
-  and it reads the cookie. Requires Playwright on the daemon host:
-  `pnpm --filter @crc/daemon add playwright` (reuses your installed Chrome via
-  `CRC_USAGE_LOGIN_CHANNEL=chrome`, so no 150 MB download). You can also run it
-  headless of the app with `pnpm --filter @crc/daemon exec crc usage login`.
-- **Paste (works everywhere):** copy the `sessionKey` (`sk-ant-sid…`) cookie
-  from claude.ai DevTools (or from the Claude Usage app) and paste it.
+- **Guided browser login (needs a display on the daemon host).** The daemon
+  opens a real, headful browser on whatever machine it's running on — not
+  necessarily your Mac or phone, but wherever `crc-daemon` is — and reads the
+  session cookie once you sign in there. Requires Playwright on the daemon
+  host: `pnpm --filter @crc/daemon add playwright` (reuses your installed
+  Chrome via `CRC_USAGE_LOGIN_CHANNEL=chrome`, so no 150 MB download). You can
+  also run it headless of the app with `pnpm --filter @crc/daemon exec crc
+  usage login`.
 
 On the CLI, the same two steps: `crc usage orgs <sessionKey>` lists your orgs
 with their usage, then `crc usage connect <sessionKey> <orgId>` persists the
 one you picked.
+
+**Picked the wrong org?** Every client shows a small **✕** next to any account
+with a connected usage key — tap it to stop tracking that account (a
+confirmation prompt guards against misclicks), then reconnect and pick the
+right org. On the CLI: `crc usage disconnect <email>`.
 
 **Manual file (still supported).** Copy `apps/daemon/usage-accounts.example.json`
 to your data dir as `usage-accounts.json` (gitignored) and fill in the

@@ -5,6 +5,7 @@ import type {
   CreateSessionRequest,
   CreateSessionResponse,
   DeleteSessionResponse,
+  DisconnectUsageKeyResponse,
   GetTranscriptResponse,
   ListReposResponse,
   ListSessionsResponse,
@@ -87,11 +88,16 @@ export class RestClient {
   }
 
   /**
-   * Mac guided login: ask the daemon to open a browser, wait for sign-in, and
+   * Guided browser login: ask the daemon to open a browser, wait for sign-in, and
    * extract the key. Only meaningful when the daemon host has a display + Chrome.
    */
   async startUsageLogin(): Promise<UsageLoginResponse> {
     return this.post<UsageLoginResponse>("/accounts/usage-key/login", {});
+  }
+
+  /** Remove a connected usage key (e.g. the wrong org got picked) — stops tracking that account's usage %. */
+  async disconnectUsageKey(email: string): Promise<DisconnectUsageKeyResponse> {
+    return this.request<DisconnectUsageKeyResponse>("DELETE", `/accounts/usage-key/${encodeURIComponent(email)}`);
   }
 
   /** The daemon host's own Tailscale hostname, if it can detect one — used to suggest a pairing URL. */

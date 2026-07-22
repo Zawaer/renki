@@ -77,6 +77,7 @@ async function main() {
   //   crc usage login                    open a browser, sign in; prints key + orgs
   //   crc usage orgs <key>               list the orgs a key can see (pick one)
   //   crc usage connect <key> <orgId>    track that org's usage
+  //   crc usage disconnect <email>       stop tracking that account (e.g. wrong org picked)
   if (command === "usage") {
     const { UsageReader } = await import("./accounts/usage.js");
     const reader = new UsageReader(config.usageConfigPath, config.usageBaseUrl);
@@ -121,7 +122,16 @@ async function main() {
       console.log(`connected ${id.email ?? "(email unknown)"} — 5h ${id.usage.fiveHour.pct}% · 7d ${id.usage.sevenDay.pct}%`);
       return;
     }
-    return fail("usage: crc usage login | crc usage orgs <key> | crc usage connect <key> <orgId>");
+    if (rest[0] === "disconnect") {
+      const email = rest[1];
+      if (!email) return fail("usage: crc usage disconnect <email>");
+      const removed = reader.removeKey(email);
+      console.log(removed ? `disconnected ${email}` : `no connected usage key found for ${email}`);
+      return;
+    }
+    return fail(
+      "usage: crc usage login | crc usage orgs <key> | crc usage connect <key> <orgId> | crc usage disconnect <email>",
+    );
   }
 
   const db = openDb(config);

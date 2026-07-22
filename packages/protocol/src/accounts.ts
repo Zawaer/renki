@@ -110,11 +110,18 @@ export const ConnectUsageKeyResponse = z.object({
 });
 export type ConnectUsageKeyResponse = z.infer<typeof ConnectUsageKeyResponse>;
 
+/** Remove a previously-connected claude.ai usage key (e.g. wrong org picked). */
+export const DisconnectUsageKeyResponse = z.object({
+  ok: z.boolean(),
+});
+export type DisconnectUsageKeyResponse = z.infer<typeof DisconnectUsageKeyResponse>;
+
 /**
- * Mac-only guided login: the daemon opens a real browser (Playwright) at
- * claude.ai, the user signs in, and the daemon reads the resulting session
- * cookie. `unavailable` distinguishes "Playwright/Chrome isn't installed on the
- * host" (a setup problem) from an ordinary failure/timeout.
+ * Guided browser login: the daemon opens a real browser (Playwright) on its
+ * own host at claude.ai, the user signs in, and the daemon reads the
+ * resulting session cookie. `unavailable` distinguishes "Playwright/Chrome
+ * isn't installed (or there's no display) on the host" (a setup problem) from
+ * an ordinary failure/timeout.
  */
 export const UsageLoginResponse = z.object({
   ok: z.boolean(),

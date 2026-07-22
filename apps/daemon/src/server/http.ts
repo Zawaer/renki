@@ -183,8 +183,15 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
     }
   });
 
-  // Mac-only guided login: daemon opens a browser, user signs in, we read the
-  // cookie. Returns { unavailable: true } if Playwright/Chrome isn't installed.
+  // Remove a previously-connected usage key (e.g. the wrong org got picked).
+  app.delete<{ Params: { email: string } }>("/accounts/usage-key/:email", async (req, reply) => {
+    const ok = usage.removeKey(req.params.email);
+    return { ok };
+  });
+
+  // Guided browser login: daemon opens a browser on its own host, user signs
+  // in, we read the cookie. Returns { unavailable: true } if Playwright/Chrome
+  // isn't installed, or if that host has no display to render the browser on.
   app.post("/accounts/usage-key/login", async (_req, reply) => {
     try {
       const sessionKey = await loginAndExtractSessionKey({

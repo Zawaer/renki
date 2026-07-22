@@ -11,6 +11,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # test/git-merge.test.ts exercises the real `git` binary (no mocking) —
+      # attemptMerge's own commits (as opposed to the test's setup commands,
+      # which already set GIT_AUTHOR_*/GIT_COMMITTER_* per call) need an
+      # ambient identity, which a real developer machine always has but this
+      # ephemeral runner doesn't.
+      - run: |
+          git config --global user.email "ci@example.com"
+          git config --global user.name "CI"
+
       # Reads the pnpm version from package.json's "packageManager" field.
       - uses: pnpm/action-setup@v4
 

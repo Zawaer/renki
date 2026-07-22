@@ -71,7 +71,7 @@ const Env = z.object({
   CRC_USAGE_CONFIG: z.string().optional(),
   /** Base URL for the usage endpoint (override for testing). */
   CRC_USAGE_BASE_URL: z.string().url().default("https://claude.ai"),
-  /** Browser channel the Mac guided-login reuses ("chrome"/"msedge"; empty = bundled Chromium). */
+  /** Browser channel the guided browser login reuses ("chrome"/"msedge"; empty = bundled Chromium). */
   CRC_USAGE_LOGIN_CHANNEL: z.string().default("chrome"),
   /** How long the guided-login browser waits for you to finish signing in. */
   CRC_USAGE_LOGIN_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(180),

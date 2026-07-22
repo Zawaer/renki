@@ -1,10 +1,12 @@
 import { logger } from "../logger.js";
 
 /**
- * Mac guided-login: open a REAL browser at claude.ai, let the user sign in, and
- * read the resulting `sessionKey` cookie — exactly what native usage trackers
- * do, but driven by the daemon so it works from the web/CLI/phone "Sign in on
- * Mac" button. Playwright is an OPTIONAL dependency, lazily imported here so the
+ * Guided browser login: open a REAL browser on whatever host the daemon runs
+ * on, let the user sign in, and read the resulting `sessionKey` cookie —
+ * exactly what native usage trackers do, but driven by the daemon so it
+ * works from the web/CLI/phone "sign in via browser" button. Only useful if
+ * that host has a display; headless hosts should use the paste-a-key route
+ * instead. Playwright is an OPTIONAL dependency, lazily imported here so the
  * daemon boots fine without it; we surface a clean "unavailable" instead of
  * crashing. We prefer your already-installed Chrome (`channel`) to avoid a
  * 150 MB Chromium download.

@@ -495,10 +495,10 @@ How it behaves:
 - All clients show a live per-account usage strip and a manual **Switch** button.
 
 **Update cadence** — three independent timers, no manual refresh:
-- The web/phone usage strip polls `GET /accounts` every **30s**.
-- The daemon caches each account's usage for **25s** before re-hitting
+- The web/phone usage strip polls `GET /accounts` every **15s**.
+- The daemon caches each account's usage for **15s** before re-hitting
   claude.ai, so a poll often serves a cached value instantly. Net effect: the
-  % you see is at most ~55s stale.
+  % you see is at most ~30s stale.
 - The **rotation threshold check** (decides whether to actually switch) runs on
   its own timer, `CRC_ROTATION_POLL_SECONDS` (default **60s**) — independent of
   how often a UI happens to be open and polling.

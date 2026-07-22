@@ -95,7 +95,6 @@ export function SessionView({ sessionId }: { sessionId: string }) {
       <Composer
         disabled={!isController}
         reason={!isController ? "Take control to send prompts" : ""}
-        busy={status === "busy"}
         onSend={(text, opts) => realtime.submitPrompt(sessionId, text, opts)}
       />
     </div>
@@ -317,12 +316,10 @@ function PermissionCard({
 function Composer({
   disabled,
   reason,
-  busy,
   onSend,
 }: {
   disabled: boolean;
   reason: string;
-  busy: boolean;
   onSend: (
     text: string,
     opts?: { model?: string; maxThinkingTokens?: number | null; permissionMode?: PermissionModeKey },
@@ -540,13 +537,7 @@ function Composer({
           }}
           rows={2}
           disabled={disabled}
-          placeholder={
-            disabled
-              ? reason
-              : busy
-                ? "Claude is working — sending now will queue this message."
-                : "Send a prompt… (Enter to send, Shift+Enter for newline, / for commands)"
-          }
+          placeholder={disabled ? reason : "Send a prompt… (Enter to send, Shift+Enter for newline, / for commands)"}
           className="flex-1 resize-none rounded-sm border border-(--crc-border) bg-(--crc-input-bg) px-3 py-2 text-sm text-(--crc-fg) outline-none placeholder:text-(--crc-fg-muted) focus:border-(--crc-focus) disabled:opacity-50"
         />
         <Button variant="primary" disabled={disabled || !text.trim()} onClick={send}>

@@ -9,7 +9,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # test/git-merge.test.ts exercises the real `git` binary (no mocking) —
       # attemptMerge's own commits (as opposed to the test's setup commands,
@@ -21,9 +21,9 @@ jobs:
           git config --global user.name "CI"
 
       # Reads the pnpm version from package.json's "packageManager" field.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: pnpm

@@ -1,9 +1,13 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import type { Account, AccountsResponse, RotationStatus, SwitchAccountResponse } from "@crc/protocol";
 import type { Config } from "../config.js";
 import { logger } from "../logger.js";
 import type { SessionManager } from "../sessions/manager.js";
 import { Cswap } from "./cswap.js";
 import type { UsageReader } from "./usage.js";
+
+type PersistedRotationSettings = { enabled?: boolean; threshold?: number };
 
 /**
  * Automates the manual "hit the limit, run cswap --switch, keep going" habit.
@@ -29,6 +33,9 @@ export class AccountRotator {
   private lastSwitchAt: number | null = null;
   private lastHoldReason: string | null = null;
   private ticking = false;
+  /** Live-mutable policy — seeded from config, then a persisted override (if any), then editable from Settings. */
+  private enabled: boolean;
+  private threshold: number;
 
   constructor(
     private readonly config: Config,
@@ -36,11 +43,46 @@ export class AccountRotator {
     private readonly usage: UsageReader,
   ) {
     this.cswap = new Cswap(config.rotation.cswapBin);
+    this.enabled = config.rotation.enabled;
+    this.threshold = config.rotation.threshold;
+    this.loadSettings();
   }
 
   /** Auto-retry (switch + re-run) is only attempted when rotation is enabled. */
   get autoRetryEnabled(): boolean {
-    return this.config.rotation.enabled && this.config.rotation.autoRetry;
+    return this.enabled && this.config.rotation.autoRetry;
+  }
+
+  private loadSettings(): void {
+    const path = this.config.rotationConfigPath;
+    if (!existsSync(path)) return;
+    try {
+      const raw = JSON.parse(readFileSync(path, "utf8")) as PersistedRotationSettings;
+      if (typeof raw.enabled === "boolean") this.enabled = raw.enabled;
+      if (typeof raw.threshold === "number" && raw.threshold >= 1 && raw.threshold <= 100) this.threshold = raw.threshold;
+    } catch (err) {
+      logger.warn("could not read rotation config", { path, err: String(err) });
+    }
+  }
+
+  private persistSettings(): void {
+    const path = this.config.rotationConfigPath;
+    try {
+      mkdirSync(dirname(path), { recursive: true });
+      const body: PersistedRotationSettings = { enabled: this.enabled, threshold: this.threshold };
+      writeFileSync(path, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
+    } catch (err) {
+      logger.warn("could not write rotation config", { path, err: String(err) });
+    }
+  }
+
+  /** Update the rotation policy from Settings. Persists so it survives a restart. */
+  updateSettings(patch: { enabled?: boolean; threshold?: number }): RotationStatus {
+    if (patch.enabled !== undefined) this.enabled = patch.enabled;
+    if (patch.threshold !== undefined) this.threshold = patch.threshold;
+    this.persistSettings();
+    logger.info("rotation settings updated", { enabled: this.enabled, threshold: this.threshold });
+    return this.status();
   }
 
   /** cswap accounts with real usage merged in from the usage reader, by email. */
@@ -74,14 +116,15 @@ export class AccountRotator {
     }
   }
 
+  /**
+   * Always runs the poll timer — even when rotation starts disabled — so
+   * flipping it on from Settings takes effect on the next tick instead of
+   * needing a daemon restart. `evaluate()` is a no-op while disabled.
+   */
   start(): void {
-    if (!this.config.rotation.enabled) return;
     this.timer = setInterval(() => void this.tick(), this.config.rotation.pollMs);
     this.timer.unref();
-    logger.info("account rotation enabled", {
-      threshold: this.config.rotation.threshold,
-      cooldownMin: this.config.rotation.cooldownMs / 60_000,
-    });
+    logger.info("account rotation timer started", { enabled: this.enabled, threshold: this.threshold });
   }
 
   stop(): void {
@@ -151,8 +194,8 @@ export class AccountRotator {
 
   private status(): RotationStatus {
     return {
-      enabled: this.config.rotation.enabled,
-      threshold: this.config.rotation.threshold,
+      enabled: this.enabled,
+      threshold: this.threshold,
       cooldownMs: this.config.rotation.cooldownMs,
       lastSwitchAt: this.lastSwitchAt,
       lastHoldReason: this.lastHoldReason,
@@ -175,7 +218,9 @@ export class AccountRotator {
   }
 
   private async evaluate(): Promise<void> {
-    const { threshold, cooldownMs, strategy } = this.config.rotation;
+    if (!this.enabled) return this.hold("disabled");
+    const { cooldownMs, strategy } = this.config.rotation;
+    const threshold = this.threshold;
     const { accounts } = await this.mergedAccounts();
 
     const active = accounts.find((a) => a.active);

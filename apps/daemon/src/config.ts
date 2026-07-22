@@ -64,6 +64,11 @@ const Env = z.object({
   /** On a rate-limit failure, switch accounts and retry the prompt once. */
   CRC_ROTATION_AUTORETRY: z.string().optional(),
   /**
+   * Where the rotation on/off + threshold set from Settings gets persisted, so
+   * it survives a restart. Defaults alongside the other account data.
+   */
+  CRC_ROTATION_CONFIG: z.string().optional(),
+  /**
    * JSON file of claude.ai session keys for usage %:
    *   [{ "email": "...", "sessionKey": "sk-ant-sid01-...", "orgId": "..." }]
    * Read-only usage display only; separate from the coding setup-tokens.
@@ -100,6 +105,7 @@ export type Config = {
     strategy: "best" | "next-available";
     autoRetry: boolean;
   };
+  rotationConfigPath: string;
   usageConfigPath: string;
   usageBaseUrl: string;
   usageLoginChannel: string;
@@ -185,6 +191,7 @@ export function loadConfig(): Config {
       strategy: env.CRC_ROTATION_STRATEGY,
       autoRetry: env.CRC_ROTATION_AUTORETRY !== "0" && env.CRC_ROTATION_AUTORETRY !== "false",
     },
+    rotationConfigPath: env.CRC_ROTATION_CONFIG ? resolve(env.CRC_ROTATION_CONFIG) : resolve(dataDir, "rotation-settings.json"),
     usageConfigPath: env.CRC_USAGE_CONFIG ? resolve(env.CRC_USAGE_CONFIG) : resolve(dataDir, "usage-accounts.json"),
     usageBaseUrl: env.CRC_USAGE_BASE_URL,
     usageLoginChannel: env.CRC_USAGE_LOGIN_CHANNEL,

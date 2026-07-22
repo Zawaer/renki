@@ -1,4 +1,4 @@
-import type { Account, AccountsResponse } from "@crc/protocol";
+import type { Account, AccountsResponse, RotationStatus } from "@crc/protocol";
 import { useCallback, useEffect, useState } from "react";
 import { saveConfig } from "../lib/config.js";
 import { useClient, useStoreValue } from "../lib/client.js";
@@ -170,12 +170,78 @@ function AccountsSection() {
         </div>
       )}
 
+      {data && data.accounts.length > 1 && <RotationSettings rotation={data.rotation} onChanged={refresh} />}
+
       <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-(--crc-border) pt-3">
         <UsageConnect configured={data?.usageConfigured ?? false} onConnected={refresh} />
       </div>
 
       <AddCodingAccount onAdded={refresh} />
     </Section>
+  );
+}
+
+/** Auto-switch accounts once the active one's usage crosses a threshold — the policy `AccountRotator` polls for. */
+function RotationSettings({ rotation, onChanged }: { rotation: RotationStatus; onChanged: () => void }) {
+  const { rest } = useClient();
+  const [threshold, setThreshold] = useState(String(rotation.threshold));
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setThreshold(String(rotation.threshold));
+  }, [rotation.threshold]);
+
+  async function toggleEnabled() {
+    setBusy(true);
+    try {
+      await rest.updateRotation({ enabled: !rotation.enabled });
+    } finally {
+      setBusy(false);
+      onChanged();
+    }
+  }
+
+  async function saveThreshold() {
+    const n = Number(threshold);
+    if (!Number.isFinite(n) || n < 1 || n > 100) return;
+    setBusy(true);
+    try {
+      await rest.updateRotation({ threshold: n });
+    } finally {
+      setBusy(false);
+      onChanged();
+    }
+  }
+
+  const thresholdDirty = threshold.trim() !== "" && Number(threshold) !== rotation.threshold;
+
+  return (
+    <div className="mt-4 space-y-2 border-t border-(--crc-border) pt-3 text-xs">
+      <label className="flex items-center gap-2 text-(--crc-fg)">
+        <input type="checkbox" checked={rotation.enabled} disabled={busy} onChange={toggleEnabled} />
+        Automatically switch accounts when usage hits the threshold
+      </label>
+      <label className="flex items-center gap-2 text-(--crc-fg-muted)">
+        Switch at
+        <input
+          type="number"
+          min={1}
+          max={100}
+          value={threshold}
+          onChange={(e) => setThreshold(e.target.value)}
+          className="w-16 rounded-sm border border-(--crc-border) bg-(--crc-bg-inset) px-2 py-1 text-(--crc-fg) outline-none focus:border-(--crc-focus)"
+        />
+        % usage (5h or 7d)
+        {thresholdDirty && (
+          <Button variant="primary" onClick={saveThreshold}>
+            Save
+          </Button>
+        )}
+      </label>
+      {rotation.enabled && rotation.lastHoldReason && (
+        <p className="text-[11px] text-(--crc-fg-muted)">holding: {rotation.lastHoldReason}</p>
+      )}
+    </div>
   );
 }
 

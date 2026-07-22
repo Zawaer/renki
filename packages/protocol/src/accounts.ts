@@ -96,6 +96,20 @@ export const SwitchAccountResponse = z.object({
 });
 export type SwitchAccountResponse = z.infer<typeof SwitchAccountResponse>;
 
+/** Update the rotation policy. Both fields optional — send only what changed. */
+export const UpdateRotationRequest = z.object({
+  enabled: z.boolean().optional(),
+  threshold: z.number().min(1).max(100).optional(),
+});
+export type UpdateRotationRequest = z.infer<typeof UpdateRotationRequest>;
+
+export const UpdateRotationResponse = z.object({
+  ok: z.boolean(),
+  rotation: RotationStatus,
+  message: z.string().nullable(),
+});
+export type UpdateRotationResponse = z.infer<typeof UpdateRotationResponse>;
+
 /**
  * Connect a claude.ai usage session key (`sk-ant-sid…`). Two-step by design so
  * the user — not a heuristic — chooses the org:

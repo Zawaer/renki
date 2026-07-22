@@ -5,6 +5,7 @@ import {
   CreateSessionRequest,
   RegisterPushTokenRequest,
   SwitchAccountRequest,
+  UpdateRotationRequest,
 } from "@crc/protocol";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
@@ -179,6 +180,13 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
     const parsed = SwitchAccountRequest.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
     return accounts.manualSwitch(parsed.data.to);
+  });
+
+  // Toggle auto-rotation on/off and/or change its usage threshold (Settings page).
+  app.post("/accounts/rotation", async (req, reply) => {
+    const parsed = UpdateRotationRequest.safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+    return { ok: true, rotation: accounts.updateSettings(parsed.data), message: null };
   });
 
   // Connect a claude.ai usage session key (pasted from web/phone, or already

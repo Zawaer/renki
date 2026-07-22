@@ -15,6 +15,8 @@ import type {
   StatsResponse,
   SwitchAccountResponse,
   TailscaleStatusResponse,
+  UpdateRotationRequest,
+  UpdateRotationResponse,
   UsageLoginResponse,
 } from "@crc/protocol";
 
@@ -76,6 +78,11 @@ export class RestClient {
   /** Manually rotate accounts. Omit `to` to jump to the account with most headroom. */
   async switchAccount(to?: number | string): Promise<SwitchAccountResponse> {
     return this.post<SwitchAccountResponse>("/accounts/switch", to === undefined ? {} : { to });
+  }
+
+  /** Toggle auto-rotation on/off and/or change its usage threshold. Send only what changed. */
+  async updateRotation(patch: UpdateRotationRequest): Promise<UpdateRotationResponse> {
+    return this.post<UpdateRotationResponse>("/accounts/rotation", patch);
   }
 
   /**

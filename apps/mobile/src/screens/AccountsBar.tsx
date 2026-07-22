@@ -27,14 +27,24 @@ export function AccountsBar() {
 
   if (!data || data.accounts.length === 0) return null;
 
-  async function switchNow() {
-    setSwitching(true);
-    try {
-      await rest.switchAccount();
-    } finally {
-      setSwitching(false);
-      refresh();
-    }
+  function switchTo(account: Account) {
+    if (account.active || switching) return;
+    Alert.alert("Switch account", `Switch to ${account.email}?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Switch",
+        onPress: async () => {
+          setSwitching(true);
+          try {
+            const res = await rest.switchAccount(account.number);
+            if (!res.ok && res.message) Alert.alert("Couldn't switch", res.message);
+          } finally {
+            setSwitching(false);
+            refresh();
+          }
+        },
+      },
+    ]);
   }
 
   return (
@@ -43,9 +53,7 @@ export function AccountsBar() {
         <Text style={styles.header}>
           Accounts {data.rotation.enabled ? `· auto @ ${data.rotation.threshold}%` : "· auto off"}
         </Text>
-        <TouchableOpacity onPress={switchNow} disabled={switching}>
-          <Text style={styles.switch}>{switching ? "…" : "Switch"}</Text>
-        </TouchableOpacity>
+        {switching && <Text style={styles.switch}>switching…</Text>}
       </View>
       {data.accounts.map((a) => (
         <AccountRow
@@ -53,6 +61,8 @@ export function AccountsBar() {
           account={a}
           usageConnected={data.usageConnectedEmails.includes(a.email.toLowerCase())}
           onUsageDisconnected={refresh}
+          onSwitch={switchTo}
+          switching={switching}
           colors={colors}
           styles={styles}
         />
@@ -69,12 +79,16 @@ function AccountRow({
   account,
   usageConnected,
   onUsageDisconnected,
+  onSwitch,
+  switching,
   colors,
   styles,
 }: {
   account: Account;
   usageConnected: boolean;
   onUsageDisconnected: () => void;
+  onSwitch: (account: Account) => void;
+  switching: boolean;
   colors: ThemeColors;
   styles: Styles;
 }) {
@@ -104,9 +118,15 @@ function AccountRow({
     <View style={styles.acct}>
       <View style={styles.acctHead}>
         <View style={[styles.dot, { backgroundColor: account.active ? colors.ok : colors.faint }]} />
-        <Text style={styles.email} numberOfLines={1}>
-          {account.email}
-        </Text>
+        <TouchableOpacity
+          style={styles.emailBtn}
+          onPress={() => onSwitch(account)}
+          disabled={account.active || switching}
+        >
+          <Text style={[styles.email, !account.active && styles.emailSwitchable]} numberOfLines={1}>
+            {account.email}
+          </Text>
+        </TouchableOpacity>
         {usageConnected && (
           <TouchableOpacity onPress={confirmDisconnect} disabled={removing}>
             <Text style={styles.removeUsage}>{removing ? "…" : "✕"}</Text>
@@ -193,7 +213,9 @@ const makeStyles = (colors: ThemeColors) =>
   acct: { marginBottom: 8 },
   acctHead: { flexDirection: "row", alignItems: "center", gap: 6 },
   dot: { width: 7, height: 7, borderRadius: 4 },
-  email: { color: colors.text, fontSize: 12, flex: 1 },
+  emailBtn: { flex: 1 },
+  email: { color: colors.text, fontSize: 12 },
+  emailSwitchable: { color: colors.accent },
   removeUsage: { color: colors.faint, fontSize: 13, paddingHorizontal: 4 },
   na: { color: colors.faint, fontSize: 11, marginLeft: 13 },
   meters: { marginLeft: 13, marginTop: 4, gap: 3 },

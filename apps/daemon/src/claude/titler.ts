@@ -10,8 +10,10 @@ const NOT_ENOUGH_CONTEXT = "NONE";
 
 const TITLE_SYSTEM_PROMPT =
   "You generate short titles for coding chat sessions, like a browser tab title. " +
-  "You'll be shown the user's messages so far (not the assistant's replies). " +
-  `If they don't yet give enough to write something more specific than just repeating the request, reply with exactly "${NOT_ENOUGH_CONTEXT}" and nothing else. ` +
+  "You'll be shown the conversation so far (user messages and a trimmed version of the assistant's replies). " +
+  "Write a specific, descriptive title for what's being discussed or worked on — use the assistant's replies " +
+  "for detail even if the user's own messages are vague (e.g. \"what does this do\"). " +
+  `Only reply with exactly "${NOT_ENOUGH_CONTEXT}" if there's truly nothing to go on yet (e.g. just a greeting). ` +
   "Otherwise reply with ONLY the title: 3-6 words, no punctuation, no quotes, no markdown.";
 
 /** Cheapest model available for a disposable side task like this; falls back to a known-cheap id. */
@@ -37,12 +39,12 @@ function sanitizeGenerated(raw: string): string | null {
 }
 
 /**
- * Spins up a throwaway, tool-less turn purely to summarize the user's
- * messages so far into a short title (same auth/subprocess path as a real
- * turn, see runner.ts — there's no separate API key to call Anthropic
- * directly). Capped to one no-tool round trip on the cheapest available
- * model. Returns null both on failure AND when the model decides there isn't
- * enough context yet — callers should treat either as "try again next turn",
+ * Spins up a throwaway, tool-less turn purely to summarize the conversation
+ * so far into a short title (same auth/subprocess path as a real turn, see
+ * runner.ts — there's no separate API key to call Anthropic directly).
+ * Capped to one no-tool round trip on the cheapest available model. Returns
+ * null both on failure AND when the model decides there isn't enough context
+ * yet — callers should treat either as "try again next turn",
  * not a fatal error.
  */
 export async function generateSessionTitle(cwd: string, transcriptSoFar: string): Promise<string | null> {

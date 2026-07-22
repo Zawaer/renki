@@ -1,5 +1,5 @@
 import type { PermissionMode, Query } from "@anthropic-ai/claude-agent-sdk";
-import type { MergeConflictMeta, Session, SessionEvent, SessionPurpose, SessionStatus } from "@crc/protocol";
+import type { MergeConflictMeta, Session, SessionPurpose, SessionStatus } from "@crc/protocol";
 import { desc, eq, ne } from "drizzle-orm";
 import { mkdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
@@ -445,12 +445,24 @@ export class SessionManager {
     return row ?? { titleSource: null, titleGenAttempts: 0 };
   }
 
-  /** One attempt at upgrading a placeholder title using the user's messages so far; a no-op once a manual rename or a prior success has taken title ownership away from "placeholder". */
+  /**
+   * One attempt at upgrading a placeholder title using the conversation so
+   * far; a no-op once a manual rename or a prior success has taken title
+   * ownership away from "placeholder".
+   *
+   * Includes the assistant's final text blocks, not just the user's prompts:
+   * a vague first message ("what does this do?") never gets more specific on
+   * its own no matter how many follow-ups repeat the question — the actual
+   * substance for a good title lives in what the assistant found and said.
+   */
   private async tryUpgradeTitle(sessionId: string, cwd: string): Promise<void> {
     const transcript = this.events
       .read(sessionId)
-      .filter((e): e is Extract<SessionEvent, { kind: "prompt_submitted" }> => e.kind === "prompt_submitted")
-      .map((e) => e.text)
+      .flatMap((e) => {
+        if (e.kind === "prompt_submitted") return [`User: ${e.text}`];
+        if (e.kind === "assistant_block" && e.blockKind === "text" && e.text) return [`Assistant: ${e.text}`];
+        return [];
+      })
       .join("\n");
 
     const title = await generateSessionTitle(cwd, transcript);

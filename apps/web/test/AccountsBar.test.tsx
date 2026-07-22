@@ -1,6 +1,7 @@
 import type { AccountsResponse } from "@crc/protocol";
 import { RealtimeClient, RestClient } from "@crc/client-core";
 import { fireEvent, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import { AccountsBar } from "../src/components/AccountsBar.js";
 import { ClientContext } from "../src/lib/client.js";
@@ -42,9 +43,11 @@ function renderAccountsBar(response: AccountsResponse) {
   const config = { baseUrl: "http://test.invalid", token: "t", deviceId: "d1", deviceName: "Test" };
 
   return render(
-    <ClientContext.Provider value={{ rest, realtime, config }}>
-      <AccountsBar />
-    </ClientContext.Provider>,
+    <MemoryRouter>
+      <ClientContext.Provider value={{ rest, realtime, config }}>
+        <AccountsBar />
+      </ClientContext.Provider>
+    </MemoryRouter>,
   );
 }
 

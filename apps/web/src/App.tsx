@@ -3,10 +3,10 @@ import { BrowserRouter, MemoryRouter, Route, Routes, useLocation, useNavigate } 
 import { ClientProvider, useClient, useStoreValue } from "./lib/client.js";
 import { type AppConfig, clearConfig, loadConfig, saveConfig } from "./lib/config.js";
 import { AccountsBar } from "./components/AccountsBar.js";
-import { PairDevice } from "./components/PairDevice.js";
 import { RtkGainBadge } from "./components/RtkGainBadge.js";
 import { SessionList } from "./components/SessionList.js";
 import { SessionView } from "./components/SessionView.js";
+import { Settings } from "./components/Settings.js";
 import { Setup } from "./components/Setup.js";
 import { StatsView } from "./components/StatsView.js";
 import { injectedConfig } from "./lib/host.js";
@@ -56,6 +56,7 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
   const location = useLocation();
   const navigate = useNavigate();
   const onStats = location.pathname === "/stats";
+  const onSettings = location.pathname === "/settings";
 
   return (
     <div className="flex h-full flex-col">
@@ -77,13 +78,15 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
           </button>
           <AccountsBar />
           <RtkGainBadge />
-          {!managed && <PairDevice />}
-          {!managed && (
-            <button className="inline-flex items-center gap-1 hover:text-(--crc-fg)" onClick={onReset}>
-              <span className="codicon codicon-debug-disconnect" />
-              Disconnect
-            </button>
-          )}
+          <button
+            onClick={() => navigate(onSettings ? "/" : "/settings")}
+            title="Settings"
+            className={`flex items-center gap-1 rounded-sm px-1.5 py-1 hover:bg-(--crc-hover) hover:text-(--crc-fg) ${
+              onSettings ? "text-(--crc-fg)" : "text-(--crc-fg-muted)"
+            }`}
+          >
+            <span className="codicon codicon-gear" />
+          </button>
         </div>
       </header>
 
@@ -110,6 +113,7 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
         <main className="overflow-hidden bg-(--crc-bg)">
           <Routes>
             <Route path="/stats" element={<StatsView />} />
+            <Route path="/settings" element={<Settings onReset={onReset} managed={managed} />} />
             <Route
               path="*"
               element={

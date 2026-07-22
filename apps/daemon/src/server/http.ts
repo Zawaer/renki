@@ -1,5 +1,11 @@
 import websocketPlugin from "@fastify/websocket";
-import { ConnectUsageKeyRequest, CreateSessionRequest, RegisterPushTokenRequest, SwitchAccountRequest } from "@crc/protocol";
+import {
+  AddSetupTokenRequest,
+  ConnectUsageKeyRequest,
+  CreateSessionRequest,
+  RegisterPushTokenRequest,
+  SwitchAccountRequest,
+} from "@crc/protocol";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
 import { loginAndExtractSessionKey, PlaywrightUnavailableError } from "../accounts/login.js";
@@ -195,6 +201,15 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
       logger.warn("usage key connect failed", { err: message });
       return reply.code(200).send({ ok: false, email: null, orgId: null, usage: null, orgs: [], message });
     }
+  });
+
+  // Register a brand-new coding account from a `claude setup-token` value (or
+  // a plain API key) — distinct from /accounts/usage-key, which only ever
+  // connects a read-only claude.ai usage session key.
+  app.post("/accounts/setup-token", async (req, reply) => {
+    const parsed = AddSetupTokenRequest.safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
+    return accounts.addSetupToken(parsed.data.token);
   });
 
   // Remove a previously-connected usage key (e.g. the wrong org got picked).

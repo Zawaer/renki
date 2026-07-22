@@ -111,6 +111,28 @@ export class AccountRotator {
     }
   }
 
+  /**
+   * Register a new coding account via `cswap add-token` (a `claude
+   * setup-token` value, or a plain Anthropic API key). Diffs the account list
+   * before/after to report which email got added, since cswap's own
+   * add-token output format isn't guaranteed JSON. Never throws — errors come
+   * back as `{ ok: false, message }` so the REST layer can pass them straight
+   * through, and the raw token is never included in any log line here.
+   */
+  async addSetupToken(token: string): Promise<{ ok: boolean; email: string | null; message: string | null }> {
+    const before = await this.cswap.list().catch(() => ({ activeAccountNumber: null, accounts: [] as Account[] }));
+    try {
+      await this.cswap.addToken(token);
+    } catch (err) {
+      return { ok: false, email: null, message: err instanceof Error ? err.message : "add-token failed" };
+    }
+    const after = await this.cswap.list().catch(() => ({ activeAccountNumber: null, accounts: [] as Account[] }));
+    const beforeEmails = new Set(before.accounts.map((a) => a.email.toLowerCase()));
+    const added = after.accounts.find((a) => !beforeEmails.has(a.email.toLowerCase()));
+    logger.info("added coding account via setup-token", { email: added?.email ?? null });
+    return { ok: true, email: added?.email ?? null, message: null };
+  }
+
   /** Manual switch (REST). Honors the never-mid-flight rule too. */
   async manualSwitch(to?: number | string): Promise<SwitchAccountResponse> {
     if (this.anyBusy()) {

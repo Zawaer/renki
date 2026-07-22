@@ -79,9 +79,11 @@ export function PairDevice() {
 
   return (
     <>
-      <button className="inline-flex items-center gap-1 hover:text-(--crc-fg)" onClick={() => setOpen(true)}>
-        <span className="codicon codicon-device-mobile" />
-        Pair a device
+      <button
+        className="rounded-sm border border-(--crc-border) px-3 py-1.5 text-sm font-medium text-(--crc-fg) hover:bg-(--crc-hover)"
+        onClick={() => setOpen(true)}
+      >
+        Show QR code
       </button>
       {open && (
         <div

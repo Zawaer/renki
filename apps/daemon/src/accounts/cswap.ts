@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import type { Account } from "@crc/protocol";
 import { logger } from "../logger.js";
 
@@ -42,6 +42,38 @@ export class Cswap {
   async switchTo(target: number | string): Promise<number | null> {
     const raw = await this.run(["--switch-to", String(target), "--json"]);
     return readActiveNumber(raw);
+  }
+
+  /**
+   * Register a new account from a `claude setup-token` value (or a plain API
+   * key) — `cswap add-token -`. The token is written to the child's stdin
+   * rather than passed as an argv entry, exactly like the piped form cswap's
+   * own docs recommend (`claude setup-token | cswap add-token -`), so it
+   * never appears in a process listing or in our own error messages.
+   */
+  async addToken(token: string): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(this.bin, ["add-token", "-"], { stdio: ["pipe", "pipe", "pipe"] });
+      let stdout = "";
+      let stderr = "";
+      const timer = setTimeout(() => {
+        child.kill();
+        reject(new CswapError("cswap add-token timed out"));
+      }, 30_000);
+      child.stdout.on("data", (d) => (stdout += d));
+      child.stderr.on("data", (d) => (stderr += d));
+      child.on("error", (err) => {
+        clearTimeout(timer);
+        reject(new CswapError(`cswap add-token failed to start: ${err.message}`));
+      });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        if (code === 0) return resolve();
+        reject(new CswapError(`cswap add-token failed (exit ${code}): ${(stderr || stdout).trim()}`));
+      });
+      child.stdin.write(token);
+      child.stdin.end();
+    });
   }
 
   private run(args: string[]): Promise<any> {

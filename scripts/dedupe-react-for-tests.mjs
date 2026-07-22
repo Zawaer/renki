@@ -29,6 +29,8 @@ const canonicalReact = resolve(rootDir, "apps/web/node_modules/react");
 const nestedCopies = [
   resolve(rootDir, "node_modules/react-dom/node_modules/react"),
   resolve(rootDir, "node_modules/@testing-library/react/node_modules/react"),
+  resolve(rootDir, "node_modules/react-router/node_modules/react"),
+  resolve(rootDir, "node_modules/react-router-dom/node_modules/react"),
 ];
 
 if (!existsSync(canonicalReact)) {

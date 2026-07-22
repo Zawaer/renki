@@ -154,3 +154,22 @@ export const UsageLoginResponse = z.object({
   unavailable: z.boolean().default(false),
 });
 export type UsageLoginResponse = z.infer<typeof UsageLoginResponse>;
+
+/**
+ * Register a brand-new coding account — the credential `cswap` rotates the
+ * official `claude` CLI across — from a `claude setup-token` value (or a
+ * plain Anthropic Console API key). Distinct from `ConnectUsageKeyRequest`,
+ * which only ever connects a read-only claude.ai usage session key.
+ */
+export const AddSetupTokenRequest = z.object({
+  token: z.string().min(1),
+});
+export type AddSetupTokenRequest = z.infer<typeof AddSetupTokenRequest>;
+
+export const AddSetupTokenResponse = z.object({
+  ok: z.boolean(),
+  /** The newly added account's email, when cswap's post-add listing let us diff it out. */
+  email: z.string().nullable(),
+  message: z.string().nullable(),
+});
+export type AddSetupTokenResponse = z.infer<typeof AddSetupTokenResponse>;

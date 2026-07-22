@@ -1,5 +1,6 @@
 import type {
   AccountsResponse,
+  AddSetupTokenResponse,
   CapabilitiesResponse,
   ConnectUsageKeyResponse,
   CreateSessionRequest,
@@ -98,6 +99,17 @@ export class RestClient {
   /** Remove a connected usage key (e.g. the wrong org got picked) — stops tracking that account's usage %. */
   async disconnectUsageKey(email: string): Promise<DisconnectUsageKeyResponse> {
     return this.request<DisconnectUsageKeyResponse>("DELETE", `/accounts/usage-key/${encodeURIComponent(email)}`);
+  }
+
+  /**
+   * Register a new coding account — the credential `cswap` rotates the
+   * official `claude` CLI across — from a `claude setup-token` value or a
+   * plain Anthropic Console API key. Runs `cswap add-token` on the daemon
+   * host. Distinct from `connectUsageKey`, which only connects a read-only
+   * usage session key.
+   */
+  async addSetupTokenAccount(token: string): Promise<AddSetupTokenResponse> {
+    return this.post<AddSetupTokenResponse>("/accounts/setup-token", { token });
   }
 
   /** The daemon host's own Tailscale hostname, if it can detect one — used to suggest a pairing URL. */

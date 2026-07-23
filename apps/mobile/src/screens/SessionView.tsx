@@ -40,6 +40,7 @@ import {
 import { Markdown } from "../components/Markdown";
 import { Sheet } from "../components/Sheet";
 import { pickDocumentAttachments, pickImageAttachments, type PendingAttachment } from "../lib/attachments";
+import { loadEffortKey, loadModel, loadPermissionMode, saveEffortKey, saveModel, savePermissionMode } from "../lib/composerPrefs";
 import { useClient, useStoreValue } from "../lib/client";
 import { radius, softShadow, statusColorFor, type ThemeColors, useTheme, withAlpha } from "../theme";
 
@@ -58,9 +59,15 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const scrollRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
   const [text, setText] = useState("");
-  const [model, setModel] = useState(""); // "" until capabilities load and pick the SDK's own default
-  const [effortKey, setEffortKey] = useState(DEFAULT_EFFORT_KEY);
-  const [permissionMode, setPermissionMode] = useState<PermissionModeKey>(DEFAULT_PERMISSION_MODE);
+  // All three persisted on-device (see lib/composerPrefs.ts) so they don't
+  // silently reset to their defaults every app restart. Loaded async
+  // (SecureStore has no sync read) — prefsLoaded gates the "default model
+  // from capabilities" effect below so a slow capabilities fetch racing a
+  // fast prefs load can't have the default stomp a persisted pick.
+  const [model, setModelState] = useState("");
+  const [effortKey, setEffortKeyState] = useState(DEFAULT_EFFORT_KEY);
+  const [permissionMode, setPermissionModeState] = useState<PermissionModeKey>(DEFAULT_PERMISSION_MODE);
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
   const [capabilities, setCapabilities] = useState<CapabilitiesResponse>({ models: [], commands: [] });
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
@@ -96,11 +103,39 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
     rest.getCapabilities().then(setCapabilities).catch(() => {});
   }, [rest]);
 
-  // supportedModels() already includes its own "Default (recommended)" entry
-  // (first in the list) — no separate placeholder needed on top of it.
   useEffect(() => {
-    if (!model && capabilities.models.length > 0) setModel(capabilities.models[0]?.value ?? "");
-  }, [capabilities, model]);
+    Promise.all([loadModel(), loadEffortKey(), loadPermissionMode()]).then(([m, e, p]) => {
+      setModelState(m);
+      setEffortKeyState(e);
+      setPermissionModeState(p);
+      setPrefsLoaded(true);
+    });
+  }, []);
+
+  function setModel(next: string) {
+    setModelState(next);
+    saveModel(next);
+  }
+
+  function setEffortKey(next: string) {
+    setEffortKeyState(next);
+    saveEffortKey(next);
+  }
+
+  function setPermissionMode(next: PermissionModeKey) {
+    setPermissionModeState(next);
+    savePermissionMode(next);
+  }
+
+  // supportedModels() already includes its own "Default (recommended)" entry
+  // (first in the list) — no separate placeholder needed on top of it. Gated
+  // on prefsLoaded so a persisted model pick can't get raced/overwritten by
+  // this default if capabilities happen to arrive before the (normally much
+  // faster, local) prefs load resolves.
+  useEffect(() => {
+    if (!prefsLoaded || model || capabilities.models.length === 0) return;
+    setModel(capabilities.models[0]?.value ?? "");
+  }, [capabilities, model, prefsLoaded]);
 
   const isController = conv.controller === config.deviceId;
   const status = conv.status ?? "idle";

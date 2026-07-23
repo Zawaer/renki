@@ -1,7 +1,5 @@
 import {
   classifyAttachment,
-  DEFAULT_EFFORT_KEY,
-  DEFAULT_PERMISSION_MODE,
   EFFORT_LEVELS,
   estimateTokens,
   formatTokenCount,
@@ -26,7 +24,14 @@ import type { CapabilitiesResponse } from "@crc/protocol";
 import { useEffect, useRef, useState } from "react";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { hostOpenFile, isHosted } from "../lib/host.js";
-import { loadPermissionMode, savePermissionMode } from "../lib/permissionModePrefs.js";
+import {
+  loadEffortKey,
+  loadModel,
+  loadPermissionMode,
+  saveEffortKey,
+  saveModel,
+  savePermissionMode,
+} from "../lib/composerPrefs.js";
 import { Markdown } from "./Markdown.js";
 import { Button, StatusBadge } from "./ui.js";
 
@@ -614,10 +619,12 @@ function Composer({
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [model, setModel] = useState(""); // "" until capabilities load and pick the SDK's own default
-  const [effortKey, setEffortKey] = useState(DEFAULT_EFFORT_KEY);
-  // Persisted across refreshes/reopens so the picked mode doesn't silently
-  // reset to Manual every time.
+  // All three persisted in localStorage (see composerPrefs.ts) so they don't
+  // silently reset to their defaults every refresh/reopen. model starts ""
+  // (nothing persisted yet) until either a saved pick loads or capabilities
+  // arrive and default it to the SDK's own recommended entry.
+  const [model, setModelState] = useState(loadModel);
+  const [effortKey, setEffortKeyState] = useState(loadEffortKey);
   const [permissionMode, setPermissionModeState] = useState<PermissionModeKey>(loadPermissionMode);
   const [capabilities, setCapabilities] = useState<CapabilitiesResponse>({ models: [], commands: [] });
   const [suggestionIndex, setSuggestionIndex] = useState(0);
@@ -661,6 +668,16 @@ function Composer({
     setPermissionModeState(next);
     savePermissionMode(next);
     if (busy) realtime.setPermissionMode(sessionId, next);
+  }
+
+  function setModel(next: string) {
+    setModelState(next);
+    saveModel(next);
+  }
+
+  function setEffortKey(next: string) {
+    setEffortKeyState(next);
+    saveEffortKey(next);
   }
 
   function send() {

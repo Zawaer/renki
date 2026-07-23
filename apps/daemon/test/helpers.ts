@@ -36,6 +36,8 @@ export function makeTestConfig(overrides: Partial<Config> = {}): Config {
     port: 4517,
     host: "127.0.0.1",
     forcePermissionPrompts: false,
+    enableRtk: false,
+    rtkBin: "rtk",
     expoPushUrl: "https://example.invalid/push",
     rotation: {
       enabled: false,
@@ -46,8 +48,11 @@ export function makeTestConfig(overrides: Partial<Config> = {}): Config {
       strategy: "best",
       autoRetry: true,
     },
+    rotationConfigPath: resolve(dataDir, "rotation-settings.json"),
     usageConfigPath: resolve(dataDir, "usage-accounts.json"),
     usageBaseUrl: "https://example.invalid",
+    usageLoginChannel: "crc-usage-login-test",
+    usageLoginTimeoutMs: 120_000,
     ...overrides,
   };
 }

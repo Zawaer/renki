@@ -13,7 +13,7 @@ import {
   View,
 } from "react-native";
 import { type AppConfig, getOrCreateDeviceId } from "../lib/config";
-import { type ThemeColors, useTheme } from "../theme";
+import { radius, type ThemeColors, useTheme } from "../theme";
 
 export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
   const colors = useTheme();
@@ -204,11 +204,9 @@ const makeStyles = (colors: ThemeColors) =>
   tokenInput: { flex: 1 },
   input: {
     backgroundColor: colors.panel,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: 2,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: radius.sm,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
     color: colors.text,
     fontSize: 15,
   },
@@ -216,22 +214,20 @@ const makeStyles = (colors: ThemeColors) =>
   success: { color: colors.ok, fontSize: 13, marginTop: 8 },
   button: {
     backgroundColor: colors.accent,
-    borderRadius: 2,
-    paddingVertical: 12,
+    borderRadius: radius.pill,
+    paddingVertical: 13,
     alignItems: "center",
     marginTop: 16,
   },
   buttonDisabled: { opacity: 0.4 },
-  buttonText: { color: colors.accentFg, fontWeight: "600", fontSize: 15 },
+  buttonText: { color: colors.accentFg, fontWeight: "700", fontSize: 15 },
   scanButton: {
     backgroundColor: colors.panel,
-    borderWidth: 1,
-    borderColor: colors.accent,
-    borderRadius: 2,
-    paddingVertical: 12,
+    borderRadius: radius.pill,
+    paddingVertical: 13,
     alignItems: "center",
   },
-  scanButtonText: { color: colors.accent, fontWeight: "600", fontSize: 15 },
+  scanButtonText: { color: colors.accent, fontWeight: "700", fontSize: 15 },
   divider: { flexDirection: "row", alignItems: "center", gap: 8, marginVertical: 12 },
   dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
   dividerText: { color: colors.faint, fontSize: 11 },
@@ -243,7 +239,7 @@ const makeStyles = (colors: ThemeColors) =>
     backgroundColor: "rgba(0,0,0,0.6)",
     paddingHorizontal: 20,
     paddingVertical: 10,
-    borderRadius: 2,
+    borderRadius: radius.pill,
   },
   cancelOverlayText: { color: "#fff", fontWeight: "600", fontSize: 14 },
 });

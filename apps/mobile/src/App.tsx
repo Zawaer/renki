@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, BackHandler, StyleSheet, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import * as Notifications from "expo-notifications";
 import { type AppConfig, clearConfig, loadConfig, saveConfig } from "./lib/config";
@@ -100,6 +100,32 @@ function Main({
   const [showStats, setShowStats] = useState(false);
   const selectedRef = useRef(setSelected);
   selectedRef.current = setSelected;
+
+  // Android hardware/gesture back should step back through this screen stack
+  // (session -> settings/stats -> session list) instead of exiting the app —
+  // there's no navigation library here, just this state, so it needs its own
+  // handler. Modals/bottom sheets (model picker, attach menu, etc.) aren't
+  // handled here: Android delivers back to the topmost native Dialog a Modal
+  // renders as before it ever reaches this JS handler, so `onRequestClose`
+  // (already wired on every Modal) closes those first, on its own.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (selected) {
+        setSelected(null);
+        return true;
+      }
+      if (showSettings) {
+        setShowSettings(false);
+        return true;
+      }
+      if (showStats) {
+        setShowStats(false);
+        return true;
+      }
+      return false; // at the root session list — let Android exit/minimize as normal
+    });
+    return () => sub.remove();
+  }, [selected, showSettings, showStats]);
 
   // Register for push, and when a notification is tapped, open its session.
   useEffect(() => {

@@ -1,7 +1,7 @@
 import { memo, type ReactElement, type ReactNode, useMemo } from "react";
 import { Platform, StyleSheet, type TextStyle, type ViewStyle } from "react-native";
 import MarkdownDisplay from "react-native-markdown-display";
-import { type ThemeColors, useTheme } from "../theme";
+import { radius, type ThemeColors, useTheme } from "../theme";
 
 // The lib's bundled types trip TS2786 under @types/react 18 (its ComponentClass
 // instance type predates the `refs` change), so it isn't seen as a valid JSX
@@ -37,10 +37,11 @@ function makeShared(colors: ThemeColors): Record<string, TextStyle | ViewStyle> 
     link: { color: colors.accent, textDecorationLine: "underline" },
     blockquote: {
       backgroundColor: colors.panel,
-      borderLeftColor: colors.border,
-      borderLeftWidth: 2,
-      paddingHorizontal: 10,
-      paddingVertical: 4,
+      borderLeftColor: colors.accent,
+      borderLeftWidth: 3,
+      borderRadius: radius.xs,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
       marginVertical: 4,
     },
     bullet_list: { marginVertical: 2 },
@@ -51,16 +52,16 @@ function makeShared(colors: ThemeColors): Record<string, TextStyle | ViewStyle> 
       color: colors.text,
       fontFamily: mono,
       fontSize: 13,
-      borderRadius: 2,
-      paddingHorizontal: 4,
+      borderRadius: radius.xs,
+      paddingHorizontal: 5,
       paddingVertical: 1,
     },
-    code_block: { backgroundColor: colors.panel2, color: colors.text, fontFamily: mono, fontSize: 12, borderRadius: 2, borderWidth: 1, borderColor: colors.border, padding: 10 },
-    fence: { backgroundColor: colors.panel2, color: colors.text, fontFamily: mono, fontSize: 12, borderRadius: 2, borderWidth: 1, borderColor: colors.border, padding: 10 },
+    code_block: { backgroundColor: colors.panel2, color: colors.text, fontFamily: mono, fontSize: 12, borderRadius: radius.md, padding: 12 },
+    fence: { backgroundColor: colors.panel2, color: colors.text, fontFamily: mono, fontSize: 12, borderRadius: radius.md, padding: 12 },
     hr: { backgroundColor: colors.border, height: StyleSheet.hairlineWidth, marginVertical: 8 },
-    table: { borderColor: colors.border, borderWidth: 1, borderRadius: 2, marginVertical: 6 },
-    th: { color: colors.text, fontWeight: "700", padding: 6 },
-    td: { color: colors.text, padding: 6 },
+    table: { backgroundColor: colors.panel, borderRadius: radius.md, marginVertical: 6, overflow: "hidden" },
+    th: { color: colors.text, fontWeight: "700", padding: 8, backgroundColor: colors.panel2 },
+    td: { color: colors.text, padding: 8 },
   };
 }
 

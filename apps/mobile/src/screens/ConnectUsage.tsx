@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { WebView } from "react-native-webview";
 import { useClient } from "../lib/client";
-import { type ThemeColors, useTheme } from "../theme";
+import { radius, type ThemeColors, useTheme } from "../theme";
 
 const CLAUDE_URL = "https://claude.ai";
 
@@ -194,15 +194,13 @@ const makeStyles = (colors: ThemeColors) =>
     justifyContent: "space-between",
     alignItems: "center",
     paddingTop: 56,
-    paddingBottom: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    paddingBottom: 14,
+    paddingHorizontal: 18,
   },
-  title: { color: colors.text, fontSize: 16, fontWeight: "600" },
+  title: { color: colors.text, fontSize: 17, fontWeight: "700" },
   close: { color: colors.accent, fontSize: 15 },
   web: { flex: 1 },
-  footer: { padding: 16, borderTopWidth: 1, borderTopColor: colors.border, gap: 8 },
+  footer: { padding: 18, gap: 8 },
   footRow: { flexDirection: "row", justifyContent: "flex-end", marginTop: 8 },
   link: { color: colors.dim, fontSize: 12 },
   msg: { fontSize: 13 },
@@ -210,23 +208,19 @@ const makeStyles = (colors: ThemeColors) =>
   pasteRow: { flexDirection: "row", gap: 8, alignItems: "center" },
   input: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 2,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    borderRadius: radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     color: colors.text,
-    backgroundColor: colors.panel,
+    backgroundColor: colors.panel2,
   },
-  btn: { backgroundColor: colors.accent, borderRadius: 2, paddingHorizontal: 14, paddingVertical: 10 },
+  btn: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: 16, paddingVertical: 11 },
   btnDisabled: { opacity: 0.4 },
   btnText: { color: colors.accentFg, fontSize: 13, fontWeight: "600" },
-  orgList: { padding: 16, gap: 10 },
+  orgList: { padding: 18, gap: 10 },
   orgHint: { color: colors.dim, fontSize: 13, marginBottom: 4 },
   orgRow: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 2,
+    borderRadius: radius.md,
     padding: 14,
     backgroundColor: colors.panel,
     gap: 4,

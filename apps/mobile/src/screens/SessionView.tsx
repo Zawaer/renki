@@ -35,9 +35,10 @@ import {
   View,
 } from "react-native";
 import { Markdown } from "../components/Markdown";
+import { Sheet } from "../components/Sheet";
 import { pickDocumentAttachments, pickImageAttachments, type PendingAttachment } from "../lib/attachments";
 import { useClient, useStoreValue } from "../lib/client";
-import { statusColorFor, type ThemeColors, useTheme, withAlpha } from "../theme";
+import { radius, softShadow, statusColorFor, type ThemeColors, useTheme, withAlpha } from "../theme";
 
 export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: () => void }) {
   const colors = useTheme();
@@ -56,6 +57,9 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  const [modelSheetOpen, setModelSheetOpen] = useState(false);
+  const [effortSheetOpen, setEffortSheetOpen] = useState(false);
+  const [modeSheetOpen, setModeSheetOpen] = useState(false);
   const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
 
   useEffect(() => {
@@ -129,25 +133,6 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
     setAttachments((prev) => prev.filter((a) => a.id !== id));
   }
 
-  function cycleModel() {
-    if (capabilities.models.length === 0) return;
-    const values = capabilities.models.map((m) => m.value);
-    const next = values[(values.indexOf(model) + 1) % values.length];
-    setModel(next ?? "");
-  }
-
-  function cycleEffort() {
-    const idx = EFFORT_LEVELS.findIndex((e) => e.key === effortKey);
-    const next = EFFORT_LEVELS[(idx + 1) % EFFORT_LEVELS.length];
-    if (next) setEffortKey(next.key);
-  }
-
-  function cyclePermissionMode() {
-    const idx = PERMISSION_MODES.findIndex((m) => m.key === permissionMode);
-    const next = PERMISSION_MODES[(idx + 1) % PERMISSION_MODES.length];
-    if (next) setPermissionMode(next.key);
-  }
-
   function pickSuggestion(name: string) {
     setText(`/${name} `);
   }
@@ -162,9 +147,8 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
     >
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backRow} onPress={onBack}>
-          <Ionicons name="chevron-back" size={18} color={colors.accent} />
-          <Text style={styles.back}>Back</Text>
+        <TouchableOpacity style={styles.backRow} onPress={onBack} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Ionicons name="chevron-back" size={22} color={colors.text} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle} numberOfLines={1}>
@@ -178,7 +162,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
         </View>
         {!isController && (
           <TouchableOpacity style={styles.ctrlBtn} onPress={() => realtime.takeControl(sessionId)}>
-            <Text style={styles.ctrlBtnText}>Take</Text>
+            <Text style={styles.ctrlBtnText}>Take control</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -236,17 +220,19 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
           ))}
         </View>
       )}
-      <View style={styles.optionsRow}>
-        <TouchableOpacity style={styles.optionPill} onPress={cycleModel}>
-          <Text style={styles.optionPillText}>Model: {modelLabel}</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.optionsRow} contentContainerStyle={styles.optionsRowContent}>
+        <TouchableOpacity style={styles.optionPill} onPress={() => setModelSheetOpen(true)}>
+          <Text style={styles.optionPillText} numberOfLines={1}>
+            {modelLabel}
+          </Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.optionPill} onPress={cycleEffort}>
-          <Text style={styles.optionPillText}>Effort: {effort?.label ?? "Medium"}</Text>
+        <TouchableOpacity style={styles.optionPill} onPress={() => setEffortSheetOpen(true)}>
+          <Text style={styles.optionPillText}>{effort?.label ?? "Medium"}</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.optionPill} onPress={cyclePermissionMode}>
-          <Text style={styles.optionPillText}>Mode: {mode?.label ?? "Manual"}</Text>
+        <TouchableOpacity style={styles.optionPill} onPress={() => setModeSheetOpen(true)}>
+          <Text style={styles.optionPillText}>{mode?.label ?? "Manual"}</Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
       {attachments.length > 0 && (
         <View style={styles.pendingAttachRow}>
           {attachments.map((a) => (
@@ -262,54 +248,136 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
         </View>
       )}
       {attachError && <Text style={styles.attachError}>{attachError}</Text>}
-      <View style={styles.composer}>
-        <TouchableOpacity style={styles.attachBtn} disabled={!canSend} onPress={() => setAttachMenuOpen(true)}>
-          <Ionicons name="attach" size={20} color={canSend ? colors.dim : colors.faint} />
-        </TouchableOpacity>
-        <TextInput
-          ref={inputRef}
-          style={styles.composerInput}
-          value={text}
-          onChangeText={setText}
-          multiline
-          editable={canSend}
-          placeholder={
-            !isController ? "Take control to send prompts" : status === "busy" ? "Claude is working…" : "Send a prompt…"
-          }
-          placeholderTextColor={colors.faint}
-        />
-        {isController && status === "busy" ? (
-          <TouchableOpacity style={styles.stopBtn} onPress={() => realtime.interrupt(sessionId)}>
-            <Text style={styles.stopBtnText}>Stop</Text>
+      <View style={styles.composerWrap}>
+        <View style={styles.composerPill}>
+          <TouchableOpacity style={styles.roundIconBtn} disabled={!isController} onPress={() => setAttachMenuOpen(true)}>
+            <Ionicons name="add" size={22} color={isController ? colors.text : colors.faint} />
           </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={[styles.sendBtn, (!canSend || (!text.trim() && attachments.length === 0)) && styles.disabled]}
-            disabled={!canSend || (!text.trim() && attachments.length === 0)}
-            onPress={send}
-          >
-            <Text style={styles.sendBtnText}>Send</Text>
-          </TouchableOpacity>
-        )}
+          <TextInput
+            ref={inputRef}
+            style={styles.composerInput}
+            value={text}
+            onChangeText={setText}
+            multiline
+            placeholder={
+              !isController ? "Take control to send prompts" : status === "busy" ? "Claude is working…" : "Chat with Claude…"
+            }
+            placeholderTextColor={colors.faint}
+          />
+          {isController && status === "busy" ? (
+            <TouchableOpacity style={styles.stopBtn} onPress={() => realtime.interrupt(sessionId)}>
+              <Ionicons name="stop" size={15} color={colors.accentFg} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.sendBtn, (!canSend || (!text.trim() && attachments.length === 0)) && styles.disabled]}
+              disabled={!canSend || (!text.trim() && attachments.length === 0)}
+              onPress={send}
+            >
+              <Ionicons name="arrow-up" size={19} color={colors.accentFg} />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
-      <Modal transparent visible={attachMenuOpen} animationType="fade" onRequestClose={() => setAttachMenuOpen(false)}>
-        <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={() => setAttachMenuOpen(false)}>
-          <TouchableOpacity activeOpacity={1} style={styles.sheetCard}>
-            <TouchableOpacity style={styles.sheetRow} onPress={attachPhoto}>
-              <Ionicons name="image-outline" size={17} color={colors.text} />
-              <Text style={styles.sheetRowText}>Photo</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.sheetRow} onPress={attachDocument}>
-              <Ionicons name="document-outline" size={17} color={colors.text} />
-              <Text style={styles.sheetRowText}>File (PDF or text)</Text>
-            </TouchableOpacity>
+      {/* Attach sheet */}
+      <Sheet visible={attachMenuOpen} onClose={() => setAttachMenuOpen(false)} title="Add to chat" colors={colors}>
+        <View style={styles.attachTileRow}>
+          <TouchableOpacity style={styles.attachTile} onPress={attachPhoto}>
+            <View style={styles.attachTileIcon}>
+              <Ionicons name="image-outline" size={24} color={colors.text} />
+            </View>
+            <Text style={styles.attachTileLabel}>Photo</Text>
           </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+          <TouchableOpacity style={styles.attachTile} onPress={attachDocument}>
+            <View style={styles.attachTileIcon}>
+              <Ionicons name="document-outline" size={24} color={colors.text} />
+            </View>
+            <Text style={styles.attachTileLabel}>File</Text>
+          </TouchableOpacity>
+        </View>
+      </Sheet>
+
+      <PickerSheet
+        visible={modelSheetOpen}
+        onClose={() => setModelSheetOpen(false)}
+        title="Select model"
+        options={capabilities.models.map((m) => ({ key: m.value, label: m.displayName, description: m.description }))}
+        selectedKey={model}
+        onSelect={setModel}
+        colors={colors}
+        styles={styles}
+      />
+      <PickerSheet
+        visible={effortSheetOpen}
+        onClose={() => setEffortSheetOpen(false)}
+        title="Thinking effort"
+        options={EFFORT_LEVELS.map((e) => ({ key: e.key, label: e.label }))}
+        selectedKey={effortKey}
+        onSelect={setEffortKey}
+        colors={colors}
+        styles={styles}
+      />
+      <PickerSheet
+        visible={modeSheetOpen}
+        onClose={() => setModeSheetOpen(false)}
+        title="Permission mode"
+        options={PERMISSION_MODES.map((m) => ({ key: m.key, label: m.label, description: m.description }))}
+        selectedKey={permissionMode}
+        onSelect={(k) => setPermissionMode(k as PermissionModeKey)}
+        colors={colors}
+        styles={styles}
+      />
 
       <ImagePreviewModal attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} />
     </KeyboardAvoidingView>
+  );
+}
+
+/** A bottom sheet listing selectable options with a checkmark on the current pick — model/effort/permission-mode all use this. */
+function PickerSheet({
+  visible,
+  onClose,
+  title,
+  options,
+  selectedKey,
+  onSelect,
+  colors,
+  styles,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  title: string;
+  options: { key: string; label: string; description?: string }[];
+  selectedKey: string;
+  onSelect: (key: string) => void;
+  colors: ThemeColors;
+  styles: Styles;
+}) {
+  return (
+    <Sheet visible={visible} onClose={onClose} title={title} colors={colors}>
+      <ScrollView contentContainerStyle={styles.pickerList}>
+        {options.map((o) => {
+          const selected = o.key === selectedKey;
+          return (
+            <TouchableOpacity
+              key={o.key}
+              style={[styles.pickerRow, selected && { backgroundColor: withAlpha(colors.accent, 0.16) }]}
+              onPress={() => {
+                onSelect(o.key);
+                onClose();
+              }}
+            >
+              <View style={styles.flex1}>
+                <Text style={[styles.pickerRowLabel, selected && { color: colors.accent }]}>{o.label}</Text>
+                {o.description && <Text style={styles.pickerRowDesc}>{o.description}</Text>}
+              </View>
+              {selected && <Ionicons name="checkmark" size={19} color={colors.accent} />}
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </Sheet>
   );
 }
 
@@ -392,17 +460,14 @@ function TimelineRow({
   if (item.type === "prompt") {
     return (
       <View style={styles.promptWrap}>
-        <Ionicons name="person-outline" size={14} color={colors.accent} style={styles.promptIcon} />
-        <View style={styles.promptBody}>
-          {item.text.length > 0 && <Text style={styles.promptText}>{item.text}</Text>}
-          {item.attachments && item.attachments.length > 0 && (
-            <View style={styles.attachRow}>
-              {item.attachments.map((a, i) => (
-                <AttachmentChip key={i} attachment={a} colors={colors} styles={styles} onPreview={onPreview} />
-              ))}
-            </View>
-          )}
-        </View>
+        {item.text.length > 0 && <Text style={styles.promptText}>{item.text}</Text>}
+        {item.attachments && item.attachments.length > 0 && (
+          <View style={styles.attachRow}>
+            {item.attachments.map((a, i) => (
+              <AttachmentChip key={i} attachment={a} colors={colors} styles={styles} onPreview={onPreview} />
+            ))}
+          </View>
+        )}
       </View>
     );
   }
@@ -695,93 +760,99 @@ type Styles = ReturnType<typeof makeStyles>;
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     fill: { flex: 1, backgroundColor: colors.bg, paddingTop: 44 },
+    flex1: { flex: 1 },
     header: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 8,
-      paddingHorizontal: 12,
-      paddingBottom: 10,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
+      gap: 10,
+      paddingHorizontal: 14,
+      paddingBottom: 14,
     },
-    backRow: { flexDirection: "row", alignItems: "center", gap: 2 },
-    back: { color: colors.accent, fontSize: 15 },
+    backRow: { flexDirection: "row", alignItems: "center" },
     headerCenter: { flex: 1 },
-    headerTitle: { color: colors.text, fontSize: 14, fontWeight: "600" },
+    headerTitle: { color: colors.text, fontSize: 15, fontWeight: "700" },
     headerSub: { color: colors.faint, fontSize: 11, marginTop: 2 },
     dot: { width: 8, height: 8, borderRadius: 4 },
-    ctrlBtn: { backgroundColor: colors.panel2, borderRadius: 2, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: colors.border },
-    ctrlBtnText: { color: colors.text, fontSize: 13, fontWeight: "600" },
+    ctrlBtn: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 8 },
+    ctrlBtnText: { color: colors.accentFg, fontSize: 13, fontWeight: "700" },
     timeline: { flex: 1 },
-    timelineContent: { padding: 12, gap: 12 },
+    timelineContent: { padding: 14, gap: 14 },
     empty: { color: colors.faint, fontSize: 14 },
     noticeWrap: { alignItems: "center" },
     notice: {
       backgroundColor: colors.panel2,
       color: colors.dim,
       fontSize: 11,
-      paddingHorizontal: 10,
-      paddingVertical: 4,
-      borderRadius: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 5,
+      borderRadius: radius.pill,
       overflow: "hidden",
     },
     noticeWarn: { color: colors.busy },
     promptWrap: {
-      flexDirection: "row",
-      alignItems: "flex-start",
+      alignSelf: "flex-end",
+      maxWidth: "88%",
+      backgroundColor: colors.panel2,
+      borderRadius: radius.lg,
+      borderBottomRightRadius: radius.xs,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
       gap: 6,
-      backgroundColor: colors.panel,
-      borderLeftWidth: 2,
-      borderLeftColor: colors.accent,
-      paddingHorizontal: 10,
-      paddingVertical: 8,
     },
-    promptIcon: { marginTop: 2 },
-    promptBody: { flex: 1, gap: 6 },
-    promptText: { color: colors.text, fontSize: 15 },
+    promptText: { color: colors.text, fontSize: 15, lineHeight: 21 },
     attachRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-    pendingAttachRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingHorizontal: 10 },
+    pendingAttachRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingHorizontal: 16, marginBottom: 4 },
     attachChip: {
       flexDirection: "row",
       alignItems: "center",
       gap: 6,
-      borderWidth: 1,
-      borderColor: colors.border,
       backgroundColor: colors.panel2,
-      borderRadius: 2,
-      paddingVertical: 4,
-      paddingHorizontal: 6,
+      borderRadius: radius.pill,
+      paddingVertical: 5,
+      paddingHorizontal: 10,
       maxWidth: 160,
     },
-    attachThumb: { width: 20, height: 20, borderRadius: 2 },
+    attachThumb: { width: 20, height: 20, borderRadius: radius.xs },
     attachName: { flex: 1, color: colors.text, fontSize: 11 },
-    attachError: { color: colors.danger, fontSize: 12, paddingHorizontal: 10, paddingTop: 4 },
-    attachBtn: { paddingVertical: 9, paddingHorizontal: 2 },
-    sheetBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
-    sheetCard: {
-      backgroundColor: colors.panel,
-      borderTopLeftRadius: 8,
-      borderTopRightRadius: 8,
-      paddingVertical: 8,
-      paddingBottom: 24,
+    attachError: { color: colors.danger, fontSize: 12, paddingHorizontal: 16, paddingTop: 4 },
+    pickerList: { paddingHorizontal: 14, gap: 8, paddingBottom: 8 },
+    pickerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      borderRadius: radius.md,
+      backgroundColor: colors.panel2,
+      paddingHorizontal: 16,
+      paddingVertical: 14,
     },
-    sheetRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 20, paddingVertical: 14 },
-    sheetRowText: { color: colors.text, fontSize: 15 },
-    turn: { gap: 8 },
-    thinkingWrap: { borderLeftWidth: 2, borderLeftColor: colors.border, paddingLeft: 10, gap: 2 },
+    pickerRowLabel: { color: colors.text, fontSize: 15, fontWeight: "600" },
+    pickerRowDesc: { color: colors.faint, fontSize: 12, marginTop: 2 },
+    attachTileRow: { flexDirection: "row", gap: 20, paddingHorizontal: 20, paddingTop: 6, paddingBottom: 16 },
+    attachTile: { alignItems: "center", gap: 8 },
+    attachTileIcon: {
+      width: 60,
+      height: 60,
+      borderRadius: 30,
+      backgroundColor: colors.panel2,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    attachTileLabel: { color: colors.text, fontSize: 13 },
+    turn: { gap: 10 },
+    thinkingWrap: { backgroundColor: withAlpha(colors.faint, 0.1), borderRadius: radius.md, padding: 12, gap: 4 },
     thinkingHeader: { color: colors.faint, fontSize: 11 },
     running: { color: colors.dim, fontSize: 16 },
     meta: { color: colors.faint, fontSize: 11 },
     errText: { color: colors.danger },
-    toolCard: { backgroundColor: colors.panel, borderRadius: 2, borderWidth: 1, borderColor: colors.border, padding: 10, gap: 4 },
+    toolCard: { backgroundColor: colors.panel, borderRadius: radius.md, padding: 12, gap: 6 },
     toolHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
     toolName: { color: colors.busy, fontSize: 13, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
     toolBody: { color: colors.dim, fontSize: 12, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
-    permCard: { backgroundColor: colors.panel2, borderTopWidth: 1, borderTopColor: colors.busy, padding: 12, gap: 6 },
+    permCard: { backgroundColor: colors.panel2, borderRadius: radius.lg, padding: 14, gap: 8 },
     permHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
     permTitle: { color: colors.busy, fontSize: 14, fontWeight: "600" },
     permBody: { color: colors.dim, fontSize: 12 },
-    permDetailScroll: { maxHeight: 220, backgroundColor: colors.panel, borderRadius: 2 },
+    permDetailScroll: { maxHeight: 220, backgroundColor: colors.panel, borderRadius: radius.sm },
     permActions: { flexDirection: "row", gap: 10, marginTop: 4 },
     todoRow: { flexDirection: "row", alignItems: "flex-start", gap: 6, paddingVertical: 2 },
     todoText: { flex: 1, color: colors.text, fontSize: 12 },
@@ -789,71 +860,66 @@ const makeStyles = (colors: ThemeColors) =>
     todoActive: { fontWeight: "600" },
     queueWrap: {
       backgroundColor: colors.panel2,
-      borderTopWidth: 1,
-      borderTopColor: colors.border,
-      paddingHorizontal: 12,
-      paddingVertical: 8,
+      borderRadius: radius.md,
+      marginHorizontal: 14,
+      marginBottom: 8,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
       gap: 2,
     },
     queueLabel: { color: colors.faint, fontSize: 11 },
     queueItem: { color: colors.faint, fontSize: 12 },
-    allowBtn: { backgroundColor: colors.accent, borderRadius: 2, paddingHorizontal: 18, paddingVertical: 8 },
-    allowText: { color: colors.accentFg, fontWeight: "600" },
-    denyBtn: { borderColor: colors.danger, borderWidth: 1, borderRadius: 2, paddingHorizontal: 18, paddingVertical: 8 },
-    denyText: { color: colors.danger, fontWeight: "600" },
-    optionsRow: {
-      flexDirection: "row",
-      gap: 8,
-      paddingHorizontal: 10,
-      paddingTop: 8,
-      borderTopWidth: 1,
-      borderTopColor: colors.border,
-    },
-    optionPill: {
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 2,
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-    },
-    optionPillText: { color: colors.dim, fontSize: 11 },
+    allowBtn: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: 20, paddingVertical: 10 },
+    allowText: { color: colors.accentFg, fontWeight: "700" },
+    denyBtn: { backgroundColor: withAlpha(colors.danger, 0.14), borderRadius: radius.pill, paddingHorizontal: 20, paddingVertical: 10 },
+    denyText: { color: colors.danger, fontWeight: "700" },
+    optionsRow: { flexGrow: 0, paddingTop: 8 },
+    optionsRowContent: { flexDirection: "row", gap: 8, paddingHorizontal: 14, paddingBottom: 2 },
+    optionPill: { backgroundColor: colors.panel2, borderRadius: radius.pill, paddingHorizontal: 13, paddingVertical: 7 },
+    optionPillText: { color: colors.dim, fontSize: 12, fontWeight: "600" },
     suggestBox: {
-      borderTopWidth: 1,
-      borderTopColor: colors.border,
+      marginHorizontal: 14,
+      marginBottom: 6,
+      backgroundColor: colors.panel,
+      borderRadius: radius.md,
+      overflow: "hidden",
       maxHeight: 160,
+      ...softShadow(colors),
     },
     suggestRow: {
       flexDirection: "row",
       alignItems: "center",
       gap: 8,
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.panel,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
     },
     suggestName: { color: colors.accent, fontSize: 13, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
     suggestDesc: { flex: 1, color: colors.dim, fontSize: 12 },
-    composer: {
+    composerWrap: { paddingHorizontal: 14, paddingTop: 6, paddingBottom: 10 },
+    composerPill: {
       flexDirection: "row",
       alignItems: "flex-end",
-      gap: 8,
-      padding: 10,
+      gap: 4,
+      backgroundColor: colors.panel,
+      borderRadius: radius.xl,
+      paddingLeft: 4,
+      paddingRight: 4,
+      paddingVertical: 4,
+      ...softShadow(colors),
     },
     composerInput: {
       flex: 1,
-      backgroundColor: colors.panel,
-      borderColor: colors.border,
-      borderWidth: 1,
-      borderRadius: 2,
-      paddingHorizontal: 12,
-      paddingVertical: 9,
       color: colors.text,
       fontSize: 15,
+      paddingHorizontal: 8,
+      paddingTop: 8,
+      paddingBottom: 10,
       maxHeight: 120,
+      textAlignVertical: "center",
+      includeFontPadding: false,
     },
-    sendBtn: { backgroundColor: colors.accent, borderRadius: 2, paddingHorizontal: 16, paddingVertical: 11 },
-    sendBtnText: { color: colors.accentFg, fontWeight: "600" },
-    stopBtn: { borderColor: colors.danger, borderWidth: 1, borderRadius: 2, paddingHorizontal: 16, paddingVertical: 11 },
-    stopBtnText: { color: colors.danger, fontWeight: "600" },
-    disabled: { opacity: 0.4 },
+    roundIconBtn: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
+    sendBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.accent, alignItems: "center", justifyContent: "center" },
+    stopBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.danger, alignItems: "center", justifyContent: "center" },
+    disabled: { opacity: 0.35 },
   });

@@ -1,9 +1,10 @@
 import type { Repo, Session } from "@crc/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
-import { Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, FlatList, Keyboard, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Sheet } from "../components/Sheet";
 import { useClient } from "../lib/client";
-import { statusColorFor, type ThemeColors, useTheme } from "../theme";
+import { radius, softShadow, statusColorFor, type ThemeColors, useTheme, withAlpha } from "../theme";
 import { AccountsBar } from "./AccountsBar";
 
 export function SessionList({
@@ -76,20 +77,20 @@ export function SessionList({
       <View style={styles.header}>
         <Text style={styles.title}>Sessions</Text>
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.iconLink} onPress={onOpenStats} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="stats-chart-outline" size={16} color={colors.dim} />
+          <TouchableOpacity style={styles.iconBtn} onPress={onOpenStats} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="stats-chart-outline" size={18} color={colors.dim} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.iconLink} onPress={onOpenSettings} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="settings-outline" size={17} color={colors.dim} />
+          <TouchableOpacity style={styles.iconBtn} onPress={onOpenSettings} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="settings-outline" size={19} color={colors.dim} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.newBtn} onPress={() => setCreating(true)}>
-            <Ionicons name="add" size={14} color={colors.accentFg} />
+            <Ionicons name="add" size={16} color={colors.accentFg} />
             <Text style={styles.newBtnText}>New</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      <ScrollView style={styles.list}>
+      <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
         {active.length === 0 && <Text style={styles.empty}>No sessions yet.</Text>}
         {active.map((s) => (
           <Row
@@ -128,6 +129,12 @@ export function SessionList({
           styles={styles}
           onClose={() => setCreating(false)}
           onCreated={(s) => {
+            // Dismiss this modal's own keyboard (title/branch fields) before
+            // navigating into SessionView's composer — closing a Modal that
+            // still owns the soft keyboard while mounting a new TextInput
+            // underneath can leave Android's IME stuck, so the new composer
+            // doesn't respond to a tap until the screen is revisited.
+            Keyboard.dismiss();
             setCreating(false);
             refresh();
             realtime.takeControl(s.id);
@@ -178,7 +185,7 @@ function Row({
 
   return (
     <>
-      <TouchableOpacity style={styles.row} onPress={onSelect}>
+      <TouchableOpacity style={styles.row} activeOpacity={0.7} onPress={onSelect}>
         <View
           style={[
             styles.dot,
@@ -207,38 +214,36 @@ function Row({
         </TouchableOpacity>
       </TouchableOpacity>
 
-      <Modal transparent visible={actionsOpen} animationType="fade" onRequestClose={() => setActionsOpen(false)}>
-        <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={() => setActionsOpen(false)}>
-          <TouchableOpacity activeOpacity={1} style={styles.sheetCard}>
-            {onArchive && (
-              <TouchableOpacity
-                style={styles.sheetRow}
-                onPress={() => {
-                  setActionsOpen(false);
-                  onArchive();
-                }}
-              >
-                <Ionicons name="archive-outline" size={17} color={colors.text} />
-                <Text style={styles.sheetRowText}>Archive</Text>
-              </TouchableOpacity>
-            )}
+      <Sheet visible={actionsOpen} onClose={() => setActionsOpen(false)} title={session.title || session.repoName} colors={colors}>
+        <View style={styles.sheetBody}>
+          {onArchive && (
             <TouchableOpacity
               style={styles.sheetRow}
               onPress={() => {
                 setActionsOpen(false);
-                setRenaming(true);
+                onArchive();
               }}
             >
-              <Ionicons name="create-outline" size={17} color={colors.text} />
-              <Text style={styles.sheetRowText}>Edit title</Text>
+              <Ionicons name="archive-outline" size={18} color={colors.text} />
+              <Text style={styles.sheetRowText}>Archive</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.sheetRow} onPress={confirmDelete}>
-              <Ionicons name="trash-outline" size={17} color={colors.danger} />
-              <Text style={[styles.sheetRowText, { color: colors.danger }]}>Delete</Text>
-            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={styles.sheetRow}
+            onPress={() => {
+              setActionsOpen(false);
+              setRenaming(true);
+            }}
+          >
+            <Ionicons name="create-outline" size={18} color={colors.text} />
+            <Text style={styles.sheetRowText}>Edit title</Text>
           </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+          <TouchableOpacity style={styles.sheetRow} onPress={confirmDelete}>
+            <Ionicons name="trash-outline" size={18} color={colors.danger} />
+            <Text style={[styles.sheetRowText, { color: colors.danger }]}>Delete</Text>
+          </TouchableOpacity>
+        </View>
+      </Sheet>
 
       <Modal transparent visible={renaming} animationType="fade" onRequestClose={() => setRenaming(false)}>
         <View style={styles.modalBackdrop}>
@@ -246,7 +251,7 @@ function Row({
             <Text style={styles.modalTitle}>Rename session</Text>
             <TextInput style={styles.input} value={draft} onChangeText={setDraft} autoFocus onSubmitEditing={commitRename} />
             <View style={styles.modalActions}>
-              <TouchableOpacity onPress={() => setRenaming(false)}>
+              <TouchableOpacity style={styles.textBtn} onPress={() => setRenaming(false)}>
                 <Text style={styles.link}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.newBtn} onPress={commitRename}>
@@ -303,6 +308,7 @@ function NewSessionModal({
     <Modal transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.modalBackdrop}>
         <View style={styles.modalCard}>
+          <View style={styles.sheetHandle} />
           <Text style={styles.modalTitle}>New session</Text>
           <Text style={styles.label}>Repository</Text>
           <TouchableOpacity
@@ -341,7 +347,7 @@ function NewSessionModal({
           <TextInput style={styles.input} value={title} onChangeText={setTitle} />
           {error && <Text style={styles.error}>{error}</Text>}
           <View style={styles.modalActions}>
-            <TouchableOpacity onPress={onClose}>
+            <TouchableOpacity style={styles.textBtn} onPress={onClose}>
               <Text style={styles.link}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -367,32 +373,40 @@ const makeStyles = (colors: ThemeColors) =>
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-      paddingHorizontal: 16,
-      paddingBottom: 12,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
+      paddingHorizontal: 18,
+      paddingBottom: 14,
     },
-    title: { color: colors.text, fontSize: 18, fontWeight: "700" },
-    headerActions: { flexDirection: "row", alignItems: "center", gap: 16 },
-    iconLink: { flexDirection: "row", alignItems: "center", gap: 4 },
-    link: { color: colors.dim, fontSize: 13 },
-    newBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.accent, borderRadius: 2, paddingHorizontal: 12, paddingVertical: 6 },
-    newBtnText: { color: colors.accentFg, fontWeight: "600", fontSize: 13 },
+    title: { color: colors.text, fontSize: 20, fontWeight: "700" },
+    headerActions: { flexDirection: "row", alignItems: "center", gap: 14 },
+    iconBtn: { padding: 2 },
+    link: { color: colors.dim, fontSize: 14, fontWeight: "600" },
+    newBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      backgroundColor: colors.accent,
+      borderRadius: radius.pill,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+    },
+    newBtnText: { color: colors.accentFg, fontWeight: "700", fontSize: 13 },
+    textBtn: { paddingHorizontal: 4, paddingVertical: 8 },
     disabled: { opacity: 0.4 },
     list: { flex: 1 },
+    listContent: { padding: 12, gap: 8 },
     empty: { color: colors.faint, padding: 20, fontSize: 14 },
     row: {
       flexDirection: "row",
       alignItems: "center",
       gap: 10,
+      backgroundColor: colors.panel,
+      borderRadius: radius.md,
       paddingHorizontal: 16,
       paddingVertical: 14,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.panel,
     },
     dot: { width: 9, height: 9, borderRadius: 5 },
     rowText: { flex: 1 },
-    rowTitle: { color: colors.text, fontSize: 15 },
+    rowTitle: { color: colors.text, fontSize: 15, fontWeight: "600" },
     rowSub: { color: colors.faint, fontSize: 12, marginTop: 2 },
     kebab: { padding: 6, marginRight: -6 },
     archivedHeader: {
@@ -400,45 +414,47 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: 11,
       textTransform: "uppercase",
       letterSpacing: 0.5,
+      paddingHorizontal: 4,
+      paddingTop: 10,
+      paddingBottom: 2,
+    },
+    sheetHandle: { alignSelf: "center", width: 36, height: 4, borderRadius: 2, marginTop: 10, marginBottom: 4, backgroundColor: colors.border },
+    sheetBody: { paddingHorizontal: 14, gap: 4, paddingTop: 6 },
+    sheetRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 14,
+      backgroundColor: colors.panel2,
+      borderRadius: radius.md,
       paddingHorizontal: 16,
-      paddingTop: 12,
-      paddingBottom: 4,
+      paddingVertical: 14,
     },
-    sheetBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
-    sheetCard: {
-      backgroundColor: colors.panel,
-      borderTopLeftRadius: 8,
-      borderTopRightRadius: 8,
-      paddingVertical: 8,
-      paddingBottom: 24,
-    },
-    sheetRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 20, paddingVertical: 14 },
-    sheetRowText: { color: colors.text, fontSize: 15 },
-    modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
+    sheetRowText: { color: colors.text, fontSize: 15, fontWeight: "600" },
+    modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "flex-end" },
     modalCard: {
       backgroundColor: colors.panel,
-      borderTopLeftRadius: 8,
-      borderTopRightRadius: 8,
-      padding: 20,
+      borderTopLeftRadius: radius.xl,
+      borderTopRightRadius: radius.xl,
+      paddingHorizontal: 20,
+      paddingBottom: 24,
       gap: 6,
       maxHeight: "80%",
+      ...softShadow(colors),
     },
-    modalTitle: { color: colors.text, fontSize: 17, fontWeight: "700", marginBottom: 4 },
+    modalTitle: { color: colors.text, fontSize: 18, fontWeight: "700", marginBottom: 4, textAlign: "center" },
     repoList: { maxHeight: 200 },
-    repoRow: { padding: 10, borderRadius: 2, borderWidth: 1, borderColor: colors.border, marginVertical: 3 },
-    repoRowSelected: { borderColor: colors.accent, backgroundColor: colors.panel2 },
-    repoName: { color: colors.text, fontSize: 14 },
-    label: { color: colors.dim, fontSize: 12, marginTop: 8 },
+    repoRow: { padding: 12, borderRadius: radius.sm, backgroundColor: colors.panel2, marginVertical: 3 },
+    repoRowSelected: { backgroundColor: withAlpha(colors.accent, 0.16) },
+    repoName: { color: colors.text, fontSize: 14, fontWeight: "600" },
+    label: { color: colors.dim, fontSize: 12, marginTop: 10, marginBottom: 2 },
     input: {
-      backgroundColor: colors.bg,
-      borderColor: colors.border,
-      borderWidth: 1,
-      borderRadius: 2,
-      paddingHorizontal: 12,
-      paddingVertical: 9,
+      backgroundColor: colors.panel2,
+      borderRadius: radius.sm,
+      paddingHorizontal: 14,
+      paddingVertical: 11,
       color: colors.text,
       fontSize: 15,
     },
     error: { color: colors.danger, fontSize: 13, marginTop: 6 },
-    modalActions: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 16, marginTop: 12 },
+    modalActions: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 16, marginTop: 14 },
   });

@@ -3,7 +3,7 @@ import { formatResetIn, formatUsd } from "@crc/client-core";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useClient } from "../lib/client";
-import { type ThemeColors, useTheme } from "../theme";
+import { radius, type ThemeColors, useTheme } from "../theme";
 import { ConnectUsage } from "./ConnectUsage";
 
 /** Compact multi-account usage strip (mirror of the web AccountsBar). */
@@ -205,8 +205,8 @@ type Styles = ReturnType<typeof makeStyles>;
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-  bar: { borderTopWidth: 1, borderTopColor: colors.border, padding: 12 },
-  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
+  bar: { backgroundColor: colors.panel, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, padding: 14, paddingBottom: 18 },
+  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
   header: { color: colors.dim, fontSize: 12, fontWeight: "600" },
   switch: { color: colors.accent, fontSize: 12 },
   connectBtn: { marginTop: 8 },

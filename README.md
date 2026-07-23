@@ -57,6 +57,10 @@ never touching tokens itself). See [SETUP.md](./SETUP.md).
   URL and a 43-character token by hand.
 - **Push notifications** (Android) for permission requests and turn completion
   while the app is backgrounded.
+- **A Settings screen and a Stats screen on every client** — device/connection
+  info, cswap account management (switch/add/rotation threshold), and
+  cost/token/wait-time analytics (lifetime, daily, monthly, by-repo), at full
+  parity between web and the Android app.
 - **Optional multi-account rotation** — proactively (or on a real rate-limit
   failure) switches which Claude account the CLI uses next, via `cswap`.
 - **Optional [RTK](https://github.com/rtk-ai/rtk) support** — rewrites Bash
@@ -123,8 +127,11 @@ pnpm --filter @crc/web dev             # open http://127.0.0.1:5173
 
 Run the test suite (Vitest) with `pnpm test` — it covers the pure core: the
 event-log→state reducer (determinism + replay==live), the daemon's event log
-(seq monotonicity, gap-free replay), the rate-limit classifier, and the
-SessionManager lock/single-writer invariants.
+(seq monotonicity, gap-free replay), the rate-limit classifier, the
+SessionManager lock/single-writer invariants, the account-rotation policy
+engine and the permission broker's fail-safe timeout, the diff/todo/plan
+tool-input parsers shared by every client, and the legacy-session-id and
+merge-conflict-flow migrations — plus component tests for the web app.
 
 ## Status
 

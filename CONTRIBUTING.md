@@ -38,8 +38,11 @@ PR — please make sure they're clean locally first.
 The test suite (Vitest) currently covers the parts that are cheapest to get
 wrong and most expensive to get wrong quietly: the event-log→state reducer
 (determinism, replay==live), the daemon's event log (seq monotonicity,
-gap-free replay), the rate-limit classifier, and the SessionManager's
-lock/single-writer invariants. If you touch any of that, add a test.
+gap-free replay), the rate-limit classifier, the SessionManager's
+lock/single-writer invariants, the account-rotation policy engine, the
+permission broker's fail-safe deny-on-timeout, the diff/todo/plan tool-input
+parsers shared by every client, and the legacy-session-id and merge-conflict
+migrations. If you touch any of that, add a test.
 
 ## Where things live
 

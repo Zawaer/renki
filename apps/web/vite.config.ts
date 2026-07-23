@@ -23,4 +23,20 @@ export default defineConfig({
   // The VS Code webview build (apps/vscode/src/html.ts) rewrites these
   // absolute-rooted asset paths to its own webview URI base instead.
   base: "/",
+  build: {
+    rollupOptions: {
+      output: {
+        // Split out vendor code that changes far less often than the app
+        // itself, so a redeploy after an app-only change only invalidates the
+        // app chunk's cache entry, not react/react-dom/react-router or the
+        // markdown renderer (react-markdown + remark-gfm's AST/plugin
+        // dependencies, together the single largest chunk) too. Also drops
+        // every chunk under Vite's 500kB warning threshold.
+        manualChunks: {
+          react: ["react", "react-dom", "react-router-dom"],
+          markdown: ["react-markdown", "remark-gfm"],
+        },
+      },
+    },
+  },
 });

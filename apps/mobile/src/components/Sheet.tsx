@@ -54,6 +54,12 @@ export function Sheet({
   const [mounted, setMounted] = useState(visible);
   const translateY = useRef(new Animated.Value(visible ? 0 : OFFSCREEN_Y)).current;
   const backdropOpacity = useRef(new Animated.Value(visible ? 1 : 0)).current;
+  // Callers pass a fresh `() => setXOpen(false)` every render; keeping the
+  // latest one in a ref (rather than in the PanResponder's own deps) means
+  // the responder — and all five of its gesture-callback closures — is built
+  // once per mount instead of reconstructed on every re-render.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (visible) {
@@ -87,7 +93,7 @@ export function Sheet({
         },
         onPanResponderRelease: (_, gesture) => {
           if (gesture.dy > DISMISS_DISTANCE || gesture.vy > DISMISS_VELOCITY) {
-            onClose(); // flips `visible` false — the effect above animates translateY/backdropOpacity the rest of the way
+            onCloseRef.current(); // flips `visible` false — the effect above animates translateY/backdropOpacity the rest of the way
           } else {
             Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 4 }).start();
           }
@@ -96,7 +102,7 @@ export function Sheet({
           Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 4 }).start();
         },
       }),
-    [translateY, onClose],
+    [translateY],
   );
 
   if (!mounted) return null;

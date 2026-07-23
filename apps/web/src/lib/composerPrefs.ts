@@ -1,4 +1,4 @@
-import { DEFAULT_EFFORT_KEY, DEFAULT_PERMISSION_MODE, EFFORT_LEVELS, type PermissionModeKey } from "@crc/client-core";
+import { resolveEffortKey, resolvePermissionMode, type PermissionModeKey } from "@crc/client-core";
 
 /**
  * Last model/effort/permission-mode picked in the composer, persisted in
@@ -9,12 +9,8 @@ const MODE_KEY = "crc.permissionMode";
 const EFFORT_KEY = "crc.effortKey";
 const MODEL_KEY = "crc.model";
 
-const VALID_MODES: readonly PermissionModeKey[] = ["default", "acceptEdits", "plan", "auto"];
-const VALID_EFFORTS: readonly string[] = EFFORT_LEVELS.map((e) => e.key);
-
 export function loadPermissionMode(): PermissionModeKey {
-  const raw = localStorage.getItem(MODE_KEY);
-  return (VALID_MODES as readonly string[]).includes(raw ?? "") ? (raw as PermissionModeKey) : DEFAULT_PERMISSION_MODE;
+  return resolvePermissionMode(localStorage.getItem(MODE_KEY));
 }
 
 export function savePermissionMode(mode: PermissionModeKey): void {
@@ -22,8 +18,7 @@ export function savePermissionMode(mode: PermissionModeKey): void {
 }
 
 export function loadEffortKey(): string {
-  const raw = localStorage.getItem(EFFORT_KEY);
-  return raw && VALID_EFFORTS.includes(raw) ? raw : DEFAULT_EFFORT_KEY;
+  return resolveEffortKey(localStorage.getItem(EFFORT_KEY));
 }
 
 export function saveEffortKey(key: string): void {

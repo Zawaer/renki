@@ -54,7 +54,7 @@ export function Settings({
       <ScrollView contentContainerStyle={styles.body}>
         <ThisDeviceSection colors={colors} styles={styles} onSaved={onRenameDevice} />
         <ConnectionSection colors={colors} styles={styles} status={status} />
-        <AccountsSection colors={colors} styles={styles} />
+        <AccountsSection styles={styles} />
         <Section
           title="Pair a device"
           description="Show a QR code so another phone or the web app can join without typing the URL and token by hand."
@@ -189,7 +189,8 @@ function ConnectionSection({
   );
 }
 
-function AccountsSection({ colors, styles }: { colors: ThemeColors; styles: Styles }) {
+function AccountsSection({ styles }: { styles: Styles }) {
+  const colors = useTheme();
   const { rest } = useClient();
   const [data, setData] = useState<AccountsResponse | null>(null);
   const [connecting, setConnecting] = useState(false);

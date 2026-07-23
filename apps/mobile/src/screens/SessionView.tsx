@@ -24,9 +24,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import {
   Image,
-  Keyboard,
   KeyboardAvoidingView,
-  LayoutAnimation,
   Modal,
   Platform,
   ScrollView,
@@ -34,7 +32,6 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  UIManager,
   View,
 } from "react-native";
 import { Markdown } from "../components/Markdown";
@@ -42,12 +39,8 @@ import { Sheet } from "../components/Sheet";
 import { pickDocumentAttachments, pickImageAttachments, type PendingAttachment } from "../lib/attachments";
 import { loadEffortKey, loadModel, loadPermissionMode, saveEffortKey, saveModel, savePermissionMode } from "../lib/composerPrefs";
 import { useClient, useStoreValue } from "../lib/client";
+import { useAndroidKeyboardResizeAnimation } from "../lib/useAndroidKeyboardResizeAnimation";
 import { radius, softShadow, statusColorFor, type ThemeColors, useTheme, withAlpha } from "../theme";
-
-// Old-architecture-only flag (a no-op under Fabric/the New Architecture, which
-// this app runs — harmless either way); needed for LayoutAnimation to do
-// anything on Android at all when it does apply.
-if (Platform.OS === "android") UIManager.setLayoutAnimationEnabledExperimental?.(true);
 
 export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: () => void }) {
   const colors = useTheme();
@@ -60,14 +53,10 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const inputRef = useRef<TextInput>(null);
   const [text, setText] = useState("");
   // All three persisted on-device (see lib/composerPrefs.ts) so they don't
-  // silently reset to their defaults every app restart. Loaded async
-  // (SecureStore has no sync read) — prefsLoaded gates the "default model
-  // from capabilities" effect below so a slow capabilities fetch racing a
-  // fast prefs load can't have the default stomp a persisted pick.
+  // silently reset to their defaults every app restart.
   const [model, setModelState] = useState("");
   const [effortKey, setEffortKeyState] = useState(DEFAULT_EFFORT_KEY);
   const [permissionMode, setPermissionModeState] = useState<PermissionModeKey>(DEFAULT_PERMISSION_MODE);
-  const [prefsLoaded, setPrefsLoaded] = useState(false);
   const [capabilities, setCapabilities] = useState<CapabilitiesResponse>({ models: [], commands: [] });
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [attachError, setAttachError] = useState<string | null>(null);
@@ -82,35 +71,25 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
     return () => realtime.unwatch(sessionId);
   }, [realtime, sessionId]);
 
-  // Android has no KeyboardAvoidingView "padding" behavior (only iOS does),
-  // so the composer otherwise just snaps to its new position the instant the
-  // OS finishes resizing the window for the keyboard — a hard jump instead of
-  // following the keyboard up/down like the timeline does elsewhere. Wrapping
-  // that resize-driven layout change in a LayoutAnimation smooths it into a
-  // real transition instead.
-  useEffect(() => {
-    if (Platform.OS !== "android") return;
-    const animate = () => LayoutAnimation.configureNext(LayoutAnimation.create(220, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity));
-    const showSub = Keyboard.addListener("keyboardDidShow", animate);
-    const hideSub = Keyboard.addListener("keyboardDidHide", animate);
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
+  useAndroidKeyboardResizeAnimation();
 
+  // Capabilities and the persisted prefs are fetched together so the
+  // "default model from capabilities" logic below only ever runs once both
+  // are known — otherwise a slow SecureStore read racing a fast capabilities
+  // fetch could let the default stomp a persisted pick.
   useEffect(() => {
-    rest.getCapabilities().then(setCapabilities).catch(() => {});
-  }, [rest]);
-
-  useEffect(() => {
-    Promise.all([loadModel(), loadEffortKey(), loadPermissionMode()]).then(([m, e, p]) => {
-      setModelState(m);
+    Promise.all([
+      loadModel(),
+      loadEffortKey(),
+      loadPermissionMode(),
+      rest.getCapabilities().catch((): CapabilitiesResponse => ({ models: [], commands: [] })),
+    ]).then(([m, e, p, caps]) => {
+      setCapabilities(caps);
       setEffortKeyState(e);
       setPermissionModeState(p);
-      setPrefsLoaded(true);
+      setModelState(m || caps.models[0]?.value || "");
     });
-  }, []);
+  }, [rest]);
 
   function setModel(next: string) {
     setModelState(next);
@@ -126,16 +105,6 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
     setPermissionModeState(next);
     savePermissionMode(next);
   }
-
-  // supportedModels() already includes its own "Default (recommended)" entry
-  // (first in the list) — no separate placeholder needed on top of it. Gated
-  // on prefsLoaded so a persisted model pick can't get raced/overwritten by
-  // this default if capabilities happen to arrive before the (normally much
-  // faster, local) prefs load resolves.
-  useEffect(() => {
-    if (!prefsLoaded || model || capabilities.models.length === 0) return;
-    setModel(capabilities.models[0]?.value ?? "");
-  }, [capabilities, model, prefsLoaded]);
 
   const isController = conv.controller === config.deviceId;
   const status = conv.status ?? "idle";
@@ -228,6 +197,21 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
       </View>
 
       {/* Timeline */}
+      {/*
+        keyboardShouldPersistTaps below (here and on the two other ScrollViews
+        in this screen): a RN ScrollView's default ("never") eats the FIRST
+        tap on any child to just dismiss the keyboard whenever a TextInput
+        elsewhere has focus, requiring a second tap to actually register —
+        e.g. tapping an option pill while the composer is focused would only
+        close the keyboard, not open that pill's sheet. "handled" here (and
+        below on pickerList) only forwards a tap to a child that itself
+        handles it, which is enough since nothing here needs to work while a
+        tap is also trying to scroll. optionsRow uses the stronger "always"
+        instead, since it's the exact row this bug was originally reported
+        against — "handled" would likely have been enough there too, but
+        "always" is the safer choice for the one ScrollView the fix has to
+        actually work on.
+      */}
       <ScrollView
         ref={scrollRef}
         style={styles.timeline}

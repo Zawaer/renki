@@ -1,4 +1,4 @@
-import { DEFAULT_EFFORT_KEY, DEFAULT_PERMISSION_MODE, EFFORT_LEVELS, type PermissionModeKey } from "@crc/client-core";
+import { resolveEffortKey, resolvePermissionMode, type PermissionModeKey } from "@crc/client-core";
 import * as SecureStore from "expo-secure-store";
 
 /**
@@ -13,12 +13,8 @@ const MODE_KEY = "crc.permissionMode";
 const EFFORT_KEY = "crc.effortKey";
 const MODEL_KEY = "crc.model";
 
-const VALID_MODES: readonly PermissionModeKey[] = ["default", "acceptEdits", "plan", "auto"];
-const VALID_EFFORTS: readonly string[] = EFFORT_LEVELS.map((e) => e.key);
-
 export async function loadPermissionMode(): Promise<PermissionModeKey> {
-  const raw = await SecureStore.getItemAsync(MODE_KEY);
-  return (VALID_MODES as readonly string[]).includes(raw ?? "") ? (raw as PermissionModeKey) : DEFAULT_PERMISSION_MODE;
+  return resolvePermissionMode(await SecureStore.getItemAsync(MODE_KEY));
 }
 
 export function savePermissionMode(mode: PermissionModeKey): void {
@@ -26,8 +22,7 @@ export function savePermissionMode(mode: PermissionModeKey): void {
 }
 
 export async function loadEffortKey(): Promise<string> {
-  const raw = await SecureStore.getItemAsync(EFFORT_KEY);
-  return raw && VALID_EFFORTS.includes(raw) ? raw : DEFAULT_EFFORT_KEY;
+  return resolveEffortKey(await SecureStore.getItemAsync(EFFORT_KEY));
 }
 
 export function saveEffortKey(key: string): void {

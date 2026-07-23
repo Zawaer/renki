@@ -1,5 +1,14 @@
-import type { RepoStatsBucket, RtkGainDay, RtkGainResponse, StatsBucket, StatsResponse } from "@crc/protocol";
-import { formatTokenCount } from "@crc/client-core";
+import type { RepoStatsBucket, RtkGainResponse, StatsBucket, StatsResponse } from "@crc/protocol";
+import {
+  formatCost,
+  formatDayLabel,
+  formatDuration,
+  formatMonthLabel,
+  formatSuccessRate,
+  formatTokenCount,
+  lastNDays,
+  tickIndices,
+} from "@crc/client-core";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -52,7 +61,7 @@ export function StatsView({ onBack }: { onBack: () => void }) {
       </View>
 
       {error ? (
-        <CenteredNote colors={colors} styles={styles} text="Couldn't load stats — check the daemon connection." />
+        <CenteredNote styles={styles} text="Couldn't load stats — check the daemon connection." />
       ) : !data ? (
         <View style={styles.center}>
           <ActivityIndicator color={colors.accent} />
@@ -60,7 +69,6 @@ export function StatsView({ onBack }: { onBack: () => void }) {
       ) : data.lifetime.turnCount === 0 ? (
         <ScrollView contentContainerStyle={styles.body}>
           <CenteredNote
-            colors={colors}
             styles={styles}
             fill={false}
             text="No completed turns yet."
@@ -91,18 +99,17 @@ function StatsBody({
   return (
     <ScrollView contentContainerStyle={styles.body}>
       <View style={styles.tiles}>
-        <StatTile label="Total cost" value={formatCost(data.lifetime.costUsd)} colors={colors} styles={styles} />
-        <StatTile label="Input tokens" value={formatTokenCount(data.lifetime.inputTokens)} colors={colors} styles={styles} />
-        <StatTile label="Output tokens" value={formatTokenCount(data.lifetime.outputTokens)} colors={colors} styles={styles} />
-        <StatTile label="Time waited" value={formatDuration(data.lifetime.durationMs)} colors={colors} styles={styles} />
-        <StatTile label="Replies received" value={`${data.lifetime.turnCount}`} colors={colors} styles={styles} />
-        <StatTile label="Success rate" value={formatSuccessRate(data.lifetime)} colors={colors} styles={styles} />
+        <StatTile label="Total cost" value={formatCost(data.lifetime.costUsd)} styles={styles} />
+        <StatTile label="Input tokens" value={formatTokenCount(data.lifetime.inputTokens)} styles={styles} />
+        <StatTile label="Output tokens" value={formatTokenCount(data.lifetime.outputTokens)} styles={styles} />
+        <StatTile label="Time waited" value={formatDuration(data.lifetime.durationMs)} styles={styles} />
+        <StatTile label="Replies received" value={`${data.lifetime.turnCount}`} styles={styles} />
+        <StatTile label="Success rate" value={formatSuccessRate(data.lifetime)} styles={styles} />
       </View>
 
       {data.byRepo.length > 1 && (
         <Section
           title="By repo"
-          colors={colors}
           styles={styles}
           table={
             <SimpleTable
@@ -121,11 +128,11 @@ function StatsBody({
             />
           }
         >
-          <ChartCard title="Tokens" colors={colors} styles={styles}>
-            <Legend items={[{ label: "Input", color: colors.chartInput }, { label: "Output", color: colors.chartOutput }]} colors={colors} styles={styles} />
+          <ChartCard title="Tokens" styles={styles}>
+            <Legend items={[{ label: "Input", color: colors.chartInput }, { label: "Output", color: colors.chartOutput }]} styles={styles} />
             <RepoBars repos={data.byRepo} metric="tokens" colors={colors} styles={styles} />
           </ChartCard>
-          <ChartCard title="Cost" colors={colors} styles={styles}>
+          <ChartCard title="Cost" styles={styles}>
             <RepoBars repos={data.byRepo} metric="cost" colors={colors} styles={styles} />
           </ChartCard>
         </Section>
@@ -133,7 +140,6 @@ function StatsBody({
 
       <Section
         title={`Last ${DAY_WINDOW} days`}
-        colors={colors}
         styles={styles}
         table={
           <SimpleTable
@@ -152,8 +158,8 @@ function StatsBody({
           />
         }
       >
-        <ChartCard title="Tokens" colors={colors} styles={styles}>
-          <Legend items={[{ label: "Input", color: colors.chartInput }, { label: "Output", color: colors.chartOutput }]} colors={colors} styles={styles} />
+        <ChartCard title="Tokens" styles={styles}>
+          <Legend items={[{ label: "Input", color: colors.chartInput }, { label: "Output", color: colors.chartOutput }]} styles={styles} />
           <Bars
             items={days.map((b) => ({
               key: b.key,
@@ -168,7 +174,7 @@ function StatsBody({
             styles={styles}
           />
         </ChartCard>
-        <ChartCard title="Cost" colors={colors} styles={styles}>
+        <ChartCard title="Cost" styles={styles}>
           <Bars
             items={days.map((b) => ({
               key: b.key,
@@ -181,7 +187,7 @@ function StatsBody({
             styles={styles}
           />
         </ChartCard>
-        <ChartCard title="Time waited" colors={colors} styles={styles}>
+        <ChartCard title="Time waited" styles={styles}>
           <Bars
             items={days.map((b) => ({
               key: b.key,
@@ -198,7 +204,6 @@ function StatsBody({
 
       <Section
         title="By month"
-        colors={colors}
         styles={styles}
         table={
           data.monthly.length >= 2 ? (
@@ -223,8 +228,8 @@ function StatsBody({
           <EarlyMonthNote monthly={data.monthly} colors={colors} styles={styles} />
         ) : (
           <>
-            <ChartCard title="Tokens" colors={colors} styles={styles}>
-              <Legend items={[{ label: "Input", color: colors.chartInput }, { label: "Output", color: colors.chartOutput }]} colors={colors} styles={styles} />
+            <ChartCard title="Tokens" styles={styles}>
+              <Legend items={[{ label: "Input", color: colors.chartInput }, { label: "Output", color: colors.chartOutput }]} styles={styles} />
               <Bars
                 items={data.monthly.map((b) => ({
                   key: b.key,
@@ -239,7 +244,7 @@ function StatsBody({
                 styles={styles}
               />
             </ChartCard>
-            <ChartCard title="Cost" colors={colors} styles={styles}>
+            <ChartCard title="Cost" styles={styles}>
               <Bars
                 items={data.monthly.map((b) => ({
                   key: b.key,
@@ -276,7 +281,6 @@ function RtkSection({ rtk, colors, styles }: { rtk: RtkGainResponse; colors: The
   return (
     <Section
       title="RTK savings"
-      colors={colors}
       styles={styles}
       table={
         daily.length > 0 ? (
@@ -298,15 +302,15 @@ function RtkSection({ rtk, colors, styles }: { rtk: RtkGainResponse; colors: The
       }
     >
       <View style={styles.tiles}>
-        <StatTile label="Commands" value={String(summary.totalCommands)} colors={colors} styles={styles} />
-        <StatTile label="Tokens saved" value={formatTokenCount(summary.totalSavedTokens)} colors={colors} styles={styles} />
-        <StatTile label="Avg savings" value={`${Math.round(summary.avgSavingsPct)}%`} colors={colors} styles={styles} />
-        <StatTile label="Exec time" value={formatDuration(summary.totalTimeMs)} colors={colors} styles={styles} />
+        <StatTile label="Commands" value={String(summary.totalCommands)} styles={styles} />
+        <StatTile label="Tokens saved" value={formatTokenCount(summary.totalSavedTokens)} styles={styles} />
+        <StatTile label="Avg savings" value={`${Math.round(summary.avgSavingsPct)}%`} styles={styles} />
+        <StatTile label="Exec time" value={formatDuration(summary.totalTimeMs)} styles={styles} />
       </View>
 
       {daily.length > 0 && (
         <>
-          <ChartCard title="Tokens saved" colors={colors} styles={styles}>
+          <ChartCard title="Tokens saved" styles={styles}>
             <Bars
               items={daily.map((d) => ({
                 key: d.date,
@@ -319,7 +323,7 @@ function RtkSection({ rtk, colors, styles }: { rtk: RtkGainResponse; colors: The
               styles={styles}
             />
           </ChartCard>
-          <ChartCard title="Savings %" colors={colors} styles={styles}>
+          <ChartCard title="Savings %" styles={styles}>
             <Bars
               items={daily.map((d) => ({
                 key: d.date,
@@ -359,13 +363,11 @@ function Section({
   title,
   children,
   table,
-  colors,
   styles,
 }: {
   title: string;
   children: React.ReactNode;
   table?: React.ReactNode;
-  colors: ThemeColors;
   styles: Styles;
 }) {
   const [showTable, setShowTable] = useState(false);
@@ -384,7 +386,7 @@ function Section({
   );
 }
 
-function ChartCard({ title, children, colors, styles }: { title: string; children: React.ReactNode; colors: ThemeColors; styles: Styles }) {
+function ChartCard({ title, children, styles }: { title: string; children: React.ReactNode; styles: Styles }) {
   return (
     <View style={styles.chartCard}>
       <Text style={styles.chartTitle}>{title}</Text>
@@ -393,7 +395,7 @@ function ChartCard({ title, children, colors, styles }: { title: string; childre
   );
 }
 
-function Legend({ items, colors, styles }: { items: { label: string; color: string }[]; colors: ThemeColors; styles: Styles }) {
+function Legend({ items, styles }: { items: { label: string; color: string }[]; styles: Styles }) {
   return (
     <View style={styles.legend}>
       {items.map((it) => (
@@ -406,7 +408,7 @@ function Legend({ items, colors, styles }: { items: { label: string; color: stri
   );
 }
 
-function StatTile({ label, value, colors, styles }: { label: string; value: string; colors: ThemeColors; styles: Styles }) {
+function StatTile({ label, value, styles }: { label: string; value: string; styles: Styles }) {
   return (
     <View style={styles.tile}>
       <Text style={styles.tileLabel}>{label}</Text>
@@ -439,7 +441,8 @@ function Bars({
   const CHART_H = 96;
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const max = Math.max(1, ...items.map((i) => i.a + (i.b ?? 0)));
-  const ticks = tickIndices(items.length);
+  // 5, not web's 6 — mobile's narrower screen collides sooner.
+  const ticks = tickIndices(items.length, 5);
   const active = items.find((i) => i.key === activeKey);
 
   return (
@@ -545,13 +548,11 @@ function CenteredNote({
   text,
   sub,
   fill = true,
-  colors,
   styles,
 }: {
   text: string;
   sub?: string;
   fill?: boolean;
-  colors: ThemeColors;
   styles: Styles;
 }) {
   return (
@@ -560,61 +561,6 @@ function CenteredNote({
       {sub && <Text style={styles.noteSub}>{sub}</Text>}
     </View>
   );
-}
-
-// ── formatting & data helpers (mirrors apps/web/src/components/StatsView.tsx) ──
-
-function formatSuccessRate(bucket: { turnCount: number; okCount: number }): string {
-  if (bucket.turnCount === 0) return "—";
-  return `${Math.round((bucket.okCount / bucket.turnCount) * 100)}%`;
-}
-
-function formatCost(usd: number): string {
-  if (usd === 0) return "$0.00";
-  return usd < 1 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(2)}`;
-}
-
-function formatDuration(ms: number): string {
-  const totalSec = Math.round(ms / 1000);
-  if (totalSec <= 0) return "0s";
-  const d = Math.floor(totalSec / 86400);
-  const h = Math.floor((totalSec % 86400) / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  if (d > 0) return `${d}d ${h}h`;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
-}
-
-function formatDayLabel(key: string): string {
-  const d = new Date(`${key}T00:00:00Z`);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
-}
-
-function formatMonthLabel(key: string): string {
-  const d = new Date(`${key}-01T00:00:00Z`);
-  return d.toLocaleDateString(undefined, { month: "short", year: "numeric", timeZone: "UTC" });
-}
-
-/** Trailing N UTC days ending today, zero-filled for days with no turns. */
-function lastNDays(n: number, buckets: StatsBucket[]): StatsBucket[] {
-  const byKey = new Map(buckets.map((b) => [b.key, b]));
-  const now = new Date();
-  const out: StatsBucket[] = [];
-  for (let i = n - 1; i >= 0; i--) {
-    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
-    const key = d.toISOString().slice(0, 10);
-    out.push(byKey.get(key) ?? { key, costUsd: 0, inputTokens: 0, outputTokens: 0, durationMs: 0, turnCount: 0, okCount: 0 });
-  }
-  return out;
-}
-
-/** Sparse x-axis label indices (first, last, and evenly spaced in between) so labels don't collide. */
-function tickIndices(count: number, maxTicks = 5): Set<number> {
-  if (count <= maxTicks) return new Set(Array.from({ length: count }, (_, i) => i));
-  const step = (count - 1) / (maxTicks - 1);
-  return new Set(Array.from({ length: maxTicks }, (_, i) => Math.round(i * step)));
 }
 
 type Styles = ReturnType<typeof makeStyles>;

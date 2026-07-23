@@ -27,3 +27,8 @@ export const EFFORT_LEVELS: EffortLevel[] = [
 ];
 
 export const DEFAULT_EFFORT_KEY = "medium";
+
+/** Validates a raw persisted string (localStorage/SecureStore/etc.) against the known effort keys, falling back to the default. */
+export function resolveEffortKey(raw: string | null | undefined): string {
+  return EFFORT_LEVELS.some((e) => e.key === raw) ? (raw as string) : DEFAULT_EFFORT_KEY;
+}

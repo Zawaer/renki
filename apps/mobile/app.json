@@ -10,6 +10,10 @@
     "android": {
       "package": "com.zawaer.clauderemotecontrol"
     },
+    "androidNavigationBar": {
+      "backgroundColor": "#191918",
+      "barStyle": "light-content"
+    },
     "plugins": [
       "expo-secure-store",
       "expo-notifications",

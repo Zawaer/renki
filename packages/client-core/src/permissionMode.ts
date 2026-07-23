@@ -25,3 +25,8 @@ export const PERMISSION_MODES: PermissionModeOption[] = [
 ];
 
 export const DEFAULT_PERMISSION_MODE: PermissionModeKey = "default";
+
+/** Validates a raw persisted string (localStorage/SecureStore/etc.) against the known modes, falling back to the default. */
+export function resolvePermissionMode(raw: string | null | undefined): PermissionModeKey {
+  return PERMISSION_MODES.some((m) => m.key === raw) ? (raw as PermissionModeKey) : DEFAULT_PERMISSION_MODE;
+}

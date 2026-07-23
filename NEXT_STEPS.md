@@ -184,6 +184,52 @@ features. The throughline for everything below: shrink "found the repo" →
 
 ## 3. Deferred enhancements
 
+- [x] **Mobile UI redesign + composer/navigation/persistence fixes.** Done,
+      across several rounds of real-device testing: mobile's whole visual
+      language moved from a flat, sharp-cornered VS Code Dark+ mirror to a
+      warmer, rounded palette + a shared `radius`/`softShadow` scale
+      (`apps/mobile/src/theme.ts`), a floating pill composer, and proper
+      drag-to-dismiss bottom sheets (`apps/mobile/src/components/Sheet.tsx`)
+      replacing the model/effort/mode pickers' old tap-to-cycle chips and the
+      attach menu's plain list. Real bugs found and fixed along the way:
+      - A freshly-created session's composer went keyboard-dead until the
+        session was reopened (an Android Modal→new-screen IME handoff plus
+        the composer being needlessly non-editable pre-`isController`) — now
+        always editable, `Keyboard.dismiss()` added before the handoff.
+      - `Sheet`'s drag-to-dismiss silently did nothing (an ancestor
+        `TouchableOpacity` swallow-wrapper was winning the touch-responder
+        race against the drag), then a follow-up fix broke row taps entirely
+        (claiming the responder on touch-*start* instead of on real
+        movement) — both are now correctly resolved with a comment
+        explaining why, so the bug class doesn't reappear.
+      - Android hardware/gesture back exited the app from any screen instead
+        of navigating up (`apps/mobile/src/App.tsx`'s `BackHandler`); sheets
+        already close on back via `Modal`'s own `onRequestClose`.
+      - The status bar/nav bar/root window background defaulted to white
+        (visible as a flash on launch and on any native repaint, e.g. the
+        keyboard resize) — fixed via a new config plugin
+        (`plugins/withAndroidDarkChrome.js`) for the status bar/window
+        background (no first-class Expo config key reaches those), and
+        app.json's first-class `androidNavigationBar` key for the nav bar
+        (Expo's own built-in prebuild mod already covers that one).
+      - The Android keyboard resize was an abrupt jump instead of following
+        the keyboard (no `KeyboardAvoidingView` support on Android) —
+        smoothed with a `LayoutAnimation`, isolated in its own hook
+        (`lib/useAndroidKeyboardResizeAnimation.ts`) since it's a known
+        best-effort approximation, not a frame-perfect fix.
+      - The composer's last-picked model/effort/permission-mode now persist
+        per-device on both platforms (`lib/composerPrefs.ts` — localStorage
+        on web, `expo-secure-store` on mobile; only permission mode
+        persisted before). Shared resolver/validation logic and the Stats
+        screen's formatting helpers moved into `@crc/client-core` so web and
+        mobile can't drift apart on either.
+      A `/security-review` pass on this whole range found no high-confidence
+      issues; a `/simplify` pass found and fixed a handful of real ones
+      (duplicated validation/formatting logic, a `PanResponder` rebuilt
+      every render, dead prop-threading, two more sheet-shaped modals not
+      yet using the shared `Sheet`) — see the commit history for specifics.
+      Still open: the demo GIF and flipping the repo public (below), plus
+      whatever the next round of device testing turns up.
 - [x] **Mobile Stats screen.** Done: `apps/mobile/src/screens/StatsView.tsx`,
       reachable from a stats-chart icon next to the new gear icon on the
       session list — a mirror of web's `StatsView.tsx` (same `/stats` +

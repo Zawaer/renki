@@ -1,5 +1,14 @@
 import type { RepoStatsBucket, RtkGainDay, RtkGainResponse, StatsBucket, StatsResponse } from "@crc/protocol";
-import { formatTokenCount } from "@crc/client-core";
+import {
+  formatCost,
+  formatDayLabel,
+  formatDuration,
+  formatMonthLabel,
+  formatSuccessRate,
+  formatTokenCount,
+  lastNDays,
+  tickIndices,
+} from "@crc/client-core";
 import { useCallback, useEffect, useState } from "react";
 import { useClient } from "../lib/client.js";
 import { Button } from "./ui.js";
@@ -340,7 +349,7 @@ type BarItem = { key: string; label: string; a: number; b?: number; tooltip: str
 function Bars({ items, colorA, colorB }: { items: BarItem[]; colorA: string; colorB?: string }) {
   const CHART_H = 96;
   const max = Math.max(1, ...items.map((i) => i.a + (i.b ?? 0)));
-  const ticks = tickIndices(items.length);
+  const ticks = tickIndices(items.length, 6);
 
   return (
     <div>
@@ -493,57 +502,6 @@ function CenteredNote({ icon, text, sub, fill = true }: { icon?: string; text: s
   );
 }
 
-// ── formatting & data helpers ────────────────────────────────────────────────
-
-function formatSuccessRate(bucket: { turnCount: number; okCount: number }): string {
-  if (bucket.turnCount === 0) return "—";
-  return `${Math.round((bucket.okCount / bucket.turnCount) * 100)}%`;
-}
-
-function formatCost(usd: number): string {
-  if (usd === 0) return "$0.00";
-  return usd < 1 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(2)}`;
-}
-
-function formatDuration(ms: number): string {
-  const totalSec = Math.round(ms / 1000);
-  if (totalSec <= 0) return "0s";
-  const d = Math.floor(totalSec / 86400);
-  const h = Math.floor((totalSec % 86400) / 3600);
-  const m = Math.floor((totalSec % 3600) / 60);
-  const s = totalSec % 60;
-  if (d > 0) return `${d}d ${h}h`;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
-}
-
-function formatDayLabel(key: string): string {
-  const d = new Date(`${key}T00:00:00Z`);
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
-}
-
-function formatMonthLabel(key: string): string {
-  const d = new Date(`${key}-01T00:00:00Z`);
-  return d.toLocaleDateString(undefined, { month: "short", year: "numeric", timeZone: "UTC" });
-}
-
-/** Trailing N UTC days ending today, zero-filled for days with no turns. */
-function lastNDays(n: number, buckets: StatsBucket[]): StatsBucket[] {
-  const byKey = new Map(buckets.map((b) => [b.key, b]));
-  const now = new Date();
-  const out: StatsBucket[] = [];
-  for (let i = n - 1; i >= 0; i--) {
-    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
-    const key = d.toISOString().slice(0, 10);
-    out.push(byKey.get(key) ?? { key, costUsd: 0, inputTokens: 0, outputTokens: 0, durationMs: 0, turnCount: 0, okCount: 0 });
-  }
-  return out;
-}
-
-/** Sparse x-axis label indices (first, last, and evenly spaced in between) so labels don't collide. */
-function tickIndices(count: number, maxTicks = 6): Set<number> {
-  if (count <= maxTicks) return new Set(Array.from({ length: count }, (_, i) => i));
-  const step = (count - 1) / (maxTicks - 1);
-  return new Set(Array.from({ length: maxTicks }, (_, i) => Math.round(i * step)));
-}
+// formatCost/formatDuration/formatSuccessRate/formatDayLabel/formatMonthLabel/
+// lastNDays/tickIndices now live in @crc/client-core (statsFormat.ts), shared
+// with apps/mobile's identical Stats screen.

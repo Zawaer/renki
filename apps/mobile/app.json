@@ -33,7 +33,8 @@
           }
         }
       ],
-      "./plugins/withAndroidUserCaTrust.js"
+      "./plugins/withAndroidUserCaTrust.js",
+      "./plugins/withAndroidDarkChrome.js"
     ],
     "extra": {
       "eas": {

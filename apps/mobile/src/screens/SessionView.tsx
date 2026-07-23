@@ -24,7 +24,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import {
   Image,
+  Keyboard,
   KeyboardAvoidingView,
+  LayoutAnimation,
   Modal,
   Platform,
   ScrollView,
@@ -32,6 +34,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  UIManager,
   View,
 } from "react-native";
 import { Markdown } from "../components/Markdown";
@@ -39,6 +42,11 @@ import { Sheet } from "../components/Sheet";
 import { pickDocumentAttachments, pickImageAttachments, type PendingAttachment } from "../lib/attachments";
 import { useClient, useStoreValue } from "../lib/client";
 import { radius, softShadow, statusColorFor, type ThemeColors, useTheme, withAlpha } from "../theme";
+
+// Old-architecture-only flag (a no-op under Fabric/the New Architecture, which
+// this app runs — harmless either way); needed for LayoutAnimation to do
+// anything on Android at all when it does apply.
+if (Platform.OS === "android") UIManager.setLayoutAnimationEnabledExperimental?.(true);
 
 export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: () => void }) {
   const colors = useTheme();
@@ -66,6 +74,23 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
     realtime.watch(sessionId);
     return () => realtime.unwatch(sessionId);
   }, [realtime, sessionId]);
+
+  // Android has no KeyboardAvoidingView "padding" behavior (only iOS does),
+  // so the composer otherwise just snaps to its new position the instant the
+  // OS finishes resizing the window for the keyboard — a hard jump instead of
+  // following the keyboard up/down like the timeline does elsewhere. Wrapping
+  // that resize-driven layout change in a LayoutAnimation smooths it into a
+  // real transition instead.
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    const animate = () => LayoutAnimation.configureNext(LayoutAnimation.create(220, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity));
+    const showSub = Keyboard.addListener("keyboardDidShow", animate);
+    const hideSub = Keyboard.addListener("keyboardDidHide", animate);
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     rest.getCapabilities().then(setCapabilities).catch(() => {});
@@ -173,6 +198,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
         style={styles.timeline}
         contentContainerStyle={styles.timelineContent}
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
+        keyboardShouldPersistTaps="handled"
       >
         {conv.timeline.length === 0 && <Text style={styles.empty}>No messages yet.</Text>}
         {conv.timeline.map((item, i) => (
@@ -220,7 +246,13 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
           ))}
         </View>
       )}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.optionsRow} contentContainerStyle={styles.optionsRowContent}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.optionsRow}
+        contentContainerStyle={styles.optionsRowContent}
+        keyboardShouldPersistTaps="always"
+      >
         <TouchableOpacity style={styles.optionPill} onPress={() => setModelSheetOpen(true)}>
           <Text style={styles.optionPillText} numberOfLines={1}>
             {modelLabel}
@@ -356,7 +388,7 @@ function PickerSheet({
 }) {
   return (
     <Sheet visible={visible} onClose={onClose} title={title} colors={colors}>
-      <ScrollView contentContainerStyle={styles.pickerList}>
+      <ScrollView contentContainerStyle={styles.pickerList} keyboardShouldPersistTaps="handled">
         {options.map((o) => {
           const selected = o.key === selectedKey;
           return (

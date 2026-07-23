@@ -40,7 +40,7 @@ export function App() {
   if (loading) {
     return (
       <View style={[styles.fill, styles.center]}>
-        <StatusBar style="light" />
+        <StatusBar style="light" backgroundColor={colors.bg} />
         <ActivityIndicator color={colors.accent} />
       </View>
     );
@@ -49,7 +49,7 @@ export function App() {
   if (!config) {
     return (
       <>
-        <StatusBar style="light" />
+        <StatusBar style="light" backgroundColor={colors.bg} />
         <Setup
           onSave={async (c) => {
             await saveConfig(c);
@@ -62,7 +62,7 @@ export function App() {
 
   return (
     <ClientProvider config={config}>
-      <StatusBar style="light" />
+      <StatusBar style="light" backgroundColor={colors.bg} />
       <Main
         config={config}
         onReset={async () => {

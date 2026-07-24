@@ -1,6 +1,7 @@
 import type {
   AccountsResponse,
   AddSetupTokenResponse,
+  BranchStatusResponse,
   CapabilitiesResponse,
   ConnectUsageKeyResponse,
   CreateSessionRequest,
@@ -10,6 +11,7 @@ import type {
   GetTranscriptResponse,
   ListReposResponse,
   ListSessionsResponse,
+  PullBranchResponse,
   RenameSessionResponse,
   RtkGainResponse,
   Session,
@@ -56,6 +58,18 @@ export class RestClient {
 
   async createSession(body: CreateSessionRequest): Promise<Session> {
     return (await this.post<CreateSessionResponse>("/sessions", body)).session;
+  }
+
+  /** How far `branch` has diverged from `origin/<branch>` — check before basing a new session's worktree on it. */
+  async getBranchStatus(repoId: string, branch: string): Promise<BranchStatusResponse> {
+    return this.get<BranchStatusResponse>(
+      `/repos/${encodeURIComponent(repoId)}/branch-status?branch=${encodeURIComponent(branch)}`,
+    );
+  }
+
+  /** Fast-forward `branch` to match `origin/<branch>` (fails, rather than merge-commits, if that's not a clean fast-forward). */
+  async pullBranch(repoId: string, branch: string): Promise<PullBranchResponse> {
+    return this.post<PullBranchResponse>(`/repos/${encodeURIComponent(repoId)}/pull`, { branch });
   }
 
   async getTranscript(sessionId: string): Promise<GetTranscriptResponse> {

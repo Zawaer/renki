@@ -19,7 +19,8 @@ import type { Config } from "../config.js";
 import { logger } from "../logger.js";
 import type { DeviceRegistry } from "../push/devices.js";
 import type { PushTokenStore } from "../push/tokens.js";
-import { scanRepos } from "../repos.js";
+import { branchStatus, pullBranch } from "../git/remoteStatus.js";
+import { findRepo, scanRepos } from "../repos.js";
 import { SessionError } from "../sessions/errors.js";
 import type { SessionManager } from "../sessions/manager.js";
 import { getTailscaleStatus } from "../tailscale.js";
@@ -94,6 +95,39 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
   app.get("/health", async () => ({ ok: true }));
 
   app.get("/repos", async () => ({ repos: await scanRepos(config), root: config.reposRoot }));
+
+  // How far a repo's branch has diverged from `origin/<branch>` — lets a
+  // client warn "main is behind origin, pull first?" before basing a new
+  // session's worktree on stale code. Always runs a fresh `git fetch` first.
+  app.get<{ Params: { id: string }; Querystring: { branch?: string } }>(
+    "/repos/:id/branch-status",
+    async (req, reply) => {
+      const branch = req.query.branch?.trim();
+      if (!branch) return reply.code(400).send({ error: "invalid_request", message: "branch is required" });
+      const repo = await findRepo(config, req.params.id);
+      if (!repo) return reply.code(404).send({ error: "repo_not_found", message: `Unknown repo: ${req.params.id}` });
+      return branchStatus(repo.path, branch);
+    },
+  );
+
+  // Fast-forward a repo's branch to match `origin/<branch>`, on explicit user
+  // confirmation from the "behind origin" prompt. `--ff-only` under the hood —
+  // fails loudly instead of creating a surprise merge commit if history has
+  // diverged or a local edit is in the way.
+  app.post<{ Params: { id: string }; Body: { branch?: string } }>("/repos/:id/pull", async (req, reply) => {
+    const branch = req.body?.branch?.trim();
+    if (!branch) return reply.code(400).send({ error: "invalid_request", message: "branch is required" });
+    const repo = await findRepo(config, req.params.id);
+    if (!repo) return reply.code(404).send({ error: "repo_not_found", message: `Unknown repo: ${req.params.id}` });
+    try {
+      await pullBranch(repo.path, branch);
+      const status = await branchStatus(repo.path, branch);
+      return { ok: true, behind: status.behind };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "pull failed";
+      return reply.code(409).send({ error: "pull_failed", message });
+    }
+  });
 
   // Lets a client connected via a loopback or private-CA'd address suggest a
   // real, shareable one when showing a pairing QR — see tailscale.ts.

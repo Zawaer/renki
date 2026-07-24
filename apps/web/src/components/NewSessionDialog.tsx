@@ -22,6 +22,7 @@ export function NewSessionDialog({
   const [title, setTitle] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [behindInfo, setBehindInfo] = useState<{ behind: number } | null>(null);
 
   useEffect(() => {
     rest
@@ -40,9 +41,33 @@ export function NewSessionDialog({
     setRepoId(id);
     const repo = repos.find((r) => r.id === id);
     setBaseBranch(repo?.defaultBranch ?? "");
+    setBehindInfo(null);
   }
 
+  function changeBaseBranch(value: string) {
+    setBaseBranch(value);
+    setBehindInfo(null);
+  }
+
+  /** Create button: check the base branch against origin first, and pause for confirmation if it's behind. */
   async function create() {
+    if (repoId === NO_REPO) return submit();
+    setBusy(true);
+    setError(null);
+    try {
+      const status = await rest.getBranchStatus(repoId, baseBranch);
+      if (status.hasRemote && status.behind > 0) {
+        setBehindInfo({ behind: status.behind });
+        setBusy(false);
+        return;
+      }
+    } catch {
+      // Best-effort check — if it fails (offline, no remote, etc.) just proceed to create.
+    }
+    await submit();
+  }
+
+  async function submit() {
     setBusy(true);
     setError(null);
     try {
@@ -61,6 +86,25 @@ export function NewSessionDialog({
       setError(e instanceof Error ? e.message : "Failed to create session.");
       setBusy(false);
     }
+  }
+
+  async function pullAndCreate() {
+    setBehindInfo(null);
+    setBusy(true);
+    setError(null);
+    try {
+      await rest.pullBranch(repoId, baseBranch);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to pull.");
+      setBusy(false);
+      return;
+    }
+    await submit();
+  }
+
+  function skipAndCreate() {
+    setBehindInfo(null);
+    void submit();
   }
 
   return (
@@ -87,7 +131,7 @@ export function NewSessionDialog({
           <>
             <label className="block space-y-1">
               <span className="text-xs text-(--crc-fg-muted)">Base branch</span>
-              <input value={baseBranch} onChange={(e) => setBaseBranch(e.target.value)} className="ns-input" />
+              <input value={baseBranch} onChange={(e) => changeBaseBranch(e.target.value)} className="ns-input" />
             </label>
 
             <label className="block space-y-1">
@@ -109,14 +153,34 @@ export function NewSessionDialog({
 
         {error && <p className="text-sm text-(--crc-danger)">{error}</p>}
 
-        <div className="flex justify-end gap-2 pt-1">
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button variant="primary" disabled={busy || (repoId !== NO_REPO && !baseBranch)} onClick={create}>
-            {busy ? "Creating…" : "Create"}
-          </Button>
-        </div>
+        {behindInfo && (
+          <div className="space-y-2 rounded-sm border border-(--crc-border) bg-(--crc-bg-inset) p-3">
+            <p className="text-sm text-(--crc-fg)">
+              <span className="font-medium">{baseBranch}</span> is {behindInfo.behind} commit
+              {behindInfo.behind === 1 ? "" : "s"} behind <span className="font-medium">origin/{baseBranch}</span>.
+              Pull the latest before creating this session?
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" disabled={busy} onClick={skipAndCreate}>
+                Skip
+              </Button>
+              <Button variant="primary" disabled={busy} onClick={pullAndCreate}>
+                {busy ? "Pulling…" : "Pull & create"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {!behindInfo && (
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button variant="primary" disabled={busy || (repoId !== NO_REPO && !baseBranch)} onClick={create}>
+              {busy ? "Creating…" : "Create"}
+            </Button>
+          </div>
+        )}
 
         <style>{`.ns-input{width:100%;border-radius:2px;border:1px solid var(--crc-border);background:var(--crc-bg-inset);padding:0.5rem 0.75rem;font-size:0.875rem;color:var(--crc-fg);outline:none}.ns-input:focus{border-color:var(--crc-focus)}`}</style>
       </div>

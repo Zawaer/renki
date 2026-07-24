@@ -300,7 +300,32 @@ function NewSessionModal({
     rest.listRepos().then(setRepos).catch((e) => setError(String(e)));
   }, [visible, rest]);
 
+  /** Create button: check the base branch against origin first, and confirm via Alert if it's behind. */
   async function create() {
+    if (!repoId) return submit();
+    setBusy(true);
+    setError(null);
+    try {
+      const status = await rest.getBranchStatus(repoId, baseBranch);
+      if (status.hasRemote && status.behind > 0) {
+        setBusy(false);
+        Alert.alert(
+          "Pull latest changes?",
+          `${baseBranch} is ${status.behind} commit${status.behind === 1 ? "" : "s"} behind origin/${baseBranch}.`,
+          [
+            { text: "Skip", style: "cancel", onPress: () => submit() },
+            { text: "Pull latest", style: "default", onPress: () => pullAndSubmit() },
+          ],
+        );
+        return;
+      }
+    } catch {
+      // Best-effort check — if it fails (offline, no remote, etc.) just proceed to create.
+    }
+    await submit();
+  }
+
+  async function submit() {
     setBusy(true);
     setError(null);
     try {
@@ -313,6 +338,19 @@ function NewSessionModal({
       setError(e instanceof Error ? e.message : "Failed to create.");
       setBusy(false);
     }
+  }
+
+  async function pullAndSubmit() {
+    setBusy(true);
+    setError(null);
+    try {
+      await rest.pullBranch(repoId!, baseBranch);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to pull.");
+      setBusy(false);
+      return;
+    }
+    await submit();
   }
 
   return (

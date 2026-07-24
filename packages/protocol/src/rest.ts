@@ -10,6 +10,26 @@ import { SessionEvent } from "./events.js";
  * carry CRUD semantics.
  */
 
+/**
+ * How far a repo's local branch has diverged from `origin/<branch>`, as of a
+ * fresh `git fetch` run right before the comparison. `hasRemote:false` means
+ * the branch doesn't exist on origin (local-only branch, or no such remote) —
+ * `ahead`/`behind` are meaningless in that case.
+ */
+export const BranchStatusResponse = z.object({
+  ahead: z.number().int(),
+  behind: z.number().int(),
+  hasRemote: z.boolean(),
+});
+export type BranchStatusResponse = z.infer<typeof BranchStatusResponse>;
+
+/** Result of fast-forwarding a repo's branch to match `origin/<branch>`. */
+export const PullBranchResponse = z.object({
+  ok: z.boolean(),
+  behind: z.number().int(),
+});
+export type PullBranchResponse = z.infer<typeof PullBranchResponse>;
+
 export const ListReposResponse = z.object({
   repos: z.array(Repo),
   /** The daemon's resolved CRC_REPOS_ROOT — surfaced so clients can show where repos are (or should be) found. */

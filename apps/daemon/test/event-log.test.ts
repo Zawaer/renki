@@ -143,6 +143,42 @@ describe("subscribe", () => {
   });
 });
 
+describe("statsSummary", () => {
+  it("buckets turn_result events by model and by client type, folding missing fields into default/unknown", () => {
+    const log = new EventLog(makeTestDb());
+    const turn = (overrides: { model?: string | null; clientType?: string | null }) =>
+      log.append("s1", {
+        kind: "turn_result",
+        turnId: "t",
+        promptId: "p",
+        ok: true,
+        costUsd: 1,
+        durationMs: 100,
+        errorMessage: null,
+        inputTokens: 10,
+        outputTokens: 5,
+        ...overrides,
+      });
+
+    turn({ model: "claude-opus-4-8", clientType: "web" });
+    turn({ model: "claude-opus-4-8", clientType: "phone" });
+    turn({ model: null, clientType: "vscode" }); // ran the SDK's own default
+    turn({}); // pre-feature event: neither field present at all
+
+    const stats = log.statsSummary();
+
+    const models = Object.fromEntries(stats.byModel.map((b) => [b.key, b.turnCount]));
+    expect(models).toEqual({ "claude-opus-4-8": 2, default: 2 });
+
+    const clients = Object.fromEntries(stats.byClientType.map((b) => [b.key, b.turnCount]));
+    expect(clients).toEqual({ web: 1, phone: 1, vscode: 1, unknown: 1 });
+
+    // Sorted descending by cost, same as byRepo.
+    expect(stats.byModel[0]?.key).toBe("claude-opus-4-8");
+    expect(stats.byModel[0]?.costUsd).toBeCloseTo(2);
+  });
+});
+
 describe("restart", () => {
   it("a fresh EventLog on the same db continues the seq from stored history", () => {
     const db = makeTestDb();

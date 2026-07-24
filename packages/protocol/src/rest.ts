@@ -107,14 +107,20 @@ export type RepoStatsBucket = z.infer<typeof RepoStatsBucket>;
 /**
  * Cost/token/wait-time analytics, built by scanning every stored `turn_result`
  * event. `daily`/`monthly` are sorted ascending by key ("2026-07-22" /
- * "2026-07") and only contain buckets with at least one turn. `byRepo` is
- * sorted descending by cost. `firstTurnAt` is the timestamp of the earliest
- * recorded turn, or null if none have run yet.
+ * "2026-07") and only contain buckets with at least one turn. `byRepo`,
+ * `byModel`, and `byClientType` are sorted descending by cost — `byModel`'s
+ * key is the model string a turn ran with, or "default" when no per-turn
+ * override was sent; `byClientType`'s key is the submitting device's kind
+ * ("web"/"phone"/"vscode"), or "unknown" for turns recorded before this
+ * field existed. `firstTurnAt` is the timestamp of the earliest recorded
+ * turn, or null if none have run yet.
  */
 export const StatsResponse = z.object({
   daily: z.array(StatsBucket),
   monthly: z.array(StatsBucket),
   byRepo: z.array(RepoStatsBucket),
+  byModel: z.array(StatsBucket),
+  byClientType: z.array(StatsBucket),
   lifetime: StatsBucket,
   firstTurnAt: z.number().int().nullable(),
 });

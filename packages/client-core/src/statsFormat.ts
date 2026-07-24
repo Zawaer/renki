@@ -48,6 +48,27 @@ export function lastNDays(n: number, buckets: StatsBucket[]): StatsBucket[] {
   return out;
 }
 
+/** Turns a `byModel` bucket key (a raw model id, or "default" for no per-turn override) into a display label. */
+export function formatModelLabel(key: string): string {
+  return key === "default" ? "Default" : key;
+}
+
+/** Turns a `byClientType` bucket key (a device-id prefix, or "unknown" for pre-feature turns) into a display label. */
+export function formatClientTypeLabel(key: string): string {
+  switch (key) {
+    case "web":
+      return "Web";
+    case "phone":
+      return "Mobile";
+    case "vscode":
+      return "VS Code";
+    case "unknown":
+      return "Unknown";
+    default:
+      return key.charAt(0).toUpperCase() + key.slice(1);
+  }
+}
+
 /**
  * Sparse x-axis label indices (first, last, and evenly spaced in between) so
  * labels don't collide. `maxTicks` has no default on purpose — web's wider

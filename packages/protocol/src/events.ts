@@ -155,6 +155,10 @@ const payloads = [
     outputTokens: z.number().int().nullable(),
     /** True when this failure is the controller stopping the turn (the "stop" button), not a real error. */
     interrupted: z.boolean().optional(),
+    /** The per-turn model override the client sent, or null when it ran the SDK's own default. Optional so events stored before this field existed still parse. */
+    model: z.string().nullable().optional(),
+    /** Which kind of client submitted the prompt this turn answers ("web"/"phone"/"vscode"), derived from the submitting device's id. Optional for the same reason as `model`. */
+    clientType: z.string().nullable().optional(),
   }),
 
   /** A non-turn error (spawn failure, worktree problem, etc.). */

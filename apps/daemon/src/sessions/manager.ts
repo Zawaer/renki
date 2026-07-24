@@ -458,6 +458,7 @@ export class SessionManager {
         attachments: input.attachments,
         promptId: input.promptId,
         model: input.model,
+        clientType: clientTypeFromDeviceId(input.deviceId),
         maxThinkingTokens: input.maxThinkingTokens,
         permissionMode: input.permissionMode,
         forcePermissionPrompts: this.config.forcePermissionPrompts,
@@ -630,6 +631,17 @@ export class SessionManager {
       .run();
     this.broadcast?.onSessionChanged(this.getSession(id));
   }
+}
+
+/**
+ * Every client mints its deviceId as `${prefix}_${uuid}` (see apps/web,
+ * apps/mobile, apps/vscode's config.ts) — "web"/"phone"/"vscode" — so the
+ * prefix doubles as a cheap, always-available client-type tag for stats
+ * without a separate field the client would have to remember to send.
+ */
+function clientTypeFromDeviceId(deviceId: string): string {
+  const i = deviceId.indexOf("_");
+  return i > 0 ? deviceId.slice(0, i) : "unknown";
 }
 
 function rowToSession(row: typeof sessions.$inferSelect): Session {

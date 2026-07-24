@@ -124,6 +124,11 @@ export class EventLog {
     const daily = new Map<string, StatsBucket>();
     const monthly = new Map<string, StatsBucket>();
     const byRepo = new Map<string, RepoStatsBucket>();
+    // Keys are the raw model string / device-id prefix a turn ran with;
+    // "default"/"unknown" cover both an explicit no-override turn and turns
+    // recorded before these fields existed (see the turn_result payload doc).
+    const byModel = new Map<string, StatsBucket>();
+    const byClientType = new Map<string, StatsBucket>();
     const lifetime = emptyBucket("lifetime");
     let firstTurnAt: number | null = null;
 
@@ -136,6 +141,8 @@ export class EventLog {
 
       const repo = repoBySession.get(row.sessionId) ?? { repoId: "unknown", repoName: "Unknown repo" };
       accumulate(repoBucketFor(byRepo, repo), payload);
+      accumulate(bucketFor(byModel, payload.model ?? "default"), payload);
+      accumulate(bucketFor(byClientType, payload.clientType ?? "unknown"), payload);
 
       if (firstTurnAt === null || row.ts < firstTurnAt) firstTurnAt = row.ts;
     }
@@ -144,6 +151,8 @@ export class EventLog {
       daily: [...daily.values()].sort((a, b) => a.key.localeCompare(b.key)),
       monthly: [...monthly.values()].sort((a, b) => a.key.localeCompare(b.key)),
       byRepo: [...byRepo.values()].sort((a, b) => b.costUsd - a.costUsd),
+      byModel: [...byModel.values()].sort((a, b) => b.costUsd - a.costUsd),
+      byClientType: [...byClientType.values()].sort((a, b) => b.costUsd - a.costUsd),
       lifetime,
       firstTurnAt,
     };

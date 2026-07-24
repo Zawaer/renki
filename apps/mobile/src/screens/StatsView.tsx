@@ -1,8 +1,10 @@
 import type { RepoStatsBucket, RtkGainResponse, StatsBucket, StatsResponse } from "@crc/protocol";
 import {
+  formatClientTypeLabel,
   formatCost,
   formatDayLabel,
   formatDuration,
+  formatModelLabel,
   formatMonthLabel,
   formatSuccessRate,
   formatTokenCount,
@@ -12,6 +14,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "../lib/client";
 import { radius, type ThemeColors, useTheme } from "../theme";
 
@@ -28,6 +31,7 @@ const DAY_WINDOW = 14;
 export function StatsView({ onBack }: { onBack: () => void }) {
   const colors = useTheme();
   const styles = makeStyles(colors);
+  const insets = useSafeAreaInsets();
   const { rest } = useClient();
   const [data, setData] = useState<StatsResponse | null>(null);
   const [error, setError] = useState(false);
@@ -52,7 +56,7 @@ export function StatsView({ onBack }: { onBack: () => void }) {
 
   return (
     <View style={styles.fill}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 14 }]}>
         <TouchableOpacity onPress={onBack} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="chevron-back" size={22} color={colors.text} />
         </TouchableOpacity>
@@ -134,6 +138,68 @@ function StatsBody({
           </ChartCard>
           <ChartCard title="Cost" styles={styles}>
             <RepoBars repos={data.byRepo} metric="cost" colors={colors} styles={styles} />
+          </ChartCard>
+        </Section>
+      )}
+
+      {data.byModel.length > 1 && (
+        <Section
+          title="By model"
+          styles={styles}
+          table={
+            <SimpleTable
+              headers={["Model", "Turns", "Success", "Input", "Output", "Cost", "Time waited"]}
+              rows={data.byModel.map((b) => [
+                formatModelLabel(b.key),
+                `${b.turnCount}`,
+                formatSuccessRate(b),
+                formatTokenCount(b.inputTokens),
+                formatTokenCount(b.outputTokens),
+                formatCost(b.costUsd),
+                formatDuration(b.durationMs),
+              ])}
+              colors={colors}
+              styles={styles}
+            />
+          }
+        >
+          <ChartCard title="Tokens" styles={styles}>
+            <Legend items={[{ label: "Input", color: colors.chartInput }, { label: "Output", color: colors.chartOutput }]} styles={styles} />
+            <CategoryBars buckets={data.byModel} metric="tokens" labelFor={formatModelLabel} colors={colors} styles={styles} />
+          </ChartCard>
+          <ChartCard title="Cost" styles={styles}>
+            <CategoryBars buckets={data.byModel} metric="cost" labelFor={formatModelLabel} colors={colors} styles={styles} />
+          </ChartCard>
+        </Section>
+      )}
+
+      {data.byClientType.length > 1 && (
+        <Section
+          title="By client"
+          styles={styles}
+          table={
+            <SimpleTable
+              headers={["Client", "Turns", "Success", "Input", "Output", "Cost", "Time waited"]}
+              rows={data.byClientType.map((b) => [
+                formatClientTypeLabel(b.key),
+                `${b.turnCount}`,
+                formatSuccessRate(b),
+                formatTokenCount(b.inputTokens),
+                formatTokenCount(b.outputTokens),
+                formatCost(b.costUsd),
+                formatDuration(b.durationMs),
+              ])}
+              colors={colors}
+              styles={styles}
+            />
+          }
+        >
+          <ChartCard title="Tokens" styles={styles}>
+            <Legend items={[{ label: "Input", color: colors.chartInput }, { label: "Output", color: colors.chartOutput }]} styles={styles} />
+            <CategoryBars buckets={data.byClientType} metric="tokens" labelFor={formatClientTypeLabel} colors={colors} styles={styles} />
+          </ChartCard>
+          <ChartCard title="Cost" styles={styles}>
+            <CategoryBars buckets={data.byClientType} metric="cost" labelFor={formatClientTypeLabel} colors={colors} styles={styles} />
           </ChartCard>
         </Section>
       )}
@@ -517,6 +583,54 @@ function RepoBars({ repos, metric, colors, styles }: { repos: RepoStatsBucket[];
   );
 }
 
+/**
+ * Ranked horizontal bar list keyed on a plain `StatsBucket` (model/client-type
+ * buckets, unlike repos, have no separate id/display-name pair — the key
+ * itself, run through `labelFor`, is the label). Same proportions as `RepoBars`.
+ */
+function CategoryBars({
+  buckets,
+  metric,
+  labelFor,
+  colors,
+  styles,
+}: {
+  buckets: StatsBucket[];
+  metric: "cost" | "tokens";
+  labelFor: (key: string) => string;
+  colors: ThemeColors;
+  styles: Styles;
+}) {
+  const totalFor = (b: StatsBucket) => (metric === "cost" ? b.costUsd : b.inputTokens + b.outputTokens);
+  const max = Math.max(1, ...buckets.map(totalFor));
+  return (
+    <View style={{ gap: 8 }}>
+      {buckets.map((b) => {
+        const total = totalFor(b);
+        const pct = Math.max((total / max) * 100, total > 0 ? 2 : 0);
+        return (
+          <View key={b.key} style={styles.repoRow}>
+            <Text style={styles.repoName} numberOfLines={1}>
+              {labelFor(b.key)}
+            </Text>
+            <View style={styles.repoTrack}>
+              {metric === "tokens" ? (
+                <>
+                  <View style={{ width: `${(b.inputTokens / max) * 100}%`, height: "100%", backgroundColor: colors.chartInput }} />
+                  <View style={{ width: `${(b.outputTokens / max) * 100}%`, height: "100%", backgroundColor: colors.chartOutput }} />
+                </>
+              ) : (
+                <View style={{ width: `${pct}%`, height: "100%", backgroundColor: colors.accent }} />
+              )}
+            </View>
+            <Text style={styles.repoValue}>{metric === "cost" ? formatCost(total) : formatTokenCount(total)}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 /** Fixed-width columns in a horizontal ScrollView — the RN stand-in for an HTML table. */
 function SimpleTable({ headers, rows, colors, styles }: { headers: string[]; rows: string[][]; colors: ThemeColors; styles: Styles }) {
   const colWidth = (i: number) => (i === 0 ? 110 : 74);
@@ -573,7 +687,6 @@ const makeStyles = (colors: ThemeColors) =>
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-      paddingTop: 48,
       paddingHorizontal: 18,
       paddingBottom: 14,
     },

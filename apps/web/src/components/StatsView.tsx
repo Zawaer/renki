@@ -1,8 +1,10 @@
 import type { RepoStatsBucket, RtkGainDay, RtkGainResponse, StatsBucket, StatsResponse } from "@crc/protocol";
 import {
+  formatClientTypeLabel,
   formatCost,
   formatDayLabel,
   formatDuration,
+  formatModelLabel,
   formatMonthLabel,
   formatSuccessRate,
   formatTokenCount,
@@ -89,6 +91,40 @@ export function StatsView() {
             </ChartCard>
             <ChartCard title="Cost">
               <RepoBars repos={data.byRepo} metric="cost" />
+            </ChartCard>
+          </div>
+        </Section>
+      )}
+
+      {data.byModel.length > 1 && (
+        <Section
+          title="By model"
+          table={<DataTable rows={data.byModel} labelFor={formatModelLabel} headerLabel="Model" reverse={false} />}
+        >
+          <div className="grid gap-6 sm:grid-cols-2">
+            <ChartCard title="Tokens">
+              <Legend items={[{ label: "Input", color: "var(--crc-chart-input)" }, { label: "Output", color: "var(--crc-chart-output)" }]} />
+              <CategoryBars buckets={data.byModel} metric="tokens" labelFor={formatModelLabel} />
+            </ChartCard>
+            <ChartCard title="Cost">
+              <CategoryBars buckets={data.byModel} metric="cost" labelFor={formatModelLabel} />
+            </ChartCard>
+          </div>
+        </Section>
+      )}
+
+      {data.byClientType.length > 1 && (
+        <Section
+          title="By client"
+          table={<DataTable rows={data.byClientType} labelFor={formatClientTypeLabel} headerLabel="Client" reverse={false} />}
+        >
+          <div className="grid gap-6 sm:grid-cols-2">
+            <ChartCard title="Tokens">
+              <Legend items={[{ label: "Input", color: "var(--crc-chart-input)" }, { label: "Output", color: "var(--crc-chart-output)" }]} />
+              <CategoryBars buckets={data.byClientType} metric="tokens" labelFor={formatClientTypeLabel} />
+            </ChartCard>
+            <ChartCard title="Cost">
+              <CategoryBars buckets={data.byClientType} metric="cost" labelFor={formatClientTypeLabel} />
             </ChartCard>
           </div>
         </Section>
@@ -430,6 +466,45 @@ function RepoBars({ repos, metric }: { repos: RepoStatsBucket[]; metric: "cost" 
   );
 }
 
+/**
+ * Ranked horizontal bar list keyed on a plain `StatsBucket` (model/client-type
+ * buckets, unlike repos, have no separate id/display-name pair — the key
+ * itself, run through `labelFor`, is the label). Same proportional-bar math
+ * and single-hue rule as `RepoBars`.
+ */
+function CategoryBars({ buckets, metric, labelFor }: { buckets: StatsBucket[]; metric: "cost" | "tokens"; labelFor: (key: string) => string }) {
+  const totalFor = (b: StatsBucket) => (metric === "cost" ? b.costUsd : b.inputTokens + b.outputTokens);
+  const max = Math.max(1, ...buckets.map(totalFor));
+  return (
+    <div className="space-y-2">
+      {buckets.map((b) => {
+        const total = totalFor(b);
+        const label = labelFor(b.key);
+        return (
+          <div key={b.key} className="flex items-center gap-2">
+            <div className="w-28 shrink-0 truncate text-[11px] text-(--crc-fg)" title={label}>
+              {label}
+            </div>
+            <div className="flex h-4 flex-1 overflow-hidden rounded-sm bg-(--crc-bg)">
+              {metric === "tokens" ? (
+                <>
+                  <div className="h-full" style={{ width: `${(b.inputTokens / max) * 100}%`, background: "var(--crc-chart-input)" }} />
+                  <div className="h-full" style={{ width: `${(b.outputTokens / max) * 100}%`, background: "var(--crc-chart-output)" }} />
+                </>
+              ) : (
+                <div className="h-full rounded-sm" style={{ width: `${Math.max((total / max) * 100, total > 0 ? 2 : 0)}%`, background: "var(--crc-accent)" }} />
+              )}
+            </div>
+            <div className="w-16 shrink-0 text-right text-[11px] text-(--crc-fg-muted) tabular-nums">
+              {metric === "cost" ? formatCost(total) : formatTokenCount(total)}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function RepoTable({ rows }: { rows: RepoStatsBucket[] }) {
   return (
     <div className="overflow-x-auto rounded-sm border border-(--crc-border)">
@@ -461,21 +536,34 @@ function RepoTable({ rows }: { rows: RepoStatsBucket[] }) {
   );
 }
 
-function DataTable({ rows, labelFor }: { rows: StatsBucket[]; labelFor: (key: string) => string }) {
+function DataTable({
+  rows,
+  labelFor,
+  headerLabel = "",
+  reverse = true,
+}: {
+  rows: StatsBucket[];
+  labelFor: (key: string) => string;
+  /** Column header for the label column — "" for the time-series tables, where it's self-evident from the section title. */
+  headerLabel?: string;
+  /** Time-series buckets read newest-first; category buckets (model/client) are already cost-sorted and shouldn't be reversed. */
+  reverse?: boolean;
+}) {
+  const ordered = reverse ? [...rows].reverse() : rows;
   return (
     <div className="overflow-x-auto rounded-sm border border-(--crc-border)">
       <table className="w-full text-left text-[11px]">
         <thead className="bg-(--crc-bg-elevated) text-(--crc-fg-muted)">
           <tr>
-            {["", "Turns", "Success", "Input", "Output", "Cost", "Time waited"].map((h) => (
-              <th key={h} className="px-2.5 py-1.5 font-medium">
+            {[headerLabel, "Turns", "Success", "Input", "Output", "Cost", "Time waited"].map((h, i) => (
+              <th key={i} className="px-2.5 py-1.5 font-medium">
                 {h}
               </th>
             ))}
           </tr>
         </thead>
         <tbody className="[&>tr:nth-child(even)]:bg-(--crc-bg-elevated)/40">
-          {[...rows].reverse().map((r) => (
+          {ordered.map((r) => (
             <tr key={r.key}>
               <td className="px-2.5 py-1 text-(--crc-fg)">{labelFor(r.key)}</td>
               <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{r.turnCount}</td>

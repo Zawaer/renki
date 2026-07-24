@@ -48,6 +48,8 @@ export type RunTurnArgs = {
   resolvePermission: PermissionResolver;
   abortController?: AbortController;
   model?: string;
+  /** Which kind of client submitted this prompt ("web"/"phone"/"vscode"), stamped onto the resulting turn_result for stats. */
+  clientType?: string;
   /** Thinking-token budget for this turn; omit/null for the SDK's own default. */
   maxThinkingTokens?: number | null;
   /** SDK permission mode for this turn; omit for `"default"` (ask for every gated tool). */
@@ -237,7 +239,13 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
         }
 
         case "assistant": {
-          if ((message as { error?: string }).error === "rate_limit") sawRateLimitError = true;
+          const sdkError = (message as { error?: string }).error;
+          if (sdkError === "rate_limit") sawRateLimitError = true;
+          // An SDK-flagged error frame's content is just a placeholder repeating
+          // the same failure the `result` message's errorMessage will carry —
+          // skip it here so it isn't shown twice (once as a normal reply, once
+          // as the "Turn failed: ..." banner).
+          if (sdkError) break;
           const t = trackingFor(message.parent_tool_use_id);
           handleAssistantMessage(
             message.message,
@@ -279,6 +287,8 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
             inputTokens: message.usage?.input_tokens ?? null,
             outputTokens: message.usage?.output_tokens ?? null,
             interrupted,
+            model: args.model ?? null,
+            clientType: args.clientType ?? null,
           });
           return {
             claudeSessionId,
@@ -309,6 +319,8 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
       errorMessage: msg,
       inputTokens: null,
       outputTokens: null,
+      model: args.model ?? null,
+      clientType: args.clientType ?? null,
     });
     return {
       claudeSessionId,

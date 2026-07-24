@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient, useStoreValue } from "../lib/client";
 import { radius, type ThemeColors, useTheme, withAlpha } from "../theme";
 import { ExtraUsageMeter, Meter } from "./AccountsBar";
@@ -38,13 +39,14 @@ export function Settings({
 }) {
   const colors = useTheme();
   const styles = makeStyles(colors);
+  const insets = useSafeAreaInsets();
   const { realtime } = useClient();
   const status = useStoreValue(realtime.status);
   const [pairing, setPairing] = useState(false);
 
   return (
     <View style={styles.fill}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 14 }]}>
         <TouchableOpacity onPress={onBack} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Ionicons name="chevron-back" size={22} color={colors.text} />
         </TouchableOpacity>
@@ -472,7 +474,6 @@ const makeStyles = (colors: ThemeColors) =>
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-      paddingTop: 48,
       paddingHorizontal: 18,
       paddingBottom: 14,
     },

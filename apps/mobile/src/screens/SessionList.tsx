@@ -2,6 +2,7 @@ import type { Repo, Session } from "@crc/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, FlatList, Keyboard, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Sheet } from "../components/Sheet";
 import { useClient } from "../lib/client";
 import { radius, statusColorFor, type ThemeColors, useTheme, withAlpha } from "../theme";
@@ -19,6 +20,7 @@ export function SessionList({
   const colors = useTheme();
   const statusColor = statusColorFor(colors);
   const styles = makeStyles(colors);
+  const insets = useSafeAreaInsets();
   const { rest, realtime } = useClient();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [creating, setCreating] = useState(false);
@@ -73,7 +75,7 @@ export function SessionList({
   const archived = sessions.filter((s) => s.status === "archived");
 
   return (
-    <View style={styles.fill}>
+    <View style={[styles.fill, { paddingTop: insets.top + 14 }]}>
       <View style={styles.header}>
         <Text style={styles.title}>Sessions</Text>
         <View style={styles.headerActions}>
@@ -373,7 +375,7 @@ type Styles = ReturnType<typeof makeStyles>;
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-    fill: { flex: 1, backgroundColor: colors.bg, paddingTop: 48 },
+    fill: { flex: 1, backgroundColor: colors.bg },
     header: {
       flexDirection: "row",
       alignItems: "center",

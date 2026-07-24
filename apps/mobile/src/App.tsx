@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, BackHandler, StyleSheet, Text, View } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as Notifications from "expo-notifications";
 import { type AppConfig, clearConfig, loadConfig, saveConfig } from "./lib/config";
@@ -25,6 +26,14 @@ Notifications.setNotificationHandler({
 });
 
 export function App() {
+  return (
+    <SafeAreaProvider>
+      <AppBody />
+    </SafeAreaProvider>
+  );
+}
+
+function AppBody() {
   const colors = useTheme();
   const styles = makeStyles(colors);
   const [loading, setLoading] = useState(true);

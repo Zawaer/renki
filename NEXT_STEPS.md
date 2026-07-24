@@ -298,6 +298,16 @@ features. The throughline for everything below: shrink "found the repo" →
 
 ## 4. Known fragilities
 
+- **Per-session git worktrees + the `crc merge` conflict flow may not scale to
+  frequent conflicts.** Today a merge conflict spawns exactly one Claude
+  session (unattended, auto-approved) pre-loaded with the conflicted worktree
+  to resolve it serially (`apps/daemon/src/sessions/mergeFlow.ts`,
+  `apps/daemon/src/git/merge.ts`). If parallel worktree branches on the same
+  repo start conflicting often enough that this becomes a bottleneck, worth
+  exploring a multi-agent orchestration approach instead — e.g. fan out
+  independent agents per conflicted file/hunk (or per competing branch) and
+  have them resolve concurrently rather than one bot session working through
+  every conflicted file in sequence.
 - The claude.ai usage endpoint is undocumented/reverse-engineered — the usage-%
   reader may need a tweak if Anthropic changes it (the rate-limit trigger does
   not depend on it).

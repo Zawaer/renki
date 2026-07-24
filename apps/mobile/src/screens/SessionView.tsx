@@ -34,6 +34,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Markdown } from "../components/Markdown";
 import { Sheet } from "../components/Sheet";
 import { pickDocumentAttachments, pickImageAttachments, type PendingAttachment } from "../lib/attachments";
@@ -46,6 +47,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const colors = useTheme();
   const statusColor = statusColorFor(colors);
   const styles = makeStyles(colors);
+  const insets = useSafeAreaInsets();
   const { realtime, rest, config } = useClient();
   const store = realtime.conversation(sessionId);
   const conv = useStoreValue(store);
@@ -170,7 +172,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
 
   return (
     <KeyboardAvoidingView
-      style={styles.fill}
+      style={[styles.fill, { paddingTop: insets.top + 10 }]}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={0}
     >
@@ -810,7 +812,7 @@ type Styles = ReturnType<typeof makeStyles>;
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-    fill: { flex: 1, backgroundColor: colors.bg, paddingTop: 44 },
+    fill: { flex: 1, backgroundColor: colors.bg },
     flex1: { flex: 1 },
     header: {
       flexDirection: "row",

@@ -15,6 +15,7 @@ import {
   type EditToolView,
   type PermissionModeKey,
   type PermissionView,
+  type SubagentView,
   type TimelineItem,
   type TodoItemView,
   type TurnView,
@@ -23,6 +24,7 @@ import type { CapabilitiesResponse } from "@crc/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -613,6 +615,7 @@ function Block({
             {truncate(block.result.summary, 300)}
           </Text>
         )}
+        {block.subagent && <SubagentActivity subagent={block.subagent} colors={colors} styles={styles} />}
       </View>
     );
   }
@@ -620,6 +623,43 @@ function Block({
     return <ThinkingBlock block={block} live={turnRunning && block.endedAtMs == null} colors={colors} styles={styles} />;
   }
   return <Markdown content={block.text} />;
+}
+
+/** A Task call's own nested activity, live-streamed via the Agent SDK's forwardSubagentText — collapsible, open by default while running, auto-collapses once done. Mirrors web's <details>-based SubagentActivity. */
+function SubagentActivity({ subagent, colors, styles }: { subagent: SubagentView; colors: ThemeColors; styles: Styles }) {
+  const [expanded, setExpanded] = useState(subagent.status === "running");
+  const prevStatus = useRef(subagent.status);
+
+  useEffect(() => {
+    if (prevStatus.current === "running" && subagent.status === "done") setExpanded(false);
+    prevStatus.current = subagent.status;
+  }, [subagent.status]);
+
+  return (
+    <View style={styles.subagentWrap}>
+      <TouchableOpacity style={styles.subagentHeader} onPress={() => setExpanded((v) => !v)}>
+        {subagent.status === "running" ? (
+          <ActivityIndicator size="small" color={colors.busy} />
+        ) : (
+          <Ionicons name="checkmark-circle" size={14} color={colors.ok} />
+        )}
+        <Text style={styles.subagentType}>{subagent.subagentType ?? "Subagent"}</Text>
+        {subagent.taskDescription && (
+          <Text style={styles.subagentDesc} numberOfLines={1}>
+            — {subagent.taskDescription}
+          </Text>
+        )}
+        <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={14} color={colors.faint} />
+      </TouchableOpacity>
+      {expanded && (
+        <View style={styles.subagentBody}>
+          {subagent.blocks.map((b, i) => (
+            <Block key={i} block={b} colors={colors} styles={styles} turnRunning={subagent.status === "running"} />
+          ))}
+        </View>
+      )}
+    </View>
+  );
 }
 
 function ThinkingBlock({
@@ -901,6 +941,11 @@ const makeStyles = (colors: ThemeColors) =>
     toolHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
     toolName: { color: colors.busy, fontSize: 13, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
     toolBody: { color: colors.dim, fontSize: 12, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
+    subagentWrap: { borderTopWidth: 1, borderTopColor: colors.border, marginTop: 6, paddingTop: 8, gap: 8 },
+    subagentHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
+    subagentType: { color: colors.text, fontSize: 12, fontWeight: "700" },
+    subagentDesc: { flex: 1, color: colors.faint, fontSize: 12 },
+    subagentBody: { gap: 8, paddingLeft: 10, borderLeftWidth: 2, borderLeftColor: colors.border },
     permCard: { backgroundColor: colors.panel2, borderRadius: radius.lg, padding: 14, gap: 8 },
     permHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
     permTitle: { color: colors.busy, fontSize: 14, fontWeight: "600" },

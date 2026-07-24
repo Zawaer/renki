@@ -4,6 +4,7 @@ import type { Attachment, CapabilitiesResponse, EventPayload, PermissionDecision
 import { logger } from "../logger.js";
 import { newTurnId } from "../ids.js";
 import { createRtkPreToolUseHook } from "./rtk.js";
+import { stripUntrustedHooks } from "./settingsHygiene.js";
 
 /**
  * Runs a single Claude turn via the Agent SDK and translates the SDK's typed
@@ -173,6 +174,10 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
     }
     return t;
   }
+
+  // Repo-defined hooks run unconditionally regardless of settingSources or
+  // canUseTool — see settingsHygiene.ts for why this has to run every turn.
+  stripUntrustedHooks(args.cwd);
 
   const options: Options = {
     cwd: args.cwd,

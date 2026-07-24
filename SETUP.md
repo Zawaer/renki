@@ -592,9 +592,10 @@ Bash commands through it too — same 60-90% output-shrinking, applied to every
 session CRC runs.
 
 Normal `rtk init -g` doesn't apply here: it wires up RTK via Claude Code's
-`settings.json` hook mechanism, but CRC's sessions run the Agent SDK in
-isolation (no filesystem settings are ever loaded, by design — so a repo's own
-`.claude/settings.json` can't smuggle in arbitrary hooks). Instead, set:
+`settings.json` hook mechanism, but CRC strips any `hooks` a repo's own
+`.claude/settings.json`/`settings.local.json` defines before every turn (see
+[MCP servers](#mcp-servers-optional) below for why that's a repo file, not an
+SDK isolation flag). Instead, set:
 
 ```
 CRC_ENABLE_RTK=1
@@ -676,6 +677,21 @@ until `rtk` actually responds successfully, so a broken/missing install is
 silent there too — check the daemon logs if you expect it to show up and it
 doesn't.
 
+## MCP servers (optional)
+
+No CRC-side config needed — a repo's own `.mcp.json` (or user-level
+`~/.claude.json` MCP config on the daemon host) connects automatically,
+exactly like a local `claude` CLI session, since CRC's sessions load project
+filesystem settings by default. Manage MCP servers the same way you would for
+any Claude Code project: edit `.mcp.json` in the repo, or `claude mcp add` on
+the daemon host.
+
+The one thing CRC strips out of that same filesystem-settings loading is
+`hooks` (see the RTK section above) — a repo's `.claude/settings.json` can
+still define `mcpServers`, `permissions`, `statusLine`, etc.; only the
+`hooks` key is removed, and only from the session's own worktree copy, never
+your source repo.
+
 ## Security model (single-user v1)
 
 - **Tailscale (WireGuard)** is the network boundary — the daemon is never on the
@@ -687,3 +703,10 @@ doesn't.
 - `CRC_FORCE_PERMISSION_PROMPTS=1` makes every gated tool ask the controller
   instead of relying on your machine's allow-list — worth enabling once you
   approve actions from your phone.
+- A repo's own `.claude/settings.json`/`settings.local.json` can't smuggle in
+  a `PreToolUse`/`PostToolUse` command hook to get shell execution around the
+  approval prompt — CRC strips the `hooks` key from both files, in the
+  session's worktree, before every turn. This matters regardless of
+  `CRC_FORCE_PERMISSION_PROMPTS`: a hook-defined command runs unconditionally,
+  even when a tool call is denied, so it isn't something the permission
+  system alone can catch.

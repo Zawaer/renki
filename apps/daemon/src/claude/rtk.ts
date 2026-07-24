@@ -7,11 +7,12 @@ import { logger } from "../logger.js";
  * (https://github.com/rtk-ai/rtk), a local CLI proxy that rewrites commands
  * (e.g. `git status` -> `rtk git status`) to shrink their output before it
  * ever reaches the model. `rtk init -g` normally wires this in via Claude
- * Code's own settings.json hook mechanism, but our sessions run the Agent SDK
- * in isolation (no filesystem settings are loaded, by design — see
- * runner.ts), so we call RTK's own hook binary directly as an in-code hook
- * instead. Requires `rtk` to be installed and on PATH on the machine running
- * the daemon (not the connecting client).
+ * Code's own settings.json hook mechanism, but any hooks a repo's own
+ * settings.json defines get stripped before every turn (see
+ * settingsHygiene.ts) — so we call RTK's own hook binary directly as an
+ * in-code hook instead, passed through the SDK's `hooks` option rather than
+ * a repo file. Requires `rtk` to be installed and on PATH on the machine
+ * running the daemon (not the connecting client).
  *
  * Fails open on any problem — not found, crash, malformed output — so a
  * broken or missing rtk install never blocks a real command from running.

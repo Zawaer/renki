@@ -42,8 +42,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": ""
+        "projectId": "56903ad1-4135-4e58-93fa-c7e2b1354aad"
       }
-    }
+    },
+    "owner": "zawaer"
   }
 }

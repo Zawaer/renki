@@ -279,6 +279,23 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
           handleToolResults(message.message, turnId, args.emit);
           break;
 
+        case "system": {
+          // A background Agent-tool task (run_in_background: true) reporting
+          // it's done — may arrive during a turn that isn't the one that
+          // spawned it, so it carries no turnId; see background_task's own
+          // doc comment in events.ts for why.
+          if (message.subtype === "task_notification") {
+            args.emit({
+              kind: "background_task",
+              taskId: message.task_id,
+              toolUseId: message.tool_use_id ?? null,
+              status: message.status,
+              summary: message.summary,
+            });
+          }
+          break;
+        }
+
         case "result": {
           const ok = message.subtype === "success" && !message.is_error;
           const interrupted = !ok && isInterruptedTerminalReason((message as { terminal_reason?: unknown }).terminal_reason);
@@ -309,7 +326,7 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
         }
 
         default:
-          // system/init, tool_progress, status, etc. — not modeled in v1.
+          // init, task_started, task_progress, task_updated, etc. — not modeled in v1.
           break;
       }
     }

@@ -269,6 +269,20 @@ function Block({ block, turnRunning }: { block: BlockView; turnRunning: boolean 
           </pre>
         )}
         {block.subagent && <SubagentActivity subagent={block.subagent} />}
+        {block.backgroundTask && (
+          <div className="flex items-start gap-1.5 border-t border-(--crc-border) px-3 py-1.5 text-(--crc-fg-muted)">
+            <span
+              className={`codicon mt-0.5 ${
+                block.backgroundTask.status === "completed"
+                  ? "codicon-pass-filled text-(--crc-success)"
+                  : block.backgroundTask.status === "stopped"
+                    ? "codicon-debug-stop"
+                    : "codicon-error text-(--crc-danger)"
+              }`}
+            />
+            <span>{truncate(block.backgroundTask.summary, 800)}</span>
+          </div>
+        )}
       </div>
     );
   }

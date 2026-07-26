@@ -177,6 +177,23 @@ const payloads = [
     text: z.string(),
     level: z.enum(["info", "warn"]),
   }),
+
+  /**
+   * A background Agent-tool task (`run_in_background: true`, or one resumed
+   * later via SendMessage) reporting its outcome. Deliberately NOT tied to a
+   * turnId like tool_result is: the task can be spawned in one turn and report
+   * back during a completely different, later turn (or after the spawning
+   * turn has already finished), so the client matches it to the Task tool_use
+   * block purely by toolUseId, wherever in the timeline that block lives.
+   */
+  z.object({
+    kind: z.literal("background_task"),
+    taskId: z.string(),
+    /** The Task tool_use id that spawned it, or null if the SDK didn't supply one. */
+    toolUseId: z.string().nullable(),
+    status: z.enum(["completed", "failed", "stopped"]),
+    summary: z.string(),
+  }),
 ] as const;
 
 /** What the daemon produces before it knows the sequence number. */

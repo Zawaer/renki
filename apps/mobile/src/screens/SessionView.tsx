@@ -618,6 +618,24 @@ function Block({
           </Text>
         )}
         {block.subagent && <SubagentActivity subagent={block.subagent} colors={colors} styles={styles} />}
+        {block.backgroundTask && (
+          <View style={styles.subagentWrap}>
+            <View style={styles.subagentHeader}>
+              <Ionicons
+                name={
+                  block.backgroundTask.status === "completed"
+                    ? "checkmark-circle"
+                    : block.backgroundTask.status === "stopped"
+                      ? "stop-circle"
+                      : "alert-circle"
+                }
+                size={14}
+                color={block.backgroundTask.status === "completed" ? colors.ok : colors.danger}
+              />
+              <Text style={[styles.toolBody, { flex: 1 }]}>{truncate(block.backgroundTask.summary, 300)}</Text>
+            </View>
+          </View>
+        )}
       </View>
     );
   }

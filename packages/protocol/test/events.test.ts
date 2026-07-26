@@ -29,6 +29,7 @@ const SAMPLES: Record<EventKind, unknown> = {
   turn_result: { kind: "turn_result", turnId: "t1", promptId: "p1", ok: true, costUsd: 0.01, durationMs: 10, errorMessage: null, inputTokens: 100, outputTokens: 50 },
   error: { kind: "error", message: "boom", code: null },
   notice: { kind: "notice", text: "switched", level: "info" },
+  background_task: { kind: "background_task", taskId: "task1", toolUseId: "tu", status: "completed", summary: "done" },
 };
 
 describe("EventPayload", () => {

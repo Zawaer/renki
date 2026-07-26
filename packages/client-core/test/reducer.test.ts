@@ -311,6 +311,33 @@ describe("per-event folding", () => {
     expect(s.timeline).toEqual([{ type: "notice", text: "switched account", level: "warn" }]);
   });
 
+  it("background_task attaches to its Task tool_use block even when that block lives in an EARLIER, already-finished turn", () => {
+    const T0 = "t_spawn";
+    const T1 = "t_later";
+    const s = fold(stream(
+      { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "spin up an agent" },
+      { kind: "assistant_block", turnId: T0, blockIndex: 0, blockKind: "tool_use", text: null, toolUseId: "tu_agent", toolName: "Agent", toolInput: {} },
+      { kind: "turn_result", turnId: T0, promptId: "p1", ok: true, costUsd: 0.01, durationMs: 10, errorMessage: null, inputTokens: 1, outputTokens: 1 },
+      // An unrelated later turn is the one whose live query happens to
+      // receive the SDK's task_notification — it carries no turnId at all.
+      { kind: "prompt_submitted", promptId: "p2", deviceId: "d1", text: "anything else?" },
+      { kind: "assistant_block", turnId: T1, blockIndex: 0, blockKind: "text", text: "sure, one sec", toolUseId: null, toolName: null, toolInput: null },
+      { kind: "background_task", taskId: "task_1", toolUseId: "tu_agent", status: "completed", summary: "octopus fact delivered" },
+    ));
+    const turns = s.timeline.filter((it) => it.type === "turn").map((it: any) => it.turn);
+    const spawnTurn = turns.find((t) => t.turnId === T0);
+    const agentBlock = spawnTurn.blocks.find((b: any) => b.toolUseId === "tu_agent");
+    expect(agentBlock.backgroundTask).toEqual({ status: "completed", summary: "octopus fact delivered" });
+    // The later turn that happened to carry the notification is untouched.
+    const laterTurn = turns.find((t) => t.turnId === T1);
+    expect(laterTurn.blocks.every((b: any) => !("backgroundTask" in b) || b.backgroundTask == null)).toBe(true);
+  });
+
+  it("background_task falls back to a plain notice when no matching tool_use block exists", () => {
+    const s = fold(stream({ kind: "background_task", taskId: "task_1", toolUseId: null, status: "failed", summary: "agent crashed" }));
+    expect(s.timeline).toEqual([{ type: "notice", text: "Background task finished: agent crashed", level: "warn" }]);
+  });
+
   it("error events fold nothing into the timeline but still advance lastSeq", () => {
     const s = fold(stream(
       { kind: "status_changed", status: "idle" },

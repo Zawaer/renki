@@ -35,6 +35,13 @@ export type BlockView =
       result: { ok: boolean; summary: string } | null;
       /** Present only for a Task call once its subagent starts forwarding activity. */
       subagent?: SubagentView;
+      /**
+       * Present once a background Agent-tool task (run_in_background: true)
+       * reports its outcome — arrives independently of `result` (which, for
+       * this kind of call, is just the SDK's immediate "launched" ack) and
+       * often long after this block's own turn has finished.
+       */
+      backgroundTask?: { status: "completed" | "failed" | "stopped"; summary: string };
     };
 
 export type TurnView = {
@@ -228,6 +235,21 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       s.timeline = [...s.timeline, { type: "notice", text: e.text, level: e.level }];
       return s;
 
+    case "background_task": {
+      const found = e.toolUseId ? applyBackgroundTask(s.timeline, e.toolUseId, e.status, e.summary) : null;
+      s.timeline = found
+        ? found
+        : [
+            ...s.timeline,
+            {
+              type: "notice",
+              text: `Background task finished: ${e.summary}`,
+              level: e.status === "completed" ? "info" : "warn",
+            },
+          ];
+      return s;
+    }
+
     case "error":
       // Non-turn errors aren't rendered inline in v1; surfaced via the client's
       // own error channel instead. Fold nothing.
@@ -377,6 +399,38 @@ function applyToolResult(blocks: BlockView[], toolUseId: string, ok: boolean, su
     }
     return b;
   });
+}
+
+/**
+ * Attach a background_task outcome to its Task tool_use block by toolUseId,
+ * searching EVERY turn in the timeline (not just one, unlike applyToolResult)
+ * — a background task can report back during a turn other than the one that
+ * spawned it, so which turn currently holds the matching block isn't known in
+ * advance. Returns null (caller falls back to a plain notice) if no block
+ * anywhere matches, e.g. the spawning turn's blocks were never replayed.
+ */
+function applyBackgroundTask(
+  timeline: TimelineItem[],
+  toolUseId: string,
+  status: "completed" | "failed" | "stopped",
+  summary: string,
+): TimelineItem[] | null {
+  let found = false;
+  function patch(blocks: BlockView[]): BlockView[] {
+    return blocks.map((b) => {
+      if (b.kind !== "tool_use") return b;
+      if (b.toolUseId === toolUseId) {
+        found = true;
+        return { ...b, backgroundTask: { status, summary } };
+      }
+      if (b.subagent) return { ...b, subagent: { ...b.subagent, blocks: patch(b.subagent.blocks) } };
+      return b;
+    });
+  }
+  const next = timeline.map((item) =>
+    item.type === "turn" ? { type: "turn" as const, turn: { ...item.turn, blocks: patch(item.turn.blocks) } } : item,
+  );
+  return found ? next : null;
 }
 
 function emptyTurn(turnId: string): TurnView {

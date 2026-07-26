@@ -41,6 +41,20 @@ describe("PermissionBroker", () => {
     expect(broker.has("r_1")).toBe(false);
   });
 
+  it("carries updatedInput through to the settled outcome, for AskUserQuestion-style answers", async () => {
+    const broker = new PermissionBroker(TIMEOUT_MS);
+    const promise = broker.resolverFor("s_1")(fakeRequest("r_1", { toolName: "AskUserQuestion" }));
+
+    const answers = { "Which library?": "Luxon" };
+    broker.answer("r_1", "allow", "d_phone", { questions: [], answers });
+
+    await expect(promise).resolves.toEqual({
+      decision: "allow",
+      byDeviceId: "d_phone",
+      updatedInput: { questions: [], answers },
+    });
+  });
+
   it("returns false for an unknown request id, without throwing", () => {
     const broker = new PermissionBroker(TIMEOUT_MS);
     expect(broker.answer("nonexistent", "deny", "d_phone")).toBe(false);

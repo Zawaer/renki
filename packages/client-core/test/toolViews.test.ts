@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { diffLines, parseEditView, parsePlan, parseTodos } from "../src/toolViews.js";
+import { diffLines, parseAskUserQuestion, parseEditView, parsePlan, parseTodos } from "../src/toolViews.js";
 
 describe("diffLines", () => {
   it("marks identical text as pure context", () => {
@@ -179,5 +179,72 @@ describe("parsePlan", () => {
 
   it("returns null when toolInput isn't an object", () => {
     expect(parsePlan("ExitPlanMode", null)).toBeNull();
+  });
+});
+
+describe("parseAskUserQuestion", () => {
+  const validInput = {
+    questions: [
+      {
+        question: "Which library?",
+        header: "Library",
+        options: [
+          { label: "date-fns", description: "Lighter" },
+          { label: "Luxon", description: "More features", preview: "luxon demo" },
+        ],
+        multiSelect: false,
+      },
+    ],
+  };
+
+  it("parses a valid single-question call", () => {
+    expect(parseAskUserQuestion("AskUserQuestion", validInput)).toEqual({
+      questions: [
+        {
+          question: "Which library?",
+          header: "Library",
+          options: [
+            { label: "date-fns", description: "Lighter", preview: undefined },
+            { label: "Luxon", description: "More features", preview: "luxon demo" },
+          ],
+          multiSelect: false,
+        },
+      ],
+    });
+  });
+
+  it("parses multiple questions and defaults a missing multiSelect to false", () => {
+    const view = parseAskUserQuestion("AskUserQuestion", {
+      questions: [
+        { question: "Q1?", header: "H1", options: [{ label: "A", description: "a" }] },
+        { question: "Q2?", header: "H2", options: [{ label: "B", description: "b" }], multiSelect: true },
+      ],
+    });
+    expect(view?.questions).toHaveLength(2);
+    expect(view?.questions[0]!.multiSelect).toBe(false);
+    expect(view?.questions[1]!.multiSelect).toBe(true);
+  });
+
+  it("returns null for any other tool name, regardless of input shape", () => {
+    expect(parseAskUserQuestion("Bash", validInput)).toBeNull();
+  });
+
+  it("returns null when toolInput isn't an object, or questions isn't a non-empty array", () => {
+    expect(parseAskUserQuestion("AskUserQuestion", null)).toBeNull();
+    expect(parseAskUserQuestion("AskUserQuestion", {})).toBeNull();
+    expect(parseAskUserQuestion("AskUserQuestion", { questions: [] })).toBeNull();
+    expect(parseAskUserQuestion("AskUserQuestion", { questions: "nope" })).toBeNull();
+  });
+
+  it("returns null if a question is missing question/header/options, or an option is missing label/description", () => {
+    expect(parseAskUserQuestion("AskUserQuestion", { questions: [{ header: "H", options: [] }] })).toBeNull();
+    expect(
+      parseAskUserQuestion("AskUserQuestion", { questions: [{ question: "Q?", header: "H", options: [] }] }),
+    ).toBeNull();
+    expect(
+      parseAskUserQuestion("AskUserQuestion", {
+        questions: [{ question: "Q?", header: "H", options: [{ label: "A" }] }],
+      }),
+    ).toBeNull();
   });
 });

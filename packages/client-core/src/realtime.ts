@@ -183,8 +183,13 @@ export class RealtimeClient {
     return promptId;
   }
 
-  resolvePermission(sessionId: string, requestId: string, decision: PermissionDecision): void {
-    this.send({ type: "resolve_permission", sessionId, requestId, decision });
+  resolvePermission(
+    sessionId: string,
+    requestId: string,
+    decision: PermissionDecision,
+    updatedInput?: Record<string, unknown>,
+  ): void {
+    this.send({ type: "resolve_permission", sessionId, requestId, decision, updatedInput });
   }
 
   /** Stop the turn currently running for this session (the "stop" button). */

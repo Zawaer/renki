@@ -126,6 +126,51 @@ export function parseTodos(toolInput: unknown): TodoItemView[] | null {
   return result;
 }
 
+export type AskUserQuestionOptionView = { label: string; description: string; preview?: string };
+export type AskUserQuestionQuestionView = {
+  question: string;
+  header: string;
+  options: AskUserQuestionOptionView[];
+  multiSelect: boolean;
+};
+export type AskUserQuestionView = { questions: AskUserQuestionQuestionView[] };
+
+/**
+ * AskUserQuestion → its questions/options, or null if the input doesn't match.
+ * Per the tool's own contract, models never include an "Other" option
+ * themselves ("that will be provided automatically") — callers render one.
+ */
+export function parseAskUserQuestion(toolName: string, toolInput: unknown): AskUserQuestionView | null {
+  if (toolName !== "AskUserQuestion") return null;
+  if (!toolInput || typeof toolInput !== "object") return null;
+  const questions = (toolInput as Record<string, unknown>).questions;
+  if (!Array.isArray(questions) || questions.length === 0) return null;
+
+  const result: AskUserQuestionQuestionView[] = [];
+  for (const q of questions) {
+    if (!q || typeof q !== "object") return null;
+    const question = (q as Record<string, unknown>).question;
+    const header = (q as Record<string, unknown>).header;
+    const options = (q as Record<string, unknown>).options;
+    const multiSelect = (q as Record<string, unknown>).multiSelect;
+    if (typeof question !== "string" || typeof header !== "string" || !Array.isArray(options) || options.length === 0) {
+      return null;
+    }
+
+    const parsedOptions: AskUserQuestionOptionView[] = [];
+    for (const o of options) {
+      if (!o || typeof o !== "object") return null;
+      const label = (o as Record<string, unknown>).label;
+      const description = (o as Record<string, unknown>).description;
+      const preview = (o as Record<string, unknown>).preview;
+      if (typeof label !== "string" || typeof description !== "string") return null;
+      parsedOptions.push({ label, description, preview: typeof preview === "string" ? preview : undefined });
+    }
+    result.push({ question, header, options: parsedOptions, multiSelect: multiSelect === true });
+  }
+  return { questions: result };
+}
+
 /** ExitPlanMode → the plan markdown, or null for any other tool. */
 export function parsePlan(toolName: string, toolInput: unknown): string | null {
   if (toolName !== "ExitPlanMode") return null;

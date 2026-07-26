@@ -41,12 +41,17 @@ export class PermissionBroker {
   }
 
   /** Called by the WS layer when the controller answers. Returns true if it matched. */
-  answer(requestId: string, decision: PermissionDecision, byDeviceId: string): boolean {
+  answer(
+    requestId: string,
+    decision: PermissionDecision,
+    byDeviceId: string,
+    updatedInput?: Record<string, unknown>,
+  ): boolean {
     const entry = this.pending.get(requestId);
     if (!entry) return false;
     clearTimeout(entry.timer);
     this.pending.delete(requestId);
-    entry.settle({ decision, byDeviceId });
+    entry.settle({ decision, byDeviceId, updatedInput });
     return true;
   }
 

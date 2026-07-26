@@ -5,11 +5,13 @@ import {
   estimateTokens,
   formatTokenCount,
   MAX_ATTACHMENTS_PER_PROMPT,
+  parseAskUserQuestion,
   parseEditView,
   parsePlan,
   parseTodos,
   PERMISSION_MODES,
   THINKING_VERBS,
+  type AskUserQuestionView,
   type Attachment,
   type BlockView,
   type EditToolView,
@@ -235,7 +237,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
           key={p.requestId}
           perm={p}
           canAct={isController}
-          onDecide={(d) => realtime.resolvePermission(sessionId, p.requestId, d)}
+          onDecide={(d, updatedInput) => realtime.resolvePermission(sessionId, p.requestId, d, updatedInput)}
           colors={colors}
           styles={styles}
         />
@@ -731,13 +733,28 @@ function PermissionCard({
 }: {
   perm: PermissionView;
   canAct: boolean;
-  onDecide: (d: "allow" | "deny") => void;
+  onDecide: (d: "allow" | "deny", updatedInput?: Record<string, unknown>) => void;
   colors: ThemeColors;
   styles: Styles;
 }) {
-  const plan = parsePlan(perm.toolName, perm.toolInput);
-  const editView = plan == null ? parseEditView(perm.toolName, perm.toolInput) : null;
-  const todos = plan == null && perm.toolName === "TodoWrite" ? parseTodos(perm.toolInput) : null;
+  const askQuestion = parseAskUserQuestion(perm.toolName, perm.toolInput);
+  const plan = askQuestion == null ? parsePlan(perm.toolName, perm.toolInput) : null;
+  const editView = plan == null && askQuestion == null ? parseEditView(perm.toolName, perm.toolInput) : null;
+  const todos =
+    plan == null && askQuestion == null && perm.toolName === "TodoWrite" ? parseTodos(perm.toolInput) : null;
+
+  if (askQuestion != null) {
+    return (
+      <AskUserQuestionCard
+        view={askQuestion}
+        canAct={canAct}
+        onSubmit={(answers) => onDecide("allow", { ...(perm.toolInput as Record<string, unknown>), answers })}
+        onCancel={() => onDecide("deny")}
+        colors={colors}
+        styles={styles}
+      />
+    );
+  }
 
   return (
     <View style={styles.permCard}>
@@ -769,6 +786,144 @@ function PermissionCard({
           </TouchableOpacity>
           <TouchableOpacity style={styles.denyBtn} onPress={() => onDecide("deny")}>
             <Text style={styles.denyText}>{plan != null ? "Keep planning" : "Deny"}</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <Text style={styles.permBody}>Only the controller can respond.</Text>
+      )}
+    </View>
+  );
+}
+
+const OTHER_OPTION = "__other__";
+
+/**
+ * AskUserQuestion's own card: tappable option rows instead of raw-JSON
+ * Allow/Deny, one tab per question when there's more than one. The model
+ * never includes an "Other" choice itself (the tool's contract says the
+ * caller provides it), so it's added here for every question.
+ */
+function AskUserQuestionCard({
+  view,
+  canAct,
+  onSubmit,
+  onCancel,
+  colors,
+  styles,
+}: {
+  view: AskUserQuestionView;
+  canAct: boolean;
+  onSubmit: (answers: Record<string, string>) => void;
+  onCancel: () => void;
+  colors: ThemeColors;
+  styles: Styles;
+}) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [selected, setSelected] = useState<string[][]>(() => view.questions.map(() => []));
+  const [otherText, setOtherText] = useState<string[]>(() => view.questions.map(() => ""));
+
+  const question = view.questions[activeIndex]!;
+  const activeSelected = selected[activeIndex] ?? [];
+
+  function toggleOption(label: string): void {
+    setSelected((prev) => {
+      const next = prev.slice();
+      const current = next[activeIndex] ?? [];
+      next[activeIndex] = question.multiSelect
+        ? current.includes(label)
+          ? current.filter((l) => l !== label)
+          : [...current, label]
+        : current.includes(label)
+          ? []
+          : [label];
+      return next;
+    });
+  }
+
+  const allAnswered = view.questions.every((_, i) => {
+    const sel = selected[i] ?? [];
+    if (sel.length === 0) return false;
+    return !sel.includes(OTHER_OPTION) || (otherText[i]?.trim().length ?? 0) > 0;
+  });
+
+  function handleSubmit(): void {
+    const answers: Record<string, string> = {};
+    view.questions.forEach((q, i) => {
+      const labels = (selected[i] ?? []).map((l) => (l === OTHER_OPTION ? (otherText[i]?.trim() ?? "") : l));
+      answers[q.question] = labels.join(", ");
+    });
+    onSubmit(answers);
+  }
+
+  return (
+    <View style={styles.permCard}>
+      <View style={styles.permHeader}>
+        <Ionicons name="help-circle-outline" size={14} color={colors.busy} />
+        <Text style={styles.permTitle}>Question</Text>
+      </View>
+      {view.questions.length > 1 && (
+        <View style={styles.askQTabs}>
+          {view.questions.map((q, i) => (
+            <TouchableOpacity
+              key={q.header + i}
+              onPress={() => setActiveIndex(i)}
+              style={[styles.askQTab, i === activeIndex && styles.askQTabActive]}
+            >
+              <Text style={[styles.askQTabText, i === activeIndex && styles.askQTabTextActive]}>{q.header}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+      <Text style={styles.askQQuestion}>{question.question}</Text>
+      {question.options.map((opt) => {
+        const isSelected = activeSelected.includes(opt.label);
+        return (
+          <TouchableOpacity
+            key={opt.label}
+            disabled={!canAct}
+            onPress={() => toggleOption(opt.label)}
+            style={[styles.askQOptionRow, isSelected && styles.askQOptionRowSelected]}
+          >
+            <Text style={styles.askQOptionLabel}>{opt.label}</Text>
+            <Text style={styles.askQOptionDesc}>{opt.description}</Text>
+          </TouchableOpacity>
+        );
+      })}
+      <TouchableOpacity
+        disabled={!canAct}
+        onPress={() => toggleOption(OTHER_OPTION)}
+        style={[styles.askQOptionRow, activeSelected.includes(OTHER_OPTION) && styles.askQOptionRowSelected]}
+      >
+        <Text style={styles.askQOptionLabel}>Other</Text>
+      </TouchableOpacity>
+      {activeSelected.includes(OTHER_OPTION) && (
+        <TextInput
+          autoFocus
+          editable={canAct}
+          value={otherText[activeIndex] ?? ""}
+          onChangeText={(text) =>
+            setOtherText((prev) => {
+              const next = prev.slice();
+              next[activeIndex] = text;
+              return next;
+            })
+          }
+          placeholder="Type your answer…"
+          placeholderTextColor={colors.faint}
+          style={styles.askQOtherInput}
+        />
+      )}
+      {canAct ? (
+        <View style={styles.permActions}>
+          <TouchableOpacity
+            style={[styles.allowBtn, !allAnswered && { opacity: 0.4 }]}
+            disabled={!allAnswered}
+            onPress={handleSubmit}
+          >
+            <Text style={styles.allowText}>Submit answers</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.denyBtn} onPress={onCancel}>
+            <Text style={styles.denyText}>Cancel</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -952,6 +1107,32 @@ const makeStyles = (colors: ThemeColors) =>
     permBody: { color: colors.dim, fontSize: 12 },
     permDetailScroll: { maxHeight: 220, backgroundColor: colors.panel, borderRadius: radius.sm },
     permActions: { flexDirection: "row", gap: 10, marginTop: 4 },
+    askQTabs: { flexDirection: "row", gap: 14, borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: 6 },
+    askQTab: { paddingBottom: 6, borderBottomWidth: 2, borderBottomColor: "transparent" },
+    askQTabActive: { borderBottomColor: colors.busy },
+    askQTabText: { color: colors.faint, fontSize: 12, fontWeight: "600" },
+    askQTabTextActive: { color: colors.text },
+    askQQuestion: { color: colors.text, fontSize: 14 },
+    askQOptionRow: {
+      backgroundColor: colors.panel,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 10,
+      gap: 2,
+    },
+    askQOptionRowSelected: { borderColor: colors.busy, backgroundColor: withAlpha(colors.busy, 0.1) },
+    askQOptionLabel: { color: colors.text, fontSize: 13, fontWeight: "600" },
+    askQOptionDesc: { color: colors.faint, fontSize: 12 },
+    askQOtherInput: {
+      backgroundColor: colors.panel,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: 10,
+      color: colors.text,
+      fontSize: 13,
+    },
     todoRow: { flexDirection: "row", alignItems: "flex-start", gap: 6, paddingVertical: 2 },
     todoText: { flex: 1, color: colors.text, fontSize: 12 },
     todoDone: { color: colors.faint, textDecorationLine: "line-through" },

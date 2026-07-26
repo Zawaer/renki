@@ -5,11 +5,13 @@ import {
   formatTokenCount,
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS_PER_PROMPT,
+  parseAskUserQuestion,
   parseEditView,
   parsePlan,
   parseTodos,
   PERMISSION_MODES,
   THINKING_VERBS,
+  type AskUserQuestionView,
   type Attachment,
   type BlockView,
   type EditToolView,
@@ -101,7 +103,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
               key={p.requestId}
               perm={p}
               canAct={isController}
-              onDecide={(d) => realtime.resolvePermission(sessionId, p.requestId, d)}
+              onDecide={(d, updatedInput) => realtime.resolvePermission(sessionId, p.requestId, d, updatedInput)}
             />
           ))}
         </div>
@@ -450,11 +452,26 @@ function PermissionCard({
 }: {
   perm: PermissionView;
   canAct: boolean;
-  onDecide: (d: "allow" | "deny") => void;
+  onDecide: (d: "allow" | "deny", updatedInput?: Record<string, unknown>) => void;
 }) {
-  const plan = parsePlan(perm.toolName, perm.toolInput);
-  const editView = plan == null ? parseEditView(perm.toolName, perm.toolInput) : null;
-  const todos = plan == null && perm.toolName === "TodoWrite" ? parseTodos(perm.toolInput) : null;
+  const askQuestion = parseAskUserQuestion(perm.toolName, perm.toolInput);
+  const plan = askQuestion == null ? parsePlan(perm.toolName, perm.toolInput) : null;
+  const editView = plan == null && askQuestion == null ? parseEditView(perm.toolName, perm.toolInput) : null;
+  const todos =
+    plan == null && askQuestion == null && perm.toolName === "TodoWrite" ? parseTodos(perm.toolInput) : null;
+
+  if (askQuestion != null) {
+    return (
+      <AskUserQuestionCard
+        view={askQuestion}
+        canAct={canAct}
+        onSubmit={(answers) =>
+          onDecide("allow", { ...(perm.toolInput as Record<string, unknown>), answers })
+        }
+        onCancel={() => onDecide("deny")}
+      />
+    );
+  }
 
   return (
     <div className="rounded-sm border-l-2 border-(--crc-warning) bg-(--crc-warning)/10 p-3">
@@ -493,6 +510,152 @@ function PermissionCard({
           <Button variant="danger" onClick={() => onDecide("deny")}>
             <span className="codicon codicon-close" /> {plan != null ? "Keep planning" : "Deny"}
           </Button>
+        </div>
+      ) : (
+        <div className="mt-2 text-xs text-(--crc-fg-muted)">Only the controller can respond.</div>
+      )}
+    </div>
+  );
+}
+
+const OTHER_OPTION = "__other__";
+
+/**
+ * AskUserQuestion's own card: clickable option buttons instead of raw-JSON
+ * Allow/Deny, one tab per question when there's more than one. The model
+ * never includes an "Other" choice itself (the tool's contract says the
+ * caller provides it), so it's added here for every question.
+ */
+function AskUserQuestionCard({
+  view,
+  canAct,
+  onSubmit,
+  onCancel,
+}: {
+  view: AskUserQuestionView;
+  canAct: boolean;
+  onSubmit: (answers: Record<string, string>) => void;
+  onCancel: () => void;
+}) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [selected, setSelected] = useState<string[][]>(() => view.questions.map(() => []));
+  const [otherText, setOtherText] = useState<string[]>(() => view.questions.map(() => ""));
+
+  useEffect(() => {
+    if (!canAct) return;
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === "Escape") onCancel();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canAct, onCancel]);
+
+  const question = view.questions[activeIndex]!;
+  const activeSelected = selected[activeIndex] ?? [];
+
+  function toggleOption(label: string): void {
+    setSelected((prev) => {
+      const next = prev.slice();
+      const current = next[activeIndex] ?? [];
+      next[activeIndex] = question.multiSelect
+        ? current.includes(label)
+          ? current.filter((l) => l !== label)
+          : [...current, label]
+        : current.includes(label)
+          ? []
+          : [label];
+      return next;
+    });
+  }
+
+  const allAnswered = view.questions.every((_, i) => {
+    const sel = selected[i] ?? [];
+    if (sel.length === 0) return false;
+    return !sel.includes(OTHER_OPTION) || (otherText[i]?.trim().length ?? 0) > 0;
+  });
+
+  function handleSubmit(): void {
+    const answers: Record<string, string> = {};
+    view.questions.forEach((q, i) => {
+      const labels = (selected[i] ?? []).map((l) => (l === OTHER_OPTION ? (otherText[i]?.trim() ?? "") : l));
+      answers[q.question] = labels.join(", ");
+    });
+    onSubmit(answers);
+  }
+
+  return (
+    <div className="rounded-sm border-l-2 border-(--crc-warning) bg-(--crc-warning)/10 p-3">
+      {view.questions.length > 1 && (
+        <div className="mb-2 flex items-center gap-3 border-b border-(--crc-border) text-xs">
+          {view.questions.map((q, i) => (
+            <button
+              key={q.header + i}
+              onClick={() => setActiveIndex(i)}
+              className={`-mb-px border-b-2 pb-1.5 ${
+                i === activeIndex
+                  ? "border-(--crc-warning) text-(--crc-fg)"
+                  : "border-transparent text-(--crc-fg-muted) hover:text-(--crc-fg)"
+              }`}
+            >
+              {q.header}
+            </button>
+          ))}
+        </div>
+      )}
+      <p className="text-sm text-(--crc-fg)">{question.question}</p>
+      <div className="mt-2 space-y-1.5 text-xs">
+        {question.options.map((opt) => {
+          const isSelected = activeSelected.includes(opt.label);
+          return (
+            <button
+              key={opt.label}
+              disabled={!canAct}
+              onClick={() => toggleOption(opt.label)}
+              className={`w-full rounded-sm border px-3 py-2 text-left transition disabled:cursor-not-allowed ${
+                isSelected
+                  ? "border-(--crc-warning) bg-(--crc-bg-elevated)"
+                  : "border-(--crc-border) bg-(--crc-bg-elevated)/40 hover:bg-(--crc-bg-elevated)"
+              }`}
+            >
+              <div className="font-medium text-(--crc-fg)">{opt.label}</div>
+              <div className="text-(--crc-fg-muted)">{opt.description}</div>
+            </button>
+          );
+        })}
+        <button
+          disabled={!canAct}
+          onClick={() => toggleOption(OTHER_OPTION)}
+          className={`w-full rounded-sm border px-3 py-2 text-left transition disabled:cursor-not-allowed ${
+            activeSelected.includes(OTHER_OPTION)
+              ? "border-(--crc-warning) bg-(--crc-bg-elevated)"
+              : "border-(--crc-border) bg-(--crc-bg-elevated)/40 hover:bg-(--crc-bg-elevated)"
+          }`}
+        >
+          <div className="font-medium text-(--crc-fg)">Other</div>
+        </button>
+        {activeSelected.includes(OTHER_OPTION) && (
+          <input
+            autoFocus
+            disabled={!canAct}
+            value={otherText[activeIndex] ?? ""}
+            onChange={(e) =>
+              setOtherText((prev) => {
+                const next = prev.slice();
+                next[activeIndex] = e.target.value;
+                return next;
+              })
+            }
+            placeholder="Type your answer…"
+            className="w-full rounded-sm border border-(--crc-border) bg-(--crc-bg) px-2 py-1.5 text-(--crc-fg)"
+          />
+        )}
+      </div>
+      {canAct ? (
+        <div className="mt-2 flex items-center gap-2">
+          <Button variant="primary" disabled={!allAnswered} onClick={handleSubmit}>
+            <span className="codicon codicon-check" /> Submit answers
+          </Button>
+          <span className="text-xs text-(--crc-fg-muted)">Esc to cancel</span>
         </div>
       ) : (
         <div className="mt-2 text-xs text-(--crc-fg-muted)">Only the controller can respond.</div>

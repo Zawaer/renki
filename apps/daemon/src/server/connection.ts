@@ -147,7 +147,7 @@ export class Connection {
         if (session.controller !== this.deviceId) {
           return this.error(WsErrorCode.NotController, "Only the controller can resolve permissions.");
         }
-        const matched = this.broker.answer(msg.requestId, msg.decision, this.deviceId);
+        const matched = this.broker.answer(msg.requestId, msg.decision, this.deviceId, msg.updatedInput);
         if (!matched) this.error(WsErrorCode.BadMessage, "No such pending permission request.", msg.requestId);
         return;
       }

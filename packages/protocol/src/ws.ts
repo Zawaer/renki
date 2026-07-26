@@ -72,6 +72,12 @@ export const ClientMessage = z.discriminatedUnion("type", [
     sessionId: z.string(),
     requestId: z.string(),
     decision: PermissionDecision,
+    /**
+     * Replaces the tool's original input when allowing (e.g. `AskUserQuestion`,
+     * where the client's chosen answers ARE the tool's result — there's no
+     * other channel to return them). Ignored on `deny`.
+     */
+    updatedInput: z.record(z.string(), z.unknown()).optional(),
   }),
 
   /**

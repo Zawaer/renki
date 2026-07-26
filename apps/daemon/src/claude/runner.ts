@@ -31,6 +31,8 @@ export type PermissionOutcome = {
   decision: PermissionDecision;
   /** Which device answered (for the audit trail), or null if auto-resolved. */
   byDeviceId: string | null;
+  /** Replaces the tool's original input on an "allow" (e.g. AskUserQuestion's answers). */
+  updatedInput?: Record<string, unknown>;
 };
 
 /** Caller-supplied policy: decide (possibly by asking a remote controller). */
@@ -199,7 +201,7 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
     canUseTool: async (toolName, input, opts): Promise<PermissionResult> => {
       const requestId = opts.toolUseID;
       args.emit({ kind: "permission_request", requestId, turnId, toolName, toolInput: input });
-      const { decision, byDeviceId } = await args.resolvePermission({
+      const { decision, byDeviceId, updatedInput } = await args.resolvePermission({
         requestId,
         turnId,
         toolName,
@@ -209,7 +211,7 @@ export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
       args.emit({ kind: "permission_resolved", requestId, decision, byDeviceId });
 
       return decision === "allow"
-        ? { behavior: "allow", updatedInput: input }
+        ? { behavior: "allow", updatedInput: updatedInput ?? input }
         : { behavior: "deny", message: "Denied by controller." };
     },
     // Surface the child process's stderr into our logs for debuggability.

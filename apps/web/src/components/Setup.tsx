@@ -1,3 +1,4 @@
+import { describeConnectionError } from "@crc/client-core";
 import { useState } from "react";
 import { type AppConfig, getOrCreateDeviceId } from "../lib/config.js";
 import { Button } from "./ui.js";
@@ -24,7 +25,7 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
       const body = (await res.json()) as { repos: unknown[]; root: string };
       setFound({ repos: body.repos.length, root: body.root });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not reach the daemon.");
+      setError(describeConnectionError(e));
     } finally {
       setTesting(false);
     }

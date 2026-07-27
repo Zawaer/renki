@@ -1,4 +1,4 @@
-import { encodePairing, isLikelyLoopbackUrl } from "@crc/client-core";
+import { describeConnectionError, encodePairing, isLikelyLoopbackUrl } from "@crc/client-core";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import QRCode from "react-native-qrcode-svg";
@@ -67,8 +67,13 @@ export function PairDevice({
       if (!res.ok) throw new Error(`Daemon responded ${res.status}`);
       await onReconnect(url);
       onClose();
-    } catch {
-      setSwitchError(`Could not reach ${url}. Make sure "tailscale serve --bg <port>" is running on the daemon host.`);
+    } catch (e) {
+      setSwitchError(
+        describeConnectionError(
+          e,
+          `Could not reach ${url}. Make sure "tailscale serve --bg <port>" is running on the daemon host.`,
+        ),
+      );
     } finally {
       setSwitching(false);
     }

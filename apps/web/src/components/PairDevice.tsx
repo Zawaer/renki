@@ -1,4 +1,4 @@
-import { encodePairing, isLikelyLoopbackUrl } from "@crc/client-core";
+import { describeConnectionError, encodePairing, isLikelyLoopbackUrl } from "@crc/client-core";
 import QRCode from "qrcode";
 import { useEffect, useState } from "react";
 import { saveConfig } from "../lib/config.js";
@@ -69,9 +69,12 @@ export function PairDevice() {
       if (!res.ok) throw new Error(`Daemon responded ${res.status} at ${url}.`);
       saveConfig({ ...config, baseUrl: url });
       window.location.reload();
-    } catch {
+    } catch (e) {
       setSwitchError(
-        `Could not reach ${url}. Make sure "tailscale serve --bg <port>" is running on the daemon host.`,
+        describeConnectionError(
+          e,
+          `Could not reach ${url}. Make sure "tailscale serve --bg <port>" is running on the daemon host.`,
+        ),
       );
       setSwitching(false);
     }

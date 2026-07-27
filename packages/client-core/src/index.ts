@@ -1,4 +1,5 @@
 export * from "./attachments.js";
+export * from "./connectionErrors.js";
 export * from "./reducer.js";
 export * from "./rest.js";
 export * from "./realtime.js";

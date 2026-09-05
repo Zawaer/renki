@@ -102,6 +102,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && uv python install 3.12 \
     && uv tool install claude-swap --python 3.12
 
+# GitHub CLI: sessions commit inside this container, so pushing needs
+# credentials here — the host's login isn't visible across the container
+# boundary. `gh` doubles as git's credential helper (configured --system
+# below so it survives container recreation, since /root isn't a volume) and
+# gives sessions the same `gh` command they'd have on a dev machine for PRs
+# and issues. Authentication itself comes from bind-mounting your host's
+# ~/.config/gh — see docker-compose.override.yml.example. With no such mount
+# this is simply an unauthenticated CLI and nothing changes.
+ARG GH_VERSION=2.100.0
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+      amd64) gharch=amd64 ;; \
+      arm64) gharch=arm64 ;; \
+      *) echo "unsupported architecture: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${gharch}.tar.gz" -o /tmp/gh.tgz; \
+    tar -xzf /tmp/gh.tgz -C /tmp; \
+    install -m 0755 "/tmp/gh_${GH_VERSION}_linux_${gharch}/bin/gh" /usr/local/bin/gh; \
+    rm -rf /tmp/gh.tgz "/tmp/gh_${GH_VERSION}_linux_${gharch}"; \
+    gh --version
+RUN git config --system credential."https://github.com".helper '!gh auth git-credential' \
+    && git config --system credential."https://gist.github.com".helper '!gh auth git-credential'
+
 WORKDIR /app
 COPY --from=builder /app/deploy .
 

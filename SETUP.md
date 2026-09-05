@@ -596,6 +596,50 @@ Anthropic has confirmed is within the Consumer Terms.
 Pair this with `CRC_FORCE_PERMISSION_PROMPTS=1` if you want tool approvals to
 reach your phone rather than being auto-allowed.
 
+## Pushing to GitHub (optional)
+
+Sessions run **inside the daemon container**, which has no GitHub login of its
+own. So Claude can `git commit` in a session's worktree but `git push` fails
+with `could not read Username for 'https://github.com'` — your host's
+credentials aren't visible across the container boundary.
+
+The image ships the GitHub CLI and already wires it up as git's credential
+helper. All that's missing is authentication. Two ways to supply it:
+
+**Share the login your host already has.** Run `gh auth login` on the daemon
+host once (`gh auth status` to check), then mount its config into the
+container — in `docker-compose.override.yml`, under the daemon service:
+
+```yaml
+    volumes:
+      - ${HOME}/.config/gh:/root/.config/gh:ro
+```
+
+Then `docker compose up -d --build daemon`. Sessions can now push, and use
+`gh` for pull requests and issues, exactly as on the host. Read-only so a
+session can't log your host out; gh may warn when it can't write its state.
+
+**Be aware what this grants.** Every session gets your full GitHub reach —
+every repo and org that login can touch, not just the one it's working in.
+That's the same trust level CRC already assumes (a session can run arbitrary
+code on the host), but it now extends to your remote repositories.
+
+**Or give it a narrower token.** For a smaller blast radius, create a
+fine-grained personal access token limited to specific repositories with
+Contents: read and write, put it in `.env` as `GITHUB_TOKEN`, and add to the
+daemon service in `docker-compose.override.yml`:
+
+```yaml
+    environment:
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: credential.https://github.com.helper
+      GIT_CONFIG_VALUE_0: '!f() { test "$1" = get && echo username=x && echo "password=${GITHUB_TOKEN}"; }; f'
+```
+
+The doubled `$` are required — they stop Compose interpolating the values
+itself so git's shell expands them at run time. No rebuild needed, but
+sessions get no `gh` command.
+
 ## RTK token-savings support (optional)
 
 If you use [RTK](https://github.com/rtk-ai/rtk) locally, the daemon can rewrite

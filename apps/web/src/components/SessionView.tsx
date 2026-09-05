@@ -360,9 +360,14 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
       {steeredAfter(-1).map((p) => (
         <SteeredPrompt key={p.promptId} prompt={p} />
       ))}
-      {turn.blocks.map((b, i) => (
+      {turn.blocks.map((blk, i) => (
         <Fragment key={i}>
-          <Block block={b} turnRunning={turn.status === "running"} />
+          {/* While a reply streams, each block eases in as it arrives instead of
+              popping into place. Finished turns render flat — a replayed
+              transcript animating every block at once would just be noise. */}
+          <div className={turn.status === "running" ? "crc-stream-in" : undefined}>
+            <Block block={blk} turnRunning={turn.status === "running"} />
+          </div>
           {steeredAfter(i).map((p) => (
             <SteeredPrompt key={p.promptId} prompt={p} />
           ))}

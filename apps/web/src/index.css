@@ -258,6 +258,21 @@ input:focus-visible {
   animation: crc-shimmer 1.8s ease-in-out infinite;
 }
 
+/* Each block of a streaming reply eases in as it lands, rather than popping. */
+@keyframes crc-stream-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.crc-stream-in {
+  animation: crc-stream-in 320ms ease-out both;
+}
+
 @keyframes crc-fade-up {
   from {
     opacity: 0;
@@ -274,6 +289,7 @@ input:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   .crc-enter,
+  .crc-stream-in,
   .crc-alarm,
   .crc-skeleton,
   .animate-pulse,

@@ -55,8 +55,40 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     return () => realtime.unwatch(sessionId);
   }, [realtime, sessionId]);
 
-  // Keep pinned to the newest output as tokens stream in.
+  /**
+   * Follow the newest output ONLY while the reader is already at the bottom.
+   * Scrolling up is a deliberate act — reading something further back — and a
+   * streaming reply that yanks you forward makes the transcript unusable. The
+   * threshold absorbs sub-pixel rounding, nothing more.
+   */
+  const stickToBottom = useRef(true);
+  const [atBottom, setAtBottom] = useState(true);
+
+  function onTranscriptScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const stick = el.scrollHeight - el.scrollTop - el.clientHeight <= 24;
+    stickToBottom.current = stick;
+    setAtBottom((was) => (was === stick ? was : stick));
+  }
+
+  function jumpToLatest() {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottom.current = true;
+    setAtBottom(true);
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }
+
+  // Opening a different session always starts at its newest output.
   useEffect(() => {
+    stickToBottom.current = true;
+    setAtBottom(true);
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!stickToBottom.current) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [conv]);
 
@@ -115,7 +147,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
       </div>
 
       {/* Timeline */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+      <div ref={scrollRef} onScroll={onTranscriptScroll} className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl space-y-7 px-6 py-6">
           {conv.status === null && conv.timeline.length === 0 && (
             <div className="space-y-7" aria-busy="true" aria-label="Loading conversation">
@@ -153,6 +185,24 @@ export function SessionView({ sessionId }: { sessionId: string }) {
             <TimelineRow key={i} item={item} />
           ))}
         </div>
+        {!atBottom && conv.timeline.length > 0 && (
+          <div className="pointer-events-none sticky bottom-4 flex h-0 items-end justify-center">
+            <button
+              onClick={jumpToLatest}
+              className="crc-enter pointer-events-auto inline-flex items-center gap-1.5 rounded-full bg-(--crc-surface) px-3 py-1.5 text-xs font-medium text-(--crc-fg) shadow-(--crc-shadow-md) transition-colors hover:bg-(--crc-hover)"
+            >
+              {status === "busy" ? (
+                <>
+                  <span className="h-1.5 w-1.5 rounded-full bg-(--crc-warning) animate-pulse" />
+                  Claude is writing
+                </>
+              ) : (
+                <span className="codicon codicon-arrow-down text-[12px]" />
+              )}
+              {status === "busy" ? <span className="codicon codicon-arrow-down text-[12px]" /> : "Jump to latest"}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Pending permissions */}

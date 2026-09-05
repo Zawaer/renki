@@ -81,6 +81,15 @@ than binding to the network directly. (`docker-compose.yml` sets this to
 publishing work — the port it publishes to the host is still loopback-only,
 so this doesn't change your actual exposure. Nothing to touch here.)
 
+Each session that has been prompted keeps one live `claude` process running
+between turns (that's what lets background agents keep working after their
+turn ends and still ask you for tool approvals). Budget roughly 1 GiB of RAM per
+live process. `CRC_LIVE_IDLE_MINUTES` (default 60) controls how long a process
+with nothing running — no turn, no background agent, no pending approval — is
+kept before the daemon closes it; the conversation itself is never lost, the
+next prompt simply resumes it in a fresh process. Set it to `0` to keep
+processes until archive/delete/shutdown if you have the memory to spare.
+
 Quick sanity check:
 
 ```bash
@@ -489,7 +498,9 @@ How it behaves:
   crosses the threshold and another account has headroom.
 - **Never mid-flight:** it defers a proactive swap while any session is running
   a turn; the rate-limit swap happens *after* the failed turn ends. Either way
-  the swap lands at a clean boundary, and resume-per-prompt continues context.
+  the swap lands at a clean boundary. Idle live `claude` processes are recycled
+  after a swap (a running one may cache the old account's credentials) and the
+  next prompt resumes the same transcript in a fresh process.
 - **Fail-safe:** if usage is unavailable or a check errors, it holds rather than
   switching blind.
 - All clients show a live per-account usage strip and a manual **Switch** button.

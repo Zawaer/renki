@@ -31,6 +31,8 @@ export class AccountRotator {
   private readonly cswap: Cswap;
   private timer: ReturnType<typeof setInterval> | null = null;
   private lastSwitchAt: number | null = null;
+  /** Runs after every successful account switch (auto, manual, or rate-limit) — see setOnSwitched. */
+  private onSwitched: (() => void) | null = null;
   private lastHoldReason: string | null = null;
   private ticking = false;
   /** Live-mutable policy — seeded from config, then a persisted override (if any), then editable from Settings. */
@@ -107,6 +109,7 @@ export class AccountRotator {
     if (accounts.length < 2) return { switched: false, active: null };
     try {
       const active = await this.cswap.switch(this.config.rotation.strategy);
+      this.onSwitched?.();
       this.lastSwitchAt = Date.now();
       logger.info("rate-limit switch", { active });
       return { switched: true, active };
@@ -184,6 +187,7 @@ export class AccountRotator {
     try {
       const active =
         to === undefined ? await this.cswap.switch(this.config.rotation.strategy) : await this.cswap.switchTo(to);
+      this.onSwitched?.();
       this.lastSwitchAt = Date.now();
       logger.info("manual account switch", { active });
       return { ok: true, activeAccountNumber: active, message: null };
@@ -242,9 +246,19 @@ export class AccountRotator {
     if (this.anyBusy()) return this.hold("session busy");
 
     const newActive = await this.cswap.switch(strategy);
+    this.onSwitched?.();
     this.lastSwitchAt = Date.now();
     this.lastHoldReason = null;
     logger.info("auto-rotated account", { from: active.number, to: newActive, worstPct: worst });
+  }
+
+  /**
+   * Register a callback for after any switch lands. The daemon uses it to
+   * recycle idle live `claude` processes, which may otherwise keep serving
+   * requests with the previous account's credentials cached in memory.
+   */
+  setOnSwitched(fn: (() => void) | null): void {
+    this.onSwitched = fn;
   }
 
   private hold(reason: string | null): void {

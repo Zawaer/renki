@@ -24,6 +24,14 @@ const Env = z.object({
   CRC_AUTH_TOKEN: z.string().min(1).optional(),
   /** Idle minutes before the take-control lock auto-releases. */
   CRC_CONTROL_IDLE_MINUTES: z.coerce.number().int().positive().default(15),
+  /**
+   * Minutes a session's live `claude` process may sit idle (no turn, no
+   * background agent, no pending permission) before the daemon closes it to
+   * reclaim its memory. The conversation survives — the next prompt resumes
+   * the transcript in a fresh process. 0 disables reaping (processes live
+   * until archive/delete/shutdown).
+   */
+  CRC_LIVE_IDLE_MINUTES: z.coerce.number().min(0).default(60),
   /** Seconds a pending permission request waits for the controller before denying. */
   CRC_PERMISSION_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(300),
   /** Port the HTTP+WS server listens on. */
@@ -89,6 +97,7 @@ export type Config = {
   worktreesDir: string;
   authToken: string;
   controlIdleMs: number;
+  liveIdleMs: number;
   permissionTimeoutMs: number;
   port: number;
   host: string;
@@ -175,6 +184,7 @@ export function loadConfig(): Config {
     worktreesDir: resolve(dataDir, "worktrees"),
     authToken: resolveAuthToken(env.CRC_AUTH_TOKEN, dataDir),
     controlIdleMs: env.CRC_CONTROL_IDLE_MINUTES * 60_000,
+    liveIdleMs: env.CRC_LIVE_IDLE_MINUTES * 60_000,
     permissionTimeoutMs: env.CRC_PERMISSION_TIMEOUT_SECONDS * 1000,
     port: env.CRC_PORT,
     host: env.CRC_HOST,

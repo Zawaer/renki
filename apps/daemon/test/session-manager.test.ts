@@ -3,8 +3,8 @@ import type { EventPayload } from "@crc/protocol";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Config } from "../src/config.js";
+import type { LiveSessionOptions } from "../src/claude/liveSession.js";
 import type { RunTurnResult } from "../src/claude/runner.js";
-import { runTurn } from "../src/claude/runner.js";
 import { generateSessionTitle } from "../src/claude/titler.js";
 import type { DB } from "../src/db/index.js";
 import { sessions } from "../src/db/schema.js";
@@ -13,14 +13,44 @@ import { MAX_QUEUED_PROMPTS, SessionManager, TITLE_UPGRADE_ATTEMPT_CAP } from ".
 import { cleanupConfig, makeTestConfig, makeTestDb, makeTestRepo } from "./helpers.js";
 
 // Auto-titling (see "auto-titling" describe block below) needs to drive a real
-// happy-path turn without spawning a live `claude` process, so runTurn and
-// generateSessionTitle are mocked at the module boundary manager.ts calls
-// through. Every other describe block avoids the happy path entirely instead
-// (forcing status "busy" directly), so these mocks never affect them.
-vi.mock("../src/claude/runner.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/claude/runner.js")>();
-  return { ...actual, runTurn: vi.fn() };
-});
+// happy-path turn without spawning a live `claude` process, so the live
+// session (the manager's only route to the SDK) and generateSessionTitle are
+// mocked at the module boundary manager.ts calls through. Every other describe
+// block avoids the happy path entirely instead (forcing status "busy"
+// directly), so these mocks never affect them.
+const runTurn = vi.hoisted(() => vi.fn());
+/** Every fake live process created so far, so tests can poke its callbacks (auto turns, close) directly. */
+const liveInstances = vi.hoisted(() => [] as FakeLive[]);
+type FakeLive = {
+  opts: LiveSessionOptions;
+  busy: boolean;
+  backgroundTaskCount: number;
+  isClosed: boolean;
+  lastActivityAt: number;
+  claudeSessionId: string | null;
+  closeReasons: string[];
+};
+vi.mock("../src/claude/liveSession.js", () => ({
+  LiveClaudeSession: class FakeLiveSession {
+    busy = false;
+    backgroundTaskCount = 0;
+    isClosed = false;
+    lastActivityAt = Date.now();
+    claudeSessionId: string | null = null;
+    closeReasons: string[] = [];
+    constructor(public opts: LiveSessionOptions) {
+      liveInstances.push(this as unknown as FakeLive);
+    }
+    runTurn = (args: unknown) => runTurn(args);
+    interrupt = async () => {};
+    setPermissionMode = async () => {};
+    close = (reason = "closed") => {
+      this.isClosed = true;
+      this.closeReasons.push(reason);
+      this.opts.onClosed?.(reason);
+    };
+  },
+}));
 vi.mock("../src/claude/titler.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/claude/titler.js")>();
   return { ...actual, generateSessionTitle: vi.fn() };
@@ -301,7 +331,7 @@ describe("reconcileOrphanedTurns", () => {
     expect(permResolved).toMatchObject({ requestId: "r1", decision: "deny" });
 
     // The session is usable again: a new prompt runs instead of queuing.
-    vi.mocked(runTurn).mockResolvedValueOnce(okTurn);
+    runTurn.mockResolvedValueOnce(okTurn);
     restarted.takeControl(s.id, "d1");
     await restarted.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p2", text: "hi", resolvePermission: noopResolve });
     expect(restarted.events.read(s.id).map((e) => e.kind)).not.toContain("prompt_queued");
@@ -427,7 +457,7 @@ const okTurn: RunTurnResult = {
 
 describe("auto-titling", () => {
   beforeEach(() => {
-    vi.mocked(runTurn).mockReset().mockResolvedValue(okTurn);
+    runTurn.mockReset().mockResolvedValue(okTurn);
     vi.mocked(generateSessionTitle).mockReset().mockResolvedValue(null);
   });
 
@@ -549,5 +579,102 @@ describe("auto-titling", () => {
   it("renameSession throws for an unknown session", () => {
     const { manager } = setup();
     expect(() => manager.renameSession("s_nope", "New title")).toThrow();
+  });
+});
+
+describe("live process pool", () => {
+  beforeEach(() => {
+    runTurn.mockReset().mockResolvedValue(okTurn);
+    vi.mocked(generateSessionTitle).mockReset().mockResolvedValue(null);
+    liveInstances.length = 0;
+  });
+
+  async function prompted(manager: SessionManager, repoId: string) {
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p1", text: "hi", resolvePermission: noopResolve });
+    return s;
+  }
+
+  it("reuses one live process across turns of the same session", async () => {
+    const { manager, repoId } = setup();
+    const s = await prompted(manager, repoId);
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p2", text: "again", resolvePermission: noopResolve });
+    expect(liveInstances).toHaveLength(1);
+    expect(runTurn).toHaveBeenCalledTimes(2);
+    expect(manager.liveSessionCount()).toBe(1);
+  });
+
+  it("archiving closes the session's live process before tearing down the worktree", async () => {
+    const { manager, repoId } = setup();
+    const s = await prompted(manager, repoId);
+    await manager.archiveSession(s.id);
+    expect(liveInstances[0]!.closeReasons).toEqual(["archived"]);
+    expect(manager.liveSessionCount()).toBe(0);
+  });
+
+  it("closeAll tears down every live process; the next prompt spawns a fresh one that resumes the transcript", async () => {
+    const { manager, repoId } = setup();
+    const s = await prompted(manager, repoId);
+    liveInstances[0]!.claudeSessionId = "claude-abc";
+    manager.closeAll("shutdown");
+    expect(liveInstances[0]!.closeReasons).toEqual(["shutdown"]);
+    expect(manager.getSession(s.id).claudeSessionId).toBe("claude-abc");
+
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p2", text: "back", resolvePermission: noopResolve });
+    expect(liveInstances).toHaveLength(2);
+    expect(liveInstances[1]!.opts.resumeSessionId).toBe("claude-abc");
+  });
+
+  it("recycleIdleLiveSessions skips processes that are busy or still running background agents", async () => {
+    const { manager, repoId } = setup();
+    const a = await prompted(manager, repoId);
+    const b = await prompted(manager, repoId);
+    const c = await prompted(manager, repoId);
+    const [la, lb, lc] = liveInstances as [FakeLive, FakeLive, FakeLive];
+    lb.busy = true;
+    lc.backgroundTaskCount = 2;
+
+    manager.recycleIdleLiveSessions();
+
+    expect(la.closeReasons).toEqual(["account switched"]);
+    expect(lb.isClosed).toBe(false);
+    expect(lc.isClosed).toBe(false);
+    expect(manager.liveSessionCount()).toBe(2);
+    expect([a.id, b.id, c.id]).toHaveLength(3);
+  });
+
+  it("an auto turn flips the session busy, then idle, and drains a prompt queued behind it", async () => {
+    const { manager, repoId } = setup();
+    const s = await prompted(manager, repoId);
+    const live = liveInstances[0]!;
+
+    live.busy = true;
+    live.opts.onAutoTurnStart?.("t_auto", "auto_t_auto");
+    expect(manager.getSession(s.id).status).toBe("busy");
+    expect(kinds(manager, s.id).filter((k) => k === "status_changed")).toHaveLength(4); // idle, busy, idle, busy
+
+    // A prompt sent during the auto turn is queued, not run.
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p2", text: "queued", resolvePermission: noopResolve });
+    expect(runTurn).toHaveBeenCalledTimes(1);
+    expect(kinds(manager, s.id)).toContain("prompt_queued");
+
+    live.busy = false;
+    live.opts.onAutoTurnEnd?.({ ...okTurn, claudeSessionId: "claude-xyz" });
+    // The auto turn's session id is persisted synchronously, before the drained prompt's own turn overwrites it.
+    expect(manager.getSession(s.id).claudeSessionId).toBe("claude-xyz");
+    await vi.waitFor(() => expect(runTurn).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(manager.getSession(s.id).status).toBe("idle"));
+    expect(manager.getSession(s.id).claudeSessionId).toBe(okTurn.claudeSessionId);
+    const submitted = manager.events.read(s.id).filter((e) => e.kind === "prompt_submitted") as Array<{ promptId: string }>;
+    expect(submitted.map((e) => e.promptId)).toEqual(["p1", "p2"]);
+  });
+
+  it("interruptSession reaches the live process only while it is busy", async () => {
+    const { manager, repoId } = setup();
+    const s = await prompted(manager, repoId);
+    expect(() => manager.interruptSession(s.id, "d1")).toThrow(SessionError);
+    liveInstances[0]!.busy = true;
+    expect(() => manager.interruptSession(s.id, "d1")).not.toThrow();
   });
 });

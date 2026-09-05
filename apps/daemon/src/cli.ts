@@ -148,6 +148,8 @@ async function main() {
   const db = openDb(config);
   await migrateSessionIds(config, db);
   const manager = new SessionManager(config, db);
+  // `prompt`/`merge` leave a live `claude` child behind; main()'s process.exit runs this synchronously.
+  process.once("exit", () => manager.closeAll("cli exit"));
 
   switch (command) {
     case "new": {

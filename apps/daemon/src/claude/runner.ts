@@ -1,22 +1,25 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import type { Options, PermissionResult, Query, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Attachment, CapabilitiesResponse, EventPayload, PermissionDecision } from "@crc/protocol";
 import { logger } from "../logger.js";
-import { newTurnId } from "../ids.js";
-import { createRtkPreToolUseHook } from "./rtk.js";
-import { stripUntrustedHooks } from "./settingsHygiene.js";
 
 /**
- * Runs a single Claude turn via the Agent SDK and translates the SDK's typed
- * message stream into our EventPayloads (which the caller appends to the log).
+ * Translates the Agent SDK's typed message stream into our EventPayloads (which
+ * the caller appends to the log), plus the shared types every caller of the
+ * SDK needs. The process itself is owned by LiveClaudeSession
+ * (./liveSession.ts): one long-lived `claude` child per session whose stdin
+ * stays open between turns, so background agents survive the turn that
+ * spawned them and their permission prompts still reach the controller.
  *
- * WHY resume-per-prompt (fresh query each turn) instead of one long-lived
- * subprocess: the SDK spawns a `claude` child process per query and Anthropic
- * suggests budgeting ~1 GiB RAM per concurrent session. If we held a process
- * open for every session, idle sessions would eat memory and cap how many can
- * exist. Instead we resume the persisted `claudeSessionId` for each prompt, so
- * an idle session costs nothing but a DB row + a worktree on disk. Conversation
- * context isn't lost — it lives in the resumable transcript, not the process.
+ * HISTORY: this used to spawn a fresh `query()` per prompt (resume-per-prompt)
+ * to keep idle sessions free of the ~1 GiB an idle `claude` process costs.
+ * That design had a hard limitation the SDK exposes as
+ * anthropics/claude-agent-sdk-typescript#376 — the SDK closes the child's
+ * stdin as soon as the first `result` arrives, after which every
+ * permission-gated tool call from a still-running background subagent is
+ * denied with "Stream closed", permanently. Keeping the input stream open for
+ * the life of the session sidesteps that entirely; the memory cost is bounded
+ * by SessionManager's idle reaper (CRC_LIVE_IDLE_MINUTES) instead.
  */
 
 export type PermissionRequest = {
@@ -38,46 +41,6 @@ export type PermissionOutcome = {
 /** Caller-supplied policy: decide (possibly by asking a remote controller). */
 export type PermissionResolver = (req: PermissionRequest) => Promise<PermissionOutcome>;
 
-export type RunTurnArgs = {
-  cwd: string;
-  /** Prior Claude session id to resume, or null to start a fresh conversation. */
-  resumeSessionId: string | null;
-  prompt: string;
-  /** Images/PDFs/text files attached to this prompt, if any — see singlePromptStream. */
-  attachments?: Attachment[];
-  promptId: string;
-  /** Append an event to the session's log (the runner's only output channel). */
-  emit: (payload: EventPayload) => void;
-  resolvePermission: PermissionResolver;
-  abortController?: AbortController;
-  model?: string;
-  /** Which kind of client submitted this prompt ("web"/"phone"/"vscode"), stamped onto the resulting turn_result for stats. */
-  clientType?: string;
-  /** Thinking-token budget for this turn; omit/null for the SDK's own default. */
-  maxThinkingTokens?: number | null;
-  /** SDK permission mode for this turn; omit for `"default"` (ask for every gated tool). */
-  permissionMode?: Options["permissionMode"];
-  /** If true, don't load ~/.claude settings so every gated tool asks the controller. */
-  forcePermissionPrompts?: boolean;
-  /** If true, rewrite Bash commands through RTK (see ./rtk.ts) before they run. */
-  enableRtk?: boolean;
-  /** `rtk` executable to invoke when enableRtk is set (name on PATH or absolute path). */
-  rtkBin?: string;
-  /**
-   * Only obtainable from a live Query object, so the caller opts in (once,
-   * when it doesn't already have this cached daemon-wide) rather than paying
-   * for the extra control-request round-trip on every single turn.
-   */
-  onCapabilities?: (caps: CapabilitiesResponse) => void;
-  /**
-   * Handed the live Query object the instant it's created (before any message
-   * is consumed), so the caller can stash it and later call `.interrupt()` —
-   * the only way to stop a turn already in flight. Called synchronously, so
-   * the caller never has to worry about racing a turn's start.
-   */
-  onQuery?: (q: Query) => void;
-};
-
 export type RunTurnResult = {
   /** The Claude session id to persist for the NEXT resume (may be new). */
   claudeSessionId: string | null;
@@ -90,11 +53,6 @@ export type RunTurnResult = {
   /** True when this failure is the controller stopping the turn, not a real error. */
   interrupted: boolean;
 };
-
-/** Terminal reasons the SDK uses for a turn cut short by `Query.interrupt()`. */
-function isInterruptedTerminalReason(reason: unknown): boolean {
-  return reason === "aborted_streaming" || reason === "aborted_tools";
-}
 
 /** Pure heuristic: does this error text/flag indicate a usage/rate limit? */
 export function classifyRateLimit(text: string | null | undefined): boolean {
@@ -140,233 +98,28 @@ function attachmentToContentBlock(a: Attachment): UserContentBlock {
  * anything else about a one-shot prompt.
  */
 export async function* singlePromptStream(text: string, attachments?: Attachment[]): AsyncGenerator<SDKUserMessage> {
+  yield buildUserMessage(text, attachments);
+}
+
+/** One prompt (text + optional attachments) as the SDK's user-message shape — shared by the one-shot and live paths. */
+export function buildUserMessage(text: string, attachments?: Attachment[]): SDKUserMessage {
   const blocks = attachments?.map(attachmentToContentBlock) ?? [];
   // Images/documents before the text that references them, per Anthropic's own
   // guidance — matters for citations/grounding, not just cosmetics.
   const content = blocks.length === 0 ? text : text ? [...blocks, { type: "text" as const, text }] : blocks;
-  yield {
+  return {
     type: "user",
     message: { role: "user", content },
     parent_tool_use_id: null,
   };
 }
 
-/** Per-(sub)agent block-index bookkeeping — see the comment on `agentTracking` in runTurn. */
-type BlockTracking = { blockKinds: Map<number, "text" | "thinking" | "tool_use">; globalOffset: number };
+/** Per-(sub)agent block-index bookkeeping — see the comment on `agentTracking` in LiveClaudeSession. */
+export type BlockTracking = { blockKinds: Map<number, "text" | "thinking" | "tool_use">; globalOffset: number };
 
-export async function runTurn(args: RunTurnArgs): Promise<RunTurnResult> {
-  const turnId = newTurnId();
-  let claudeSessionId: string | null = args.resumeSessionId;
-  let sawRateLimitError = false;
-  // Anthropic's raw stream numbers content blocks PER underlying model call —
-  // a tool round-trip starts a brand-new message whose own blocks count from
-  // 0 again. Each (sub)agent gets its OWN tracking, keyed by parent_tool_use_id
-  // (`""` for the main agent): a subagent's forwarded messages (see
-  // forwardSubagentText below) are a completely separate block-index space
-  // from the main turn's, arriving interleaved with it — sharing one tracker
-  // between them would corrupt the main turn's offsets with the subagent's
-  // block count and vice versa.
-  const agentTracking = new Map<string, BlockTracking>();
-  function trackingFor(parentToolUseId: string | null): BlockTracking {
-    const key = parentToolUseId ?? "";
-    let t = agentTracking.get(key);
-    if (!t) {
-      t = { blockKinds: new Map(), globalOffset: 0 };
-      agentTracking.set(key, t);
-    }
-    return t;
-  }
-
-  // Repo-defined hooks run unconditionally regardless of settingSources or
-  // canUseTool — see settingsHygiene.ts for why this has to run every turn.
-  stripUntrustedHooks(args.cwd);
-
-  const options: Options = {
-    cwd: args.cwd,
-    includePartialMessages: true,
-    permissionMode: args.permissionMode ?? "default",
-    abortController: args.abortController,
-    // Forward a subagent's own thinking/text as it happens (not just its
-    // final tool_result) so the UI can render a live nested transcript
-    // instead of a black-box spinner for the whole Task call.
-    forwardSubagentText: true,
-    ...(args.resumeSessionId ? { resume: args.resumeSessionId } : {}),
-    ...(args.model ? { model: args.model } : {}),
-    ...(args.maxThinkingTokens != null ? { maxThinkingTokens: args.maxThinkingTokens } : {}),
-    ...(args.forcePermissionPrompts ? { settingSources: [] } : {}),
-    ...(args.enableRtk ? { hooks: { PreToolUse: [createRtkPreToolUseHook(args.rtkBin ?? "rtk")] } } : {}),
-    // Route every permission decision through the caller's resolver. This only
-    // fires for tools the permission system doesn't auto-resolve (edits, bash,
-    // etc.), which is exactly the set a human controller should see.
-    canUseTool: async (toolName, input, opts): Promise<PermissionResult> => {
-      const requestId = opts.toolUseID;
-      args.emit({ kind: "permission_request", requestId, turnId, toolName, toolInput: input });
-      const { decision, byDeviceId, updatedInput } = await args.resolvePermission({
-        requestId,
-        turnId,
-        toolName,
-        toolInput: input,
-        signal: opts.signal,
-      });
-      args.emit({ kind: "permission_resolved", requestId, decision, byDeviceId });
-
-      return decision === "allow"
-        ? { behavior: "allow", updatedInput: updatedInput ?? input }
-        : { behavior: "deny", message: "Denied by controller." };
-    },
-    // Surface the child process's stderr into our logs for debuggability.
-    stderr: (data: string) => logger.debug("claude stderr", { data: data.slice(0, 500) }),
-  };
-
-  try {
-    const q = query({ prompt: singlePromptStream(args.prompt, args.attachments), options });
-    args.onQuery?.(q);
-
-    // supportedModels()/supportedCommands() only exist on a LIVE Query object,
-    // so this is the one place we can ever discover them. Runs concurrently
-    // with the message loop below (a separate control-request channel, not
-    // blocking) — best-effort, a failure here shouldn't fail the turn.
-    if (args.onCapabilities) {
-      const onCapabilities = args.onCapabilities;
-      Promise.all([q.supportedModels(), q.supportedCommands()])
-        .then(([models, commands]) => onCapabilities({ models, commands }))
-        .catch((err) => logger.warn("supportedModels/supportedCommands failed", { err: String(err) }));
-    }
-
-    for await (const message of q) {
-      // Every SDK message carries the session id; keep the latest so we can
-      // resume next time even if the id was freshly minted this turn.
-      if ("session_id" in message && message.session_id) claudeSessionId = message.session_id;
-
-      switch (message.type) {
-        case "stream_event": {
-          const t = trackingFor(message.parent_tool_use_id);
-          handleStreamEvent(message.event, turnId, t.blockKinds, t.globalOffset, message.parent_tool_use_id, args.emit);
-          break;
-        }
-
-        case "assistant": {
-          const sdkError = (message as { error?: string }).error;
-          if (sdkError === "rate_limit") sawRateLimitError = true;
-          // An SDK-flagged error frame's content is just a placeholder repeating
-          // the same failure the `result` message's errorMessage will carry —
-          // skip it here so it isn't shown twice (once as a normal reply, once
-          // as the "Turn failed: ..." banner).
-          if (sdkError) break;
-          const t = trackingFor(message.parent_tool_use_id);
-          handleAssistantMessage(
-            message.message,
-            turnId,
-            t.blockKinds,
-            t.globalOffset,
-            {
-              parentToolUseId: message.parent_tool_use_id,
-              subagentType: (message as { subagent_type?: string }).subagent_type,
-              taskDescription: (message as { task_description?: string }).task_description,
-            },
-            args.emit,
-          );
-          // This message is done — its local indices are now spoken for.
-          // Shift the next message FROM THE SAME (sub)agent (which will again
-          // start counting from 0) past them.
-          const maxLocal = t.blockKinds.size > 0 ? Math.max(...t.blockKinds.keys()) : -1;
-          t.globalOffset += maxLocal + 1;
-          t.blockKinds.clear();
-          break;
-        }
-
-        case "user":
-          handleToolResults(message.message, turnId, args.emit);
-          break;
-
-        case "system": {
-          // A background Agent-tool task (run_in_background: true) reporting
-          // it's done — may arrive during a turn that isn't the one that
-          // spawned it, so it carries no turnId; see background_task's own
-          // doc comment in events.ts for why.
-          if (message.subtype === "task_notification") {
-            args.emit({
-              kind: "background_task",
-              taskId: message.task_id,
-              toolUseId: message.tool_use_id ?? null,
-              status: message.status,
-              summary: message.summary,
-            });
-          }
-          break;
-        }
-
-        case "result": {
-          const ok = message.subtype === "success" && !message.is_error;
-          const interrupted = !ok && isInterruptedTerminalReason((message as { terminal_reason?: unknown }).terminal_reason);
-          const errorMessage = ok ? null : interrupted ? "Stopped by controller." : summarizeResultError(message);
-          args.emit({
-            kind: "turn_result",
-            turnId,
-            promptId: args.promptId,
-            ok,
-            costUsd: message.total_cost_usd ?? null,
-            durationMs: message.duration_ms ?? null,
-            errorMessage,
-            inputTokens: message.usage?.input_tokens ?? null,
-            outputTokens: message.usage?.output_tokens ?? null,
-            interrupted,
-            model: args.model ?? null,
-            clientType: args.clientType ?? null,
-          });
-          return {
-            claudeSessionId,
-            ok,
-            costUsd: message.total_cost_usd ?? null,
-            durationMs: message.duration_ms ?? null,
-            errorMessage,
-            rateLimited: !ok && (sawRateLimitError || classifyRateLimit(errorMessage)),
-            interrupted,
-          };
-        }
-
-        default:
-          // init, task_started, task_progress, task_updated, etc. — not modeled in v1.
-          break;
-      }
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    logger.error("turn failed", { turnId, err: msg });
-    args.emit({
-      kind: "turn_result",
-      turnId,
-      promptId: args.promptId,
-      ok: false,
-      costUsd: null,
-      durationMs: null,
-      errorMessage: msg,
-      inputTokens: null,
-      outputTokens: null,
-      model: args.model ?? null,
-      clientType: args.clientType ?? null,
-    });
-    return {
-      claudeSessionId,
-      ok: false,
-      costUsd: null,
-      durationMs: null,
-      errorMessage: msg,
-      rateLimited: sawRateLimitError || classifyRateLimit(msg),
-      interrupted: false,
-    };
-  }
-
-  // Generator ended without a `result` message (shouldn't normally happen).
-  return {
-    claudeSessionId,
-    ok: false,
-    costUsd: null,
-    durationMs: null,
-    errorMessage: "no result message",
-    rateLimited: false,
-    interrupted: false,
-  };
+/** Terminal reasons the SDK uses for a turn cut short by `Query.interrupt()`. */
+export function isInterruptedTerminalReason(reason: unknown): boolean {
+  return reason === "aborted_streaming" || reason === "aborted_tools";
 }
 
 /**
@@ -531,7 +284,7 @@ export function handleAssistantMessage(
 }
 
 /** A `user` SDK message carries tool_result blocks for tools the SDK ran. */
-function handleToolResults(message: unknown, turnId: string, emit: (p: EventPayload) => void): void {
+export function handleToolResults(message: unknown, turnId: string, emit: (p: EventPayload) => void): void {
   const content = (message as { content?: unknown }).content;
   if (!Array.isArray(content)) return;
 

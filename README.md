@@ -79,7 +79,7 @@ Monorepo (pnpm + Turbo):
 | --- | --- |
 | `packages/protocol` | The shared contract: Zod schemas for domain types, the event log, and every WS/REST message. |
 | `packages/client-core` | Pure-TS brain reused by every client: the event-log→state reducer, a reconnecting WebSocket client (replays from `lastSeq`), the REST client, and the QR pairing codec. No DOM. |
-| `apps/daemon` | The always-on host service (homelab box or VPS): spawns Claude sessions (SDK, resume-per-prompt), git worktrees, SQLite persistence, and one HTTP port serving REST + WebSocket. |
+| `apps/daemon` | The always-on host service (homelab box or VPS): runs Claude sessions (SDK, one long-lived process per session so background agents outlive their turn), git worktrees, SQLite persistence, and one HTTP port serving REST + WebSocket. |
 | `apps/web` | Reference client (React + Vite + Tailwind). Reused as-is inside the VS Code webview. |
 
 `apps/vscode` embeds that same web bundle in a webview panel — the only

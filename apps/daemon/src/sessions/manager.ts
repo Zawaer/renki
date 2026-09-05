@@ -1,5 +1,5 @@
-import type { PermissionMode, Query } from "@anthropic-ai/claude-agent-sdk";
-import type { Attachment, MergeConflictMeta, Session, SessionPurpose, SessionStatus } from "@crc/protocol";
+import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk";
+import type { Attachment, EventPayload, MergeConflictMeta, Session, SessionPurpose, SessionStatus } from "@crc/protocol";
 import { desc, eq, ne } from "drizzle-orm";
 import { mkdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
@@ -12,7 +12,8 @@ import { newSessionId } from "../ids.js";
 import { logger } from "../logger.js";
 import { findRepo } from "../repos.js";
 import { hasCapabilities, setCapabilities } from "../claude/capabilities.js";
-import { type PermissionResolver, runTurn } from "../claude/runner.js";
+import { LiveClaudeSession } from "../claude/liveSession.js";
+import type { PermissionResolver } from "../claude/runner.js";
 import { derivePlaceholderTitle, generateSessionTitle } from "../claude/titler.js";
 import { SessionError } from "./errors.js";
 
@@ -66,8 +67,22 @@ export class SessionManager {
   private readonly queues = new Map<string, SubmitPromptInput[]>();
   /** sessionId -> requestIds of permission_requests awaiting a decision. */
   private readonly pendingPermissions = new Map<string, Set<string>>();
-  /** sessionId -> the live Query for its currently-running turn, if any (see interruptSession). */
-  private readonly activeQueries = new Map<string, Query>();
+  /**
+   * sessionId -> its long-lived `claude` process, created on the first prompt
+   * and kept alive between turns so background agents survive the turn that
+   * spawned them (see LiveClaudeSession). Reaped after `config.liveIdleMs` of
+   * silence, closed on archive/delete/shutdown; the conversation itself lives
+   * in the resumable transcript, so a closed process costs nothing but the
+   * next prompt's spawn time.
+   */
+  private readonly live = new Map<string, LiveClaudeSession>();
+  private reaper: NodeJS.Timeout | null = null;
+  /**
+   * Sessions currently inside runOneTurn (between flipping busy and settling).
+   * An "auto turn" (the CLI acting on its own, e.g. reacting to a background
+   * agent finishing) must not flip such a session's status underneath it.
+   */
+  private readonly promptedTurns = new Set<string>();
 
   constructor(
     private readonly config: Config,
@@ -77,11 +92,11 @@ export class SessionManager {
   }
 
   /**
-   * Call once at boot. `activeQueries`/`pendingPermissions`/`queues` all start
-   * empty on a fresh process, so any session row still `busy` from before a
-   * hard restart (crash, `kill -9`, `pm2 restart` mid-turn) has no live Query
+   * Call once at boot. `live`/`pendingPermissions`/`queues` all start empty
+   * on a fresh process, so any session row still `busy` from before a hard
+   * restart (crash, `kill -9`, `pm2 restart` mid-turn) has no live process
    * backing it and never will again. Left alone it's wedged forever: Stop
-   * throws `not_busy` (no entry in `activeQueries`), and a new prompt just
+   * throws `not_busy` (no entry in `live`), and a new prompt just
    * piles into the queue behind a turn that can never finish. Mark the
    * dangling turn (and any dangling permission request) resolved so the
    * session goes back to being usable.
@@ -285,6 +300,7 @@ export class SessionManager {
   }
 
   async archiveSession(id: string): Promise<Session> {
+    this.closeLive(id, "archived");
     await this.cleanUpWorkdir(this.getSession(id)).catch((err) =>
       logger.warn("workdir cleanup failed during archive", { id, err: String(err) }),
     );
@@ -321,6 +337,7 @@ export class SessionManager {
    */
   async deleteSession(id: string): Promise<void> {
     const session = this.getSession(id);
+    this.closeLive(id, "deleted");
     if (session.status !== "archived") {
       await this.cleanUpWorkdir(session).catch((err) =>
         logger.warn("workdir cleanup failed during delete", { id, err: String(err) }),
@@ -449,11 +466,10 @@ export class SessionManager {
       this.patch(input.sessionId, { title: derivePlaceholderTitle(placeholderSource), titleSource: "placeholder", titleGenAttempts: 0 });
     }
 
+    this.promptedTurns.add(input.sessionId);
     let resumeId = session.claudeSessionId;
     const runOnce = () =>
-      runTurn({
-        cwd: session.worktreePath,
-        resumeSessionId: resumeId,
+      this.liveFor(input.sessionId, session.worktreePath, resumeId, input).runTurn({
         prompt: input.text,
         attachments: input.attachments,
         promptId: input.promptId,
@@ -461,30 +477,10 @@ export class SessionManager {
         clientType: clientTypeFromDeviceId(input.deviceId),
         maxThinkingTokens: input.maxThinkingTokens,
         permissionMode: input.permissionMode,
-        forcePermissionPrompts: this.config.forcePermissionPrompts,
-        enableRtk: this.config.enableRtk,
-        rtkBin: this.config.rtkBin,
-        emit: (payload) => {
-          if (payload.kind === "permission_request") this.trackPendingPermission(input.sessionId, payload.requestId, true);
-          else if (payload.kind === "permission_resolved") this.trackPendingPermission(input.sessionId, payload.requestId, false);
-          this.events.append(input.sessionId, payload);
-          if (payload.kind === "assistant_block") this.events.compactBlock(input.sessionId, payload.turnId, payload.blockIndex);
-        },
         resolvePermission: input.resolvePermission,
-        // Cheap to skip once the daemon already knows this — it's static per
-        // `claude` install, not per-session.
-        onCapabilities: hasCapabilities() ? undefined : setCapabilities,
-        onQuery: (q) => this.activeQueries.set(input.sessionId, q),
       });
 
-    // Cleared as soon as each attempt settles so interruptSession can never act
-    // on a stale Query from a turn that's already finished.
-    let result: Awaited<ReturnType<typeof runOnce>>;
-    try {
-      result = await runOnce();
-    } finally {
-      this.activeQueries.delete(input.sessionId);
-    }
+    let result = await runOnce();
     resumeId = result.claudeSessionId ?? resumeId;
 
     // Rate-limit auto-rotation: if the turn failed because the account hit its
@@ -500,16 +496,20 @@ export class SessionManager {
           text: `Switched account${sw.active ? ` (now #${sw.active})` : ""} — retrying.`,
           level: "info",
         });
-        try {
-          result = await runOnce();
-        } finally {
-          this.activeQueries.delete(input.sessionId);
-        }
+        // The running process may hold the exhausted account's credentials in
+        // memory — start a fresh one that resumes the same transcript.
+        this.closeLive(input.sessionId, "account switched");
+        result = await runOnce();
         resumeId = result.claudeSessionId ?? resumeId;
       } else {
         this.events.append(input.sessionId, { kind: "notice", text: "No other account available to switch to.", level: "warn" });
       }
     }
+
+    this.promptedTurns.delete(input.sessionId);
+    // The session may have been archived/deleted while the turn ran (which
+    // closed the process and failed the turn) — don't resurrect it as idle.
+    if (this.isRetired(input.sessionId)) return;
 
     const nextStatus: SessionStatus = result.ok ? "idle" : "error";
     this.patch(input.sessionId, {
@@ -585,26 +585,158 @@ export class SessionManager {
   interruptSession(id: string, deviceId: string): void {
     const session = this.getSession(id);
     if (session.controller !== deviceId) throw new SessionError("not_controller", "Only the controller can stop a turn.");
-    const q = this.activeQueries.get(id);
-    if (!q) throw new SessionError("not_busy", "No turn is running to stop.");
-    q.interrupt().catch((err) => logger.warn("interrupt failed", { id, err: String(err) }));
+    const live = this.live.get(id);
+    if (!live?.busy) throw new SessionError("not_busy", "No turn is running to stop.");
+    live.interrupt().catch((err) => logger.warn("interrupt failed", { id, err: String(err) }));
   }
 
   /**
-   * Push a live permission-mode change to the turn currently running for this
-   * session, if any, via the SDK's mid-session control request. Lets a
-   * controller flip e.g. Manual -> Auto right after answering a pending
-   * approval, so the rest of that same turn stops asking instead of only
-   * affecting the NEXT `submitPrompt`. Silently a no-op when idle — nothing
-   * live to update, and the next turn already carries the new mode itself.
+   * Push a live permission-mode change to this session's running process, if
+   * any, via the SDK's mid-session control request. Lets a controller flip
+   * e.g. Manual -> Auto right after answering a pending approval, so the rest
+   * of that same turn stops asking instead of only affecting the NEXT
+   * `submitPrompt`. Also reaches background agents still running between
+   * turns. Silently a no-op with no live process — the next turn already
+   * carries the new mode itself.
    */
   setPermissionMode(id: string, deviceId: string, mode: PermissionMode): void {
     const session = this.getSession(id);
     if (session.controller !== deviceId)
       throw new SessionError("not_controller", "Only the controller can change permission mode.");
-    const q = this.activeQueries.get(id);
-    if (!q) return;
-    q.setPermissionMode(mode).catch((err) => logger.warn("setPermissionMode failed", { id, err: String(err) }));
+    this.live.get(id)?.setPermissionMode(mode).catch((err) => logger.warn("setPermissionMode failed", { id, err: String(err) }));
+  }
+
+  // ── Live process pool ────────────────────────────────────────────────────────
+
+  /** Tear down every live process (daemon shutdown / CLI exit). Idle sessions resume transparently on their next prompt. */
+  closeAll(reason = "shutdown"): void {
+    for (const id of [...this.live.keys()]) this.closeLive(id, reason);
+    if (this.reaper) {
+      clearInterval(this.reaper);
+      this.reaper = null;
+    }
+  }
+
+  /**
+   * Close every live process that has nothing running — used after an account
+   * switch, since a running `claude` may keep the old account's credentials in
+   * memory. Busy sessions and ones with background agents are left alone; the
+   * rate-limit retry path handles its own session explicitly.
+   */
+  recycleIdleLiveSessions(reason = "account switched"): void {
+    for (const [id, live] of [...this.live]) {
+      if (live.busy || live.backgroundTaskCount > 0) continue;
+      this.closeLive(id, reason);
+    }
+  }
+
+  /** Number of sessions currently backed by a running `claude` process (for status/diagnostics). */
+  liveSessionCount(): number {
+    return this.live.size;
+  }
+
+  private liveFor(sessionId: string, cwd: string, resumeSessionId: string | null, first: SubmitPromptInput): LiveClaudeSession {
+    const existing = this.live.get(sessionId);
+    if (existing && !existing.isClosed) return existing;
+
+    const live = new LiveClaudeSession({
+      cwd,
+      resumeSessionId,
+      emit: this.emitterFor(sessionId),
+      model: first.model,
+      permissionMode: first.permissionMode,
+      maxThinkingTokens: first.maxThinkingTokens,
+      forcePermissionPrompts: this.config.forcePermissionPrompts,
+      enableRtk: this.config.enableRtk,
+      rtkBin: this.config.rtkBin,
+      // Cheap to skip once the daemon already knows this — it's static per
+      // `claude` install, not per-session.
+      onCapabilities: hasCapabilities() ? undefined : setCapabilities,
+      onAutoTurnStart: () => {
+        if (this.promptedTurns.has(sessionId) || this.isRetired(sessionId)) return;
+        this.patch(sessionId, { status: "busy", lastActivityAt: Date.now() });
+        this.events.append(sessionId, { kind: "status_changed", status: "busy" });
+      },
+      onAutoTurnEnd: (result) => {
+        if (this.isRetired(sessionId)) return;
+        this.patch(sessionId, { claudeSessionId: result.claudeSessionId ?? undefined, lastActivityAt: Date.now() });
+        // A prompted turn is about to run (it was waiting for this auto turn to
+        // finish) — it owns the status from here.
+        if (this.promptedTurns.has(sessionId)) return;
+        const status: SessionStatus = result.ok ? "idle" : "error";
+        this.patch(sessionId, { status });
+        this.events.append(sessionId, { kind: "status_changed", status });
+        this.drainQueue(sessionId);
+      },
+      onClosed: () => {
+        if (this.live.get(sessionId) === live) this.live.delete(sessionId);
+      },
+    });
+    this.live.set(sessionId, live);
+    this.ensureReaper();
+    return live;
+  }
+
+  /** The runner's event sink for one session: pending-permission bookkeeping, append, and delta compaction. */
+  private emitterFor(sessionId: string): (payload: EventPayload) => void {
+    return (payload) => {
+      if (payload.kind === "permission_request") this.trackPendingPermission(sessionId, payload.requestId, true);
+      else if (payload.kind === "permission_resolved") this.trackPendingPermission(sessionId, payload.requestId, false);
+      this.events.append(sessionId, payload);
+      if (payload.kind === "assistant_block") this.events.compactBlock(sessionId, payload.turnId, payload.blockIndex);
+    };
+  }
+
+  private closeLive(id: string, reason: string): void {
+    const live = this.live.get(id);
+    if (!live) return;
+    this.live.delete(id);
+    live.close(reason);
+    // Whatever session id the process last reported is the one to resume with.
+    if (live.claudeSessionId && !this.isRetired(id)) this.patch(id, { claudeSessionId: live.claudeSessionId });
+  }
+
+  /** Prompts queued behind an auto turn have no submitPrompt loop to drain them — start one. */
+  private drainQueue(sessionId: string): void {
+    const next = this.queues.get(sessionId)?.shift();
+    if (!next) return;
+    this.submitPrompt(next).catch((err) => {
+      logger.warn("queued prompt failed to start", { sessionId, err: String(err) });
+      this.events.append(sessionId, {
+        kind: "error",
+        message: err instanceof Error ? err.message : String(err),
+        code: err instanceof SessionError ? err.code : null,
+      });
+    });
+  }
+
+  private ensureReaper(): void {
+    if (this.reaper || this.config.liveIdleMs <= 0) return;
+    // Check a few times per idle window, but never more than once a second or less than once a minute.
+    const every = Math.min(60_000, Math.max(1_000, Math.floor(this.config.liveIdleMs / 4)));
+    this.reaper = setInterval(() => this.reapIdleLive(), every);
+    this.reaper.unref();
+  }
+
+  /** Close processes that have been silent past `liveIdleMs` with nothing pending — never one mid-turn, mid-permission, or with background agents. */
+  private reapIdleLive(): void {
+    const now = Date.now();
+    for (const [id, live] of [...this.live]) {
+      if (live.busy || live.backgroundTaskCount > 0 || this.pendingPermissions.has(id)) continue;
+      if (now - live.lastActivityAt < this.config.liveIdleMs) continue;
+      logger.info("closing idle live session", { id, idleMs: now - live.lastActivityAt });
+      this.closeLive(id, "idle");
+    }
+    if (this.live.size === 0 && this.reaper) {
+      clearInterval(this.reaper);
+      this.reaper = null;
+    }
+  }
+
+  /** True once a session is archived or deleted — nothing should flip its status back. */
+  private isRetired(id: string): boolean {
+    const row = this.db.select({ status: sessions.status }).from(sessions).where(eq(sessions.id, id)).get();
+    return !row || row.status === "archived" || row.status === "deleted";
   }
 
   // ── internals ────────────────────────────────────────────────────────────────

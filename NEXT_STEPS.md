@@ -296,6 +296,46 @@ features. The throughline for everything below: shrink "found the repo" →
       `test/usage.test.ts` (previously zero coverage on this module) via a
       fake swapped in for the private `http` client.
 
+- [x] **One long-lived `claude` process per session (2026-09-05).** Replaced
+      resume-per-prompt (a fresh `query()` per turn) with
+      `apps/daemon/src/claude/liveSession.ts`: one process per session whose
+      input stream never closes, fed one serialized prompt at a time by
+      `SessionManager`'s existing FIFO queue. Why: the SDK closes the child's
+      stdin as soon as the first `result` arrives
+      (anthropics/claude-agent-sdk-typescript#376), which permanently broke
+      every permission-gated tool call from a background Agent-tool task once
+      its spawning turn ended — so background agents never really worked
+      through CRC. Verified against the real CLI with a scripted smoke test:
+      two turns share one process and session id; a background agent spawned
+      in turn 1 kept running through turn 2 and, 24 s after both turns ended,
+      its Write permission request reached the resolver and the file landed;
+      its `task_notification` arrived while idle; and the CLI then started an
+      unprompted turn to report the result — modeled as an "auto turn" with a
+      synthetic `auto_<turnId>` promptId that flips the session busy/idle
+      around it and drains anything queued behind it. Subagent output arriving
+      turns later is routed to the turn holding its Task block via a
+      tool_use→turn map. Processes close on archive/delete/shutdown, after an
+      account switch (idle ones only — a running process may cache the old
+      credentials), and after `CRC_LIVE_IDLE_MINUTES` (default 60) of true
+      idleness. The RAM ceiling that originally motivated resume-per-prompt
+      (~1 GiB/process) is now a config knob instead of an architecture.
+      Follow-ups worth doing on real hardware:
+      - **Resume across a restart after queued messages.** Upstream #67 (queued
+        streaming-input messages missing from the CLI's transcript) is still
+        open; CRC's own event log is complete regardless, but a session resumed
+        after a daemon restart could see Claude's history minus those user
+        turns. Prompts are only ever sent one at a time here, so this may not
+        bite at all — confirm with a real restart mid-conversation.
+      - **"Run in parallel" composer affordance.** The plumbing now supports
+        it: a prompt flagged parallel could be rewritten as "spawn a background
+        agent for: …" so a second idea starts while the first turn is still
+        running, without a second worktree. Clients don't expose this yet.
+      - **Mid-turn steering** (the CLI's own between-tool-call message pickup)
+        is now technically possible — push while a turn is in flight — but
+        the CLI coalesces such messages into the running turn's single
+        `result`, which breaks the 1 prompt → 1 `turn_result` mapping clients
+        rely on. Needs a protocol change before it's worth doing.
+
 ## 4. Known fragilities
 
 - **Per-session git worktrees + the `crc merge` conflict flow may not scale to
@@ -307,7 +347,9 @@ features. The throughline for everything below: shrink "found the repo" →
   exploring a multi-agent orchestration approach instead — e.g. fan out
   independent agents per conflicted file/hunk (or per competing branch) and
   have them resolve concurrently rather than one bot session working through
-  every conflicted file in sequence.
+  every conflicted file in sequence. (Since 2026-09-05 background agents
+  actually survive their turn — see § 3 — so fan-out inside one session is now
+  a real option rather than a hypothetical.)
 - The claude.ai usage endpoint is undocumented/reverse-engineered — the usage-%
   reader may need a tweak if Anthropic changes it (the rate-limit trigger does
   not depend on it).

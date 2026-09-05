@@ -34,6 +34,7 @@ async function main() {
   const usageReader = new UsageReader(config.usageConfigPath, config.usageBaseUrl);
   const accounts = new AccountRotator(config, manager, usageReader);
   manager.setAutoSwitch(accounts); // lets a rate-limited turn switch + retry
+  accounts.setOnSwitched(() => manager.recycleIdleLiveSessions()); // idle processes may cache the old account's creds
   accounts.start();
 
   const app = await createServer(config, { manager, broker, pushTokens, devices, accounts, usage: usageReader });
@@ -55,6 +56,8 @@ async function main() {
     logger.info("shutting down", { signal });
     clearInterval(sweep);
     accounts.stop();
+    // Kill every live `claude` child; in-flight turns fail cleanly and resume on the next prompt after restart.
+    manager.closeAll("shutdown");
     await app.close().catch(() => {});
     process.exit(0);
   };

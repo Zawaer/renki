@@ -73,13 +73,20 @@ export function SessionGlyph({ status, pendingPermission }: { status: SessionSta
     tone = "text-(--crc-danger)";
     label = "Error";
   } else if (status === "archived" || status === "deleted") {
-    icon = "codicon-archive";
-    tone = "text-(--crc-fg-muted)/70";
-    label = "Archived";
+    // Archived rows are already dimmed; a hollow dot is enough of a marker.
+    return (
+      <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center" title="Archived" aria-label="Archived">
+        <span className="h-1.5 w-1.5 rounded-full ring-1 ring-(--crc-fg-muted)/45 ring-inset" />
+      </span>
+    );
   } else {
-    icon = "codicon-circle-large-outline";
-    tone = "text-(--crc-fg-muted)";
-    label = "Idle";
+    // Idle is the quiet default: a small filled dot, not an outlined circle —
+    // a big hollow ring beside a label reads as an unchecked checkbox.
+    return (
+      <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center" title="Idle" aria-label="Idle">
+        <span className="h-1.5 w-1.5 rounded-full bg-(--crc-fg-muted)/60" />
+      </span>
+    );
   }
   return (
     <span className={`inline-flex h-4 w-4 shrink-0 items-center justify-center ${tone}`} title={label} aria-label={label}>

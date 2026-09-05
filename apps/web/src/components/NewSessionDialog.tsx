@@ -26,6 +26,10 @@ export function NewSessionDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [behindInfo, setBehindInfo] = useState<{ behind: number } | null>(null);
+  // Base branch, new branch and title all have good defaults (the repo's own
+  // default branch, an auto `crc/xxxxxx` worktree handle, and a title the
+  // daemon generates from the first message), so they stay folded away.
+  const [advanced, setAdvanced] = useState(false);
 
   useEffect(() => {
     rest
@@ -111,15 +115,32 @@ export function NewSessionDialog({
     void submit();
   }
 
+  const selectedRepo = repos.find((r) => r.id === repoId);
+  const canCreate = !busy && (repoId === NO_REPO || Boolean(baseBranch));
+
   return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-10 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+      onClick={onClose}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
+        else if (e.key === "Enter" && !e.shiftKey && canCreate && !behindInfo) {
+          e.preventDefault();
+          void create();
+        }
+      }}
+    >
       <div
         className="crc-enter w-full max-w-md space-y-4 rounded-2xl border border-(--crc-border) bg-(--crc-surface) p-6 shadow-(--crc-shadow-lg)"
         onClick={(e) => e.stopPropagation()}
       >
         <div>
           <h2 className="text-lg font-semibold tracking-tight text-(--crc-fg)">New session</h2>
-          <p className="mt-0.5 text-xs text-(--crc-fg-muted)">Each session gets its own branch and worktree, so it never collides with another.</p>
+          <p className="mt-0.5 text-xs text-(--crc-fg-muted)">
+            {repoId === NO_REPO
+              ? "A scratch directory with no git — just somewhere to think out loud."
+              : "Gets its own branch and worktree, so it never collides with another session."}
+          </p>
         </div>
 
         <div className="space-y-1">
@@ -132,31 +153,53 @@ export function NewSessionDialog({
               ...repos.map((r) => ({ value: r.id, label: r.name, description: r.defaultBranch })),
             ]}
           />
+          {/* The defaults everyone actually uses, stated rather than asked for. */}
+          {repoId !== NO_REPO && !advanced && (
+            <p className="pt-1 text-[11px] text-(--crc-fg-muted)">
+              Branches from <span className="font-mono">{baseBranch || selectedRepo?.defaultBranch}</span>
+              {newBranch ? (
+                <>
+                  {" "}
+                  onto <span className="font-mono">{newBranch}</span>
+                </>
+              ) : null}
+              . Claude names the session from your first message.
+            </p>
+          )}
         </div>
 
-        {repoId !== NO_REPO && (
-          <>
-            <label className="block space-y-1">
-              <span className="text-xs font-medium text-(--crc-fg-muted)">Base branch</span>
-              <input value={baseBranch} onChange={(e) => changeBaseBranch(e.target.value)} className="crc-input" />
-            </label>
+        {advanced && (
+          <div className="space-y-4">
+            {repoId !== NO_REPO && (
+              <>
+                <label className="block space-y-1">
+                  <span className="text-xs font-medium text-(--crc-fg-muted)">Base branch</span>
+                  <input value={baseBranch} onChange={(e) => changeBaseBranch(e.target.value)} className="crc-input" />
+                </label>
+
+                <label className="block space-y-1">
+                  <span className="text-xs font-medium text-(--crc-fg-muted)">New branch (optional)</span>
+                  <input
+                    value={newBranch}
+                    onChange={(e) => setNewBranch(e.target.value)}
+                    placeholder="auto: crc/xxxxxx"
+                    className="crc-input"
+                  />
+                </label>
+              </>
+            )}
 
             <label className="block space-y-1">
-              <span className="text-xs font-medium text-(--crc-fg-muted)">New branch (optional)</span>
+              <span className="text-xs font-medium text-(--crc-fg-muted)">Title (optional)</span>
               <input
-                value={newBranch}
-                onChange={(e) => setNewBranch(e.target.value)}
-                placeholder="auto: crc/xxxxxx"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Auto-generated from your first message"
                 className="crc-input"
               />
             </label>
-          </>
+          </div>
         )}
-
-        <label className="block space-y-1">
-          <span className="text-xs font-medium text-(--crc-fg-muted)">Title (optional)</span>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} className="crc-input" />
-        </label>
 
         {error && <p className="text-sm text-(--crc-danger)">{error}</p>}
 
@@ -179,16 +222,26 @@ export function NewSessionDialog({
         )}
 
         {!behindInfo && (
-          <div className="flex justify-end gap-2 pt-1">
-            <Button variant="ghost" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button variant="primary" disabled={busy || (repoId !== NO_REPO && !baseBranch)} onClick={create}>
-              {busy ? "Creating…" : "Create"}
-            </Button>
+          <div className="flex items-center justify-between gap-2 pt-1">
+            <button
+              onClick={() => setAdvanced((v) => !v)}
+              className="flex items-center gap-1 text-xs text-(--crc-fg-muted) transition-colors hover:text-(--crc-fg)"
+            >
+              <span
+                className={`codicon codicon-chevron-right text-[11px] transition-transform duration-150 ${advanced ? "rotate-90" : ""}`}
+              />
+              Advanced
+            </button>
+            <div className="flex gap-2">
+              <Button variant="ghost" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button variant="primary" disabled={!canCreate} onClick={create}>
+                {busy ? "Creating…" : "Create"}
+              </Button>
+            </div>
           </div>
         )}
-
       </div>
     </div>
   );

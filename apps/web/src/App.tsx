@@ -60,56 +60,56 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
   const selected = sessionMatch ? decodeURIComponent(sessionMatch[1]!) : null;
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="flex h-12 shrink-0 items-center justify-between border-b border-(--crc-border) bg-(--crc-bg-elevated) px-4">
-        <div className="flex items-center gap-3">
+    <div className="grid h-full grid-cols-[288px_1fr] overflow-hidden">
+      <aside className="flex min-h-0 flex-col border-r border-(--crc-border) bg-(--crc-bg-elevated)">
+        <button
+          onClick={() => navigate("/")}
+          className="flex h-12 shrink-0 items-center gap-2.5 px-4 text-left hover:bg-(--crc-hover)/60"
+          title="Home"
+        >
           <span className="flex h-6 w-6 items-center justify-center rounded-md bg-(--crc-accent) text-(--crc-accent-fg) shadow-(--crc-shadow-xs)">
             <span className="codicon codicon-terminal text-[13px]" />
           </span>
-          <span className="text-sm font-semibold tracking-tight text-(--crc-fg)">Claude Remote Control</span>
-          <ConnBadge status={status} />
+          <span className="truncate text-[13px] font-semibold tracking-tight text-(--crc-fg)">Claude Remote Control</span>
+        </button>
+
+        <div className="min-h-0 flex-1">
+          <SessionList
+            selectedId={selected}
+            onSelect={(id) => navigate(`/session/${encodeURIComponent(id)}`)}
+            onDeleted={(id) => {
+              if (selected === id) navigate("/");
+            }}
+          />
         </div>
-        <div className="flex items-center gap-1 text-xs text-(--crc-fg-muted)">
-          <span className="mr-2 hidden sm:inline">{config.deviceName}</span>
+
+        {/* Identity + connection + utilities live down here, like a native app's account chip — the main column keeps its full height for the conversation. */}
+        <div className="flex shrink-0 items-center gap-0.5 border-t border-(--crc-border) p-2">
+          <ConnChip status={status} deviceName={config.deviceName} />
           <HeaderButton active={onStats} title="Stats" icon="graph-line" onClick={() => navigate(onStats ? "/" : "/stats")} />
           <AccountsBar />
           <RtkGainBadge />
           <HeaderButton active={onSettings} title="Settings" icon="gear" onClick={() => navigate(onSettings ? "/" : "/settings")} />
         </div>
-      </header>
+      </aside>
 
-      {lastError && (
-        <div className="flex items-center gap-1.5 border-b border-(--crc-danger)/30 bg-(--crc-danger)/10 px-4 py-1.5 text-xs text-(--crc-danger)">
-          <span className="codicon codicon-error" />
-          {lastError.code}: {lastError.message}
-        </div>
-      )}
-
-      <div className="grid flex-1 grid-cols-[288px_1fr] overflow-hidden">
-        <aside className="flex flex-col border-r border-(--crc-border) bg-(--crc-bg-elevated)">
-          <div className="min-h-0 flex-1">
-            <SessionList
-              selectedId={selected}
-              onSelect={(id) => navigate(`/session/${encodeURIComponent(id)}`)}
-              onDeleted={(id) => {
-                if (selected === id) navigate("/");
-              }}
-            />
+      <main className="flex min-h-0 flex-col overflow-hidden bg-(--crc-bg)">
+        {lastError && (
+          <div className="flex items-center gap-1.5 border-b border-(--crc-danger)/30 bg-(--crc-danger)/10 px-4 py-1.5 text-xs text-(--crc-danger)">
+            <span className="codicon codicon-error" />
+            {lastError.code}: {lastError.message}
           </div>
-        </aside>
-        <main className="overflow-hidden bg-(--crc-bg)">
+        )}
+        <div className="min-h-0 flex-1 overflow-hidden">
           <Routes>
             <Route path="/stats" element={<StatsView />} />
             <Route path="/settings" element={<Settings onReset={onReset} managed={managed} />} />
-            <Route
-              path="/session/:id"
-              element={selected ? <SessionView key={selected} sessionId={selected} /> : null}
-            />
+            <Route path="/session/:id" element={selected ? <SessionView key={selected} sessionId={selected} /> : null} />
             <Route
               path="*"
               element={
                 <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-(--crc-border) bg-(--crc-surface) text-(--crc-fg-muted) shadow-(--crc-shadow-sm)">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-(--crc-surface) text-(--crc-fg-muted) shadow-(--crc-shadow-sm)">
                     <span className="codicon codicon-comment-discussion text-xl" />
                   </span>
                   <div>
@@ -120,8 +120,8 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
               }
             />
           </Routes>
-        </main>
-      </div>
+        </div>
+      </main>
     </div>
   );
 }
@@ -140,7 +140,7 @@ function HeaderButton({ active, title, icon, onClick }: { active: boolean; title
   );
 }
 
-function ConnBadge({ status }: { status: "connecting" | "open" | "closed" }) {
+function ConnChip({ status, deviceName }: { status: "connecting" | "open" | "closed"; deviceName: string }) {
   const map = {
     open: { color: "bg-(--crc-success)", label: "Connected", tone: "text-(--crc-fg-muted)" },
     connecting: { color: "bg-(--crc-warning) animate-pulse", label: "Connecting…", tone: "text-(--crc-warning)" },
@@ -148,9 +148,11 @@ function ConnBadge({ status }: { status: "connecting" | "open" | "closed" }) {
   } as const;
   const s = map[status];
   return (
-    <span className={`inline-flex h-6 items-center gap-1.5 rounded-full border border-(--crc-border) bg-(--crc-surface) px-2 text-[11px] font-medium ${s.tone}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${s.color}`} />
-      {s.label}
-    </span>
+    <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg px-2" title={`${deviceName} · ${s.label}`}>
+      <span className={`h-2 w-2 shrink-0 rounded-full ${s.color}`} />
+      <span className={`truncate text-xs font-medium ${status === "open" ? "text-(--crc-fg)" : s.tone}`}>
+        {status === "open" ? deviceName : s.label}
+      </span>
+    </div>
   );
 }

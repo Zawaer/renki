@@ -55,7 +55,7 @@ export function AccountsBar() {
       <button
         onClick={() => setOpen((v) => !v)}
         title="Accounts & usage"
-        className="flex items-center gap-1 rounded-sm px-1.5 py-1 text-(--crc-fg-muted) hover:bg-(--crc-hover) hover:text-(--crc-fg)"
+        className="flex h-8 items-center gap-1 rounded-lg px-2 text-(--crc-fg-muted) transition-colors hover:bg-(--crc-hover) hover:text-(--crc-fg)"
       >
         <span className="codicon codicon-account" />
         {worstPct != null && <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />}
@@ -65,7 +65,7 @@ export function AccountsBar() {
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div
-            className="absolute right-0 top-full z-50 mt-2 w-72 space-y-2 rounded-xl border border-(--crc-border) bg-(--crc-surface) p-3 text-xs shadow-(--crc-shadow-lg)"
+            className="crc-enter absolute bottom-full left-0 z-50 mb-2 w-72 space-y-2 rounded-xl border border-(--crc-border) bg-(--crc-surface) p-3 text-xs shadow-(--crc-shadow-lg)"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">

@@ -368,6 +368,24 @@ features. The throughline for everything below: shrink "found the repo" →
       Mobile untouched — it already had its own warmer redesign. A Lovable
       brief for further concepts was written the same day (not in repo).
 
+- [x] **Web sidebar + shell, second pass (2026-09-05).** Learnings taken from
+      the Claude Code desktop app: sessions are grouped by repo (the repo is the
+      folder — automatic, collapsible, collapsed state in localStorage, a
+      per-repo "+" that opens the new-session dialog preselected, and a
+      collapsed group rolls its children's busy / needs-approval state up into
+      its header); rows are a single line — a shape-based glyph
+      (`SessionGlyph`: outline idle, spinner working, shield needs-approval,
+      cross error, box archived) plus the title; the auto-generated
+      `crc/xxxxxx` branch is hidden everywhere (client-core `isAutoBranch` /
+      `displayBranch`) because it's a worktree handle, not information — a
+      branch the user named still shows; the top header is gone, brand sits at
+      the top of the sidebar and device/connection/stats/accounts/RTK/settings
+      form a footer chip row (popovers there open upward); cards lost their
+      hairline borders in favor of tonal surfaces (tool calls, stat tiles,
+      settings sections), inner separators are 60% borders. Not yet taken from
+      that app: the "what's up next" home screen with a compact stats card and
+      activity heatmap — the data exists on the Stats page, worth a follow-up.
+
 ## 4. Known fragilities
 
 - **Per-session git worktrees + the `crc merge` conflict flow may not scale to

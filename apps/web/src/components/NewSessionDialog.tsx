@@ -8,9 +8,12 @@ const NO_REPO = "";
 
 /** Create a session: pick a repo (or "No repo" for a plain scratch dir), base branch, optional new-branch name + title. */
 export function NewSessionDialog({
+  initialRepoId,
   onClose,
   onCreated,
 }: {
+  /** Preselect this repo (the sidebar's per-repo "+"); falls back to the first repo when absent or unknown. */
+  initialRepoId?: string;
   onClose: () => void;
   onCreated: (session: Session) => void;
 }) {
@@ -29,13 +32,14 @@ export function NewSessionDialog({
       .listRepos()
       .then((r) => {
         setRepos(r);
-        if (r[0]) {
-          setRepoId(r[0].id);
-          setBaseBranch(r[0].defaultBranch);
+        const preferred = (initialRepoId && r.find((x) => x.id === initialRepoId)) || r[0];
+        if (preferred) {
+          setRepoId(preferred.id);
+          setBaseBranch(preferred.defaultBranch);
         }
       })
       .catch((e) => setError(String(e)));
-  }, [rest]);
+  }, [rest, initialRepoId]);
 
   function pickRepo(id: string) {
     setRepoId(id);

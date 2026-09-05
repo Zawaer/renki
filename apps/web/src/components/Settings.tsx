@@ -34,7 +34,7 @@ export function Settings({ onReset, managed }: { onReset: () => void; managed: b
 function Section({ title, description, danger, children }: { title: string; description: string; danger?: boolean; children: React.ReactNode }) {
   return (
     <section
-      className={`rounded-xl border p-5 shadow-(--crc-shadow-xs) ${danger ? "border-(--crc-danger)/40 bg-(--crc-danger)/5" : "border-(--crc-border) bg-(--crc-bg-elevated)"}`}
+      className={`rounded-xl p-5 shadow-(--crc-shadow-xs) ${danger ? "border border-(--crc-danger)/40 bg-(--crc-danger)/5" : "bg-(--crc-surface)"}`}
     >
       <h2 className="text-sm font-semibold text-(--crc-fg)">{title}</h2>
       <p className="mt-1 text-xs text-(--crc-fg-muted)">{description}</p>

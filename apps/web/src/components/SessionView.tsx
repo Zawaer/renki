@@ -11,6 +11,7 @@ import {
   parseTodos,
   PERMISSION_MODES,
   THINKING_VERBS,
+  displayBranch,
   turnTriggerLabel,
   type AskUserQuestionView,
   type Attachment,
@@ -68,10 +69,10 @@ export function SessionView({ sessionId }: { sessionId: string }) {
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="truncate text-[15px] font-semibold tracking-tight text-(--crc-fg)">{conv.repoName ?? "…"}</span>
-              {conv.branch && (
-                <span className="hidden shrink-0 items-center gap-1 rounded-md border border-(--crc-border) bg-(--crc-surface) px-1.5 py-0.5 font-mono text-[11px] text-(--crc-fg-muted) md:inline-flex">
+              {displayBranch(conv.branch) && (
+                <span className="hidden shrink-0 items-center gap-1 rounded-md bg-(--crc-surface) px-1.5 py-0.5 font-mono text-[11px] text-(--crc-fg-muted) md:inline-flex">
                   <span className="codicon codicon-git-branch text-[11px]" />
-                  {conv.branch}
+                  {displayBranch(conv.branch)}
                 </span>
               )}
             </div>
@@ -104,7 +105,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
         <div className="mx-auto w-full max-w-4xl space-y-5 px-6 py-6">
           {conv.timeline.length === 0 && (
             <div className="flex flex-col items-center gap-3 py-24 text-center">
-              <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-(--crc-border) bg-(--crc-surface) text-(--crc-fg-muted) shadow-(--crc-shadow-sm)">
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-(--crc-surface) text-(--crc-fg-muted) shadow-(--crc-shadow-sm)">
                 <span className="codicon codicon-sparkle text-xl" />
               </span>
               <div>
@@ -123,7 +124,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
 
       {/* Pending permissions */}
       {conv.pending.length > 0 && (
-        <div className="border-t border-(--crc-border) bg-(--crc-bg-elevated) px-6 py-3 shadow-[0_-12px_32px_-16px_rgba(0,0,0,0.45)]">
+        <div className="border-t border-(--crc-border)/60 bg-(--crc-bg-elevated) px-6 py-3 shadow-[0_-12px_32px_-16px_rgba(0,0,0,0.45)]">
           <div className="mx-auto w-full max-w-4xl space-y-2">
           {conv.pending.map((p) => (
             <PermissionCard
@@ -142,7 +143,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
           QueuedPromptView). Shown here as "up next", separate from the
           strictly-ordered conversation above. */}
       {conv.queuedPrompts.length > 0 && (
-        <div className="border-t border-(--crc-border) bg-(--crc-bg-elevated)/60 px-6 py-2">
+        <div className="border-t border-(--crc-border)/60 bg-(--crc-bg-elevated)/60 px-6 py-2">
           <div className="mx-auto w-full max-w-4xl space-y-1">
           <div className="text-[11px] text-(--crc-fg-muted)">
             {conv.queuedPrompts.length === 1 ? "1 message queued" : `${conv.queuedPrompts.length} messages queued`} — will send once the current turn finishes
@@ -310,7 +311,7 @@ function Block({ block, turnRunning }: { block: BlockView; turnRunning: boolean 
     const todos = block.toolName === "TodoWrite" ? parseTodos(block.toolInput) : null;
     const plan = parsePlan(block.toolName, block.toolInput);
     return (
-      <div className="overflow-hidden rounded-xl border border-(--crc-border) bg-(--crc-surface) text-xs shadow-(--crc-shadow-xs)">
+      <div className="overflow-hidden rounded-xl bg-(--crc-surface) text-xs shadow-(--crc-shadow-xs)">
         <div className="flex items-center gap-2 px-3 py-2 text-(--crc-fg)">
           <span className="flex h-5 w-5 items-center justify-center rounded-md bg-(--crc-bg-inset) text-(--crc-fg-muted)">
             <span className={`codicon codicon-${toolIcon(block.toolName)} text-[12px]`} />
@@ -340,17 +341,17 @@ function Block({ block, turnRunning }: { block: BlockView; turnRunning: boolean 
         ) : todos ? (
           <TodoChecklist todos={todos} />
         ) : plan ? (
-          <div className="border-t border-(--crc-border) px-3 py-2">
+          <div className="border-t border-(--crc-border)/60 px-3 py-2">
             <Markdown content={plan} />
           </div>
         ) : (
-          <pre className="overflow-x-auto border-t border-(--crc-border) bg-(--crc-bg-inset)/50 px-3 py-2 font-mono leading-relaxed text-(--crc-fg-muted)">
+          <pre className="overflow-x-auto border-t border-(--crc-border)/60 bg-(--crc-bg-inset)/50 px-3 py-2 font-mono leading-relaxed text-(--crc-fg-muted)">
             {truncate(JSON.stringify(block.toolInput, null, 2), 800)}
           </pre>
         )}
         {block.result && (
           <pre
-            className={`max-h-72 overflow-auto border-t border-(--crc-border) px-3 py-2 font-mono leading-relaxed ${
+            className={`max-h-72 overflow-auto border-t border-(--crc-border)/60 px-3 py-2 font-mono leading-relaxed ${
               block.result.ok ? "text-(--crc-fg-muted)" : "bg-(--crc-danger)/8 text-(--crc-danger)"
             }`}
           >
@@ -360,7 +361,7 @@ function Block({ block, turnRunning }: { block: BlockView; turnRunning: boolean 
         )}
         {block.subagent && <SubagentActivity subagent={block.subagent} />}
         {block.backgroundTask && (
-          <div className="flex items-start gap-1.5 border-t border-(--crc-border) bg-(--crc-bg-inset)/40 px-3 py-2 text-(--crc-fg-muted)">
+          <div className="flex items-start gap-1.5 border-t border-(--crc-border)/60 bg-(--crc-bg-inset)/40 px-3 py-2 text-(--crc-fg-muted)">
             <span
               className={`codicon mt-0.5 ${
                 block.backgroundTask.status === "completed"
@@ -399,7 +400,7 @@ function SubagentActivity({ subagent }: { subagent: SubagentView }) {
   }, [subagent.status]);
 
   return (
-    <details ref={detailsRef} className="border-t border-(--crc-border) px-3 py-2" open={subagent.status === "running"}>
+    <details ref={detailsRef} className="border-t border-(--crc-border)/60 px-3 py-2" open={subagent.status === "running"}>
       <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-md text-(--crc-fg-muted) hover:text-(--crc-fg)">
         <span
           className={`codicon ${subagent.status === "running" ? "codicon-loading codicon-modifier-spin" : "codicon-pass-filled text-(--crc-success)"}`}
@@ -423,14 +424,14 @@ function DiffView({ view }: { view: EditToolView }) {
   const totalLines = view.hunks.reduce((n, h) => n + h.lines.length, 0);
   let shown = 0;
   return (
-    <div className="overflow-x-auto border-t border-(--crc-border) font-mono">
+    <div className="overflow-x-auto border-t border-(--crc-border)/60 font-mono">
       {view.hunks.map((hunk, hi) => {
         if (shown >= MAX_DIFF_LINES_SHOWN) return null;
         const remaining = MAX_DIFF_LINES_SHOWN - shown;
         const lines = hunk.lines.slice(0, remaining);
         shown += lines.length;
         return (
-          <div key={hi} className={hi > 0 ? "border-t border-dashed border-(--crc-border)" : ""}>
+          <div key={hi} className={hi > 0 ? "border-t border-dashed border-(--crc-border)/60" : ""}>
             {lines.map((line, li) => (
               <div
                 key={li}
@@ -458,7 +459,7 @@ function DiffView({ view }: { view: EditToolView }) {
 
 function TodoChecklist({ todos }: { todos: TodoItemView[] }) {
   return (
-    <div className="border-t border-(--crc-border) px-3 py-1.5">
+    <div className="border-t border-(--crc-border)/60 px-3 py-1.5">
       {todos.map((t, i) => (
         <div key={i} className="flex items-start gap-2 py-0.5">
           <span
@@ -1020,7 +1021,7 @@ function Composer({
 
   return (
     <div
-      className="relative border-t border-(--crc-border) bg-(--crc-bg-elevated) px-6 pb-4 pt-3"
+      className="relative border-t border-(--crc-border)/60 bg-(--crc-bg-elevated) px-6 pb-4 pt-3"
       onDragOver={(e) => {
         e.preventDefault();
         setDragOver(true);
@@ -1077,7 +1078,7 @@ function Composer({
                         {m.value === model && <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />}
                       </button>
                     )),
-                    <div key="custom" className="mt-1 border-t border-(--crc-border) p-2">
+                    <div key="custom" className="mt-1 border-t border-(--crc-border)/60 p-2">
                       <div className="mb-1 text-(--crc-fg-muted)">Not listed? Enter a model ID directly:</div>
                       <div className="flex gap-1.5">
                         <input

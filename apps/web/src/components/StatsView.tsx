@@ -226,7 +226,7 @@ function RtkSection({ rtk }: { rtk: RtkGainResponse }) {
     return (
       <section className="mb-8">
         <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-(--crc-fg-muted)">RTK savings</h2>
-        <div className="rounded-xl border border-(--crc-border) bg-(--crc-surface) p-4 text-xs text-(--crc-fg-muted)">
+        <div className="rounded-xl bg-(--crc-surface) p-4 text-xs text-(--crc-fg-muted)">
           RTK is enabled but not reachable on the daemon host{rtk.error ? ` — ${rtk.error}` : ""}.
         </div>
       </section>
@@ -312,7 +312,7 @@ function RtkTable({ rows }: { rows: RtkGainDay[] }) {
 function EarlyMonthNote({ monthly }: { monthly: StatsBucket[] }) {
   const current = monthly[0];
   return (
-    <div className="rounded-xl border border-(--crc-border) bg-(--crc-surface) p-4 text-xs text-(--crc-fg-muted)">
+    <div className="rounded-xl bg-(--crc-surface) p-4 text-xs text-(--crc-fg-muted)">
       <p>Not enough history yet for a month-over-month trend — check back after a full month or two.</p>
       {current && (
         <p className="mt-2 text-(--crc-fg)">
@@ -343,7 +343,7 @@ function Section({ title, children, table }: { title: string; children: React.Re
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-(--crc-border) bg-(--crc-surface) p-4">
+    <div className="rounded-xl bg-(--crc-surface) p-4">
       <div className="mb-2 text-[11px] font-medium text-(--crc-fg-muted)">{title}</div>
       {children}
     </div>
@@ -365,7 +365,7 @@ function Legend({ items }: { items: { label: string; color: string }[] }) {
 
 function StatTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-(--crc-border) bg-(--crc-surface) p-4 shadow-(--crc-shadow-xs)">
+    <div className="rounded-xl bg-(--crc-surface) p-4 shadow-(--crc-shadow-xs)">
       <div className="text-[11px] font-medium text-(--crc-fg-muted)">{label}</div>
       <div className="mt-1 text-xl font-semibold tracking-tight text-(--crc-fg)">{value}</div>
     </div>
@@ -396,7 +396,7 @@ function Bars({ items, colorA, colorB }: { items: BarItem[]; colorA: string; col
           const hB = ((it.b ?? 0) / max) * CHART_H;
           return (
             <div key={it.key} className="group relative flex h-full max-w-6 flex-1 flex-col justify-end">
-              <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 hidden -translate-x-1/2 whitespace-pre rounded-xl border border-(--crc-border) bg-(--crc-surface) px-2 py-1 text-[10px] text-(--crc-fg) shadow-lg group-hover:block">
+              <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 hidden -translate-x-1/2 whitespace-pre rounded-xl bg-(--crc-surface) px-2 py-1 text-[10px] text-(--crc-fg) shadow-lg group-hover:block">
                 {it.tooltip}
               </div>
               <div className="flex w-full flex-col justify-end gap-0.5" style={{ height: CHART_H }}>

@@ -50,6 +50,43 @@ export function StatusDot({ status, pendingPermission }: { status: SessionStatus
   return <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${STATUS_COLOR[status]}`} />;
 }
 
+/**
+ * Session state as a glyph whose SHAPE changes, not just its color — an
+ * outline for idle, a spinner while working, a shield when it needs you, a
+ * cross on error, a box when archived. Reads at a glance and without color.
+ */
+export function SessionGlyph({ status, pendingPermission }: { status: SessionStatus; pendingPermission?: boolean }) {
+  let icon: string;
+  let tone: string;
+  let label: string;
+  if (pendingPermission && status === "busy") {
+    icon = "codicon-shield animate-pulse";
+    tone = "text-(--crc-danger)";
+    label = "Needs your approval";
+  } else if (status === "busy") {
+    icon = "codicon-loading codicon-modifier-spin";
+    tone = "text-(--crc-warning)";
+    label = "Working";
+  } else if (status === "error") {
+    icon = "codicon-error";
+    tone = "text-(--crc-danger)";
+    label = "Error";
+  } else if (status === "archived" || status === "deleted") {
+    icon = "codicon-archive";
+    tone = "text-(--crc-fg-muted)/70";
+    label = "Archived";
+  } else {
+    icon = "codicon-circle-large-outline";
+    tone = "text-(--crc-fg-muted)";
+    label = "Idle";
+  }
+  return (
+    <span className={`inline-flex h-4 w-4 shrink-0 items-center justify-center ${tone}`} title={label} aria-label={label}>
+      <span className={`codicon ${icon} text-[13px]`} />
+    </span>
+  );
+}
+
 export function StatusBadge({ status, pendingPermission }: { status: SessionStatus; pendingPermission?: boolean }) {
   const needsYou = pendingPermission && status === "busy";
   return (

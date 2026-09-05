@@ -237,6 +237,27 @@ input:focus-visible {
   animation: crc-alarm 2.4s ease-in-out infinite;
 }
 
+/* Skeleton placeholders: a slow sheen across an inset-toned block. */
+@keyframes crc-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+.crc-skeleton {
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+    90deg,
+    var(--crc-bg-inset) 0%,
+    color-mix(in oklab, var(--crc-bg-inset) 60%, var(--crc-hover)) 50%,
+    var(--crc-bg-inset) 100%
+  );
+  background-size: 200% 100%;
+  animation: crc-shimmer 1.8s ease-in-out infinite;
+}
+
 @keyframes crc-fade-up {
   from {
     opacity: 0;
@@ -254,6 +275,7 @@ input:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .crc-enter,
   .crc-alarm,
+  .crc-skeleton,
   .animate-pulse,
   .codicon-modifier-spin {
     animation: none !important;

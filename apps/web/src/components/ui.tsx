@@ -1,4 +1,5 @@
 import type { SessionStatus } from "@crc/protocol";
+import { useEffect, useRef, useState } from "react";
 
 type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "default" | "primary" | "ghost" | "danger";
@@ -111,4 +112,115 @@ export function StatusBadge({ status, pendingPermission }: { status: SessionStat
 /** Uppercase section eyebrow — "Archived", "By repo", etc. */
 export function Eyebrow({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <div className={`text-[11px] font-semibold tracking-[0.08em] text-(--crc-fg-muted) uppercase ${className}`}>{children}</div>;
+}
+
+/**
+ * Loading placeholder shaped like the content it stands in for. Size it with
+ * Tailwind classes (`h-3 w-24`); it shimmers until the real thing renders.
+ */
+export function Skeleton({ className = "" }: { className?: string }) {
+  return <span aria-hidden className={`crc-skeleton block ${className}`} />;
+}
+
+export type SelectOption = { value: string; label: string; description?: string };
+
+/**
+ * A themed replacement for a native <select>: a field-shaped trigger and a
+ * floating list with a check on the current value. Same look as the composer
+ * pickers, so forms and the composer read as one system. Closes on outside
+ * click and Escape; arrow keys move, Enter picks.
+ */
+export function Select({
+  value,
+  options,
+  onChange,
+  placeholder = "Choose…",
+  disabled,
+  className = "",
+}: {
+  value: string;
+  options: SelectOption[];
+  onChange: (value: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [cursor, setCursor] = useState(0);
+  const listRef = useRef<HTMLDivElement>(null);
+  const current = options.find((o) => o.value === value);
+
+  useEffect(() => {
+    if (open) setCursor(Math.max(0, options.findIndex((o) => o.value === value)));
+  }, [open, options, value]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+      else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setCursor((c) => Math.min(options.length - 1, c + 1));
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setCursor((c) => Math.max(0, c - 1));
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        const picked = options[cursor];
+        if (picked) onChange(picked.value);
+        setOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, options, cursor, onChange]);
+
+  return (
+    <div className={`relative ${className}`}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`crc-input flex items-center justify-between gap-2 text-left disabled:opacity-50 ${open ? "border-(--crc-accent)" : ""}`}
+      >
+        <span className={`truncate ${current ? "text-(--crc-fg)" : "text-(--crc-fg-muted)"}`}>{current?.label ?? placeholder}</span>
+        <span className="codicon codicon-chevron-down shrink-0 text-[12px] text-(--crc-fg-muted)" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div
+            ref={listRef}
+            role="listbox"
+            className="crc-enter absolute top-full left-0 z-50 mt-1.5 max-h-64 w-full overflow-y-auto rounded-xl bg-(--crc-surface) p-1 text-sm shadow-(--crc-shadow-lg)"
+          >
+            {options.map((o, i) => (
+              <button
+                key={o.value}
+                type="button"
+                role="option"
+                aria-selected={o.value === value}
+                onMouseEnter={() => setCursor(i)}
+                onClick={() => {
+                  onChange(o.value);
+                  setOpen(false);
+                }}
+                className={`flex w-full items-start justify-between gap-2 rounded-lg px-3 py-2 text-left ${
+                  i === cursor ? "bg-(--crc-hover)" : ""
+                }`}
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-(--crc-fg)">{o.label}</span>
+                  {o.description && <span className="block truncate text-xs text-(--crc-fg-muted)">{o.description}</span>}
+                </span>
+                {o.value === value && <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
 }

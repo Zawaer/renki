@@ -5,7 +5,7 @@ import { useClient, useStoreValue } from "../lib/client.js";
 import { ExtraUsageMeter, Meter } from "./AccountsBar.js";
 import { PairDevice } from "./PairDevice.js";
 import { UsageConnect } from "./UsageConnect.js";
-import { Button } from "./ui.js";
+import { Button, Skeleton } from "./ui.js";
 
 /**
  * Everything about this connection that used to be scattered across the
@@ -196,7 +196,21 @@ function AccountsSection() {
       description="The Claude logins the daemon can run sessions as. One is active at a time. Connect usage tracking on an account to see its 5-hour and 7-day limits, and to let auto-switch move to whichever account still has headroom."
     >
       {!data ? (
-        <p className="text-xs text-(--crc-fg-muted)">Loading…</p>
+        <div className="flex flex-col gap-2" aria-busy="true" aria-label="Loading accounts">
+          {[0, 1].map((i) => (
+            <div key={i} className="rounded-xl bg-(--crc-bg-inset)/70 px-4 py-3">
+              <div className="flex items-center gap-2.5">
+                <Skeleton className="h-1.5 w-1.5 rounded-full" />
+                <Skeleton className="h-3.5 w-44" />
+                <Skeleton className="ml-auto h-7 w-24 rounded-md" />
+              </div>
+              <div className="mt-3 flex gap-6 pl-4">
+                <Skeleton className="h-1.5 flex-1 rounded-full" />
+                <Skeleton className="h-1.5 flex-1 rounded-full" />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : accounts.length === 0 ? (
         <div className="rounded-xl bg-(--crc-bg-inset)/70 px-4 py-4 text-[13px] text-(--crc-fg-muted)">
           No accounts yet. Add a coding account below — it runs <code className="font-mono text-(--crc-fg)">cswap add-token</code> on the daemon host.

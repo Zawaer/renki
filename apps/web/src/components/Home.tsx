@@ -14,6 +14,7 @@ import {
 } from "@crc/client-core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useClient } from "../lib/client.js";
+import { Skeleton } from "./ui.js";
 
 type Range = "all" | "30d" | "7d";
 type Tab = "overview" | "models";
@@ -76,6 +77,36 @@ export function Home() {
         {failed && (
           <div className="mt-8 rounded-xl bg-(--crc-surface) p-5 text-sm text-(--crc-fg-muted) shadow-(--crc-shadow-xs)">
             Couldn't load your activity — check the daemon connection.
+          </div>
+        )}
+
+        {!stats && !failed && (
+          <div className="mt-8 rounded-2xl bg-(--crc-surface) p-4 shadow-(--crc-shadow-sm)" aria-busy="true" aria-label="Loading activity">
+            <div className="flex items-center justify-between">
+              <div className="flex gap-2">
+                <Skeleton className="h-7 w-20" />
+                <Skeleton className="h-7 w-16" />
+              </div>
+              <Skeleton className="h-7 w-24" />
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {Array.from({ length: 8 }, (_, i) => (
+                <div key={i} className="rounded-xl bg-(--crc-bg) px-3 py-2.5">
+                  <Skeleton className="h-2.5 w-16" />
+                  <Skeleton className="mt-2 h-4 w-12" />
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 flex gap-1 overflow-hidden">
+              {Array.from({ length: HEATMAP_WEEKS }, (_, c) => (
+                <div key={c} className="flex flex-col gap-1">
+                  {Array.from({ length: 7 }, (_, r) => (
+                    <Skeleton key={r} className="h-4 w-4 rounded-[4px]" />
+                  ))}
+                </div>
+              ))}
+            </div>
+            <Skeleton className="mt-4 h-3 w-72" />
           </div>
         )}
 

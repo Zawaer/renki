@@ -38,7 +38,7 @@ import {
   savePermissionMode,
 } from "../lib/composerPrefs.js";
 import { Markdown } from "./Markdown.js";
-import { Button, StatusBadge } from "./ui.js";
+import { Button, Skeleton, StatusBadge } from "./ui.js";
 
 export function SessionView({ sessionId }: { sessionId: string }) {
   const { realtime, config } = useClient();
@@ -115,7 +115,22 @@ export function SessionView({ sessionId }: { sessionId: string }) {
       {/* Timeline */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl space-y-7 px-6 py-6">
-          {conv.timeline.length === 0 && (
+          {conv.status === null && conv.timeline.length === 0 && (
+            <div className="space-y-7" aria-busy="true" aria-label="Loading conversation">
+              <div className="flex justify-end">
+                <Skeleton className="h-16 w-[60%] rounded-2xl" />
+              </div>
+              <div className="space-y-3">
+                <Skeleton className="h-3 w-40" />
+                <Skeleton className="h-3.5 w-[92%]" />
+                <Skeleton className="h-3.5 w-[78%]" />
+                <Skeleton className="h-3.5 w-[85%]" />
+                <Skeleton className="mt-4 h-3 w-56" />
+                <Skeleton className="h-3 w-48" />
+              </div>
+            </div>
+          )}
+          {conv.status !== null && conv.timeline.length === 0 && (
             <div className="flex flex-col items-center gap-3 py-24 text-center">
               <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-(--crc-surface) text-(--crc-fg-muted) shadow-(--crc-shadow-sm)">
                 <span className="codicon codicon-sparkle text-xl" />
@@ -1638,9 +1653,11 @@ function Composer({
               <div className="relative">
                 <PickerButton
                   label={
-                    capabilities.models.length === 0 && !model
-                      ? "Loading models…"
-                      : (selectedModel?.displayName ?? model ?? "Default")
+                    capabilities.models.length === 0 && !model ? (
+                      <Skeleton className="h-3 w-24" />
+                    ) : (
+                      (selectedModel?.displayName ?? model ?? "Default")
+                    )
                   }
                   open={openMenu === "model"}
                   onToggle={() => setOpenMenu((v) => (v === "model" ? null : "model"))}
@@ -1693,7 +1710,7 @@ function PickerButton({
   open,
   onToggle,
 }: {
-  label: string;
+  label: React.ReactNode;
   open: boolean;
   onToggle: () => void;
 }) {

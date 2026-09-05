@@ -1,7 +1,7 @@
 import type { Repo, Session } from "@crc/protocol";
 import { useEffect, useState } from "react";
 import { useClient } from "../lib/client.js";
-import { Button } from "./ui.js";
+import { Button, Select } from "./ui.js";
 
 /** Sentinel repoId value for "no repo" — a real repo's id is never empty. */
 const NO_REPO = "";
@@ -122,17 +122,17 @@ export function NewSessionDialog({
           <p className="mt-0.5 text-xs text-(--crc-fg-muted)">Each session gets its own branch and worktree, so it never collides with another.</p>
         </div>
 
-        <label className="block space-y-1">
-          <span className="text-xs font-medium text-(--crc-fg-muted)">Repository</span>
-          <select value={repoId} onChange={(e) => pickRepo(e.target.value)} className="crc-input">
-            <option value={NO_REPO}>No repo (just chat)</option>
-            {repos.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="space-y-1">
+          <span className="block text-xs font-medium text-(--crc-fg-muted)">Repository</span>
+          <Select
+            value={repoId}
+            onChange={pickRepo}
+            options={[
+              { value: NO_REPO, label: "No repo", description: "Just chat — a scratch directory, no git" },
+              ...repos.map((r) => ({ value: r.id, label: r.name, description: r.defaultBranch })),
+            ]}
+          />
+        </div>
 
         {repoId !== NO_REPO && (
           <>

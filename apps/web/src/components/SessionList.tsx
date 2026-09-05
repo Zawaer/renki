@@ -3,7 +3,7 @@ import type { Session } from "@crc/protocol";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useClient } from "../lib/client.js";
 import { NewSessionDialog } from "./NewSessionDialog.js";
-import { Button, Eyebrow, SessionGlyph } from "./ui.js";
+import { Button, Eyebrow, SessionGlyph, Skeleton } from "./ui.js";
 
 /**
  * Session list, grouped by repo. Initial load (and an occasional slow
@@ -29,12 +29,19 @@ export function SessionList({
 }) {
   const { rest, realtime } = useClient();
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [creating, setCreating] = useState<{ repoId?: string } | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
   const [showArchived, setShowArchived] = useState(false);
 
   const refresh = useCallback(() => {
-    rest.listSessions().then(setSessions).catch(() => {});
+    rest
+      .listSessions()
+      .then((list) => {
+        setSessions(list);
+        setLoaded(true);
+      })
+      .catch(() => {});
   }, [rest]);
 
   useEffect(() => {
@@ -114,7 +121,25 @@ export function SessionList({
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 pb-3">
-        {active.length === 0 && (
+        {!loaded && sessions.length === 0 && (
+          <div className="space-y-4 px-1 pt-1" aria-busy="true" aria-label="Loading sessions">
+            {[3, 2].map((n, g) => (
+              <div key={g}>
+                <div className="flex items-center gap-1.5 px-2 py-1.5">
+                  <Skeleton className="h-2.5 w-2.5" />
+                  <Skeleton className="h-2.5 w-20" />
+                </div>
+                {Array.from({ length: n }, (_, i) => (
+                  <div key={i} className="flex items-center gap-2.5 px-2 py-2">
+                    <Skeleton className="h-3.5 w-3.5 rounded-full" />
+                    <Skeleton className={`h-3 ${i % 2 ? "w-36" : "w-44"}`} />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+        {loaded && active.length === 0 && (
           <div className="mx-1 mt-2 rounded-xl border border-dashed border-(--crc-border) px-3 py-6 text-center">
             <div className="text-sm text-(--crc-fg)">No active sessions</div>
             <div className="mt-1 text-xs text-(--crc-fg-muted)">Start one with the New button.</div>

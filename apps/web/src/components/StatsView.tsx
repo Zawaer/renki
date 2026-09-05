@@ -13,7 +13,7 @@ import {
 } from "@crc/client-core";
 import { useCallback, useEffect, useState } from "react";
 import { useClient } from "../lib/client.js";
-import { Button } from "./ui.js";
+import { Button, Skeleton } from "./ui.js";
 
 const DAY_WINDOW = 14;
 
@@ -50,7 +50,40 @@ export function StatsView() {
     return <CenteredNote text="Couldn't load stats — check the daemon connection." />;
   }
   if (!data) {
-    return <CenteredNote text="Loading stats…" />;
+    return (
+      <div className="h-full overflow-y-auto px-8 py-8" aria-busy="true" aria-label="Loading stats">
+        <h1 className="mb-5 text-lg font-semibold tracking-tight text-(--crc-fg)">Stats</h1>
+        <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {Array.from({ length: 6 }, (_, i) => (
+            <div key={i} className="rounded-xl bg-(--crc-surface) p-4 shadow-(--crc-shadow-xs)">
+              <Skeleton className="h-2.5 w-16" />
+              <Skeleton className="mt-2.5 h-5 w-14" />
+            </div>
+          ))}
+        </div>
+        {[0, 1].map((i) => (
+          <div key={i} className="mb-8">
+            <Skeleton className="mb-3 h-3 w-20" />
+            <div className="grid gap-4 lg:grid-cols-2">
+              {[0, 1].map((j) => (
+                <div key={j} className="rounded-xl bg-(--crc-surface) p-4 shadow-(--crc-shadow-xs)">
+                  <Skeleton className="h-3 w-14" />
+                  <div className="mt-4 space-y-3">
+                    {[0, 1, 2, 3].map((k) => (
+                      <div key={k} className="flex items-center gap-3">
+                        <Skeleton className="h-3 w-24" />
+                        <Skeleton className="h-2.5 flex-1 rounded-full" />
+                        <Skeleton className="h-3 w-8" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
   }
   if (data.lifetime.turnCount === 0) {
     return (

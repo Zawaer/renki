@@ -57,6 +57,7 @@ function fakeQueryFactory(): { factory: (p: { prompt: AsyncIterable<SDKUserMessa
       setModel: vi.fn(async () => {}),
       setPermissionMode: vi.fn(async () => {}),
       setMaxThinkingTokens: vi.fn(async () => {}),
+      getContextUsage: vi.fn(async () => ({ totalTokens: 12_000, maxTokens: 200_000, percentage: 6, isAutoCompactEnabled: true })),
       supportedModels: vi.fn(async () => []),
       supportedCommands: vi.fn(async () => []),
       close: vi.fn(),
@@ -417,5 +418,34 @@ describe("LiveClaudeSession steering", () => {
     await fake.emit(assistant("hmm, continuing"));
     await fake.emit(okResult as never);
     expect((events.filter((e) => e.kind === "turn_started")[2] as { trigger: string }).trigger).toBe("auto");
+  });
+});
+
+describe("LiveClaudeSession cost accounting", () => {
+  it("reports each turn's own cost, since the SDK's total is cumulative for the process", async () => {
+    const { live, fake, events } = makeLive();
+    // Three turns whose cumulative totals climb by ~1 cent each.
+    for (const [i, total] of [0.184893, 0.1945047, 0.2041338].entries()) {
+      const t = live.runTurn({ prompt: `q${i}`, promptId: `p${i}`, resolvePermission: allow });
+      await new Promise((r) => setTimeout(r, 0));
+      await fake.emit({ ...okResult, total_cost_usd: total } as never);
+      await t;
+    }
+    const costs = (events.filter((e) => e.kind === "turn_result") as Array<{ costUsd: number | null }>).map((e) =>
+      Number(e.costUsd!.toFixed(6)),
+    );
+    expect(costs).toEqual([0.184893, 0.009612, 0.009629]);
+  });
+
+  it("counts cached input as input, not as nothing", async () => {
+    const { live, fake, events } = makeLive();
+    const t = live.runTurn({ prompt: "hi", promptId: "p1", resolvePermission: allow });
+    await new Promise((r) => setTimeout(r, 0));
+    await fake.emit({
+      ...okResult,
+      usage: { input_tokens: 2, output_tokens: 3, cache_read_input_tokens: 30_709, cache_creation_input_tokens: 58 },
+    } as never);
+    await t;
+    expect(events.find((e) => e.kind === "turn_result")).toMatchObject({ inputTokens: 30_769, outputTokens: 3 });
   });
 });

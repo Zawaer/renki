@@ -97,6 +97,14 @@ export type QueuedPromptView = {
   text: string;
 };
 
+/** How full the session's context window is, as the CLI last reported it. */
+export type ContextUsageView = {
+  usedTokens: number;
+  maxTokens: number;
+  percentage: number;
+  autoCompact: boolean;
+};
+
 export type ConversationState = {
   sessionId: string;
   status: SessionStatus | null;
@@ -119,6 +127,8 @@ export type ConversationState = {
    * stays what it always was: strictly ordered prompt/answer pairs.
    */
   queuedPrompts: QueuedPromptView[];
+  /** null until the daemon has reported it for this session (after its first turn). */
+  context: ContextUsageView | null;
   /** Highest seq folded in — sent as lastSeq on (re)subscribe. */
   lastSeq: number;
 };
@@ -134,6 +144,7 @@ export function initialConversation(sessionId: string): ConversationState {
     timeline: [],
     pending: [],
     queuedPrompts: [],
+    context: null,
     lastSeq: -1,
   };
 }
@@ -237,10 +248,10 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
           ? updateSubagentBlocks(
               turn.blocks,
               e.parentToolUseId,
-              (sub) => applyBlock(sub, e.blockIndex, e.blockKind, e.text, e.toolUseId, e.toolName, e.toolInput, e.ts),
+              (sub) => applyBlock(sub, e.blockIndex, e.blockKind, e.text, e.toolUseId, e.toolName, e.toolInput, e.durationMs, e.ts),
               { subagentType: e.subagentType ?? null, taskDescription: e.taskDescription ?? null },
             )
-          : applyBlock(turn.blocks, e.blockIndex, e.blockKind, e.text, e.toolUseId, e.toolName, e.toolInput, e.ts),
+          : applyBlock(turn.blocks, e.blockIndex, e.blockKind, e.text, e.toolUseId, e.toolName, e.toolInput, e.durationMs, e.ts),
       }));
       return s;
 
@@ -282,6 +293,15 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       s.timeline = s.timeline.filter(
         (it) => !(it.type === "turn" && it.turn.turnId !== e.turnId && it.turn.promptId === e.promptId && it.turn.status === "error"),
       );
+      return s;
+
+    case "context_usage":
+      s.context = {
+        usedTokens: e.usedTokens,
+        maxTokens: e.maxTokens,
+        percentage: e.percentage,
+        autoCompact: e.autoCompact ?? false,
+      };
       return s;
 
     case "notice":
@@ -381,6 +401,7 @@ function applyBlock(
   toolUseId: string | null,
   toolName: string | null,
   toolInput: unknown,
+  durationMs: number | null | undefined,
   ts: number,
 ): BlockView[] {
   const next = blocks.slice();
@@ -388,11 +409,13 @@ function applyBlock(
   if (blockKind === "tool_use") {
     next[blockIndex] = { kind: "tool_use", toolUseId: toolUseId ?? "", toolName: toolName ?? "", toolInput, result: null };
   } else {
-    // Canonical final text supersedes the streamed accumulation; keep
-    // whatever startedAtMs the first delta recorded, or this event's own
-    // timestamp if no delta ever arrived for this block.
+    // Canonical final text supersedes the streamed accumulation. Timing comes
+    // from the daemon's own measurement when it sent one — the only source
+    // that survives a replay, since the deltas it was measured from are
+    // compacted away — else from whatever the first delta recorded live.
     const existing = next[blockIndex];
-    const startedAtMs = existing && existing.kind !== "tool_use" ? existing.startedAtMs : ts;
+    const startedAtMs =
+      durationMs != null ? ts - durationMs : existing && existing.kind !== "tool_use" ? existing.startedAtMs : ts;
     next[blockIndex] = { kind: blockKind === "thinking" ? "thinking" : "text", text: text ?? "", startedAtMs, endedAtMs: ts };
   }
   return next;

@@ -9,7 +9,8 @@ import { memo } from "react";
  */
 
 const TONE: Record<SyntaxKind, string> = {
-  command: "text-(--crc-accent)",
+  command: "text-(--crc-link)",
+  argument: "text-(--crc-success)",
   flag: "text-(--crc-fg)",
   string: "text-(--crc-success)",
   variable: "text-(--crc-warning)",

@@ -115,7 +115,12 @@ export function buildUserMessage(text: string, attachments?: Attachment[]): SDKU
 }
 
 /** Per-(sub)agent block-index bookkeeping — see the comment on `agentTracking` in LiveClaudeSession. */
-export type BlockTracking = { blockKinds: Map<number, "text" | "thinking" | "tool_use">; globalOffset: number };
+export type BlockTracking = {
+  blockKinds: Map<number, "text" | "thinking" | "tool_use">;
+  globalOffset: number;
+  /** local block index -> when its first delta arrived, so a finished block can carry its own duration. */
+  startedAt: Map<number, number>;
+};
 
 /** Terminal reasons the SDK uses for a turn cut short by `Query.interrupt()`. */
 export function isInterruptedTerminalReason(reason: unknown): boolean {
@@ -163,6 +168,7 @@ export function handleStreamEvent(
   globalOffset: number,
   parentToolUseId: string | null,
   emit: (p: EventPayload) => void,
+  startedAt?: Map<number, number>,
 ): void {
   const e = event as {
     type?: string;
@@ -174,6 +180,7 @@ export function handleStreamEvent(
   if (e.type === "content_block_start" && typeof e.index === "number") {
     const t = e.content_block?.type;
     blockKinds.set(e.index, t === "thinking" ? "thinking" : t === "tool_use" ? "tool_use" : "text");
+    startedAt?.set(e.index, Date.now());
     return;
   }
 
@@ -221,6 +228,7 @@ export function handleAssistantMessage(
   globalOffset: number,
   subagentCtx: SubagentContext,
   emit: (p: EventPayload) => void,
+  startedAt?: Map<number, number>,
 ): void {
   const content = (message as { content?: unknown }).content;
   if (!Array.isArray(content)) return;
@@ -242,6 +250,8 @@ export function handleAssistantMessage(
     const localIndex = cursor < localIndices.length ? localIndices[cursor]! : localIndices.length;
     cursor++;
     const blockIndex = globalOffset + localIndex;
+    const began = startedAt?.get(localIndex);
+    const durationMs = began != null ? Math.max(0, Date.now() - began) : undefined;
 
     if (block?.type === "text") {
       emit({
@@ -265,6 +275,7 @@ export function handleAssistantMessage(
         toolUseId: null,
         toolName: null,
         toolInput: null,
+        ...(durationMs != null ? { durationMs } : {}),
         ...subagentFields,
       });
     } else if (block?.type === "tool_use") {

@@ -15,6 +15,7 @@ describe("tokenizeShell", () => {
     const t = tokenizeShell(src);
     expect(joined(t)).toBe(src);
     expect(of(t, "command")).toEqual(["psql"]);
+    expect(of(t, "argument")).toEqual(["cleanup.sql"]);
     expect(of(t, "flag")).toEqual(["-c", "--file"]);
     expect(of(t, "string")).toEqual([`"DELETE FROM ledger WHERE idem IS NULL"`]);
   });

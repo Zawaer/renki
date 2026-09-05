@@ -9,6 +9,7 @@
 export type SyntaxKind =
   | "plain"
   | "command"
+  | "argument"
   | "flag"
   | "string"
   | "operator"
@@ -133,7 +134,7 @@ export function tokenizeShell(src: string): SyntaxToken[] {
     else if (expectCommand) {
       push(out, word, "command");
       expectCommand = false;
-    } else push(out, word, "plain");
+    } else push(out, word, "argument");
     i = j;
   }
 

@@ -66,6 +66,7 @@ describe("initialConversation", () => {
       timeline: [],
       pending: [],
       queuedPrompts: [],
+      context: null,
       lastSeq: -1,
     });
   });
@@ -576,5 +577,50 @@ describe("steering + turn_started", () => {
     expect(turnTriggerLabel({ ...base, trigger: null })).toBeNull();
     expect(turnTriggerLabel({ ...base, trigger: "background_task" })).toMatch(/Background agent finished/);
     expect(turnTriggerLabel({ ...base, trigger: "auto" })).toMatch(/continued/);
+  });
+});
+
+describe("block timing survives compaction", () => {
+  it("takes a thinking block's duration from the daemon's measurement, not from delta timestamps", () => {
+    // A replayed session has no assistant_delta events at all — they are
+    // compacted away once the block lands — so this is the only timing source.
+    const st = fold(
+      stream(
+        { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "think" },
+        { kind: "assistant_block", turnId: "t1", blockIndex: 0, blockKind: "thinking", text: "hmm", toolUseId: null, toolName: null, toolInput: null, durationMs: 4200 },
+      ),
+    );
+    const turn = (st.timeline[1] as Extract<TimelineItem, { type: "turn" }>).turn;
+    const block = turn.blocks[0]!;
+    if (block.kind === "tool_use") throw new Error("expected a thinking block");
+    expect(block.endedAtMs! - block.startedAtMs!).toBe(4200);
+  });
+
+  it("falls back to delta timestamps when the daemon sent no measurement", () => {
+    const st = fold(
+      stream(
+        { kind: "assistant_delta", turnId: "t1", blockIndex: 0, blockKind: "thinking", text: "hm" },
+        { kind: "assistant_block", turnId: "t1", blockIndex: 0, blockKind: "thinking", text: "hmm", toolUseId: null, toolName: null, toolInput: null },
+      ),
+    );
+    const turn = (st.timeline[0] as Extract<TimelineItem, { type: "turn" }>).turn;
+    const block = turn.blocks[0]!;
+    if (block.kind === "tool_use") throw new Error("expected a thinking block");
+    // stream() stamps ts 1000 + index, so the delta and the block are 1ms apart.
+    expect(block.startedAtMs).toBe(1000);
+    expect(block.endedAtMs).toBe(1001);
+  });
+});
+
+describe("context usage", () => {
+  it("keeps the latest report and nothing before the daemon has sent one", () => {
+    expect(fold(stream({ kind: "status_changed", status: "idle" })).context).toBeNull();
+    const st = fold(
+      stream(
+        { kind: "context_usage", usedTokens: 12_000, maxTokens: 200_000, percentage: 6, autoCompact: true },
+        { kind: "context_usage", usedTokens: 96_000, maxTokens: 200_000, percentage: 48 },
+      ),
+    );
+    expect(st.context).toEqual({ usedTokens: 96_000, maxTokens: 200_000, percentage: 48, autoCompact: false });
   });
 });

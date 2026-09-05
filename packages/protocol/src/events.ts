@@ -130,6 +130,14 @@ const payloads = [
     toolUseId: z.string().nullable(),
     toolName: z.string().nullable(),
     toolInput: z.unknown().nullable(),
+    /**
+     * How long this block took to produce, in ms — measured by the daemon from
+     * the block's first streamed delta to its completion. Carried on the block
+     * because the deltas themselves are compacted away once it lands
+     * (EventLog.compactBlock), so a replayed session has no other way to know
+     * how long Claude spent thinking. Absent for blocks that never streamed.
+     */
+    durationMs: z.number().int().nonnegative().nullable().optional(),
     /** See assistant_delta's own doc — same meaning here. */
     parentToolUseId: z.string().optional(),
     /** Which subagent type produced this (e.g. "Explore") — only set alongside parentToolUseId. */
@@ -208,6 +216,22 @@ const payloads = [
     kind: z.literal("notice"),
     text: z.string(),
     level: z.enum(["info", "warn"]),
+  }),
+
+  /**
+   * How full this session's context window is, as the CLI itself reports it
+   * (Query.getContextUsage). Read after a turn settles rather than polled:
+   * it only changes when the conversation grows. `maxTokens` is the usable
+   * budget for the session's model, so the ratio is what the user cares about.
+   */
+  z.object({
+    kind: z.literal("context_usage"),
+    usedTokens: z.number().int().nonnegative(),
+    maxTokens: z.number().int().positive(),
+    /** 0-100, as the CLI computes it (it accounts for its own auto-compact headroom). */
+    percentage: z.number(),
+    /** True when the CLI will auto-compact this conversation as it fills up. */
+    autoCompact: z.boolean().optional(),
   }),
 
   /**

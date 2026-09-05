@@ -274,3 +274,33 @@ describe("subagent-tagged blocks (forwardSubagentText)", () => {
     ]);
   });
 });
+
+describe("thinking block duration", () => {
+  it("stamps a thinking block with how long it streamed, so replay can show it", () => {
+    const events: EventPayload[] = [];
+    const blockKinds = new Map<number, "text" | "thinking" | "tool_use">();
+    const startedAt = new Map<number, number>();
+    // The stream opens the block ~3s ago; the finalized message lands now.
+    handleStreamEvent({ type: "content_block_start", index: 0, content_block: { type: "thinking" } }, "t1", blockKinds, 0, null, (p) => events.push(p), startedAt);
+    startedAt.set(0, Date.now() - 3000);
+    handleAssistantMessage(
+      { content: [{ type: "thinking", thinking: "weighing options" }] },
+      "t1",
+      blockKinds,
+      0,
+      { parentToolUseId: null },
+      (p) => events.push(p),
+      startedAt,
+    );
+    const block = events.find((e) => e.kind === "assistant_block") as { durationMs?: number };
+    expect(block.durationMs).toBeGreaterThanOrEqual(3000);
+    expect(block.durationMs).toBeLessThan(3500);
+  });
+
+  it("omits the duration when the block never streamed", () => {
+    const events: EventPayload[] = [];
+    const blockKinds = new Map<number, "text" | "thinking" | "tool_use">([[0, "thinking"]]);
+    handleAssistantMessage({ content: [{ type: "thinking", thinking: "x" }] }, "t1", blockKinds, 0, { parentToolUseId: null }, (p) => events.push(p));
+    expect((events[0] as { durationMs?: number }).durationMs).toBeUndefined();
+  });
+});

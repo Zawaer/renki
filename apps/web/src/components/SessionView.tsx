@@ -17,6 +17,7 @@ import {
   type AskUserQuestionView,
   type Attachment,
   type BlockView,
+  type ContextUsageView,
   type EditToolView,
   type PermissionModeKey,
   type PermissionView,
@@ -119,6 +120,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
           )}
         </div>
         <div className="flex items-center gap-3">
+          {conv.context && <ContextMeter context={conv.context} />}
           <span
             className={`inline-flex items-center gap-1.5 text-xs font-medium ${
               conv.controller && isController
@@ -311,6 +313,28 @@ function TimelineRow({ item }: { item: TimelineItem }) {
   return <AssistantTurn turn={item.turn} />;
 }
 
+/**
+ * How full the session's context window is, as the CLI reports it. A quiet
+ * bar: it only matters as it approaches full, so it warms up as it fills.
+ */
+function ContextMeter({ context }: { context: ContextUsageView }) {
+  const pct = Math.max(0, Math.min(100, Math.round(context.percentage)));
+  const tone = pct >= 90 ? "bg-(--crc-danger)" : pct >= 70 ? "bg-(--crc-warning)" : "bg-(--crc-accent)";
+  return (
+    <span
+      className="hidden items-center gap-2 md:inline-flex"
+      title={`Context window: ${formatTokenCount(context.usedTokens)} of ${formatTokenCount(context.maxTokens)} tokens${
+        context.autoCompact ? " · Claude compacts the conversation automatically as this fills" : ""
+      }`}
+    >
+      <span className="block h-1.5 w-16 overflow-hidden rounded-full bg-(--crc-bg-inset)">
+        <span className={`block h-full rounded-full transition-[width] duration-500 ${tone}`} style={{ width: `${pct}%` }} />
+      </span>
+      <span className="text-[11px] tabular-nums text-(--crc-fg-muted)">{pct}%</span>
+    </span>
+  );
+}
+
 /** Claude's prose for this turn — what "copy the reply" puts on the clipboard (no thinking, no tool payloads). */
 function replyTextOf(turn: TurnView): string {
   // BlockView's prose variant covers both "text" and "thinking", so narrow by
@@ -474,11 +498,14 @@ function describeTool(
   const base = (path: string | null) =>
     path ? path.split("/").filter(Boolean).slice(-2).join("/") : null;
   switch (name) {
-    case "Bash":
-      return {
-        label: "Ran a command",
-        meta: str("description") ?? truncate(str("command") ?? "", 72),
-      };
+    case "Bash": {
+      // The model's own one-line description IS the sentence worth showing;
+      // only fall back to the command when it didn't write one.
+      const described = str("description");
+      return described
+        ? { label: described, meta: null }
+        : { label: "Ran a command", meta: truncate(str("command") ?? "", 72) };
+    }
     case "BashOutput":
       return { label: "Checked command output", meta: null };
     case "Read":
@@ -500,11 +527,10 @@ function describeTool(
     case "WebSearch":
       return { label: "Searched the web", meta: str("query") };
     case "Agent":
-    case "Task":
-      return {
-        label: "Agent",
-        meta: str("description") ?? str("subagent_type"),
-      };
+    case "Task": {
+      const described = str("description");
+      return described ? { label: described, meta: null } : { label: "Agent", meta: str("subagent_type") };
+    }
     case "TodoWrite":
       return { label: "Updated tasks", meta: null };
     case "AskUserQuestion":
@@ -616,7 +642,7 @@ function ToolStep({
         }}
         className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 py-1 text-left text-[13px] text-(--crc-fg-muted) transition-colors hover:bg-(--crc-surface)/60 hover:text-(--crc-fg)"
       >
-        <span className="font-medium text-(--crc-fg)/85">{label}</span>
+        <span className="text-(--crc-fg)">{label}</span>
         {meta && <span className="truncate font-mono text-xs">{meta}</span>}
         <span
           className={`codicon ${open ? "codicon-chevron-down" : "codicon-chevron-right"} shrink-0 text-[12px]`}
@@ -641,7 +667,8 @@ function ToolStep({
         )}
       </button>
       {open && (
-        <div className="mt-1.5 space-y-1.5 pl-0.5 text-xs">
+        <div className="mt-2 space-y-2 rounded-xl border border-(--crc-border)/70 p-3 text-xs">
+          <div className="text-[13px] text-(--crc-fg)">{block.toolName}</div>
           {editView ? (
             <div className="overflow-hidden rounded-lg bg-(--crc-bg-inset)/70">
               <DiffView view={editView} />
@@ -661,10 +688,8 @@ function ToolStep({
           ) : null}
           {block.result && block.result.summary && !isAgent && (
             <pre
-              className={`max-h-72 overflow-auto rounded-lg px-3 py-2 font-mono leading-relaxed ${
-                block.result.ok
-                  ? "text-(--crc-fg-muted)"
-                  : "bg-(--crc-danger)/8 text-(--crc-danger)"
+              className={`max-h-72 overflow-auto font-mono leading-relaxed break-words whitespace-pre-wrap ${
+                block.result.ok ? "text-(--crc-fg-muted)" : "text-(--crc-danger)"
               }`}
             >
               {block.result.ok ? "" : "error: "}
@@ -674,7 +699,7 @@ function ToolStep({
           {block.subagent && <SubagentActivity subagent={block.subagent} />}
           {block.backgroundTask &&
             !block.subagent?.blocks.some((b) => b.kind === "text") && (
-              <div className="flex items-start gap-1.5 rounded-lg bg-(--crc-bg-inset)/50 px-3 py-2 text-(--crc-fg-muted)">
+              <div className="flex items-start gap-1.5 text-(--crc-fg-muted)">
                 <span
                   className={`codicon mt-0.5 ${
                     block.backgroundTask.status === "completed"
@@ -816,7 +841,9 @@ function ThinkingBlock({
           <>
             <span className="codicon codicon-sparkle text-[11px]" />
             <span>
-              Thought for {formatDuration(block.endedAtMs - block.startedAtMs)}
+              {block.endedAtMs - block.startedAtMs < 1000
+                ? "Thought for a moment"
+                : `Thought for ${formatDuration(block.endedAtMs - block.startedAtMs)}`}
             </span>
           </>
         ) : (

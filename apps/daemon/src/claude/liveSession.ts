@@ -190,6 +190,13 @@ export class LiveClaudeSession {
   /** Live background tasks as last reported by the CLI (REPLACE semantics on background_tasks_changed). */
   private backgroundTasks = new Set<string>();
   private lastTurnId: string | null = null;
+  /**
+   * The SDK's `total_cost_usd` is cumulative for the life of the process, not
+   * the cost of one turn. Under resume-per-prompt that was the same thing —
+   * every turn got a fresh process — but with one long-lived process per
+   * session it climbs forever, so each turn's own cost is the delta.
+   */
+  private costUsdSoFar = 0;
   private currentModel: string | undefined;
   private currentPermissionMode: PermissionMode;
   private currentMaxThinkingTokens: number | null | undefined;
@@ -334,6 +341,28 @@ export class LiveClaudeSession {
     this._lastActivityAt = Date.now();
   }
 
+  /**
+   * Ask the CLI how full the context window is and record it. Best-effort and
+   * fire-and-forget: it costs a control round-trip, so it runs once a turn has
+   * settled rather than during one, and a failure is never worth surfacing.
+   */
+  private reportContextUsage(): void {
+    if (this.closed || typeof this.q.getContextUsage !== "function") return;
+    void Promise.resolve()
+      .then(() => this.q.getContextUsage())
+      .then((usage) => {
+        if (this.closed || !usage || !usage.maxTokens) return;
+        this.opts.emit({
+          kind: "context_usage",
+          usedTokens: Math.max(0, Math.round(usage.totalTokens)),
+          maxTokens: Math.round(usage.maxTokens),
+          percentage: Math.max(0, Math.min(100, usage.percentage)),
+          autoCompact: usage.isAutoCompactEnabled,
+        });
+      })
+      .catch((err) => logger.debug("getContextUsage failed", { err: String(err) }));
+  }
+
   /** Stop the in-flight turn (the "stop" button). The turn still ends through the normal `result` path, just early. */
   async interrupt(): Promise<void> {
     if (!this.busy) return;
@@ -430,7 +459,7 @@ export class LiveClaudeSession {
     const key = parentToolUseId ?? "";
     let t = this.agentTracking.get(key);
     if (!t) {
-      t = { blockKinds: new Map(), globalOffset: 0 };
+      t = { blockKinds: new Map(), globalOffset: 0, startedAt: new Map() };
       this.agentTracking.set(key, t);
     }
     return t;
@@ -468,7 +497,7 @@ export class LiveClaudeSession {
       case "stream_event": {
         const turnId = this.turnFor(message.parent_tool_use_id);
         const t = this.trackingFor(message.parent_tool_use_id);
-        handleStreamEvent(message.event, turnId, t.blockKinds, t.globalOffset, message.parent_tool_use_id, this.opts.emit);
+        handleStreamEvent(message.event, turnId, t.blockKinds, t.globalOffset, message.parent_tool_use_id, this.opts.emit, t.startedAt);
         break;
       }
 
@@ -492,6 +521,7 @@ export class LiveClaudeSession {
             taskDescription: (message as { task_description?: string }).task_description,
           },
           this.opts.emit,
+          t.startedAt,
         );
         // Remember which turn each tool_use call lives in, so a subagent it
         // spawns can be routed back here even turns later (see toolUseTurn).
@@ -506,6 +536,7 @@ export class LiveClaudeSession {
         const maxLocal = t.blockKinds.size > 0 ? Math.max(...t.blockKinds.keys()) : -1;
         t.globalOffset += maxLocal + 1;
         t.blockKinds.clear();
+        t.startedAt.clear();
         break;
       }
 
@@ -558,9 +589,23 @@ export class LiveClaudeSession {
       return;
     }
     const ok = message.subtype === "success" && !message.is_error;
+    const cumulativeCost = message.total_cost_usd ?? null;
+    const costUsd = cumulativeCost != null ? Math.max(0, cumulativeCost - this.costUsdSoFar) : null;
+    if (cumulativeCost != null) this.costUsdSoFar = cumulativeCost;
     const interrupted = !ok && isInterruptedTerminalReason((message as { terminal_reason?: unknown }).terminal_reason);
     const errorMessage = ok ? null : interrupted ? "Stopped by controller." : summarizeResultError(message);
-    const usage = (message as { usage?: { input_tokens?: number; output_tokens?: number } }).usage;
+    const usage = (message as {
+      usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
+    }).usage;
+    /**
+     * `input_tokens` counts only what wasn't served from the prompt cache — for
+     * a resumed conversation that's a couple of tokens while the real context
+     * is tens of thousands. Summing all three is the honest "input processed".
+     */
+    const inputTokens =
+      usage == null
+        ? null
+        : (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
     const sawRateLimit = this.inflight?.sawRateLimitError ?? false;
 
     const promptIds = this.takeSteered(target.promptId);
@@ -571,10 +616,10 @@ export class LiveClaudeSession {
       promptId: target.promptId,
       promptIds,
       ok,
-      costUsd: message.total_cost_usd ?? null,
+      costUsd,
       durationMs: message.duration_ms ?? null,
       errorMessage,
-      inputTokens: usage?.input_tokens ?? null,
+      inputTokens,
       outputTokens: usage?.output_tokens ?? null,
       interrupted,
       model: this.inflight?.model ?? null,
@@ -584,7 +629,7 @@ export class LiveClaudeSession {
     const result: RunTurnResult = {
       claudeSessionId: this._claudeSessionId,
       ok,
-      costUsd: message.total_cost_usd ?? null,
+      costUsd,
       durationMs: message.duration_ms ?? null,
       errorMessage,
       rateLimited: !ok && (sawRateLimit || classifyRateLimit(errorMessage)),
@@ -593,6 +638,8 @@ export class LiveClaudeSession {
 
     if (this.inflight) this.settleInflight(result, false);
     else this.settleAutoTurn(result);
+    // The conversation only grows at turn boundaries, so this is the moment to look.
+    this.reportContextUsage();
   }
 
   private settleInflight(result: RunTurnResult, emitFailure: boolean): void {

@@ -4,7 +4,9 @@ import {
   applyEvent,
   applyEvents,
   initialConversation,
+  turnTriggerLabel,
   type ConversationState,
+  type TimelineItem,
 } from "../src/reducer.js";
 
 /**
@@ -534,5 +536,45 @@ describe("subagent nesting (forwardSubagentText)", () => {
     expect(turn.blocks[1]).toMatchObject({ kind: "text", text: "Here's what I found." });
     // The subagent's text never leaked into the top level.
     expect(turn.blocks.some((b) => b.kind === "text" && b.text === "sub says hi")).toBe(false);
+  });
+});
+
+describe("steering + turn_started", () => {
+  it("turn_started creates the turn with its trigger and promptId before any block streams", () => {
+    const s = fold(stream({ kind: "turn_started", turnId: "t9", promptId: "auto_t9", trigger: "background_task" }));
+    expect(s.timeline).toHaveLength(1);
+    const item = s.timeline[0] as Extract<TimelineItem, { type: "turn" }>;
+    expect(item.turn).toMatchObject({ turnId: "t9", promptId: "auto_t9", trigger: "background_task", status: "running" });
+  });
+
+  it("a steered prompt lands INSIDE the running turn, pinned after the block that was current, not on the timeline", () => {
+    const s = fold(
+      stream(
+        { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "long task" },
+        { kind: "turn_started", turnId: "t1", promptId: "p1", trigger: "prompt" },
+        { kind: "assistant_block", turnId: "t1", blockIndex: 0, blockKind: "tool_use", text: null, toolUseId: "tu1", toolName: "Bash", toolInput: {} },
+        { kind: "prompt_submitted", promptId: "p2", deviceId: "d1", text: "also do Y", steered: true },
+        { kind: "assistant_block", turnId: "t1", blockIndex: 1, blockKind: "text", text: "did both", toolUseId: null, toolName: null, toolInput: null },
+        { kind: "turn_result", turnId: "t1", promptId: "p1", promptIds: ["p1", "p2"], ok: true, costUsd: 0.01, durationMs: 5, errorMessage: null, inputTokens: 1, outputTokens: 1 },
+      ),
+    );
+    expect(s.timeline.map((it) => it.type)).toEqual(["prompt", "turn"]);
+    const turn = (s.timeline[1] as Extract<TimelineItem, { type: "turn" }>).turn;
+    expect(turn.steeredPrompts).toEqual([{ promptId: "p2", deviceId: "d1", text: "also do Y", attachments: undefined, afterBlockIndex: 0 }]);
+    expect(turn.status).toBe("done");
+    expect(s.queuedPrompts).toEqual([]);
+  });
+
+  it("a prompt flagged steered with no running turn to join falls back to an ordinary timeline prompt", () => {
+    const s = fold(stream({ kind: "prompt_submitted", promptId: "p2", deviceId: "d1", text: "hi", steered: true }));
+    expect(s.timeline).toEqual([{ type: "prompt", promptId: "p2", deviceId: "d1", text: "hi", attachments: undefined }]);
+  });
+
+  it("turnTriggerLabel names unprompted turns and stays silent for prompted/legacy ones", () => {
+    const base = (fold(stream({ kind: "turn_started", turnId: "t", promptId: "p", trigger: "prompt" })).timeline[0] as Extract<TimelineItem, { type: "turn" }>).turn;
+    expect(turnTriggerLabel(base)).toBeNull();
+    expect(turnTriggerLabel({ ...base, trigger: null })).toBeNull();
+    expect(turnTriggerLabel({ ...base, trigger: "background_task" })).toMatch(/Background agent finished/);
+    expect(turnTriggerLabel({ ...base, trigger: "auto" })).toMatch(/continued/);
   });
 });

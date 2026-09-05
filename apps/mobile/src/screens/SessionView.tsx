@@ -11,12 +11,14 @@ import {
   parseTodos,
   PERMISSION_MODES,
   THINKING_VERBS,
+  turnTriggerLabel,
   type AskUserQuestionView,
   type Attachment,
   type BlockView,
   type EditToolView,
   type PermissionModeKey,
   type PermissionView,
+  type SteeredPromptView,
   type SubagentView,
   type TimelineItem,
   type TodoItemView,
@@ -24,7 +26,7 @@ import {
 } from "@crc/client-core";
 import type { CapabilitiesResponse } from "@crc/protocol";
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -539,10 +541,21 @@ function TimelineRow({
 }
 
 function AssistantTurn({ turn, colors, styles }: { turn: TurnView; colors: ThemeColors; styles: Styles }) {
+  const label = turnTriggerLabel(turn);
+  const steeredAfter = (index: number) => turn.steeredPrompts.filter((p) => p.afterBlockIndex === index);
   return (
     <View style={styles.turn}>
+      {label && <Text style={styles.meta}>{label}</Text>}
+      {steeredAfter(-1).map((p) => (
+        <SteeredPrompt key={p.promptId} prompt={p} styles={styles} />
+      ))}
       {turn.blocks.map((b, i) => (
-        <Block key={i} block={b} colors={colors} styles={styles} turnRunning={turn.status === "running"} />
+        <Fragment key={i}>
+          <Block block={b} colors={colors} styles={styles} turnRunning={turn.status === "running"} />
+          {steeredAfter(i).map((p) => (
+            <SteeredPrompt key={p.promptId} prompt={p} styles={styles} />
+          ))}
+        </Fragment>
       ))}
       {turn.status === "running" && <Text style={styles.running}>▍</Text>}
       {turn.status === "done" && turn.costUsd != null && (
@@ -558,6 +571,16 @@ function AssistantTurn({ turn, colors, styles }: { turn: TurnView; colors: Theme
         ) : (
           <Text style={styles.errText}>Turn failed: {turn.errorMessage}</Text>
         ))}
+    </View>
+  );
+}
+
+/** A prompt sent while this turn was already running — shown inside the turn, where Claude picked it up. */
+function SteeredPrompt({ prompt, styles }: { prompt: SteeredPromptView; styles: Styles }) {
+  return (
+    <View style={[styles.promptWrap, styles.steeredWrap]}>
+      {prompt.text.length > 0 && <Text style={styles.promptText}>{prompt.text}</Text>}
+      <Text style={styles.meta}>Sent while Claude was working · picked up mid-turn</Text>
     </View>
   );
 }
@@ -1066,6 +1089,7 @@ const makeStyles = (colors: ThemeColors) =>
       gap: 6,
     },
     promptText: { color: colors.text, fontSize: 15, lineHeight: 21 },
+    steeredWrap: { marginTop: 2 },
     attachRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
     pendingAttachRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingHorizontal: 16, marginBottom: 4 },
     attachChip: {

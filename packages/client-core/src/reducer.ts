@@ -44,9 +44,26 @@ export type BlockView =
       backgroundTask?: { status: "completed" | "failed" | "stopped"; summary: string };
     };
 
+/** A prompt the controller sent while this turn was already running — answered inside the turn, not by a turn of its own. */
+export type SteeredPromptView = {
+  promptId: string;
+  deviceId: string;
+  text: string;
+  attachments?: Attachment[];
+  /** Index of the last block that existed when it arrived (-1 = before any) — render it right after that block. */
+  afterBlockIndex: number;
+};
+
 export type TurnView = {
   turnId: string;
   promptId: string | null;
+  /**
+   * What started the turn: a controller prompt, the main agent reacting to a
+   * background agent finishing, or the CLI continuing for some other reason.
+   * null for turns recorded before turn_started existed.
+   */
+  trigger: "prompt" | "background_task" | "auto" | null;
+  steeredPrompts: SteeredPromptView[];
   /** Ordered by the block index Claude assigned. */
   blocks: BlockView[];
   status: "running" | "done" | "error";
@@ -155,18 +172,54 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       s.queuedPrompts = [...s.queuedPrompts, { promptId: e.promptId, deviceId: e.deviceId, text: e.text }];
       return s;
 
-    case "prompt_submitted":
+    case "turn_started":
+      s.timeline = updateTurn(s.timeline, e.turnId, (turn) => ({
+        ...turn,
+        promptId: turn.promptId ?? e.promptId,
+        trigger: e.trigger,
+      }));
+      return s;
+
+    case "prompt_submitted": {
+      s.queuedPrompts = s.queuedPrompts.filter((q) => q.promptId !== e.promptId);
+      // Steered into a running turn: it belongs INSIDE that turn, pinned after
+      // whatever block was current when it landed, so the transcript reads in
+      // the order things actually happened (Claude's answer follows it).
+      if (e.steered) {
+        let idx = -1;
+        for (let i = s.timeline.length - 1; i >= 0; i--) {
+          const it = s.timeline[i]!;
+          if (it.type === "turn" && it.turn.status === "running") {
+            idx = i;
+            break;
+          }
+        }
+        if (idx !== -1) {
+          const item = s.timeline[idx] as Extract<TimelineItem, { type: "turn" }>;
+          const steered: SteeredPromptView = {
+            promptId: e.promptId,
+            deviceId: e.deviceId,
+            text: e.text,
+            attachments: e.attachments,
+            afterBlockIndex: item.turn.blocks.length - 1,
+          };
+          const next = s.timeline.slice();
+          next[idx] = { type: "turn", turn: { ...item.turn, steeredPrompts: [...item.turn.steeredPrompts, steered] } };
+          s.timeline = next;
+          return s;
+        }
+      }
       // If this was sitting in the queue, it's no longer waiting — it's
       // starting now. Either way it enters `timeline` fresh, at the position
       // that reflects when it actually started (not when it was sent), so a
       // prompt and its turn are always adjacent regardless of how fast
       // follow-ups were typed.
-      s.queuedPrompts = s.queuedPrompts.filter((q) => q.promptId !== e.promptId);
       s.timeline = [
         ...s.timeline,
         { type: "prompt", promptId: e.promptId, deviceId: e.deviceId, text: e.text, attachments: e.attachments },
       ];
       return s;
+    }
 
     case "assistant_delta":
       s.timeline = updateTurn(s.timeline, e.turnId, (turn) => ({
@@ -437,6 +490,8 @@ function emptyTurn(turnId: string): TurnView {
   return {
     turnId,
     promptId: null,
+    trigger: null,
+    steeredPrompts: [],
     blocks: [],
     status: "running",
     costUsd: null,
@@ -446,4 +501,14 @@ function emptyTurn(turnId: string): TurnView {
     outputTokens: null,
     interrupted: false,
   };
+}
+
+/**
+ * Human label for a turn nobody prompted (see turn_started.trigger), or null
+ * for an ordinary prompted turn. Shared by every client so the wording matches.
+ */
+export function turnTriggerLabel(turn: TurnView): string | null {
+  if (turn.trigger === "background_task") return "Background agent finished — Claude's follow-up";
+  if (turn.trigger === "auto") return "Claude continued on its own";
+  return null;
 }

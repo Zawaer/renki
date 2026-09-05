@@ -326,15 +326,31 @@ features. The throughline for everything below: shrink "found the repo" →
         after a daemon restart could see Claude's history minus those user
         turns. Prompts are only ever sent one at a time here, so this may not
         bite at all — confirm with a real restart mid-conversation.
-      - **"Run in parallel" composer affordance.** The plumbing now supports
-        it: a prompt flagged parallel could be rewritten as "spawn a background
-        agent for: …" so a second idea starts while the first turn is still
-        running, without a second worktree. Clients don't expose this yet.
-      - **Mid-turn steering** (the CLI's own between-tool-call message pickup)
-        is now technically possible — push while a turn is in flight — but
-        the CLI coalesces such messages into the running turn's single
-        `result`, which breaks the 1 prompt → 1 `turn_result` mapping clients
-        rely on. Needs a protocol change before it's worth doing.
+      - [x] **Mid-turn steering (2026-09-05, same day).** A prompt sent while a
+        turn is in flight is now pushed straight into the running process
+        (`LiveClaudeSession.steer`, chosen over the queue in
+        `SessionManager.submitPrompt` whenever the live process reports a turn
+        running). Probed against the real CLI first: the message is picked up
+        at the next tool-call boundary and answered inside the same turn,
+        which ends with ONE `result` — and the CLI neither echoes the message
+        back nor sets `result.user_message_uuid` to anything we sent, so there
+        is no per-message ack to build on. Protocol therefore grew three
+        things: `prompt_submitted.steered`, a new `turn_started` event
+        (`trigger: prompt | background_task | auto`, emitted the moment a
+        turnId exists), and `turn_result.promptIds` (every prompt the turn
+        answered). The reducer pins a steered prompt INSIDE the running turn
+        after the block that was current when it landed (`TurnView.
+        steeredPrompts`) rather than appending it after the turn, so the
+        transcript reads in real order; web + mobile render it there with a
+        "picked up mid-turn" caption, and unprompted turns get a header from
+        `turnTriggerLabel` ("Background agent finished — Claude's follow-up"
+        / "Claude continued on its own"). The FIFO queue survives only as the
+        fallback for the brief windows where the session is busy but no live
+        turn can take a message (spawn in progress, account-switch retry).
+        Usage pattern this unlocks: while a long task runs, type "also, in a
+        background agent, do Y" — it starts seconds later, no second worktree.
+        A dedicated "run in parallel" composer toggle was considered and
+        dropped: it would only save typing that one phrase.
 
 ## 4. Known fragilities
 

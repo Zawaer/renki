@@ -29,6 +29,7 @@ type FakeLive = {
   lastActivityAt: number;
   claudeSessionId: string | null;
   closeReasons: string[];
+  steered: unknown[];
 };
 vi.mock("../src/claude/liveSession.js", () => ({
   LiveClaudeSession: class FakeLiveSession {
@@ -38,10 +39,14 @@ vi.mock("../src/claude/liveSession.js", () => ({
     lastActivityAt = Date.now();
     claudeSessionId: string | null = null;
     closeReasons: string[] = [];
+    steered: unknown[] = [];
     constructor(public opts: LiveSessionOptions) {
       liveInstances.push(this as unknown as FakeLive);
     }
     runTurn = (args: unknown) => runTurn(args);
+    steer = (args: unknown) => {
+      this.steered.push(args);
+    };
     interrupt = async () => {};
     setPermissionMode = async () => {};
     close = (reason = "closed") => {
@@ -644,22 +649,23 @@ describe("live process pool", () => {
     expect([a.id, b.id, c.id]).toHaveLength(3);
   });
 
-  it("an auto turn flips the session busy, then idle, and drains a prompt queued behind it", async () => {
+  it("an auto turn flips the session busy, then idle, and drains a prompt that had to be queued behind it", async () => {
     const { manager, repoId } = setup();
     const s = await prompted(manager, repoId);
     const live = liveInstances[0]!;
 
-    live.busy = true;
     live.opts.onAutoTurnStart?.("t_auto", "auto_t_auto");
     expect(manager.getSession(s.id).status).toBe("busy");
     expect(kinds(manager, s.id).filter((k) => k === "status_changed")).toHaveLength(4); // idle, busy, idle, busy
 
-    // A prompt sent during the auto turn is queued, not run.
+    // The fake live process doesn't report itself busy here, so this exercises
+    // the fallback: busy session, nothing to steer into → queued, not run.
+    // (With a live turn in flight the prompt is steered instead — see the
+    // steering test below.)
     await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p2", text: "queued", resolvePermission: noopResolve });
     expect(runTurn).toHaveBeenCalledTimes(1);
     expect(kinds(manager, s.id)).toContain("prompt_queued");
 
-    live.busy = false;
     live.opts.onAutoTurnEnd?.({ ...okTurn, claudeSessionId: "claude-xyz" });
     // The auto turn's session id is persisted synchronously, before the drained prompt's own turn overwrites it.
     expect(manager.getSession(s.id).claudeSessionId).toBe("claude-xyz");
@@ -668,6 +674,31 @@ describe("live process pool", () => {
     expect(manager.getSession(s.id).claudeSessionId).toBe(okTurn.claudeSessionId);
     const submitted = manager.events.read(s.id).filter((e) => e.kind === "prompt_submitted") as Array<{ promptId: string }>;
     expect(submitted.map((e) => e.promptId)).toEqual(["p1", "p2"]);
+  });
+
+  it("a prompt sent while a turn is actually in flight is steered into it, not queued", async () => {
+    const { manager, repoId } = setup();
+    const s = await prompted(manager, repoId);
+    const live = liveInstances[0]!;
+    live.busy = true;
+    manager["patch"](s.id, { status: "busy" });
+
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p2", text: "also do Y", resolvePermission: noopResolve });
+
+    expect(live.steered).toEqual([{ prompt: "also do Y", attachments: undefined, promptId: "p2" }]);
+    expect(kinds(manager, s.id)).not.toContain("prompt_queued");
+    const submitted = manager.events.read(s.id).filter((e) => e.kind === "prompt_submitted") as Array<{ promptId: string; steered?: boolean }>;
+    expect(submitted.at(-1)).toMatchObject({ promptId: "p2", steered: true });
+    expect(runTurn).toHaveBeenCalledTimes(1); // no new turn spawned
+  });
+
+  it("falls back to the queue when the session is busy but no live turn can take the message", async () => {
+    const { manager, repoId } = setup();
+    const s = await prompted(manager, repoId);
+    manager["patch"](s.id, { status: "busy" }); // busy, but the fake live is idle (e.g. a spawn in progress)
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p2", text: "later", resolvePermission: noopResolve });
+    expect(kinds(manager, s.id)).toContain("prompt_queued");
+    expect(liveInstances[0]!.steered).toEqual([]);
   });
 
   it("interruptSession reaches the live process only while it is busy", async () => {

@@ -41,6 +41,14 @@ import { stripUntrustedHooks } from "./settingsHygiene.js";
  * synthetic promptId and are reported through `onAutoTurnStart/End` so the
  * manager can flip the session busy for their duration.
  *
+ * "Steering": a prompt pushed while a turn is in flight (`steer()`) is NOT a
+ * new turn. The CLI picks it up at its next tool-call boundary and answers it
+ * within the running turn, which then ends with a single `result` — verified
+ * against the real CLI. So steered prompts are tracked on the in-flight turn
+ * and reported in its turn_result's `promptIds`. (The CLI neither echoes the
+ * pushed message back nor sets `result.user_message_uuid` to anything we sent,
+ * so there is no per-message acknowledgement to key off.)
+ *
  * Crash/restart recovery is unchanged from the resume-per-prompt days: the
  * conversation lives in the CLI's resumable transcript (`claudeSessionId`),
  * so a dead process is simply replaced by a fresh one that resumes it.
@@ -69,6 +77,13 @@ export type LiveSessionOptions = {
   onAutoTurnEnd?: (result: RunTurnResult) => void;
   /** Fired exactly once, when the underlying process is gone for good (crash, exit, or `close()`). */
   onClosed?: (reason: string) => void;
+};
+
+/** A prompt delivered into the turn that's already running — see LiveClaudeSession.steer. */
+export type SteerArgs = {
+  prompt: string;
+  attachments?: Attachment[];
+  promptId: string;
 };
 
 export type LiveTurnArgs = {
@@ -145,6 +160,10 @@ export class LiveClaudeSession {
   private readonly q: Query;
   private inflight: InflightTurn | null = null;
   private autoTurn: { turnId: string; promptId: string } | null = null;
+  /** Prompts steered into the current turn, in delivery order — reported in its turn_result.promptIds. */
+  private steered: string[] = [];
+  /** A background task finished since the last `result` — makes the next unprompted turn a "background_task" one, not a mystery. */
+  private taskFinishedSinceResult = false;
   /** Resolvers waiting for the current auto turn to settle (see runTurn). */
   private autoTurnWaiters: Array<() => void> = [];
   private resolver: PermissionResolver | null = null;
@@ -288,6 +307,7 @@ export class LiveClaudeSession {
         resolve,
       };
       this._lastActivityAt = Date.now();
+      this.opts.emit({ kind: "turn_started", turnId, promptId: args.promptId, trigger: "prompt" });
       try {
         // `uuid` is our handle for cross-checking `result.user_message_uuid`
         // and for reading `interrupt()`'s still_queued receipt.
@@ -296,6 +316,22 @@ export class LiveClaudeSession {
         this.settleInflight(this.failedResult(err instanceof Error ? err.message : String(err), false), true);
       }
     });
+  }
+
+  /**
+   * Deliver a prompt into the turn that is running right now. The CLI reads it
+   * at its next tool-call boundary and folds the answer into the same turn —
+   * this is what lets "also do X in a background agent" start while a long
+   * task is mid-flight instead of waiting behind it. Throws if no turn is in
+   * flight (the caller should run it as an ordinary turn instead). Per-turn
+   * knobs (model, permission mode) can't change mid-turn and are not accepted.
+   */
+  steer(args: SteerArgs): void {
+    if (this.closed) throw new Error("LiveClaudeSession: closed");
+    if (!this.busy) throw new Error("LiveClaudeSession: no turn in flight to steer");
+    this.channel.push({ ...buildUserMessage(args.prompt, args.attachments), uuid: randomUUID() as SDKUserMessage["uuid"] });
+    this.steered.push(args.promptId);
+    this._lastActivityAt = Date.now();
   }
 
   /** Stop the in-flight turn (the "stop" button). The turn still ends through the normal `result` path, just early. */
@@ -420,8 +456,10 @@ export class LiveClaudeSession {
     this.autoTurn = { turnId, promptId: `auto_${turnId}` };
     this.agentTracking.delete("");
     this.lastTurnId = turnId;
-    logger.info("live session started an unprompted turn", { cwd: this.opts.cwd, turnId });
+    const trigger = this.taskFinishedSinceResult ? "background_task" : "auto";
+    logger.info("live session started an unprompted turn", { cwd: this.opts.cwd, turnId, trigger });
     this.opts.onAutoTurnStart?.(turnId, this.autoTurn.promptId);
+    this.opts.emit({ kind: "turn_started", turnId, promptId: this.autoTurn.promptId, trigger });
     return turnId;
   }
 
@@ -488,6 +526,7 @@ export class LiveClaudeSession {
           // a later turn or while idle, so the event carries no turnId; see
           // background_task's own doc comment in events.ts for why.
           this.backgroundTasks.delete(message.task_id);
+          this.taskFinishedSinceResult = true;
           this.opts.emit({
             kind: "background_task",
             taskId: message.task_id,
@@ -518,25 +557,19 @@ export class LiveClaudeSession {
       logger.debug("result with no turn in flight", { cwd: this.opts.cwd, subtype: message.subtype });
       return;
     }
-    const uuid = (message as { user_message_uuid?: string }).user_message_uuid;
-    if (this.inflight && uuid && uuid !== this.inflight.uuid) {
-      logger.warn("result user_message_uuid does not match the in-flight prompt", {
-        cwd: this.opts.cwd,
-        expected: this.inflight.uuid,
-        got: uuid,
-      });
-    }
-
     const ok = message.subtype === "success" && !message.is_error;
     const interrupted = !ok && isInterruptedTerminalReason((message as { terminal_reason?: unknown }).terminal_reason);
     const errorMessage = ok ? null : interrupted ? "Stopped by controller." : summarizeResultError(message);
     const usage = (message as { usage?: { input_tokens?: number; output_tokens?: number } }).usage;
     const sawRateLimit = this.inflight?.sawRateLimitError ?? false;
 
+    const promptIds = this.takeSteered(target.promptId);
+    this.taskFinishedSinceResult = false;
     this.opts.emit({
       kind: "turn_result",
       turnId: target.turnId,
       promptId: target.promptId,
+      promptIds,
       ok,
       costUsd: message.total_cost_usd ?? null,
       durationMs: message.duration_ms ?? null,
@@ -571,6 +604,7 @@ export class LiveClaudeSession {
         kind: "turn_result",
         turnId: turn.turnId,
         promptId: turn.promptId,
+        promptIds: this.takeSteered(turn.promptId),
         ok: false,
         costUsd: null,
         durationMs: null,
@@ -592,6 +626,13 @@ export class LiveClaudeSession {
     this.autoTurnWaiters = [];
     this.opts.onAutoTurnEnd?.(result);
     for (const wake of waiters) wake();
+  }
+
+  /** The finished turn's full prompt list (representative first, then steered), clearing the steered set. */
+  private takeSteered(promptId: string): string[] {
+    const ids = [promptId, ...this.steered];
+    this.steered = [];
+    return ids;
   }
 
   private failedResult(errorMessage: string, rateLimited: boolean): RunTurnResult {
@@ -621,6 +662,7 @@ export class LiveClaudeSession {
         kind: "turn_result",
         turnId: this.autoTurn.turnId,
         promptId: this.autoTurn.promptId,
+        promptIds: this.takeSteered(this.autoTurn.promptId),
         ok: false,
         costUsd: null,
         durationMs: null,

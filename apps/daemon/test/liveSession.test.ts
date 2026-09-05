@@ -363,3 +363,59 @@ describe("LiveClaudeSession lifecycle", () => {
     expect(fake.options).toMatchObject({ resume: "old-1", settingSources: [], model: "m1", permissionMode: "plan", forwardSubagentText: true, includePartialMessages: true });
   });
 });
+
+describe("LiveClaudeSession steering", () => {
+  it("pushes a steered prompt into the running turn and reports both prompts on the single turn_result", async () => {
+    const { live, fake, events } = makeLive();
+    const t = live.runTurn({ prompt: "long task", promptId: "p1", resolvePermission: allow });
+    await new Promise((r) => setTimeout(r, 0));
+    await fake.emit(assistant("working", { toolUseId: "tu-1" }));
+
+    live.steer({ prompt: "also do Y in a background agent", promptId: "p2" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(fake.sent.map((m) => m.message.content)).toEqual(["long task", "also do Y in a background agent"]);
+    // Still one turn: no new turn_started, still busy on the same turn.
+    expect(events.filter((e) => e.kind === "turn_started")).toHaveLength(1);
+    expect(live.busy).toBe(true);
+
+    await fake.emit(assistant("done both"));
+    await fake.emit(okResult as never);
+    expect(await t).toMatchObject({ ok: true });
+    const results = events.filter((e) => e.kind === "turn_result");
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ promptId: "p1", promptIds: ["p1", "p2"], ok: true });
+    // The steered set is per turn — the next turn starts clean.
+    const t2 = live.runTurn({ prompt: "next", promptId: "p3", resolvePermission: allow });
+    await new Promise((r) => setTimeout(r, 0));
+    await fake.emit(okResult as never);
+    await t2;
+    expect(events.filter((e) => e.kind === "turn_result")[1]).toMatchObject({ promptId: "p3", promptIds: ["p3"] });
+  });
+
+  it("refuses to steer when nothing is running (the caller runs it as a normal turn instead)", () => {
+    const { live } = makeLive();
+    expect(() => live.steer({ prompt: "x", promptId: "p1" })).toThrow(/no turn in flight/);
+  });
+
+  it("emits turn_started with trigger=prompt for prompted turns and background_task/auto for unprompted ones", async () => {
+    const { live, fake, events } = makeLive();
+    const t = live.runTurn({ prompt: "spawn", promptId: "p1", resolvePermission: allow });
+    await new Promise((r) => setTimeout(r, 0));
+    await fake.emit(okResult as never);
+    await t;
+    expect(events.find((e) => e.kind === "turn_started")).toMatchObject({ promptId: "p1", trigger: "prompt" });
+
+    // A background task finished, then the CLI speaks unprompted -> background_task.
+    await fake.emit({ type: "system", subtype: "task_notification", task_id: "bg1", tool_use_id: "tu-x", status: "completed", summary: "ok" } as never);
+    await fake.emit(assistant("the agent finished"));
+    await fake.emit(okResult as never);
+    const started = events.filter((e) => e.kind === "turn_started") as Array<{ trigger: string; turnId: string }>;
+    expect(started[1]!.trigger).toBe("background_task");
+    expect(events.filter((e) => e.kind === "turn_result")[1]).toMatchObject({ turnId: started[1]!.turnId });
+
+    // Unprompted again with no task in between -> auto.
+    await fake.emit(assistant("hmm, continuing"));
+    await fake.emit(okResult as never);
+    expect((events.filter((e) => e.kind === "turn_started")[2] as { trigger: string }).trigger).toBe("auto");
+  });
+});

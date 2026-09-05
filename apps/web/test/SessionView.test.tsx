@@ -371,3 +371,34 @@ describe("SessionView", () => {
     expect(textarea.value).toBe("/compact ");
   });
 });
+
+describe("SessionView steering + unprompted turns", () => {
+  it("renders a steered prompt inside the running turn after the block it interrupted, and labels a background-agent follow-up turn", () => {
+    const sessionId = "s_steer";
+    const events = [
+      ev(sessionId, { kind: "session_created", repoId: "demo", repoName: "demo", baseBranch: "main", branch: "crc/x", worktreePath: "/tmp/wt" }),
+      ev(sessionId, { kind: "status_changed", status: "busy" }),
+      ev(sessionId, { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "refactor the parser" }),
+      ev(sessionId, { kind: "turn_started", turnId: "t1", promptId: "p1", trigger: "prompt" }),
+      ev(sessionId, { kind: "assistant_block", turnId: "t1", blockIndex: 0, blockKind: "text", text: "Starting the refactor.", toolUseId: null, toolName: null, toolInput: null }),
+      ev(sessionId, { kind: "prompt_submitted", promptId: "p2", deviceId: "d1", text: "also add tests in a background agent", steered: true }),
+      ev(sessionId, { kind: "assistant_block", turnId: "t1", blockIndex: 1, blockKind: "text", text: "Spawned the test agent, continuing.", toolUseId: null, toolName: null, toolInput: null }),
+      ev(sessionId, { kind: "turn_result", turnId: "t1", promptId: "p1", promptIds: ["p1", "p2"], ok: true, costUsd: 0.02, durationMs: 40, errorMessage: null, inputTokens: 10, outputTokens: 10 }),
+      ev(sessionId, { kind: "turn_started", turnId: "t2", promptId: "auto_t2", trigger: "background_task" }),
+      ev(sessionId, { kind: "assistant_block", turnId: "t2", blockIndex: 0, blockKind: "text", text: "The test agent finished.", toolUseId: null, toolName: null, toolInput: null }),
+      ev(sessionId, { kind: "turn_result", turnId: "t2", promptId: "auto_t2", promptIds: ["auto_t2"], ok: true, costUsd: 0.01, durationMs: 10, errorMessage: null, inputTokens: 1, outputTokens: 1 }),
+    ];
+    renderSession(sessionId, events);
+
+    const steered = screen.getByTestId("steered-prompt");
+    expect(steered.textContent).toContain("also add tests in a background agent");
+    expect(steered.textContent).toContain("picked up mid-turn");
+    // Order on screen: first block, then the steered prompt, then the second block.
+    const all = screen.getByText("Starting the refactor.").compareDocumentPosition(steered);
+    expect(all & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const after = steered.compareDocumentPosition(screen.getByText("Spawned the test agent, continuing."));
+    expect(after & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    expect(screen.getByText(/Background agent finished/)).toBeTruthy();
+  });
+});

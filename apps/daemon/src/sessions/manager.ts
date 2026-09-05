@@ -405,10 +405,14 @@ export class SessionManager {
    * Submit a finished prompt. Enforces the lock; if the session is idle, runs
    * it as a turn immediately (and keeps draining anything queued behind it —
    * each queued prompt becomes its own ordinary turn the instant the previous
-   * one finishes). If the session is busy, the prompt is held in a per-session
-   * FIFO queue instead of being rejected — this is the only difference from
-   * before, not a new execution model. The `resolvePermission` policy decides
-   * tool-use requests (in Step 2 this asks the controller over WS).
+   * one finishes). If a turn is running right now, the prompt is steered INTO
+   * it (`LiveClaudeSession.steer`): the CLI reads it at its next tool-call
+   * boundary and answers within the same turn, so "also spin up a background
+   * agent for X" starts seconds later instead of after the whole task. Only
+   * when the session is busy but no live turn can take the message (a spawn or
+   * account switch in progress) does it fall back to the per-session FIFO
+   * queue. The `resolvePermission` policy decides tool-use requests (over WS
+   * this asks the controller).
    */
   async submitPrompt(input: SubmitPromptInput): Promise<void> {
     const session = this.getSession(input.sessionId);
@@ -419,6 +423,20 @@ export class SessionManager {
       throw new SessionError("invalid_request", "Prompt text or at least one attachment is required.");
 
     if (session.status === "busy") {
+      const live = this.live.get(input.sessionId);
+      if (live && live.busy && !live.isClosed) {
+        live.steer({ prompt: input.text, attachments: input.attachments, promptId: input.promptId });
+        this.events.append(input.sessionId, {
+          kind: "prompt_submitted",
+          promptId: input.promptId,
+          deviceId: input.deviceId,
+          text: input.text,
+          attachments: input.attachments,
+          steered: true,
+        });
+        this.patch(input.sessionId, { lastActivityAt: Date.now() });
+        return;
+      }
       const queue = this.queues.get(input.sessionId) ?? [];
       if (queue.length >= MAX_QUEUED_PROMPTS)
         throw new SessionError("queue_full", "Too many prompts queued for this session.");

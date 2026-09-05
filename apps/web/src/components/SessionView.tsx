@@ -11,19 +11,21 @@ import {
   parseTodos,
   PERMISSION_MODES,
   THINKING_VERBS,
+  turnTriggerLabel,
   type AskUserQuestionView,
   type Attachment,
   type BlockView,
   type EditToolView,
   type PermissionModeKey,
   type PermissionView,
+  type SteeredPromptView,
   type SubagentView,
   type TimelineItem,
   type TodoItemView,
   type TurnView,
 } from "@crc/client-core";
 import type { CapabilitiesResponse } from "@crc/protocol";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, Fragment } from "react";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { hostOpenFile, isHosted } from "../lib/host.js";
 import {
@@ -175,10 +177,25 @@ function TimelineRow({ item }: { item: TimelineItem }) {
 }
 
 function AssistantTurn({ turn }: { turn: TurnView }) {
+  const label = turnTriggerLabel(turn);
+  const steeredAfter = (index: number) => turn.steeredPrompts.filter((p) => p.afterBlockIndex === index);
   return (
     <div className="space-y-2">
+      {label && (
+        <div className="flex items-center gap-1 text-[11px] text-(--crc-fg-muted)">
+          <span className="codicon codicon-rocket" /> {label}
+        </div>
+      )}
+      {steeredAfter(-1).map((p) => (
+        <SteeredPrompt key={p.promptId} prompt={p} />
+      ))}
       {turn.blocks.map((b, i) => (
-        <Block key={i} block={b} turnRunning={turn.status === "running"} />
+        <Fragment key={i}>
+          <Block block={b} turnRunning={turn.status === "running"} />
+          {steeredAfter(i).map((p) => (
+            <SteeredPrompt key={p.promptId} prompt={p} />
+          ))}
+        </Fragment>
       ))}
       {turn.status === "running" && (
         <span className="codicon codicon-loading codicon-modifier-spin text-(--crc-fg-muted)" />
@@ -200,6 +217,26 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
           <span className="codicon codicon-error" /> Turn failed: {turn.errorMessage}
         </div>
       )}
+    </div>
+  );
+}
+
+/** A prompt the controller sent while this turn was already running — shown inside the turn, where Claude picked it up. */
+function SteeredPrompt({ prompt }: { prompt: SteeredPromptView }) {
+  return (
+    <div className="flex gap-2 border-l-2 border-(--crc-accent) bg-(--crc-bg-elevated) px-3 py-2" data-testid="steered-prompt">
+      <span className="codicon codicon-account mt-0.5 text-(--crc-accent)" />
+      <div className="min-w-0 flex-1">
+        {prompt.text && <div className="whitespace-pre-wrap text-sm text-(--crc-fg)">{prompt.text}</div>}
+        {prompt.attachments && prompt.attachments.length > 0 && (
+          <div className={`flex flex-wrap gap-1.5 ${prompt.text ? "mt-1.5" : ""}`}>
+            {prompt.attachments.map((a, i) => (
+              <AttachmentChip key={i} attachment={a} />
+            ))}
+          </div>
+        )}
+        <div className="mt-1 text-[11px] text-(--crc-fg-muted)">Sent while Claude was working — picked up mid-turn</div>
+      </div>
     </div>
   );
 }

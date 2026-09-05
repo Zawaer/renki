@@ -64,6 +64,31 @@ const payloads = [
     deviceId: DeviceId,
     text: z.string(),
     attachments: z.array(Attachment).optional(),
+    /**
+     * True when this prompt was delivered INTO a turn that was already running
+     * (the controller typed while Claude was working). The CLI picks it up at
+     * its next tool-call boundary and answers it within that same turn, so no
+     * separate turn/turn_result exists for it — the running turn's turn_result
+     * lists it in `promptIds`. Absent/false for an ordinary prompt that starts
+     * its own turn.
+     */
+    steered: z.boolean().optional(),
+  }),
+
+  /**
+   * A turn began. Emitted by the daemon the moment it knows the turnId — for a
+   * prompted turn right after `prompt_submitted`, and for a turn the CLI starts
+   * on its own (e.g. the main agent reacting to a background agent finishing)
+   * as the only heads-up clients get before its blocks stream in. `trigger`
+   * is what clients label the turn by. Optional in the log's history: turns
+   * recorded before this event existed are still created lazily from their
+   * first block.
+   */
+  z.object({
+    kind: z.literal("turn_started"),
+    turnId: z.string(),
+    promptId: z.string(),
+    trigger: z.enum(["prompt", "background_task", "auto"]),
   }),
 
   /**
@@ -159,6 +184,13 @@ const payloads = [
     model: z.string().nullable().optional(),
     /** Which kind of client submitted the prompt this turn answers ("web"/"phone"/"vscode"), derived from the submitting device's id. Optional for the same reason as `model`. */
     clientType: z.string().nullable().optional(),
+    /**
+     * Every prompt this turn answered: `promptId` first, then any prompts
+     * steered into it mid-turn (see prompt_submitted.steered), in delivery
+     * order. Absent on events recorded before steering existed (then it's just
+     * `[promptId]`).
+     */
+    promptIds: z.array(z.string()).optional(),
   }),
 
   /** A non-turn error (spawn failure, worktree problem, etc.). */

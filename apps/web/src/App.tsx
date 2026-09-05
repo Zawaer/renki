@@ -61,44 +61,31 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between border-b border-(--crc-border) bg-(--crc-bg-elevated) px-4 py-2">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-(--crc-fg)">Claude Remote Control</span>
+      <header className="flex h-12 shrink-0 items-center justify-between border-b border-(--crc-border) bg-(--crc-bg-elevated) px-4">
+        <div className="flex items-center gap-3">
+          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-(--crc-accent) text-(--crc-accent-fg) shadow-(--crc-shadow-xs)">
+            <span className="codicon codicon-terminal text-[13px]" />
+          </span>
+          <span className="text-sm font-semibold tracking-tight text-(--crc-fg)">Claude Remote Control</span>
           <ConnBadge status={status} />
         </div>
-        <div className="flex items-center gap-3 text-xs text-(--crc-fg-muted)">
-          <span>{config.deviceName}</span>
-          <button
-            onClick={() => navigate(onStats ? "/" : "/stats")}
-            title="Stats"
-            className={`flex items-center gap-1 rounded-sm px-1.5 py-1 hover:bg-(--crc-hover) hover:text-(--crc-fg) ${
-              onStats ? "text-(--crc-fg)" : "text-(--crc-fg-muted)"
-            }`}
-          >
-            <span className="codicon codicon-graph-line" />
-          </button>
+        <div className="flex items-center gap-1 text-xs text-(--crc-fg-muted)">
+          <span className="mr-2 hidden sm:inline">{config.deviceName}</span>
+          <HeaderButton active={onStats} title="Stats" icon="graph-line" onClick={() => navigate(onStats ? "/" : "/stats")} />
           <AccountsBar />
           <RtkGainBadge />
-          <button
-            onClick={() => navigate(onSettings ? "/" : "/settings")}
-            title="Settings"
-            className={`flex items-center gap-1 rounded-sm px-1.5 py-1 hover:bg-(--crc-hover) hover:text-(--crc-fg) ${
-              onSettings ? "text-(--crc-fg)" : "text-(--crc-fg-muted)"
-            }`}
-          >
-            <span className="codicon codicon-gear" />
-          </button>
+          <HeaderButton active={onSettings} title="Settings" icon="gear" onClick={() => navigate(onSettings ? "/" : "/settings")} />
         </div>
       </header>
 
       {lastError && (
-        <div className="flex items-center gap-1.5 bg-(--crc-danger)/15 px-4 py-1.5 text-xs text-(--crc-danger)">
+        <div className="flex items-center gap-1.5 border-b border-(--crc-danger)/30 bg-(--crc-danger)/10 px-4 py-1.5 text-xs text-(--crc-danger)">
           <span className="codicon codicon-error" />
           {lastError.code}: {lastError.message}
         </div>
       )}
 
-      <div className="grid flex-1 grid-cols-[280px_1fr] overflow-hidden">
+      <div className="grid flex-1 grid-cols-[288px_1fr] overflow-hidden">
         <aside className="flex flex-col border-r border-(--crc-border) bg-(--crc-bg-elevated)">
           <div className="min-h-0 flex-1">
             <SessionList
@@ -121,8 +108,14 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
             <Route
               path="*"
               element={
-                <div className="flex h-full items-center justify-center text-sm text-(--crc-fg-muted)">
-                  Select or create a session.
+                <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-(--crc-border) bg-(--crc-surface) text-(--crc-fg-muted) shadow-(--crc-shadow-sm)">
+                    <span className="codicon codicon-comment-discussion text-xl" />
+                  </span>
+                  <div>
+                    <div className="text-sm font-medium text-(--crc-fg)">No session open</div>
+                    <div className="mt-1 text-xs text-(--crc-fg-muted)">Pick one from the sidebar, or start a new one.</div>
+                  </div>
                 </div>
               }
             />
@@ -133,16 +126,30 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
   );
 }
 
+function HeaderButton({ active, title, icon, onClick }: { active: boolean; title: string; icon: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-(--crc-hover) hover:text-(--crc-fg) ${
+        active ? "bg-(--crc-hover) text-(--crc-fg)" : "text-(--crc-fg-muted)"
+      }`}
+    >
+      <span className={`codicon codicon-${icon}`} />
+    </button>
+  );
+}
+
 function ConnBadge({ status }: { status: "connecting" | "open" | "closed" }) {
   const map = {
-    open: { color: "bg-(--crc-success)", label: "connected" },
-    connecting: { color: "bg-(--crc-warning) animate-pulse", label: "connecting" },
-    closed: { color: "bg-(--crc-danger)", label: "offline" },
+    open: { color: "bg-(--crc-success)", label: "Connected", tone: "text-(--crc-fg-muted)" },
+    connecting: { color: "bg-(--crc-warning) animate-pulse", label: "Connecting…", tone: "text-(--crc-warning)" },
+    closed: { color: "bg-(--crc-danger)", label: "Offline", tone: "text-(--crc-danger)" },
   } as const;
   const s = map[status];
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-(--crc-fg-muted)">
-      <span className={`h-2 w-2 rounded-full ${s.color}`} />
+    <span className={`inline-flex h-6 items-center gap-1.5 rounded-full border border-(--crc-border) bg-(--crc-surface) px-2 text-[11px] font-medium ${s.tone}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${s.color}`} />
       {s.label}
     </span>
   );

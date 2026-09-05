@@ -352,6 +352,22 @@ features. The throughline for everything below: shrink "found the repo" →
         A dedicated "run in parallel" composer toggle was considered and
         dropped: it would only save typing that one phrase.
 
+- [x] **Web UI visual sweep (2026-09-05).** Replaced the flat VS Code Dark+
+      mirror with a warm near-black / warm-paper palette, a terracotta accent
+      (dark text on it, not white), and a real radius + shadow scale — Tailwind's
+      radius scale is remapped in `apps/web/src/index.css` `@theme` so the
+      whole app rounds off from one place. Prompts are right-aligned bubbles
+      (steered ones sit inside the turn), tool calls are quiet cards with a
+      result dot, the permission card is an unmissable pinned card, the
+      composer is a single rounded unit with the model/effort/mode pickers and
+      attach inside it, and unprompted turns carry a header. Session list rows
+      are rounded with mono repo/branch. Verified with Playwright screenshots
+      against the live daemon in dark + light, including a live permission
+      prompt. VS Code embedding still tracks editor theme through the same
+      tokens (`--crc-surface` added, mapped to `editorWidget.background`).
+      Mobile untouched — it already had its own warmer redesign. A Lovable
+      brief for further concepts was written the same day (not in repo).
+
 ## 4. Known fragilities
 
 - **Per-session git worktrees + the `crc merge` conflict flow may not scale to

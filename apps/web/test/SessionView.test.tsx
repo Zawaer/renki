@@ -120,12 +120,14 @@ describe("SessionView", () => {
 
     expect(screen.getByText("demo")).toBeInTheDocument();
     expect(screen.getByText("You're in control")).toBeInTheDocument();
-    expect(screen.getByText("idle")).toBeInTheDocument();
+    expect(screen.getByText("Idle")).toBeInTheDocument();
     expect(screen.getByText("Add a README")).toBeInTheDocument();
     expect(screen.getByText("Let me look at the repo first.")).toBeInTheDocument();
     expect(screen.getByText("Read")).toBeInTheDocument();
     expect(screen.getByText("Done — added a README.")).toBeInTheDocument();
-    expect(screen.getByText("$0.0123 · 4200ms · 1.5k tokens")).toBeInTheDocument();
+    expect(screen.getByText("$0.0123")).toBeInTheDocument();
+    expect(screen.getByText("4s")).toBeInTheDocument();
+    expect(screen.getByText("1.5k tokens")).toBeInTheDocument();
     expect(screen.getByText("Switched account — retrying.")).toBeInTheDocument();
     // No control button at all — this device already holds the lock, and
     // there's nothing useful to do about it (taking control is a unilateral
@@ -158,7 +160,7 @@ describe("SessionView", () => {
 
     // Rendered as the controller: Allow/Deny should be actionable.
     renderSession(sessionId, events, "d1");
-    expect(screen.getByText(/Permission requested:/)).toBeInTheDocument();
+    expect(screen.getByText(/Claude wants to run/)).toBeInTheDocument();
     expect(screen.getByText("Bash")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Allow" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Deny" })).toBeInTheDocument();
@@ -186,8 +188,8 @@ describe("SessionView", () => {
 
     renderSession(sessionId, events);
 
-    expect(screen.getByText("No messages yet. Take control and send a prompt.")).toBeInTheDocument();
-    expect(screen.getByText("Unlocked")).toBeInTheDocument();
+    expect(screen.getByText("Nothing here yet")).toBeInTheDocument();
+    expect(screen.getByText("Nobody is in control")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Take control" })).toBeInTheDocument();
   });
 
@@ -293,7 +295,7 @@ describe("SessionView", () => {
     fireEvent.click(screen.getByRole("button", { name: /Medium/ }));
     fireEvent.click(screen.getByText("Extra High"));
 
-    fireEvent.change(screen.getByPlaceholderText(/Send a prompt/), { target: { value: "hello" } });
+    fireEvent.change(screen.getByPlaceholderText(/Ask Claude anything/), { target: { value: "hello" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     expect(calls).toEqual([
@@ -335,7 +337,7 @@ describe("SessionView", () => {
     // The trigger button now reflects the typed-in model, not the fetched list.
     expect(screen.getByRole("button", { name: "claude-fable-5" })).toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText(/Send a prompt/), { target: { value: "hi" } });
+    fireEvent.change(screen.getByPlaceholderText(/Ask Claude anything/), { target: { value: "hi" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     expect(calls[0]).toMatchObject({ sid: sessionId, text: "hi", opts: { model: "claude-fable-5" } });
@@ -362,7 +364,7 @@ describe("SessionView", () => {
 
     renderSession(sessionId, events, "d1", capabilities);
 
-    const textarea = screen.getByPlaceholderText(/Send a prompt/) as HTMLTextAreaElement;
+    const textarea = screen.getByPlaceholderText(/Ask Claude anything/) as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: "/comp" } });
 
     const suggestion = await screen.findByText("/compact");

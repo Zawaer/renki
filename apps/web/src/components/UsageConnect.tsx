@@ -107,7 +107,7 @@ export function UsageConnect({ configured, onConnected }: { configured: boolean;
               key={o.orgId}
               onClick={() => pickOrg(o.orgId)}
               disabled={busy !== null}
-              className="flex w-full items-center justify-between rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) px-2.5 py-1.5 text-left hover:border-(--crc-focus) disabled:opacity-40"
+              className="flex w-full items-center justify-between rounded-xl border border-(--crc-border) bg-(--crc-surface) px-2.5 py-1.5 text-left hover:border-(--crc-focus) disabled:opacity-40"
             >
               <span className="truncate text-[12px] text-(--crc-fg)">{o.name}</span>
               <span className="ml-2 shrink-0 text-[10px] text-(--crc-fg-muted)">{fmt(o)}</span>
@@ -158,7 +158,7 @@ export function UsageConnect({ configured, onConnected }: { configured: boolean;
             placeholder="sk-ant-sid…"
             spellCheck={false}
             autoComplete="off"
-            className="w-full rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) px-2 py-1 text-[12px] text-(--crc-fg) outline-none focus:border-(--crc-focus)"
+            className="w-full rounded-xl border border-(--crc-border) bg-(--crc-surface) px-2 py-1 text-[12px] text-(--crc-fg) outline-none focus:border-(--crc-focus)"
           />
           <div className="flex items-center justify-between">
             <button onClick={() => setOpen(false)} className="text-[11px] text-(--crc-fg-muted) hover:underline">

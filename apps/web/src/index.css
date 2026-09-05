@@ -2,64 +2,104 @@
 @import "@vscode/codicons/dist/codicon.css";
 
 /*
- * Theme tokens, in increasing priority:
- *   1. :root            - VS Code Dark+ defaults (plain browser, no preference)
- *   2. prefers-color-scheme: light - VS Code Light+ (plain browser, light OS/browser)
- *   3. body.vscode-*    - the real --vscode-* variables VS Code injects into every
- *      webview, so the panel live-tracks whatever editor theme is actually open.
- * Components consume --crc-* only; they never reference --vscode-* directly.
+ * Design tokens. Components consume --crc-* only.
+ *
+ * Priority, low to high:
+ *   1. :root                         warm dark (plain browser, no preference)
+ *   2. prefers-color-scheme: light   warm light (plain browser, light OS)
+ *   3. body.vscode-*                 the --vscode-* variables VS Code injects
+ *                                    into every webview, so the panel tracks
+ *                                    whatever editor theme is actually open.
+ *
+ * Shape and depth live here too (radius / shadow scale) so the whole app
+ * changes character from one place. Tailwind's radius scale is remapped in
+ * @theme below: `rounded-sm` is a soft 6px, `rounded-xl` is a card.
  */
+
+@theme {
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-3xl: 24px;
+  --font-sans: var(--crc-font-ui);
+  --font-mono: var(--crc-font-mono);
+}
+
 :root {
   color-scheme: dark;
 
-  --crc-bg: #1e1e1e;
-  --crc-bg-elevated: #252526;
-  --crc-bg-inset: #1a1a1a;
-  --crc-fg: #cccccc;
-  --crc-fg-muted: #9d9d9d;
-  --crc-border: #3c3c3c;
-  --crc-accent: #0078d4;
-  --crc-accent-hover: #1177bb;
-  --crc-accent-fg: #ffffff;
-  --crc-link: #3794ff;
-  --crc-input-bg: #3c3c3c;
-  --crc-hover: #2a2d2e;
-  --crc-selected: #04395e;
-  --crc-selected-fg: #ffffff;
-  --crc-success: #89d185;
-  --crc-warning: #cca700;
-  --crc-danger: #f14c4c;
-  --crc-focus: #007fd4;
-  --crc-chart-input: #3987e5;
-  --crc-chart-output: #d95926;
-  --crc-font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --crc-font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Courier New", monospace;
+  /* Surfaces, darkest to lightest: inset < bg < elevated < surface */
+  --crc-bg: #141416;
+  --crc-bg-elevated: #191a1d;
+  --crc-surface: #1f2024;
+  --crc-bg-inset: #0f0f11;
+  --crc-hover: #26272c;
+
+  --crc-fg: #ececef;
+  --crc-fg-muted: #8f909a;
+  --crc-border: #2b2c32;
+
+  /* Terracotta accent — dark text on it reads far better than white. */
+  --crc-accent: #e0865f;
+  --crc-accent-hover: #ea9770;
+  --crc-accent-fg: #17110e;
+  --crc-selected: color-mix(in oklab, var(--crc-accent) 16%, transparent);
+  --crc-selected-fg: #f6f6f7;
+  --crc-link: #9db7ff;
+  --crc-input-bg: #1a1b1f;
+
+  --crc-success: #5ecb92;
+  --crc-warning: #e6b455;
+  --crc-danger: #f26b63;
+  --crc-focus: #e0865f;
+  --crc-chart-input: #7aa2ff;
+  --crc-chart-output: #e0865f;
+
+  --crc-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --crc-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 8px -2px rgba(0, 0, 0, 0.35);
+  --crc-shadow-md: 0 2px 6px rgba(0, 0, 0, 0.3), 0 10px 28px -10px rgba(0, 0, 0, 0.5);
+  --crc-shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.35), 0 24px 56px -16px rgba(0, 0, 0, 0.6);
+
+  --crc-font-ui: "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --crc-font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Courier New", monospace;
 }
 
 @media (prefers-color-scheme: light) {
   :root {
     color-scheme: light;
 
-    --crc-bg: #ffffff;
-    --crc-bg-elevated: #f3f3f3;
-    --crc-bg-inset: #ffffff;
-    --crc-fg: #3b3b3b;
-    --crc-fg-muted: #717171;
-    --crc-border: #e5e5e5;
-    --crc-accent: #007acc;
-    --crc-accent-hover: #0062a3;
+    --crc-bg: #f5f4f1;
+    --crc-bg-elevated: #faf9f7;
+    --crc-surface: #ffffff;
+    --crc-bg-inset: #eeece8;
+    --crc-hover: #ebe9e4;
+
+    --crc-fg: #1d1c1a;
+    --crc-fg-muted: #6c6b66;
+    --crc-border: #e2e0da;
+
+    --crc-accent: #c9633c;
+    --crc-accent-hover: #b6552f;
     --crc-accent-fg: #ffffff;
-    --crc-link: #006ab1;
+    --crc-selected: color-mix(in oklab, var(--crc-accent) 14%, transparent);
+    --crc-selected-fg: #1d1c1a;
+    --crc-link: #2f66c9;
     --crc-input-bg: #ffffff;
-    --crc-hover: #e8e8e8;
-    --crc-selected: #d6ebff;
-    --crc-selected-fg: #1a1a1a;
-    --crc-success: #388a34;
-    --crc-warning: #bf8803;
-    --crc-danger: #cd3131;
-    --crc-focus: #007acc;
-    --crc-chart-input: #2a78d6;
-    --crc-chart-output: #eb6834;
+
+    --crc-success: #2f9e63;
+    --crc-warning: #b7841a;
+    --crc-danger: #d4453d;
+    --crc-focus: #c9633c;
+    --crc-chart-input: #3b74d9;
+    --crc-chart-output: #d9744b;
+
+    --crc-shadow-xs: 0 1px 2px rgba(28, 25, 20, 0.06);
+    --crc-shadow-sm: 0 1px 2px rgba(28, 25, 20, 0.06), 0 2px 8px -2px rgba(28, 25, 20, 0.08);
+    --crc-shadow-md: 0 2px 6px rgba(28, 25, 20, 0.06), 0 10px 28px -10px rgba(28, 25, 20, 0.14);
+    --crc-shadow-lg: 0 4px 12px rgba(28, 25, 20, 0.08), 0 24px 56px -16px rgba(28, 25, 20, 0.2);
   }
 }
 
@@ -71,6 +111,7 @@ body.vscode-high-contrast-light {
 
   --crc-bg: var(--vscode-editor-background);
   --crc-bg-elevated: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  --crc-surface: var(--vscode-editorWidget-background, var(--vscode-sideBar-background, var(--vscode-editor-background)));
   --crc-bg-inset: var(--vscode-input-background, var(--vscode-editor-background));
   --crc-fg: var(--vscode-foreground);
   --crc-fg-muted: var(--vscode-descriptionForeground, var(--vscode-foreground));
@@ -104,4 +145,91 @@ body {
   background: var(--crc-bg);
   color: var(--crc-fg);
   font-family: var(--crc-font-ui);
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--crc-accent) 35%, transparent);
+}
+
+/* Thin, quiet scrollbars — a long transcript shouldn't carry a chunky rail. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--crc-fg-muted) 35%, transparent) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--crc-fg-muted) 35%, transparent);
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* One focus treatment everywhere; visible for keyboards, invisible for mouse. */
+:focus-visible {
+  outline: 2px solid var(--crc-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+textarea:focus-visible,
+input:focus-visible {
+  outline: none;
+}
+
+/* Shared form control — Setup, dialogs, Settings. */
+.crc-input {
+  width: 100%;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--crc-border);
+  background: var(--crc-input-bg);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--crc-fg);
+  outline: none;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+.crc-input::placeholder {
+  color: var(--crc-fg-muted);
+}
+.crc-input:focus {
+  border-color: var(--crc-accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--crc-accent) 18%, transparent);
+}
+
+/* Status dots that need to read from across the room. */
+.crc-glow-warning {
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--crc-warning) 28%, transparent);
+}
+.crc-glow-danger {
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--crc-danger) 30%, transparent);
+}
+
+@keyframes crc-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.crc-enter {
+  animation: crc-fade-up 160ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crc-enter,
+  .animate-pulse,
+  .codicon-modifier-spin {
+    animation: none !important;
+  }
 }

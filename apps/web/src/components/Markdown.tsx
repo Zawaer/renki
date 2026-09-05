@@ -31,13 +31,13 @@ const components: Components = {
   blockquote: ({ node, ...p }) => <blockquote className="border-l-2 border-(--crc-border) pl-3 text-(--crc-fg-muted)" {...p} />,
   hr: ({ node, ...p }) => <hr className="border-(--crc-border)" {...p} />,
   code: ({ node, ...p }) => (
-    <code className="rounded-sm bg-(--crc-bg-elevated) px-1 py-0.5 font-(family-name:--crc-font-mono) text-[0.85em] text-(--crc-fg)" {...p} />
+    <code className="rounded-md bg-(--crc-bg-inset) px-1.5 py-0.5 font-(family-name:--crc-font-mono) text-[0.85em] text-(--crc-fg)" {...p} />
   ),
   // Fenced blocks: the descendant selectors neutralize the inline-code pill so
   // the code sits flush inside the block.
   pre: ({ node, ...p }) => (
     <pre
-      className="overflow-x-auto rounded-sm border border-(--crc-border) bg-(--crc-bg-inset) p-3 font-(family-name:--crc-font-mono) text-xs text-(--crc-fg) [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit"
+      className="overflow-x-auto rounded-xl border border-(--crc-border) bg-(--crc-bg-inset) p-3.5 font-(family-name:--crc-font-mono) text-xs leading-relaxed text-(--crc-fg) [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit"
       {...p}
     />
   ),
@@ -52,7 +52,7 @@ const components: Components = {
 
 export const Markdown = memo(function Markdown({ content, muted = false }: { content: string; muted?: boolean }) {
   return (
-    <div className={`space-y-2 wrap-break-word text-sm ${muted ? "text-(--crc-fg-muted)" : "text-(--crc-fg)"}`}>
+    <div className={`space-y-2.5 wrap-break-word text-[14px] leading-relaxed ${muted ? "text-(--crc-fg-muted)" : "text-(--crc-fg)"}`}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {content}
       </ReactMarkdown>

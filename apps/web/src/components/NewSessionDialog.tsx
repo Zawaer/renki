@@ -108,16 +108,19 @@ export function NewSessionDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="w-full max-w-md space-y-3 rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) p-5"
+        className="crc-enter w-full max-w-md space-y-4 rounded-2xl border border-(--crc-border) bg-(--crc-surface) p-6 shadow-(--crc-shadow-lg)"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-base font-semibold text-(--crc-fg)">New session</h2>
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight text-(--crc-fg)">New session</h2>
+          <p className="mt-0.5 text-xs text-(--crc-fg-muted)">Each session gets its own branch and worktree, so it never collides with another.</p>
+        </div>
 
         <label className="block space-y-1">
-          <span className="text-xs text-(--crc-fg-muted)">Repository</span>
-          <select value={repoId} onChange={(e) => pickRepo(e.target.value)} className="ns-input">
+          <span className="text-xs font-medium text-(--crc-fg-muted)">Repository</span>
+          <select value={repoId} onChange={(e) => pickRepo(e.target.value)} className="crc-input">
             <option value={NO_REPO}>No repo (just chat)</option>
             {repos.map((r) => (
               <option key={r.id} value={r.id}>
@@ -130,31 +133,31 @@ export function NewSessionDialog({
         {repoId !== NO_REPO && (
           <>
             <label className="block space-y-1">
-              <span className="text-xs text-(--crc-fg-muted)">Base branch</span>
-              <input value={baseBranch} onChange={(e) => changeBaseBranch(e.target.value)} className="ns-input" />
+              <span className="text-xs font-medium text-(--crc-fg-muted)">Base branch</span>
+              <input value={baseBranch} onChange={(e) => changeBaseBranch(e.target.value)} className="crc-input" />
             </label>
 
             <label className="block space-y-1">
-              <span className="text-xs text-(--crc-fg-muted)">New branch (optional)</span>
+              <span className="text-xs font-medium text-(--crc-fg-muted)">New branch (optional)</span>
               <input
                 value={newBranch}
                 onChange={(e) => setNewBranch(e.target.value)}
                 placeholder="auto: crc/xxxxxx"
-                className="ns-input"
+                className="crc-input"
               />
             </label>
           </>
         )}
 
         <label className="block space-y-1">
-          <span className="text-xs text-(--crc-fg-muted)">Title (optional)</span>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} className="ns-input" />
+          <span className="text-xs font-medium text-(--crc-fg-muted)">Title (optional)</span>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} className="crc-input" />
         </label>
 
         {error && <p className="text-sm text-(--crc-danger)">{error}</p>}
 
         {behindInfo && (
-          <div className="space-y-2 rounded-sm border border-(--crc-border) bg-(--crc-bg-inset) p-3">
+          <div className="space-y-2 rounded-xl border border-(--crc-warning)/30 bg-(--crc-warning)/8 p-3">
             <p className="text-sm text-(--crc-fg)">
               <span className="font-medium">{baseBranch}</span> is {behindInfo.behind} commit
               {behindInfo.behind === 1 ? "" : "s"} behind <span className="font-medium">origin/{baseBranch}</span>.
@@ -182,7 +185,6 @@ export function NewSessionDialog({
           </div>
         )}
 
-        <style>{`.ns-input{width:100%;border-radius:2px;border:1px solid var(--crc-border);background:var(--crc-bg-inset);padding:0.5rem 0.75rem;font-size:0.875rem;color:var(--crc-fg);outline:none}.ns-input:focus{border-color:var(--crc-focus)}`}</style>
       </div>
     </div>
   );

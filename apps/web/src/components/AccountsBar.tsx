@@ -65,7 +65,7 @@ export function AccountsBar() {
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div
-            className="absolute right-0 top-full z-50 mt-2 w-72 space-y-2 rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) p-3 text-xs shadow-lg"
+            className="absolute right-0 top-full z-50 mt-2 w-72 space-y-2 rounded-xl border border-(--crc-border) bg-(--crc-surface) p-3 text-xs shadow-(--crc-shadow-lg)"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">

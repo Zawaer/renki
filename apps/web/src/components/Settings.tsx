@@ -18,8 +18,8 @@ export function Settings({ onReset, managed }: { onReset: () => void; managed: b
   const status = useStoreValue(realtime.status);
 
   return (
-    <div className="mx-auto h-full max-w-2xl overflow-y-auto p-6">
-      <h1 className="mb-4 text-sm font-semibold text-(--crc-fg)">Settings</h1>
+    <div className="mx-auto h-full max-w-2xl overflow-y-auto px-6 py-8">
+      <h1 className="mb-5 text-lg font-semibold tracking-tight text-(--crc-fg)">Settings</h1>
       <div className="space-y-6">
         <ThisDeviceSection />
         <ConnectionSection status={status} />
@@ -34,7 +34,7 @@ export function Settings({ onReset, managed }: { onReset: () => void; managed: b
 function Section({ title, description, danger, children }: { title: string; description: string; danger?: boolean; children: React.ReactNode }) {
   return (
     <section
-      className={`rounded-sm border p-4 ${danger ? "border-(--crc-danger)/40 bg-(--crc-danger)/5" : "border-(--crc-border) bg-(--crc-bg-elevated)"}`}
+      className={`rounded-xl border p-5 shadow-(--crc-shadow-xs) ${danger ? "border-(--crc-danger)/40 bg-(--crc-danger)/5" : "border-(--crc-border) bg-(--crc-bg-elevated)"}`}
     >
       <h2 className="text-sm font-semibold text-(--crc-fg)">{title}</h2>
       <p className="mt-1 text-xs text-(--crc-fg-muted)">{description}</p>
@@ -375,7 +375,7 @@ function AddCodingAccount({ onAdded }: { onAdded: () => void }) {
         placeholder="sk-ant-…"
         spellCheck={false}
         rows={2}
-        className="w-full resize-none rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) px-2 py-1.5 font-mono text-[11px] text-(--crc-fg) outline-none focus:border-(--crc-focus)"
+        className="w-full resize-none rounded-xl border border-(--crc-border) bg-(--crc-surface) px-2 py-1.5 font-mono text-[11px] text-(--crc-fg) outline-none focus:border-(--crc-focus)"
       />
       <div className="flex items-center justify-between">
         <button onClick={() => setOpen(false)} className="text-(--crc-fg-muted) hover:underline">

@@ -1,46 +1,72 @@
 import type { SessionStatus } from "@crc/protocol";
 
-export function Button({
-  variant = "default",
-  className = "",
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "default" | "primary" | "ghost" | "danger" }) {
-  const styles: Record<string, string> = {
-    default:
-      "bg-(--crc-input-bg) hover:bg-(--crc-hover) text-(--crc-fg) border border-(--crc-border)",
-    primary: "bg-(--crc-accent) hover:bg-(--crc-accent-hover) text-(--crc-accent-fg)",
-    ghost: "bg-transparent hover:bg-(--crc-hover) text-(--crc-fg-muted)",
-    danger: "bg-transparent hover:bg-(--crc-danger)/15 text-(--crc-danger) border border-(--crc-danger)/40",
+type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: "default" | "primary" | "ghost" | "danger";
+  /** `icon` is a square button for a single glyph. */
+  size?: "sm" | "md" | "icon";
+};
+
+export function Button({ variant = "default", size = "md", className = "", ...props }: ButtonProps) {
+  const variants: Record<NonNullable<ButtonProps["variant"]>, string> = {
+    default: "border border-(--crc-border) bg-(--crc-surface) text-(--crc-fg) shadow-(--crc-shadow-xs) hover:bg-(--crc-hover)",
+    primary: "bg-(--crc-accent) text-(--crc-accent-fg) shadow-(--crc-shadow-sm) hover:bg-(--crc-accent-hover)",
+    ghost: "bg-transparent text-(--crc-fg-muted) hover:bg-(--crc-hover) hover:text-(--crc-fg)",
+    danger: "bg-(--crc-danger)/12 text-(--crc-danger) hover:bg-(--crc-danger)/20",
+  };
+  const sizes: Record<NonNullable<ButtonProps["size"]>, string> = {
+    sm: "h-7 rounded-md px-2.5 text-xs",
+    md: "h-8 rounded-lg px-3.5 text-sm",
+    icon: "h-8 w-8 rounded-lg p-0",
   };
   return (
     <button
       {...props}
-      className={`rounded-sm px-3 py-1.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${styles[variant]} ${className}`}
+      className={`inline-flex shrink-0 items-center justify-center gap-1.5 font-medium transition-[background-color,color,transform] duration-150 select-none active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100 ${variants[variant]} ${sizes[size]} ${className}`}
     />
   );
 }
 
 const STATUS_COLOR: Record<SessionStatus, string> = {
   idle: "bg-(--crc-success)",
-  busy: "bg-(--crc-warning) animate-pulse",
+  busy: "bg-(--crc-warning) crc-glow-warning animate-pulse",
   error: "bg-(--crc-danger)",
-  archived: "bg-(--crc-fg-muted)",
+  archived: "bg-(--crc-fg-muted)/60",
   // Never actually rendered — deleted sessions are excluded from listSessions()/getSession().
-  deleted: "bg-(--crc-fg-muted)",
+  deleted: "bg-(--crc-fg-muted)/60",
+};
+
+const STATUS_LABEL: Record<SessionStatus, string> = {
+  idle: "Idle",
+  busy: "Working",
+  error: "Error",
+  archived: "Archived",
+  deleted: "Deleted",
 };
 
 export function StatusDot({ status, pendingPermission }: { status: SessionStatus; pendingPermission?: boolean }) {
   if (pendingPermission && status === "busy") {
-    return <span className="inline-block h-2 w-2 rounded-full bg-(--crc-danger) animate-pulse" />;
+    return <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-(--crc-danger) crc-glow-danger animate-pulse" />;
   }
-  return <span className={`inline-block h-2 w-2 rounded-full ${STATUS_COLOR[status]}`} />;
+  return <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${STATUS_COLOR[status]}`} />;
 }
 
 export function StatusBadge({ status, pendingPermission }: { status: SessionStatus; pendingPermission?: boolean }) {
+  const needsYou = pendingPermission && status === "busy";
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-sm bg-(--crc-bg-elevated) px-2 py-0.5 text-xs text-(--crc-fg-muted)">
+    <span
+      className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium ${
+        needsYou
+          ? "border-(--crc-danger)/40 bg-(--crc-danger)/10 text-(--crc-danger)"
+          : "border-(--crc-border) bg-(--crc-surface) text-(--crc-fg-muted)"
+      }`}
+    >
       <StatusDot status={status} pendingPermission={pendingPermission} />
-      {pendingPermission && status === "busy" ? "awaiting permission" : status}
+      {needsYou ? "Needs your approval" : STATUS_LABEL[status]}
     </span>
   );
+}
+
+/** Uppercase section eyebrow — "Archived", "By repo", etc. */
+export function Eyebrow({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <div className={`text-[11px] font-semibold tracking-[0.08em] text-(--crc-fg-muted) uppercase ${className}`}>{children}</div>;
 }

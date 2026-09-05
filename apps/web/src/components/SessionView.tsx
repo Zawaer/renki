@@ -63,43 +63,68 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3 border-b border-(--crc-border) px-4 py-2.5">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-medium text-(--crc-fg)">
-            {conv.repoName ?? "…"}
-            {conv.branch && <span className="text-(--crc-fg-muted)">:{conv.branch}</span>}
-          </div>
-          <div className="text-xs text-(--crc-fg-muted)">
-            {conv.controller
-              ? isController
-                ? "You're in control"
-                : `Controlled by ${conv.controllerName ?? conv.controller}`
-              : "Unlocked"}
+      <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-(--crc-border) bg-(--crc-bg-elevated) px-5">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="truncate text-[15px] font-semibold tracking-tight text-(--crc-fg)">{conv.repoName ?? "…"}</span>
+              {conv.branch && (
+                <span className="hidden shrink-0 items-center gap-1 rounded-md border border-(--crc-border) bg-(--crc-surface) px-1.5 py-0.5 font-mono text-[11px] text-(--crc-fg-muted) md:inline-flex">
+                  <span className="codicon codicon-git-branch text-[11px]" />
+                  {conv.branch}
+                </span>
+              )}
+            </div>
+            <div className="mt-0.5 flex items-center gap-1.5 text-xs text-(--crc-fg-muted)">
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  conv.controller ? (isController ? "bg-(--crc-accent)" : "bg-(--crc-fg-muted)") : "bg-(--crc-border)"
+                }`}
+              />
+              {conv.controller
+                ? isController
+                  ? "You're in control"
+                  : `${conv.controllerName ?? conv.controller} is in control — you're watching`
+                : "Nobody is in control"}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <StatusBadge status={status} />
+          <StatusBadge status={status} pendingPermission={conv.pending.length > 0} />
           {!isController && (
             <Button variant="primary" onClick={() => realtime.takeControl(sessionId)}>
-              Take control
+              <span className="codicon codicon-record-keys" /> Take control
             </Button>
           )}
         </div>
       </div>
 
       {/* Timeline */}
-      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4">
-        {conv.timeline.length === 0 && (
-          <p className="text-sm text-(--crc-fg-muted)">No messages yet. Take control and send a prompt.</p>
-        )}
-        {conv.timeline.map((item, i) => (
-          <TimelineRow key={i} item={item} />
-        ))}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-4xl space-y-5 px-6 py-6">
+          {conv.timeline.length === 0 && (
+            <div className="flex flex-col items-center gap-3 py-24 text-center">
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-(--crc-border) bg-(--crc-surface) text-(--crc-fg-muted) shadow-(--crc-shadow-sm)">
+                <span className="codicon codicon-sparkle text-xl" />
+              </span>
+              <div>
+                <div className="text-sm font-medium text-(--crc-fg)">Nothing here yet</div>
+                <div className="mt-1 text-xs text-(--crc-fg-muted)">
+                  {isController ? "Send a prompt below to get Claude going." : "Take control and send a prompt to get Claude going."}
+                </div>
+              </div>
+            </div>
+          )}
+          {conv.timeline.map((item, i) => (
+            <TimelineRow key={i} item={item} />
+          ))}
+        </div>
       </div>
 
       {/* Pending permissions */}
       {conv.pending.length > 0 && (
-        <div className="space-y-2 border-t border-(--crc-border) bg-(--crc-bg-elevated) p-3">
+        <div className="border-t border-(--crc-border) bg-(--crc-bg-elevated) px-6 py-3 shadow-[0_-12px_32px_-16px_rgba(0,0,0,0.45)]">
+          <div className="mx-auto w-full max-w-4xl space-y-2">
           {conv.pending.map((p) => (
             <PermissionCard
               key={p.requestId}
@@ -108,6 +133,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
               onDecide={(d, updatedInput) => realtime.resolvePermission(sessionId, p.requestId, d, updatedInput)}
             />
           ))}
+          </div>
         </div>
       )}
 
@@ -116,7 +142,8 @@ export function SessionView({ sessionId }: { sessionId: string }) {
           QueuedPromptView). Shown here as "up next", separate from the
           strictly-ordered conversation above. */}
       {conv.queuedPrompts.length > 0 && (
-        <div className="space-y-1 border-t border-(--crc-border) bg-(--crc-bg-elevated)/50 px-4 py-2">
+        <div className="border-t border-(--crc-border) bg-(--crc-bg-elevated)/60 px-6 py-2">
+          <div className="mx-auto w-full max-w-4xl space-y-1">
           <div className="text-[11px] text-(--crc-fg-muted)">
             {conv.queuedPrompts.length === 1 ? "1 message queued" : `${conv.queuedPrompts.length} messages queued`} — will send once the current turn finishes
           </div>
@@ -126,6 +153,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
               <span className="truncate">{q.text}</span>
             </div>
           ))}
+          </div>
         </div>
       )}
 
@@ -144,12 +172,11 @@ export function SessionView({ sessionId }: { sessionId: string }) {
 function TimelineRow({ item }: { item: TimelineItem }) {
   if (item.type === "prompt") {
     return (
-      <div className="flex gap-2 border-l-2 border-(--crc-accent) bg-(--crc-bg-elevated) px-3 py-2">
-        <span className="codicon codicon-account mt-0.5 text-(--crc-accent)" />
-        <div className="min-w-0 flex-1">
-          {item.text && <div className="whitespace-pre-wrap text-sm text-(--crc-fg)">{item.text}</div>}
+      <div className="crc-enter flex justify-end">
+        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-(--crc-accent)/12 px-4 py-2.5 ring-1 ring-(--crc-accent)/20 ring-inset">
+          {item.text && <div className="whitespace-pre-wrap text-[14px] leading-relaxed text-(--crc-fg)">{item.text}</div>}
           {item.attachments && item.attachments.length > 0 && (
-            <div className={`flex flex-wrap gap-1.5 ${item.text ? "mt-1.5" : ""}`}>
+            <div className={`flex flex-wrap gap-1.5 ${item.text ? "mt-2" : ""}`}>
               {item.attachments.map((a, i) => (
                 <AttachmentChip key={i} attachment={a} />
               ))}
@@ -163,8 +190,10 @@ function TimelineRow({ item }: { item: TimelineItem }) {
     return (
       <div className="flex justify-center">
         <span
-          className={`inline-flex items-center gap-1 rounded-sm px-3 py-1 text-xs ${
-            item.level === "warn" ? "bg-(--crc-warning)/15 text-(--crc-warning)" : "bg-(--crc-bg-elevated) text-(--crc-fg-muted)"
+          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${
+            item.level === "warn"
+              ? "border-(--crc-warning)/30 bg-(--crc-warning)/10 text-(--crc-warning)"
+              : "border-(--crc-border) bg-(--crc-surface) text-(--crc-fg-muted)"
           }`}
         >
           <span className={`codicon ${item.level === "warn" ? "codicon-warning" : "codicon-info"}`} />
@@ -180,10 +209,13 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
   const label = turnTriggerLabel(turn);
   const steeredAfter = (index: number) => turn.steeredPrompts.filter((p) => p.afterBlockIndex === index);
   return (
-    <div className="space-y-2">
+    <div className="crc-enter space-y-3">
       {label && (
-        <div className="flex items-center gap-1 text-[11px] text-(--crc-fg-muted)">
-          <span className="codicon codicon-rocket" /> {label}
+        <div className="flex items-center gap-1.5 text-[11px] font-medium text-(--crc-fg-muted)">
+          <span className="flex h-5 w-5 items-center justify-center rounded-md bg-(--crc-surface) ring-1 ring-(--crc-border) ring-inset">
+            <span className="codicon codicon-rocket text-[11px]" />
+          </span>
+          {label}
         </div>
       )}
       {steeredAfter(-1).map((p) => (
@@ -198,22 +230,27 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
         </Fragment>
       ))}
       {turn.status === "running" && (
-        <span className="codicon codicon-loading codicon-modifier-spin text-(--crc-fg-muted)" />
+        <div className="flex items-center gap-2 text-xs text-(--crc-fg-muted)">
+          <span className="codicon codicon-loading codicon-modifier-spin" />
+          Working…
+        </div>
       )}
       {turn.status === "done" && turn.costUsd != null && (
-        <div className="text-[11px] text-(--crc-fg-muted)">
-          ${turn.costUsd.toFixed(4)} · {turn.durationMs}ms
-          {(turn.inputTokens != null || turn.outputTokens != null) &&
-            ` · ${formatTokenCount((turn.inputTokens ?? 0) + (turn.outputTokens ?? 0))} tokens`}
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-(--crc-fg-muted)">
+          <MetaPill>${turn.costUsd.toFixed(4)}</MetaPill>
+          <MetaPill>{formatDuration(turn.durationMs ?? 0)}</MetaPill>
+          {(turn.inputTokens != null || turn.outputTokens != null) && (
+            <MetaPill>{formatTokenCount((turn.inputTokens ?? 0) + (turn.outputTokens ?? 0))} tokens</MetaPill>
+          )}
         </div>
       )}
       {turn.status === "error" && turn.interrupted && (
-        <div className="flex items-center gap-1 text-xs text-(--crc-fg-muted)">
+        <div className="flex items-center gap-1.5 text-xs text-(--crc-fg-muted)">
           <span className="codicon codicon-debug-stop" /> Stopped
         </div>
       )}
       {turn.status === "error" && !turn.interrupted && (
-        <div className="flex items-center gap-1 text-xs text-(--crc-danger)">
+        <div className="flex items-center gap-1.5 rounded-lg border border-(--crc-danger)/30 bg-(--crc-danger)/10 px-3 py-2 text-xs text-(--crc-danger)">
           <span className="codicon codicon-error" /> Turn failed: {turn.errorMessage}
         </div>
       )}
@@ -221,21 +258,26 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
   );
 }
 
+function MetaPill({ children }: { children: React.ReactNode }) {
+  return <span className="rounded-md bg-(--crc-surface) px-1.5 py-0.5 ring-1 ring-(--crc-border) ring-inset">{children}</span>;
+}
+
 /** A prompt the controller sent while this turn was already running — shown inside the turn, where Claude picked it up. */
 function SteeredPrompt({ prompt }: { prompt: SteeredPromptView }) {
   return (
-    <div className="flex gap-2 border-l-2 border-(--crc-accent) bg-(--crc-bg-elevated) px-3 py-2" data-testid="steered-prompt">
-      <span className="codicon codicon-account mt-0.5 text-(--crc-accent)" />
-      <div className="min-w-0 flex-1">
-        {prompt.text && <div className="whitespace-pre-wrap text-sm text-(--crc-fg)">{prompt.text}</div>}
+    <div className="crc-enter flex justify-end" data-testid="steered-prompt">
+      <div className="max-w-[85%] rounded-2xl rounded-br-md bg-(--crc-accent)/12 px-4 py-2.5 ring-1 ring-(--crc-accent)/20 ring-inset">
+        {prompt.text && <div className="whitespace-pre-wrap text-[14px] leading-relaxed text-(--crc-fg)">{prompt.text}</div>}
         {prompt.attachments && prompt.attachments.length > 0 && (
-          <div className={`flex flex-wrap gap-1.5 ${prompt.text ? "mt-1.5" : ""}`}>
+          <div className={`flex flex-wrap gap-1.5 ${prompt.text ? "mt-2" : ""}`}>
             {prompt.attachments.map((a, i) => (
               <AttachmentChip key={i} attachment={a} />
             ))}
           </div>
         )}
-        <div className="mt-1 text-[11px] text-(--crc-fg-muted)">Sent while Claude was working — picked up mid-turn</div>
+        <div className="mt-1.5 flex items-center gap-1 text-[11px] text-(--crc-fg-muted)">
+          <span className="codicon codicon-debug-step-into text-[11px]" /> Sent while Claude was working — picked up mid-turn
+        </div>
       </div>
     </div>
   );
@@ -268,10 +310,21 @@ function Block({ block, turnRunning }: { block: BlockView; turnRunning: boolean 
     const todos = block.toolName === "TodoWrite" ? parseTodos(block.toolInput) : null;
     const plan = parsePlan(block.toolName, block.toolInput);
     return (
-      <div className="rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) text-xs">
-        <div className="flex items-center gap-2 px-3 py-1.5 font-mono text-(--crc-fg)">
-          <span className={`codicon codicon-${toolIcon(block.toolName)} text-(--crc-warning)`} />
-          {block.toolName}
+      <div className="overflow-hidden rounded-xl border border-(--crc-border) bg-(--crc-surface) text-xs shadow-(--crc-shadow-xs)">
+        <div className="flex items-center gap-2 px-3 py-2 text-(--crc-fg)">
+          <span className="flex h-5 w-5 items-center justify-center rounded-md bg-(--crc-bg-inset) text-(--crc-fg-muted)">
+            <span className={`codicon codicon-${toolIcon(block.toolName)} text-[12px]`} />
+          </span>
+          <span className="font-mono font-medium">{block.toolName}</span>
+          {block.result && (
+            <span
+              className={`ml-1 h-1.5 w-1.5 rounded-full ${block.result.ok ? "bg-(--crc-success)" : "bg-(--crc-danger)"}`}
+              title={block.result.ok ? "Succeeded" : "Failed"}
+            />
+          )}
+          {!block.result && turnRunning && !block.backgroundTask && (
+            <span className="codicon codicon-loading codicon-modifier-spin ml-1 text-[11px] text-(--crc-fg-muted)" />
+          )}
           {filePath && isHosted() && (
             <button
               onClick={() => hostOpenFile(filePath)}
@@ -291,14 +344,14 @@ function Block({ block, turnRunning }: { block: BlockView; turnRunning: boolean 
             <Markdown content={plan} />
           </div>
         ) : (
-          <pre className="overflow-x-auto border-t border-(--crc-border) px-3 py-1.5 font-mono text-(--crc-fg-muted)">
+          <pre className="overflow-x-auto border-t border-(--crc-border) bg-(--crc-bg-inset)/50 px-3 py-2 font-mono leading-relaxed text-(--crc-fg-muted)">
             {truncate(JSON.stringify(block.toolInput, null, 2), 800)}
           </pre>
         )}
         {block.result && (
           <pre
-            className={`overflow-x-auto border-t border-(--crc-border) px-3 py-1.5 font-mono ${
-              block.result.ok ? "text-(--crc-fg-muted)" : "text-(--crc-danger)"
+            className={`max-h-72 overflow-auto border-t border-(--crc-border) px-3 py-2 font-mono leading-relaxed ${
+              block.result.ok ? "text-(--crc-fg-muted)" : "bg-(--crc-danger)/8 text-(--crc-danger)"
             }`}
           >
             {block.result.ok ? "" : "error: "}
@@ -307,7 +360,7 @@ function Block({ block, turnRunning }: { block: BlockView; turnRunning: boolean 
         )}
         {block.subagent && <SubagentActivity subagent={block.subagent} />}
         {block.backgroundTask && (
-          <div className="flex items-start gap-1.5 border-t border-(--crc-border) px-3 py-1.5 text-(--crc-fg-muted)">
+          <div className="flex items-start gap-1.5 border-t border-(--crc-border) bg-(--crc-bg-inset)/40 px-3 py-2 text-(--crc-fg-muted)">
             <span
               className={`codicon mt-0.5 ${
                 block.backgroundTask.status === "completed"
@@ -347,14 +400,14 @@ function SubagentActivity({ subagent }: { subagent: SubagentView }) {
 
   return (
     <details ref={detailsRef} className="border-t border-(--crc-border) px-3 py-2" open={subagent.status === "running"}>
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-(--crc-fg-muted)">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-md text-(--crc-fg-muted) hover:text-(--crc-fg)">
         <span
           className={`codicon ${subagent.status === "running" ? "codicon-loading codicon-modifier-spin" : "codicon-pass-filled text-(--crc-success)"}`}
         />
         <span className="font-medium text-(--crc-fg)">{subagent.subagentType ?? "Subagent"}</span>
         {subagent.taskDescription && <span className="truncate">— {subagent.taskDescription}</span>}
       </summary>
-      <div className="mt-1.5 space-y-1.5 border-l-2 border-(--crc-border) pl-3">
+      <div className="mt-2 space-y-2 border-l-2 border-(--crc-accent)/30 pl-3">
         {subagent.blocks.map((b, i) => (
           <Block key={i} block={b} turnRunning={subagent.status === "running"} />
         ))}
@@ -381,11 +434,11 @@ function DiffView({ view }: { view: EditToolView }) {
             {lines.map((line, li) => (
               <div
                 key={li}
-                className={`whitespace-pre px-3 py-0.5 ${
+                className={`whitespace-pre px-3 py-px leading-5 ${
                   line.type === "add"
-                    ? "bg-(--crc-success)/10 text-(--crc-success)"
+                    ? "bg-(--crc-success)/12 text-(--crc-success)"
                     : line.type === "del"
-                      ? "bg-(--crc-danger)/10 text-(--crc-danger)"
+                      ? "bg-(--crc-danger)/12 text-(--crc-danger)"
                       : "text-(--crc-fg-muted)"
                 }`}
               >
@@ -446,20 +499,26 @@ function ThinkingBlock({
   const estimatedTokens = estimateTokens(block.text);
 
   return (
-    <div className="border-l-2 border-(--crc-border) pl-3">
+    <div className="border-l-2 border-(--crc-border) pl-3.5">
       <div className="mb-1 flex items-center gap-1.5 text-xs text-(--crc-fg-muted)">
         {live ? (
           <>
-            <span className="codicon codicon-loading codicon-modifier-spin" />
+            <span className="codicon codicon-loading codicon-modifier-spin text-(--crc-accent)" />
             <span>
               {verb}… {elapsedSeconds != null && `· ${elapsedSeconds}s `}
               {estimatedTokens > 0 && `· ~${formatTokenCount(estimatedTokens)} tokens`}
             </span>
           </>
         ) : block.startedAtMs != null && block.endedAtMs != null ? (
-          <span>Thought for {formatDuration(block.endedAtMs - block.startedAtMs)}</span>
+          <>
+            <span className="codicon codicon-sparkle text-[11px]" />
+            <span>Thought for {formatDuration(block.endedAtMs - block.startedAtMs)}</span>
+          </>
         ) : (
-          <span>Thinking</span>
+          <>
+            <span className="codicon codicon-sparkle text-[11px]" />
+            <span>Thinking</span>
+          </>
         )}
       </div>
       <Markdown content={block.text} muted />
@@ -525,36 +584,39 @@ function PermissionCard({
   }
 
   return (
-    <div className="rounded-sm border-l-2 border-(--crc-warning) bg-(--crc-warning)/10 p-3">
-      <div className="flex items-center gap-1.5 text-sm text-(--crc-warning)">
-        <span className={`codicon ${plan != null ? "codicon-checklist" : "codicon-shield"}`} />
+    <div className="crc-enter rounded-xl border border-(--crc-warning)/40 bg-(--crc-warning)/8 p-4 shadow-(--crc-shadow-md)">
+      <div className="flex items-center gap-2.5 text-sm text-(--crc-fg)">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-(--crc-warning)/15 text-(--crc-warning)">
+          <span className={`codicon ${plan != null ? "codicon-checklist" : "codicon-shield"}`} />
+        </span>
         {plan != null ? (
-          "Plan ready for review"
+          <span className="font-medium">Plan ready for review</span>
         ) : (
-          <>
-            Permission requested: <span className="font-mono">{perm.toolName}</span>
-          </>
+          <span className="flex flex-wrap items-center gap-x-1.5">
+            <span className="font-medium">Claude wants to run</span>
+            <span className="rounded-md bg-(--crc-surface) px-1.5 py-0.5 font-mono text-xs ring-1 ring-(--crc-border) ring-inset">{perm.toolName}</span>
+          </span>
         )}
       </div>
       {plan != null ? (
-        <div className="mt-2 max-h-64 overflow-auto rounded-sm bg-(--crc-bg-elevated) p-2 text-xs">
+        <div className="mt-2 max-h-64 overflow-auto rounded-lg bg-(--crc-surface) p-2 text-xs">
           <Markdown content={plan} />
         </div>
       ) : editView ? (
-        <div className="mt-1 max-h-64 overflow-auto rounded-sm bg-(--crc-bg-elevated) text-xs">
+        <div className="mt-1 max-h-64 overflow-auto rounded-lg bg-(--crc-surface) text-xs">
           <DiffView view={editView} />
         </div>
       ) : todos ? (
-        <div className="mt-1 max-h-48 overflow-auto rounded-sm bg-(--crc-bg-elevated) text-xs">
+        <div className="mt-1 max-h-48 overflow-auto rounded-lg bg-(--crc-surface) text-xs">
           <TodoChecklist todos={todos} />
         </div>
       ) : (
-        <pre className="mt-1 max-h-24 overflow-auto text-xs text-(--crc-fg-muted)">
+        <pre className="mt-3 max-h-32 overflow-auto rounded-lg bg-(--crc-bg-inset)/70 px-3 py-2 font-mono text-xs leading-relaxed text-(--crc-fg-muted)">
           {truncate(JSON.stringify(perm.toolInput, null, 2), 500)}
         </pre>
       )}
       {canAct ? (
-        <div className="mt-2 flex gap-2">
+        <div className="mt-3 flex gap-2">
           <Button variant="primary" onClick={() => onDecide("allow")}>
             <span className="codicon codicon-check" /> {plan != null ? "Approve plan" : "Allow"}
           </Button>
@@ -746,7 +808,7 @@ function AttachmentChip({ attachment, onRemove }: { attachment: Attachment; onRe
   return (
     <>
       <div
-        className={`flex items-center gap-1.5 rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) py-1 pl-1 pr-2 text-xs ${isImage ? "cursor-pointer" : ""}`}
+        className={`flex items-center gap-1.5 rounded-xl border border-(--crc-border) bg-(--crc-surface) py-1 pl-1 pr-2 text-xs ${isImage ? "cursor-pointer" : ""}`}
         onClick={isImage ? () => setPreviewing(true) : undefined}
       >
         {isImage ? (
@@ -958,7 +1020,7 @@ function Composer({
 
   return (
     <div
-      className={`relative border-t p-3 ${dragOver ? "border-(--crc-accent) bg-(--crc-accent)/5" : "border-(--crc-border)"}`}
+      className="relative border-t border-(--crc-border) bg-(--crc-bg-elevated) px-6 pb-4 pt-3"
       onDragOver={(e) => {
         e.preventDefault();
         setDragOver(true);
@@ -970,204 +1032,229 @@ function Composer({
         if (e.dataTransfer.files.length > 0) void addFiles(e.dataTransfer.files);
       }}
     >
-      {suggestions.length > 0 && (
-        <div className="absolute bottom-full left-3 right-3 z-10 mb-1 max-h-48 overflow-y-auto rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) shadow-lg">
-          {suggestions.map((c, i) => (
-            <button
-              key={c.name}
-              onClick={() => pickSuggestion(c.name)}
-              className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs ${
-                i === suggestionIndex ? "bg-(--crc-selected) text-(--crc-selected-fg)" : "text-(--crc-fg)"
-              }`}
-            >
-              <span className="font-mono text-(--crc-link)">/{c.name}</span>
-              <span className="truncate text-(--crc-fg-muted)">{c.description}</span>
-              {c.argumentHint && <span className="ml-auto shrink-0 text-(--crc-fg-muted)">{c.argumentHint}</span>}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="mb-2 flex items-center gap-2 text-xs">
-        <PickerButton
-          label={
-            capabilities.models.length === 0 && !model
-              ? "Loading models…"
-              : (selectedModel?.displayName ?? model ?? "Default")
-          }
-          open={openMenu === "model"}
-          onToggle={() => setOpenMenu((v) => (v === "model" ? null : "model"))}
-        />
-        <PickerButton
-          label={effort?.label ?? "Medium"}
-          open={openMenu === "effort"}
-          onToggle={() => setOpenMenu((v) => (v === "effort" ? null : "effort"))}
-        />
-        <PickerButton
-          label={mode?.label ?? "Manual"}
-          open={openMenu === "mode"}
-          onToggle={() => setOpenMenu((v) => (v === "mode" ? null : "mode"))}
-        />
-      </div>
-
-      {openMenu && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpenMenu(null)} />
-          <div
-            className="absolute bottom-full left-3 z-50 mb-1 max-h-72 w-72 overflow-y-auto rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) py-1 text-xs shadow-lg"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {openMenu === "model"
-              ? [
-                  ...capabilities.models.map((m) => (
-                    <button
-                      key={m.value}
-                      onClick={() => {
-                        setModel(m.value);
-                        setOpenMenu(null);
-                      }}
-                      className="flex w-full items-start justify-between gap-2 px-3 py-1.5 text-left hover:bg-(--crc-hover)"
-                    >
-                      <div className="min-w-0">
-                        <div className="truncate font-medium text-(--crc-fg)">{m.displayName}</div>
-                        {m.description && <div className="truncate text-(--crc-fg-muted)">{m.description}</div>}
-                      </div>
-                      {m.value === model && <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />}
-                    </button>
-                  )),
-                  <div key="custom" className="mt-1 border-t border-(--crc-border) p-2">
-                    <div className="mb-1 text-(--crc-fg-muted)">Not listed? Enter a model ID directly:</div>
-                    <div className="flex gap-1.5">
-                      <input
-                        value={customModel}
-                        onChange={(ev) => setCustomModel(ev.target.value)}
-                        onKeyDown={(ev) => {
-                          if (ev.key === "Enter") useCustomModel();
-                        }}
-                        placeholder="claude-fable-5"
-                        spellCheck={false}
-                        autoComplete="off"
-                        className="min-w-0 flex-1 rounded-sm border border-(--crc-border) bg-(--crc-input-bg) px-2 py-1 text-(--crc-fg) outline-none focus:border-(--crc-focus)"
-                      />
-                      <Button variant="default" disabled={!customModel.trim()} onClick={useCustomModel} className="shrink-0">
-                        Use
-                      </Button>
-                    </div>
-                  </div>,
-                ]
-              : openMenu === "effort"
-                ? EFFORT_LEVELS.map((e) => (
-                    <button
-                      key={e.key}
-                      onClick={() => {
-                        setEffortKey(e.key);
-                        setOpenMenu(null);
-                      }}
-                      className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left hover:bg-(--crc-hover)"
-                    >
-                      <span className="font-medium text-(--crc-fg)">{e.label}</span>
-                      {e.key === effortKey && <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />}
-                    </button>
-                  ))
-                : PERMISSION_MODES.map((m) => (
-                    <button
-                      key={m.key}
-                      onClick={() => {
-                        setPermissionMode(m.key);
-                        setOpenMenu(null);
-                      }}
-                      className="flex w-full items-start justify-between gap-2 px-3 py-1.5 text-left hover:bg-(--crc-hover)"
-                    >
-                      <div className="min-w-0">
-                        <div className="font-medium text-(--crc-fg)">{m.label}</div>
-                        <div className="truncate text-(--crc-fg-muted)">{m.description}</div>
-                      </div>
-                      {m.key === permissionMode && <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />}
-                    </button>
-                  ))}
+      <div className="relative mx-auto w-full max-w-4xl">
+        {suggestions.length > 0 && (
+          <div className="crc-enter absolute bottom-full left-4 right-4 z-10 mb-2 max-h-48 overflow-y-auto rounded-xl border border-(--crc-border) bg-(--crc-surface) p-1 shadow-(--crc-shadow-lg)">
+            {suggestions.map((c, i) => (
+              <button
+                key={c.name}
+                onClick={() => pickSuggestion(c.name)}
+                className={`flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-xs ${
+                  i === suggestionIndex ? "bg-(--crc-selected) text-(--crc-selected-fg)" : "text-(--crc-fg)"
+                }`}
+              >
+                <span className="font-mono text-(--crc-link)">/{c.name}</span>
+                <span className="truncate text-(--crc-fg-muted)">{c.description}</span>
+                {c.argumentHint && <span className="ml-auto shrink-0 text-(--crc-fg-muted)">{c.argumentHint}</span>}
+              </button>
+            ))}
           </div>
-        </>
-      )}
+        )}
 
-      {attachments.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-1.5">
-          {attachments.map((a) => (
-            <AttachmentChip key={a.id} attachment={a} onRemove={() => removeAttachment(a.id)} />
-          ))}
-        </div>
-      )}
-      {attachError && <div className="mb-2 text-xs text-(--crc-danger)">{attachError}</div>}
 
-      <div className="flex items-end gap-2">
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,.md,.json,.csv,.log,.yaml,.yml"
-          className="hidden"
-          onChange={(e) => {
-            if (e.target.files) void addFiles(e.target.files);
-            e.target.value = ""; // allow re-picking the same file
-          }}
-        />
-        <Button
-          variant="default"
-          disabled={disabled}
-          onClick={() => fileInputRef.current?.click()}
-          title="Attach images, PDFs, or text files"
-          className="shrink-0 px-2"
+        {openMenu && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setOpenMenu(null)} />
+            <div
+              className="crc-enter absolute bottom-full left-4 z-50 mb-2 max-h-72 w-80 overflow-y-auto rounded-xl border border-(--crc-border) bg-(--crc-surface) p-1 text-xs shadow-(--crc-shadow-lg)"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {openMenu === "model"
+                ? [
+                    ...capabilities.models.map((m) => (
+                      <button
+                        key={m.value}
+                        onClick={() => {
+                          setModel(m.value);
+                          setOpenMenu(null);
+                        }}
+                        className="flex w-full items-start justify-between gap-2 rounded-lg px-3 py-2 text-left hover:bg-(--crc-hover)"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate font-medium text-(--crc-fg)">{m.displayName}</div>
+                          {m.description && <div className="truncate text-(--crc-fg-muted)">{m.description}</div>}
+                        </div>
+                        {m.value === model && <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />}
+                      </button>
+                    )),
+                    <div key="custom" className="mt-1 border-t border-(--crc-border) p-2">
+                      <div className="mb-1 text-(--crc-fg-muted)">Not listed? Enter a model ID directly:</div>
+                      <div className="flex gap-1.5">
+                        <input
+                          value={customModel}
+                          onChange={(ev) => setCustomModel(ev.target.value)}
+                          onKeyDown={(ev) => {
+                            if (ev.key === "Enter") useCustomModel();
+                          }}
+                          placeholder="claude-fable-5"
+                          spellCheck={false}
+                          autoComplete="off"
+                          className="crc-input min-w-0 flex-1 px-2 py-1 text-xs"
+                        />
+                        <Button variant="default" disabled={!customModel.trim()} onClick={useCustomModel} className="shrink-0">
+                          Use
+                        </Button>
+                      </div>
+                    </div>,
+                  ]
+                : openMenu === "effort"
+                  ? EFFORT_LEVELS.map((e) => (
+                      <button
+                        key={e.key}
+                        onClick={() => {
+                          setEffortKey(e.key);
+                          setOpenMenu(null);
+                        }}
+                        className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left hover:bg-(--crc-hover)"
+                      >
+                        <span className="font-medium text-(--crc-fg)">{e.label}</span>
+                        {e.key === effortKey && <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />}
+                      </button>
+                    ))
+                  : PERMISSION_MODES.map((m) => (
+                      <button
+                        key={m.key}
+                        onClick={() => {
+                          setPermissionMode(m.key);
+                          setOpenMenu(null);
+                        }}
+                        className="flex w-full items-start justify-between gap-2 rounded-lg px-3 py-2 text-left hover:bg-(--crc-hover)"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-medium text-(--crc-fg)">{m.label}</div>
+                          <div className="truncate text-(--crc-fg-muted)">{m.description}</div>
+                        </div>
+                        {m.key === permissionMode && <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />}
+                      </button>
+                    ))}
+            </div>
+          </>
+        )}
+
+
+        <div
+          className={`rounded-2xl border bg-(--crc-surface) shadow-(--crc-shadow-sm) transition-[border-color,box-shadow] duration-150 focus-within:border-(--crc-accent)/60 focus-within:ring-3 focus-within:ring-(--crc-accent)/12 ${
+            dragOver ? "border-(--crc-accent) ring-3 ring-(--crc-accent)/15" : "border-(--crc-border)"
+          } ${disabled ? "opacity-80" : ""}`}
         >
-          <span className="codicon codicon-attach" />
-        </Button>
-        <textarea
-          ref={textareaRef}
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            setSuggestionIndex(0);
-          }}
-          onPaste={handlePaste}
-          onKeyDown={(e) => {
-            if (suggestions.length > 0) {
-              if (e.key === "ArrowDown") {
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 px-3 pt-3">
+              {attachments.map((a) => (
+                <AttachmentChip key={a.id} attachment={a} onRemove={() => removeAttachment(a.id)} />
+              ))}
+            </div>
+          )}
+
+          {attachError && <div className="px-4 pt-3 text-xs text-(--crc-danger)">{attachError}</div>}
+          <textarea
+            ref={textareaRef}
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              setSuggestionIndex(0);
+            }}
+            onPaste={handlePaste}
+            onKeyDown={(e) => {
+              if (suggestions.length > 0) {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setSuggestionIndex((i) => (i + 1) % suggestions.length);
+                  return;
+                }
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setSuggestionIndex((i) => (i - 1 + suggestions.length) % suggestions.length);
+                  return;
+                }
+                if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+                  e.preventDefault();
+                  const picked = suggestions[suggestionIndex];
+                  if (picked) pickSuggestion(picked.name);
+                  return;
+                }
+                if (e.key === "Escape") {
+                  setText("");
+                  return;
+                }
+              }
+              if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                setSuggestionIndex((i) => (i + 1) % suggestions.length);
-                return;
+                send();
               }
-              if (e.key === "ArrowUp") {
-                e.preventDefault();
-                setSuggestionIndex((i) => (i - 1 + suggestions.length) % suggestions.length);
-                return;
-              }
-              if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
-                e.preventDefault();
-                const picked = suggestions[suggestionIndex];
-                if (picked) pickSuggestion(picked.name);
-                return;
-              }
-              if (e.key === "Escape") {
-                setText("");
-                return;
-              }
-            }
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              send();
-            }
-          }}
-          rows={2}
-          disabled={disabled}
-          placeholder={disabled ? reason : "Send a prompt… (Enter to send, Shift+Enter for newline, / for commands)"}
-          className="flex-1 resize-none rounded-sm border border-(--crc-border) bg-(--crc-input-bg) px-3 py-2 text-sm text-(--crc-fg) outline-none placeholder:text-(--crc-fg-muted) focus:border-(--crc-focus) disabled:opacity-50"
-        />
-        {busy ? (
-          <Button variant="danger" onClick={onStop}>
-            <span className="codicon codicon-debug-stop" /> Stop
-          </Button>
-        ) : (
-          <Button variant="primary" disabled={disabled || (!text.trim() && attachments.length === 0)} onClick={send}>
-            Send
-          </Button>
+            }}
+            rows={2}
+            disabled={disabled}
+            placeholder={disabled ? "Watching only" : busy ? "Add to what Claude is doing… it picks this up at its next step" : "Ask Claude anything… ⏎ to send, ⇧⏎ for a new line, / for commands"}
+            className="block w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-[14px] leading-relaxed text-(--crc-fg) outline-none placeholder:text-(--crc-fg-muted) disabled:opacity-60"
+          />
+
+          <div className="flex items-center justify-between gap-2 px-2 pb-2">
+            <div className="flex min-w-0 items-center gap-0.5">
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,.md,.json,.csv,.log,.yaml,.yml"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files) void addFiles(e.target.files);
+                  e.target.value = ""; // allow re-picking the same file
+                }}
+              />
+
+              <Button
+                variant="ghost"
+                size="icon"
+                disabled={disabled}
+                onClick={() => fileInputRef.current?.click()}
+                title="Attach images, PDFs, or text files"
+              >
+                <span className="codicon codicon-attach" />
+              </Button>
+              <span className="mx-1 h-4 w-px bg-(--crc-border)" />
+                <PickerButton
+                  label={
+                    capabilities.models.length === 0 && !model
+                      ? "Loading models…"
+                      : (selectedModel?.displayName ?? model ?? "Default")
+                  }
+                  open={openMenu === "model"}
+                  onToggle={() => setOpenMenu((v) => (v === "model" ? null : "model"))}
+                />
+                <PickerButton
+                  label={effort?.label ?? "Medium"}
+                  open={openMenu === "effort"}
+                  onToggle={() => setOpenMenu((v) => (v === "effort" ? null : "effort"))}
+                />
+                <PickerButton
+                  label={mode?.label ?? "Manual"}
+                  open={openMenu === "mode"}
+                  onToggle={() => setOpenMenu((v) => (v === "mode" ? null : "mode"))}
+                />
+
+            </div>
+            {busy ? (
+              <Button variant="danger" size="sm" onClick={onStop} title="Stop the current turn">
+                <span className="codicon codicon-debug-stop" /> Stop
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                size="icon"
+                title="Send (Enter)"
+                aria-label="Send"
+                disabled={disabled || (!text.trim() && attachments.length === 0)}
+                onClick={send}
+              >
+                <span className="codicon codicon-arrow-up text-base" />
+              </Button>
+            )}
+          </div>
+        </div>
+        {disabled && reason && (
+          <div className="mt-2 flex items-center gap-1.5 text-[11px] text-(--crc-fg-muted)">
+            <span className="codicon codicon-lock-small" /> {reason}
+          </div>
         )}
       </div>
     </div>
@@ -1178,12 +1265,12 @@ function PickerButton({ label, open, onToggle }: { label: string; open: boolean;
   return (
     <button
       onClick={onToggle}
-      className={`flex items-center gap-1 rounded-sm border border-(--crc-border) bg-(--crc-input-bg) px-1.5 py-1 text-(--crc-fg) ${
-        open ? "border-(--crc-focus)" : ""
+      className={`flex h-7 max-w-44 items-center gap-1 rounded-md px-2 text-xs transition-colors hover:bg-(--crc-hover) hover:text-(--crc-fg) ${
+        open ? "bg-(--crc-hover) text-(--crc-fg)" : "text-(--crc-fg-muted)"
       }`}
     >
       <span className="truncate">{label}</span>
-      <span className="codicon codicon-chevron-down text-(--crc-fg-muted)" />
+      <span className="codicon codicon-chevron-down text-[11px] opacity-70" />
     </button>
   );
 }

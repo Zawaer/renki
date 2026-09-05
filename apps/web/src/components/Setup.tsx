@@ -37,10 +37,15 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
 
   return (
     <div className="flex h-full items-center justify-center p-6">
-      <div className="w-full max-w-sm space-y-4 rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) p-6">
-        <div>
-          <h1 className="text-lg font-semibold text-(--crc-fg)">Connect to your daemon</h1>
-          <p className="mt-1 text-sm text-(--crc-fg-muted)">Enter the address and token of your homelab daemon.</p>
+      <div className="crc-enter w-full max-w-sm space-y-5 rounded-2xl border border-(--crc-border) bg-(--crc-surface) p-7 shadow-(--crc-shadow-lg)">
+        <div className="space-y-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-(--crc-accent) text-(--crc-accent-fg) shadow-(--crc-shadow-sm)">
+            <span className="codicon codicon-terminal text-xl" />
+          </span>
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight text-(--crc-fg)">Connect to your daemon</h1>
+            <p className="mt-1 text-sm text-(--crc-fg-muted)">Point this browser at the CRC daemon on your homelab and paste its token.</p>
+          </div>
         </div>
 
         <Field label="Daemon URL">
@@ -51,7 +56,7 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
               setFound(null);
             }}
             placeholder="http://homelab.tailnet:4517"
-            className="input"
+            className="crc-input"
           />
         </Field>
         <Field label="Auth token">
@@ -64,7 +69,7 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
               }}
               type={showToken ? "text" : "password"}
               placeholder="CRC_AUTH_TOKEN"
-              className="input min-w-0 flex-1"
+              className="crc-input min-w-0 flex-1"
             />
             <button
               type="button"
@@ -76,13 +81,13 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
           </div>
         </Field>
         <Field label="This device's name">
-          <input value={deviceName} onChange={(e) => setDeviceName(e.target.value)} className="input" />
+          <input value={deviceName} onChange={(e) => setDeviceName(e.target.value)} className="crc-input" />
         </Field>
 
-        {error && <p className="text-sm text-(--crc-danger)">{error}</p>}
+        {error && <p className="rounded-lg border border-(--crc-danger)/30 bg-(--crc-danger)/10 px-3 py-2 text-sm text-(--crc-danger)">{error}</p>}
 
         {found && (
-          <p className="text-sm text-(--crc-success)">
+          <p className="rounded-lg border border-(--crc-success)/30 bg-(--crc-success)/10 px-3 py-2 text-sm text-(--crc-success)">
             Connected — found {found.repos} repo{found.repos === 1 ? "" : "s"} under{" "}
             <code className="text-(--crc-success)">{found.root}</code>.
             {found.repos === 0 && " Add a git repo there (or point CRC_REPOS_ROOT elsewhere) before creating a session."}
@@ -98,7 +103,6 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
           {testing ? "Testing…" : found ? "Continue" : "Connect"}
         </Button>
 
-        <style>{`.input{width:100%;border-radius:2px;border:1px solid var(--crc-border);background:var(--crc-bg-inset);padding:0.5rem 0.75rem;font-size:0.875rem;color:var(--crc-fg);outline:none}.input:focus{border-color:var(--crc-focus)}`}</style>
       </div>
     </div>
   );

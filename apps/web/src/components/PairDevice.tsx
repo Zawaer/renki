@@ -94,7 +94,7 @@ export function PairDevice() {
           onClick={() => setOpen(false)}
         >
           <div
-            className="flex flex-col items-center gap-3 rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) p-6"
+            className="flex flex-col items-center gap-3 rounded-xl border border-(--crc-border) bg-(--crc-surface) p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <span className="text-sm font-medium text-(--crc-fg)">Scan with the CRC phone app</span>

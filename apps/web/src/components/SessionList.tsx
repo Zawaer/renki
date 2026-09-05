@@ -2,7 +2,7 @@ import type { Session } from "@crc/protocol";
 import { useCallback, useEffect, useState } from "react";
 import { useClient } from "../lib/client.js";
 import { NewSessionDialog } from "./NewSessionDialog.js";
-import { Button, StatusDot } from "./ui.js";
+import { Button, Eyebrow, StatusDot } from "./ui.js";
 
 /**
  * Session list. Initial load (and an occasional slow re-fetch, as a safety
@@ -75,15 +75,20 @@ export function SessionList({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-(--crc-border) p-3">
-        <span className="text-sm font-semibold text-(--crc-fg)">Sessions</span>
-        <Button variant="primary" onClick={() => setCreating(true)}>
+      <div className="flex items-center justify-between px-4 pt-4 pb-2">
+        <span className="text-sm font-semibold tracking-tight text-(--crc-fg)">Sessions</span>
+        <Button variant="primary" size="sm" onClick={() => setCreating(true)}>
           <span className="codicon codicon-add" /> New
         </Button>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
-        {active.length === 0 && <p className="p-4 text-sm text-(--crc-fg-muted)">No active sessions.</p>}
+      <div className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
+        {active.length === 0 && (
+          <div className="mx-1 mt-2 rounded-xl border border-dashed border-(--crc-border) px-3 py-6 text-center">
+            <div className="text-sm text-(--crc-fg)">No active sessions</div>
+            <div className="mt-1 text-xs text-(--crc-fg-muted)">Start one with the New button.</div>
+          </div>
+        )}
         {active.map((s) => (
           <Row
             key={s.id}
@@ -96,9 +101,7 @@ export function SessionList({
           />
         ))}
 
-        {archived.length > 0 && (
-          <div className="mt-2 px-3 py-1 text-xs uppercase tracking-wide text-(--crc-fg-muted)">Archived</div>
-        )}
+        {archived.length > 0 && <Eyebrow className="mt-4 px-3 pt-2 pb-1.5">Archived</Eyebrow>}
         {archived.map((s) => (
           <Row
             key={s.id}
@@ -158,11 +161,9 @@ function Row({
 
   return (
     <div
-      className={`group flex w-full items-center gap-2 border-l-2 px-3 py-2.5 ${
-        selected
-          ? "border-(--crc-focus) bg-(--crc-selected) text-(--crc-selected-fg)"
-          : "border-transparent hover:bg-(--crc-hover)"
-      }`}
+      className={`group flex w-full items-center gap-2 rounded-lg px-3 py-2 transition-colors ${
+        selected ? "bg-(--crc-selected) text-(--crc-selected-fg)" : "hover:bg-(--crc-hover)"
+      } ${session.status === "archived" ? "opacity-70" : ""}`}
     >
       {renaming ? (
         <div className="min-w-0 flex-1 py-px">
@@ -176,19 +177,29 @@ function Row({
               if (e.key === "Enter") e.currentTarget.blur();
               else if (e.key === "Escape") setRenaming(false);
             }}
-            className="w-full rounded-sm border border-(--crc-focus) bg-(--crc-bg-inset) px-1.5 py-0.5 text-sm text-(--crc-fg) outline-none"
+            className="crc-input px-2 py-1 text-sm"
           />
         </div>
       ) : (
-        <button onClick={onSelect} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+        <button onClick={onSelect} className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
           <StatusDot status={session.status} pendingPermission={session.hasPendingPermission} />
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm text-(--crc-fg)">{session.title || session.repoName}</div>
-            <div className="truncate text-xs text-(--crc-fg-muted)">
-              {session.branch ? `${session.repoName}:${session.branch}` : session.repoName}
+            <div className="truncate text-[13px] font-medium text-(--crc-fg)">{session.title || session.repoName}</div>
+            <div className="mt-0.5 truncate font-mono text-[11px] text-(--crc-fg-muted)">
+              {session.branch ? (
+                <>
+                  {session.repoName}
+                  <span className="opacity-50"> / </span>
+                  {session.branch}
+                </>
+              ) : (
+                session.repoName
+              )}
             </div>
           </div>
-          {session.controller && <span className="codicon codicon-lock text-xs text-(--crc-link)" />}
+          {session.controller && (
+            <span className="codicon codicon-lock-small shrink-0 text-(--crc-fg-muted)" title="A device holds control" />
+          )}
         </button>
       )}
 
@@ -196,8 +207,8 @@ function Row({
         <button
           onClick={() => setMenuOpen((v) => !v)}
           title="Session actions"
-          className={`rounded-sm p-1 text-(--crc-fg-muted) hover:bg-(--crc-hover) hover:text-(--crc-fg) ${
-            menuOpen ? "bg-(--crc-hover) text-(--crc-fg)" : "opacity-0 group-hover:opacity-100"
+          className={`flex h-6 w-6 items-center justify-center rounded-md text-(--crc-fg-muted) hover:bg-(--crc-bg-inset) hover:text-(--crc-fg) ${
+            menuOpen ? "bg-(--crc-bg-inset) text-(--crc-fg)" : "opacity-0 group-hover:opacity-100"
           }`}
         >
           <span className="codicon codicon-kebab-vertical" />
@@ -207,7 +218,7 @@ function Row({
           <>
             <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
             <div
-              className="absolute right-0 top-full z-50 mt-1 w-40 overflow-hidden rounded-sm border border-(--crc-border) bg-(--crc-bg-elevated) py-1 text-sm shadow-lg"
+              className="crc-enter absolute right-0 top-full z-50 mt-1 w-44 overflow-hidden rounded-xl border border-(--crc-border) bg-(--crc-surface) p-1 text-sm shadow-(--crc-shadow-lg)"
               onClick={(e) => e.stopPropagation()}
             >
               {onArchive && (
@@ -216,7 +227,7 @@ function Row({
                     setMenuOpen(false);
                     onArchive();
                   }}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-(--crc-fg) hover:bg-(--crc-hover)"
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--crc-fg) hover:bg-(--crc-hover)"
                 >
                   <span className="codicon codicon-archive" /> Archive
                 </button>
@@ -226,7 +237,7 @@ function Row({
                   setMenuOpen(false);
                   startRename();
                 }}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-(--crc-fg) hover:bg-(--crc-hover)"
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--crc-fg) hover:bg-(--crc-hover)"
               >
                 <span className="codicon codicon-edit" /> Edit title
               </button>
@@ -235,7 +246,7 @@ function Row({
                   setMenuOpen(false);
                   onDelete();
                 }}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-(--crc-danger) hover:bg-(--crc-danger)/15"
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--crc-danger) hover:bg-(--crc-danger)/12"
               >
                 <span className="codicon codicon-trash" /> Delete
               </button>

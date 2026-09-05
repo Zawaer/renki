@@ -331,7 +331,7 @@ describe("SessionView", () => {
 
     await screen.findByRole("button", { name: /Opus/ });
     fireEvent.click(screen.getByRole("button", { name: /Opus/ }));
-    fireEvent.change(screen.getByPlaceholderText("claude-fable-5"), { target: { value: "claude-fable-5" } });
+    fireEvent.change(screen.getByPlaceholderText("claude-fable-5-1"), { target: { value: "claude-fable-5" } });
     fireEvent.click(screen.getByRole("button", { name: "Use" }));
 
     // The trigger button now reflects the typed-in model, not the fetched list.

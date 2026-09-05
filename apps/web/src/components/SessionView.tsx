@@ -67,23 +67,34 @@ export function SessionView({ sessionId }: { sessionId: string }) {
       <div className="flex shrink-0 items-center justify-between gap-3 px-6 py-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2.5">
-            <span className="truncate text-[15px] font-medium tracking-tight text-(--crc-fg)">{conv.repoName ?? "…"}</span>
-            <StatusBadge status={status} pendingPermission={conv.pending.length > 0} />
+            <span className="truncate text-[15px] font-medium tracking-tight text-(--crc-fg)">
+              {conv.repoName ?? "…"}
+            </span>
+            <StatusBadge
+              status={status}
+              pendingPermission={conv.pending.length > 0}
+            />
           </div>
           {displayBranch(conv.branch) && (
             <div className="mt-0.5 flex items-center gap-1.5 text-xs text-(--crc-fg-muted)">
               <span className="codicon codicon-git-branch text-[11px]" />
-              <span className="truncate font-mono">{displayBranch(conv.branch)}</span>
+              <span className="truncate font-mono">
+                {displayBranch(conv.branch)}
+              </span>
             </div>
           )}
         </div>
         <div className="flex items-center gap-3">
           <span
             className={`inline-flex items-center gap-1.5 text-xs font-medium ${
-              conv.controller && isController ? "text-(--crc-success)" : "text-(--crc-fg-muted)"
+              conv.controller && isController
+                ? "text-(--crc-success)"
+                : "text-(--crc-fg-muted)"
             }`}
           >
-            <span className={`codicon ${conv.controller && isController ? "codicon-verified" : conv.controller ? "codicon-eye" : "codicon-unlock"} text-[13px]`} />
+            <span
+              className={`codicon ${conv.controller && isController ? "codicon-verified" : conv.controller ? "codicon-eye" : "codicon-unlock"} text-[13px]`}
+            />
             {conv.controller
               ? isController
                 ? "You're in control"
@@ -91,7 +102,10 @@ export function SessionView({ sessionId }: { sessionId: string }) {
               : "Nobody is in control"}
           </span>
           {!isController && (
-            <Button variant="primary" onClick={() => realtime.takeControl(sessionId)}>
+            <Button
+              variant="primary"
+              onClick={() => realtime.takeControl(sessionId)}
+            >
               Take control
             </Button>
           )}
@@ -107,9 +121,13 @@ export function SessionView({ sessionId }: { sessionId: string }) {
                 <span className="codicon codicon-sparkle text-xl" />
               </span>
               <div>
-                <div className="text-sm font-medium text-(--crc-fg)">Nothing here yet</div>
+                <div className="text-sm font-medium text-(--crc-fg)">
+                  Nothing here yet
+                </div>
                 <div className="mt-1 text-xs text-(--crc-fg-muted)">
-                  {isController ? "Send a prompt below to get Claude going." : "Take control and send a prompt to get Claude going."}
+                  {isController
+                    ? "Send a prompt below to get Claude going."
+                    : "Take control and send a prompt to get Claude going."}
                 </div>
               </div>
             </div>
@@ -124,14 +142,21 @@ export function SessionView({ sessionId }: { sessionId: string }) {
       {conv.pending.length > 0 && (
         <div className="px-6 pb-3">
           <div className="mx-auto w-full max-w-3xl space-y-2">
-          {conv.pending.map((p) => (
-            <PermissionCard
-              key={p.requestId}
-              perm={p}
-              canAct={isController}
-              onDecide={(d, updatedInput) => realtime.resolvePermission(sessionId, p.requestId, d, updatedInput)}
-            />
-          ))}
+            {conv.pending.map((p) => (
+              <PermissionCard
+                key={p.requestId}
+                perm={p}
+                canAct={isController}
+                onDecide={(d, updatedInput) =>
+                  realtime.resolvePermission(
+                    sessionId,
+                    p.requestId,
+                    d,
+                    updatedInput,
+                  )
+                }
+              />
+            ))}
           </div>
         </div>
       )}
@@ -143,15 +168,21 @@ export function SessionView({ sessionId }: { sessionId: string }) {
       {conv.queuedPrompts.length > 0 && (
         <div className="px-6 pb-2">
           <div className="mx-auto w-full max-w-3xl space-y-1">
-          <div className="text-[11px] text-(--crc-fg-muted)">
-            {conv.queuedPrompts.length === 1 ? "1 message queued" : `${conv.queuedPrompts.length} messages queued`} — will send once the current turn finishes
-          </div>
-          {conv.queuedPrompts.map((q) => (
-            <div key={q.promptId} className="flex items-center gap-1.5 truncate text-xs text-(--crc-fg-muted)">
-              <span className="codicon codicon-history shrink-0" />
-              <span className="truncate">{q.text}</span>
+            <div className="text-[11px] text-(--crc-fg-muted)">
+              {conv.queuedPrompts.length === 1
+                ? "1 message queued"
+                : `${conv.queuedPrompts.length} messages queued`}{" "}
+              — will send once the current turn finishes
             </div>
-          ))}
+            {conv.queuedPrompts.map((q) => (
+              <div
+                key={q.promptId}
+                className="flex items-center gap-1.5 truncate text-xs text-(--crc-fg-muted)"
+              >
+                <span className="codicon codicon-history shrink-0" />
+                <span className="truncate">{q.text}</span>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -173,9 +204,15 @@ function TimelineRow({ item }: { item: TimelineItem }) {
     return (
       <div className="crc-enter flex justify-end">
         <div className="max-w-[85%] rounded-2xl bg-(--crc-surface) px-4 py-3">
-          {item.text && <div className="whitespace-pre-wrap text-[14px] leading-relaxed text-(--crc-fg)">{item.text}</div>}
+          {item.text && (
+            <div className="whitespace-pre-wrap text-[14px] leading-relaxed text-(--crc-fg)">
+              {item.text}
+            </div>
+          )}
           {item.attachments && item.attachments.length > 0 && (
-            <div className={`flex flex-wrap gap-1.5 ${item.text ? "mt-2" : ""}`}>
+            <div
+              className={`flex flex-wrap gap-1.5 ${item.text ? "mt-2" : ""}`}
+            >
               {item.attachments.map((a, i) => (
                 <AttachmentChip key={i} attachment={a} />
               ))}
@@ -195,7 +232,9 @@ function TimelineRow({ item }: { item: TimelineItem }) {
               : "border-(--crc-border) bg-(--crc-surface) text-(--crc-fg-muted)"
           }`}
         >
-          <span className={`codicon ${item.level === "warn" ? "codicon-warning" : "codicon-info"}`} />
+          <span
+            className={`codicon ${item.level === "warn" ? "codicon-warning" : "codicon-info"}`}
+          />
           {item.text}
         </span>
       </div>
@@ -206,7 +245,8 @@ function TimelineRow({ item }: { item: TimelineItem }) {
 
 function AssistantTurn({ turn }: { turn: TurnView }) {
   const label = turnTriggerLabel(turn);
-  const steeredAfter = (index: number) => turn.steeredPrompts.filter((p) => p.afterBlockIndex === index);
+  const steeredAfter = (index: number) =>
+    turn.steeredPrompts.filter((p) => p.afterBlockIndex === index);
   return (
     <div className="crc-enter space-y-3">
       {label && (
@@ -240,7 +280,12 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
           {(turn.inputTokens != null || turn.outputTokens != null) && (
             <>
               <span>·</span>
-              <span>{formatTokenCount((turn.inputTokens ?? 0) + (turn.outputTokens ?? 0))} tokens</span>
+              <span>
+                {formatTokenCount(
+                  (turn.inputTokens ?? 0) + (turn.outputTokens ?? 0),
+                )}{" "}
+                tokens
+              </span>
             </>
           )}
           <span>·</span>
@@ -254,7 +299,8 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
       )}
       {turn.status === "error" && !turn.interrupted && (
         <div className="flex items-center gap-1.5 rounded-lg border border-(--crc-danger)/30 bg-(--crc-danger)/10 px-3 py-2 text-xs text-(--crc-danger)">
-          <span className="codicon codicon-error" /> Turn failed: {turn.errorMessage}
+          <span className="codicon codicon-error" /> Turn failed:{" "}
+          {turn.errorMessage}
         </div>
       )}
     </div>
@@ -266,16 +312,23 @@ function SteeredPrompt({ prompt }: { prompt: SteeredPromptView }) {
   return (
     <div className="crc-enter flex justify-end" data-testid="steered-prompt">
       <div className="max-w-[85%] rounded-2xl bg-(--crc-surface) px-4 py-3">
-        {prompt.text && <div className="whitespace-pre-wrap text-[14px] leading-relaxed text-(--crc-fg)">{prompt.text}</div>}
+        {prompt.text && (
+          <div className="whitespace-pre-wrap text-[14px] leading-relaxed text-(--crc-fg)">
+            {prompt.text}
+          </div>
+        )}
         {prompt.attachments && prompt.attachments.length > 0 && (
-          <div className={`flex flex-wrap gap-1.5 ${prompt.text ? "mt-2" : ""}`}>
+          <div
+            className={`flex flex-wrap gap-1.5 ${prompt.text ? "mt-2" : ""}`}
+          >
             {prompt.attachments.map((a, i) => (
               <AttachmentChip key={i} attachment={a} />
             ))}
           </div>
         )}
         <div className="mt-1.5 flex items-center gap-1 text-[11px] text-(--crc-fg-muted)">
-          <span className="codicon codicon-debug-step-into text-[11px]" /> Sent while Claude was working — picked up mid-turn
+          <span className="codicon codicon-debug-step-into text-[11px]" /> Sent
+          while Claude was working — picked up mid-turn
         </div>
       </div>
     </div>
@@ -302,22 +355,42 @@ function toolIcon(name: string): string {
   return map[name] ?? "tools";
 }
 
-function Block({ block, turnRunning }: { block: BlockView; turnRunning: boolean }) {
-  if (block.kind === "tool_use") return <ToolStep block={block} turnRunning={turnRunning} />;
+function Block({
+  block,
+  turnRunning,
+}: {
+  block: BlockView;
+  turnRunning: boolean;
+}) {
+  if (block.kind === "tool_use")
+    return <ToolStep block={block} turnRunning={turnRunning} />;
   if (block.kind === "thinking") {
-    return <ThinkingBlock block={block} live={turnRunning && block.endedAtMs == null} />;
+    return (
+      <ThinkingBlock
+        block={block}
+        live={turnRunning && block.endedAtMs == null}
+      />
+    );
   }
   return <Markdown content={block.text} />;
 }
 
 /** What a tool call is, in words: the row label and the mono detail beside it. */
-function describeTool(name: string, input: unknown): { label: string; meta: string | null } {
+function describeTool(
+  name: string,
+  input: unknown,
+): { label: string; meta: string | null } {
   const inp = (input ?? {}) as Record<string, unknown>;
-  const str = (k: string) => (typeof inp[k] === "string" ? (inp[k] as string) : null);
-  const base = (path: string | null) => (path ? path.split("/").filter(Boolean).slice(-2).join("/") : null);
+  const str = (k: string) =>
+    typeof inp[k] === "string" ? (inp[k] as string) : null;
+  const base = (path: string | null) =>
+    path ? path.split("/").filter(Boolean).slice(-2).join("/") : null;
   switch (name) {
     case "Bash":
-      return { label: "Ran a command", meta: str("description") ?? truncate(str("command") ?? "", 72) };
+      return {
+        label: "Ran a command",
+        meta: str("description") ?? truncate(str("command") ?? "", 72),
+      };
     case "BashOutput":
       return { label: "Checked command output", meta: null };
     case "Read":
@@ -327,7 +400,10 @@ function describeTool(name: string, input: unknown): { label: string; meta: stri
     case "Edit":
     case "MultiEdit":
     case "NotebookEdit":
-      return { label: "Edited", meta: base(str("file_path") ?? str("notebook_path")) };
+      return {
+        label: "Edited",
+        meta: base(str("file_path") ?? str("notebook_path")),
+      };
     case "Grep":
     case "Glob":
       return { label: "Searched", meta: str("pattern") };
@@ -337,7 +413,10 @@ function describeTool(name: string, input: unknown): { label: string; meta: stri
       return { label: "Searched the web", meta: str("query") };
     case "Agent":
     case "Task":
-      return { label: "Agent", meta: str("description") ?? str("subagent_type") };
+      return {
+        label: "Agent",
+        meta: str("description") ?? str("subagent_type"),
+      };
     case "TodoWrite":
       return { label: "Updated tasks", meta: null };
     case "AskUserQuestion":
@@ -364,19 +443,28 @@ function hostOf(url: string | null): string | null {
  * call is running or when the payload is worth seeing unprompted (a diff, a
  * plan, a task list, a live agent), and folds shut once a routine call is done.
  */
-function ToolStep({ block, turnRunning }: { block: Extract<BlockView, { kind: "tool_use" }>; turnRunning: boolean }) {
+function ToolStep({
+  block,
+  turnRunning,
+}: {
+  block: Extract<BlockView, { kind: "tool_use" }>;
+  turnRunning: boolean;
+}) {
   const filePath = extractFilePath(block.toolInput);
   const editView = parseEditView(block.toolName, block.toolInput);
-  const todos = block.toolName === "TodoWrite" ? parseTodos(block.toolInput) : null;
+  const todos =
+    block.toolName === "TodoWrite" ? parseTodos(block.toolInput) : null;
   const plan = parsePlan(block.toolName, block.toolInput);
   const { label, meta } = describeTool(block.toolName, block.toolInput);
   const isAgent = block.toolName === "Agent" || block.toolName === "Task";
   // A background agent's nested feed never gets a closing tool_result (its
   // Task call returned immediately), so its completion notification is the
   // real "done" signal.
-  const agentRunning = block.subagent?.status === "running" && !block.backgroundTask;
+  const agentRunning =
+    block.subagent?.status === "running" && !block.backgroundTask;
   const running = !block.result && !block.backgroundTask && turnRunning;
-  const richPayload = editView != null || todos != null || plan != null || block.subagent != null;
+  const richPayload =
+    editView != null || todos != null || plan != null || block.subagent != null;
   const restingOpen = richPayload && (agentRunning || block.subagent == null);
   const [open, setOpen] = useState(running || restingOpen);
   const userToggled = useRef(false);
@@ -384,27 +472,51 @@ function ToolStep({ block, turnRunning }: { block: Extract<BlockView, { kind: "t
   useEffect(() => {
     // Auto-collapse a routine call once it settles — unless the user opened it themselves.
     const nowRunning = running || agentRunning;
-    if (wasRunning.current && !nowRunning && !userToggled.current) setOpen(restingOpen);
+    if (wasRunning.current && !nowRunning && !userToggled.current)
+      setOpen(restingOpen);
     wasRunning.current = nowRunning;
   }, [running, agentRunning, restingOpen]);
 
   const status = block.backgroundTask ? (
-    <span className={block.backgroundTask.status === "completed" ? "text-(--crc-success)" : block.backgroundTask.status === "stopped" ? "text-(--crc-fg-muted)" : "text-(--crc-danger)"}>
-      {block.backgroundTask.status === "completed" ? "done" : block.backgroundTask.status}
+    <span
+      className={
+        block.backgroundTask.status === "completed"
+          ? "text-(--crc-success)"
+          : block.backgroundTask.status === "stopped"
+            ? "text-(--crc-fg-muted)"
+            : "text-(--crc-danger)"
+      }
+    >
+      {block.backgroundTask.status === "completed"
+        ? "done"
+        : block.backgroundTask.status}
     </span>
   ) : block.subagent ? (
     agentRunning ? (
-      <span className="text-(--crc-link)">running · {block.subagent.blocks.filter((b) => b.kind === "tool_use").length} tools</span>
+      <span className="text-(--crc-link)">
+        running ·{" "}
+        {block.subagent.blocks.filter((b) => b.kind === "tool_use").length}{" "}
+        tools
+      </span>
     ) : (
       <span className="text-(--crc-success)">done</span>
     )
   ) : block.result ? (
-    <span className={block.result.ok ? "text-(--crc-success)" : "text-(--crc-danger)"}>{block.result.ok ? "ok" : "failed"}</span>
+    <span
+      className={
+        block.result.ok ? "text-(--crc-success)" : "text-(--crc-danger)"
+      }
+    >
+      {block.result.ok ? "ok" : "failed"}
+    </span>
   ) : running ? (
     <span className="codicon codicon-loading codicon-modifier-spin text-(--crc-fg-muted)" />
   ) : null;
 
-  const command = block.toolName === "Bash" ? ((block.toolInput as { command?: string } | null)?.command ?? null) : null;
+  const command =
+    block.toolName === "Bash"
+      ? ((block.toolInput as { command?: string } | null)?.command ?? null)
+      : null;
 
   return (
     <div className="my-1">
@@ -418,7 +530,9 @@ function ToolStep({ block, turnRunning }: { block: Extract<BlockView, { kind: "t
       >
         <span className="font-medium text-(--crc-fg)/85">{label}</span>
         {meta && <span className="truncate font-mono text-xs">{meta}</span>}
-        <span className={`codicon ${open ? "codicon-chevron-down" : "codicon-chevron-right"} shrink-0 text-[12px]`} />
+        <span
+          className={`codicon ${open ? "codicon-chevron-down" : "codicon-chevron-right"} shrink-0 text-[12px]`}
+        />
         {filePath && isHosted() && (
           <span
             role="link"
@@ -432,7 +546,11 @@ function ToolStep({ block, turnRunning }: { block: Extract<BlockView, { kind: "t
             open
           </span>
         )}
-        {status && <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs">{status}</span>}
+        {status && (
+          <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs">
+            {status}
+          </span>
+        )}
       </button>
       {open && (
         <div className="mt-1.5 space-y-1.5 pl-0.5 text-xs">
@@ -449,7 +567,9 @@ function ToolStep({ block, turnRunning }: { block: Extract<BlockView, { kind: "t
               <Markdown content={plan} />
             </div>
           ) : command ? (
-            <pre className="overflow-x-auto rounded-lg bg-(--crc-bg-inset)/70 px-3 py-2 font-mono leading-relaxed text-(--crc-fg)">$ {command}</pre>
+            <pre className="overflow-x-auto rounded-lg bg-(--crc-bg-inset)/70 px-3 py-2 font-mono leading-relaxed text-(--crc-fg)">
+              $ {command}
+            </pre>
           ) : block.toolName !== "Agent" && block.toolName !== "Task" ? (
             <pre className="overflow-x-auto rounded-lg bg-(--crc-bg-inset)/70 px-3 py-2 font-mono leading-relaxed text-(--crc-fg-muted)">
               {truncate(JSON.stringify(block.toolInput, null, 2), 800)}
@@ -458,7 +578,9 @@ function ToolStep({ block, turnRunning }: { block: Extract<BlockView, { kind: "t
           {block.result && block.result.summary && !isAgent && (
             <pre
               className={`max-h-72 overflow-auto rounded-lg px-3 py-2 font-mono leading-relaxed ${
-                block.result.ok ? "text-(--crc-fg-muted)" : "bg-(--crc-danger)/8 text-(--crc-danger)"
+                block.result.ok
+                  ? "text-(--crc-fg-muted)"
+                  : "bg-(--crc-danger)/8 text-(--crc-danger)"
               }`}
             >
               {block.result.ok ? "" : "error: "}
@@ -466,20 +588,21 @@ function ToolStep({ block, turnRunning }: { block: Extract<BlockView, { kind: "t
             </pre>
           )}
           {block.subagent && <SubagentActivity subagent={block.subagent} />}
-          {block.backgroundTask && !block.subagent?.blocks.some((b) => b.kind === "text") && (
-            <div className="flex items-start gap-1.5 rounded-lg bg-(--crc-bg-inset)/50 px-3 py-2 text-(--crc-fg-muted)">
-              <span
-                className={`codicon mt-0.5 ${
-                  block.backgroundTask.status === "completed"
-                    ? "codicon-pass-filled text-(--crc-success)"
-                    : block.backgroundTask.status === "stopped"
-                      ? "codicon-debug-stop"
-                      : "codicon-error text-(--crc-danger)"
-                }`}
-              />
-              <span>{truncate(block.backgroundTask.summary, 800)}</span>
-            </div>
-          )}
+          {block.backgroundTask &&
+            !block.subagent?.blocks.some((b) => b.kind === "text") && (
+              <div className="flex items-start gap-1.5 rounded-lg bg-(--crc-bg-inset)/50 px-3 py-2 text-(--crc-fg-muted)">
+                <span
+                  className={`codicon mt-0.5 ${
+                    block.backgroundTask.status === "completed"
+                      ? "codicon-pass-filled text-(--crc-success)"
+                      : block.backgroundTask.status === "stopped"
+                        ? "codicon-debug-stop"
+                        : "codicon-error text-(--crc-danger)"
+                  }`}
+                />
+                <span>{truncate(block.backgroundTask.summary, 800)}</span>
+              </div>
+            )}
         </div>
       )}
     </div>
@@ -516,7 +639,12 @@ function DiffView({ view }: { view: EditToolView }) {
         const lines = hunk.lines.slice(0, remaining);
         shown += lines.length;
         return (
-          <div key={hi} className={hi > 0 ? "border-t border-dashed border-(--crc-border)/60" : ""}>
+          <div
+            key={hi}
+            className={
+              hi > 0 ? "border-t border-dashed border-(--crc-border)/60" : ""
+            }
+          >
             {lines.map((line, li) => (
               <div
                 key={li}
@@ -536,7 +664,9 @@ function DiffView({ view }: { view: EditToolView }) {
         );
       })}
       {totalLines > MAX_DIFF_LINES_SHOWN && (
-        <div className="px-3 py-1 text-(--crc-fg-muted)">… {totalLines - MAX_DIFF_LINES_SHOWN} more lines</div>
+        <div className="px-3 py-1 text-(--crc-fg-muted)">
+          … {totalLines - MAX_DIFF_LINES_SHOWN} more lines
+        </div>
       )}
     </div>
   );
@@ -565,7 +695,9 @@ function TodoChecklist({ todos }: { todos: TodoItemView[] }) {
                   : "text-(--crc-fg)"
             }
           >
-            {t.status === "in_progress" && t.activeForm ? t.activeForm : t.content}
+            {t.status === "in_progress" && t.activeForm
+              ? t.activeForm
+              : t.content}
           </span>
         </div>
       ))}
@@ -592,13 +724,16 @@ function ThinkingBlock({
             <span className="codicon codicon-loading codicon-modifier-spin text-(--crc-accent)" />
             <span>
               {verb}… {elapsedSeconds != null && `· ${elapsedSeconds}s `}
-              {estimatedTokens > 0 && `· ~${formatTokenCount(estimatedTokens)} tokens`}
+              {estimatedTokens > 0 &&
+                `· ~${formatTokenCount(estimatedTokens)} tokens`}
             </span>
           </>
         ) : block.startedAtMs != null && block.endedAtMs != null ? (
           <>
             <span className="codicon codicon-sparkle text-[11px]" />
-            <span>Thought for {formatDuration(block.endedAtMs - block.startedAtMs)}</span>
+            <span>
+              Thought for {formatDuration(block.endedAtMs - block.startedAtMs)}
+            </span>
           </>
         ) : (
           <>
@@ -621,15 +756,22 @@ function useElapsedSeconds(startedAtMs: number | null): number | null {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [startedAtMs]);
-  return startedAtMs == null ? null : Math.max(0, Math.round((now - startedAtMs) / 1000));
+  return startedAtMs == null
+    ? null
+    : Math.max(0, Math.round((now - startedAtMs) / 1000));
 }
 
 /** Rotates through THINKING_VERBS while `live`; holds still (and hides) otherwise. */
 function useThinkingVerb(live: boolean): string {
-  const [i, setI] = useState(() => Math.floor(Math.random() * THINKING_VERBS.length));
+  const [i, setI] = useState(() =>
+    Math.floor(Math.random() * THINKING_VERBS.length),
+  );
   useEffect(() => {
     if (!live) return;
-    const id = setInterval(() => setI((v) => (v + 1) % THINKING_VERBS.length), 2000);
+    const id = setInterval(
+      () => setI((v) => (v + 1) % THINKING_VERBS.length),
+      2000,
+    );
     return () => clearInterval(id);
   }, [live]);
   return THINKING_VERBS[i] ?? "Thinking";
@@ -675,13 +817,22 @@ function PermissionCard({
 }: {
   perm: PermissionView;
   canAct: boolean;
-  onDecide: (d: "allow" | "deny", updatedInput?: Record<string, unknown>) => void;
+  onDecide: (
+    d: "allow" | "deny",
+    updatedInput?: Record<string, unknown>,
+  ) => void;
 }) {
   const askQuestion = parseAskUserQuestion(perm.toolName, perm.toolInput);
-  const plan = askQuestion == null ? parsePlan(perm.toolName, perm.toolInput) : null;
-  const editView = plan == null && askQuestion == null ? parseEditView(perm.toolName, perm.toolInput) : null;
+  const plan =
+    askQuestion == null ? parsePlan(perm.toolName, perm.toolInput) : null;
+  const editView =
+    plan == null && askQuestion == null
+      ? parseEditView(perm.toolName, perm.toolInput)
+      : null;
   const todos =
-    plan == null && askQuestion == null && perm.toolName === "TodoWrite" ? parseTodos(perm.toolInput) : null;
+    plan == null && askQuestion == null && perm.toolName === "TodoWrite"
+      ? parseTodos(perm.toolInput)
+      : null;
 
   if (askQuestion != null) {
     return (
@@ -689,7 +840,10 @@ function PermissionCard({
         view={askQuestion}
         canAct={canAct}
         onSubmit={(answers) =>
-          onDecide("allow", { ...(perm.toolInput as Record<string, unknown>), answers })
+          onDecide("allow", {
+            ...(perm.toolInput as Record<string, unknown>),
+            answers,
+          })
         }
         onCancel={() => onDecide("deny")}
       />
@@ -699,14 +853,20 @@ function PermissionCard({
   return (
     <div className="crc-enter crc-alarm rounded-2xl bg-(--crc-surface) px-4 py-3 shadow-(--crc-shadow-alarm)">
       <div className="flex items-center gap-3 text-sm text-(--crc-fg)">
-        <span className={`codicon ${plan != null ? "codicon-checklist text-(--crc-warning)" : "codicon-shield text-(--crc-danger)"} shrink-0 text-[15px]`} />
+        <span
+          className={`codicon ${plan != null ? "codicon-checklist text-(--crc-warning)" : "codicon-shield text-(--crc-danger)"} shrink-0 text-[15px]`}
+        />
         {plan != null ? (
           <span className="font-medium">Plan ready for review</span>
         ) : (
           <span className="flex flex-wrap items-center gap-x-1.5 text-[13px]">
-            <span className="font-medium">{permissionTitle(perm.toolName)}</span>
+            <span className="font-medium">
+              {permissionTitle(perm.toolName)}
+            </span>
             <span className="text-(--crc-fg-muted)">·</span>
-            <span className="font-mono text-xs text-(--crc-fg-muted)">{perm.toolName}</span>
+            <span className="font-mono text-xs text-(--crc-fg-muted)">
+              {perm.toolName}
+            </span>
           </span>
         )}
       </div>
@@ -730,14 +890,18 @@ function PermissionCard({
       {canAct ? (
         <div className="mt-3 flex gap-2">
           <Button variant="primary" onClick={() => onDecide("allow")}>
-            <span className="codicon codicon-check" /> {plan != null ? "Approve plan" : "Allow"}
+            <span className="codicon codicon-check" />{" "}
+            {plan != null ? "Approve plan" : "Allow"}
           </Button>
           <Button variant="danger" onClick={() => onDecide("deny")}>
-            <span className="codicon codicon-close" /> {plan != null ? "Keep planning" : "Deny"}
+            <span className="codicon codicon-close" />{" "}
+            {plan != null ? "Keep planning" : "Deny"}
           </Button>
         </div>
       ) : (
-        <div className="mt-2 text-xs text-(--crc-fg-muted)">Only the controller can respond.</div>
+        <div className="mt-2 text-xs text-(--crc-fg-muted)">
+          Only the controller can respond.
+        </div>
       )}
     </div>
   );
@@ -763,8 +927,12 @@ function AskUserQuestionCard({
   onCancel: () => void;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
-  const [selected, setSelected] = useState<string[][]>(() => view.questions.map(() => []));
-  const [otherText, setOtherText] = useState<string[]>(() => view.questions.map(() => ""));
+  const [selected, setSelected] = useState<string[][]>(() =>
+    view.questions.map(() => []),
+  );
+  const [otherText, setOtherText] = useState<string[]>(() =>
+    view.questions.map(() => ""),
+  );
 
   useEffect(() => {
     if (!canAct) return;
@@ -796,13 +964,17 @@ function AskUserQuestionCard({
   const allAnswered = view.questions.every((_, i) => {
     const sel = selected[i] ?? [];
     if (sel.length === 0) return false;
-    return !sel.includes(OTHER_OPTION) || (otherText[i]?.trim().length ?? 0) > 0;
+    return (
+      !sel.includes(OTHER_OPTION) || (otherText[i]?.trim().length ?? 0) > 0
+    );
   });
 
   function handleSubmit(): void {
     const answers: Record<string, string> = {};
     view.questions.forEach((q, i) => {
-      const labels = (selected[i] ?? []).map((l) => (l === OTHER_OPTION ? (otherText[i]?.trim() ?? "") : l));
+      const labels = (selected[i] ?? []).map((l) =>
+        l === OTHER_OPTION ? (otherText[i]?.trim() ?? "") : l,
+      );
       answers[q.question] = labels.join(", ");
     });
     onSubmit(answers);
@@ -877,13 +1049,19 @@ function AskUserQuestionCard({
       </div>
       {canAct ? (
         <div className="mt-2 flex items-center gap-2">
-          <Button variant="primary" disabled={!allAnswered} onClick={handleSubmit}>
+          <Button
+            variant="primary"
+            disabled={!allAnswered}
+            onClick={handleSubmit}
+          >
             <span className="codicon codicon-check" /> Submit answers
           </Button>
           <span className="text-xs text-(--crc-fg-muted)">Esc to cancel</span>
         </div>
       ) : (
-        <div className="mt-2 text-xs text-(--crc-fg-muted)">Only the controller can respond.</div>
+        <div className="mt-2 text-xs text-(--crc-fg-muted)">
+          Only the controller can respond.
+        </div>
       )}
     </div>
   );
@@ -893,13 +1071,19 @@ function AskUserQuestionCard({
 type PendingAttachment = Attachment & { id: string };
 
 /** Reads a File into wire-format base64, or an error message if it's an unsupported type or too large. */
-function readFileAsAttachment(file: File): Promise<PendingAttachment | { error: string }> {
+function readFileAsAttachment(
+  file: File,
+): Promise<PendingAttachment | { error: string }> {
   const mediaType = classifyAttachment(file);
   if (!mediaType) {
-    return Promise.resolve({ error: `${file.name}: unsupported file type — reference it by its path in the prompt instead.` });
+    return Promise.resolve({
+      error: `${file.name}: unsupported file type — reference it by its path in the prompt instead.`,
+    });
   }
   if (file.size > MAX_ATTACHMENT_BYTES) {
-    return Promise.resolve({ error: `${file.name}: too large (max ${Math.floor(MAX_ATTACHMENT_BYTES / (1024 * 1024))}MB).` });
+    return Promise.resolve({
+      error: `${file.name}: too large (max ${Math.floor(MAX_ATTACHMENT_BYTES / (1024 * 1024))}MB).`,
+    });
   }
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -908,13 +1092,20 @@ function readFileAsAttachment(file: File): Promise<PendingAttachment | { error: 
       const data = result.slice(result.indexOf(",") + 1);
       resolve({ id: crypto.randomUUID(), name: file.name, mediaType, data });
     };
-    reader.onerror = () => resolve({ error: `${file.name}: couldn't read file.` });
+    reader.onerror = () =>
+      resolve({ error: `${file.name}: couldn't read file.` });
     reader.readAsDataURL(file);
   });
 }
 
 /** One attached file: a thumbnail for images, a file chip otherwise. `onRemove` omitted renders it read-only (timeline history). */
-function AttachmentChip({ attachment, onRemove }: { attachment: Attachment; onRemove?: () => void }) {
+function AttachmentChip({
+  attachment,
+  onRemove,
+}: {
+  attachment: Attachment;
+  onRemove?: () => void;
+}) {
   const isImage = attachment.mediaType.startsWith("image/");
   const [previewing, setPreviewing] = useState(false);
   return (
@@ -932,7 +1123,10 @@ function AttachmentChip({ attachment, onRemove }: { attachment: Attachment; onRe
         ) : (
           <span className="codicon codicon-file text-(--crc-fg-muted)" />
         )}
-        <span className="max-w-40 truncate text-(--crc-fg)" title={attachment.name}>
+        <span
+          className="max-w-40 truncate text-(--crc-fg)"
+          title={attachment.name}
+        >
           {attachment.name}
         </span>
         {onRemove && (
@@ -948,13 +1142,24 @@ function AttachmentChip({ attachment, onRemove }: { attachment: Attachment; onRe
           </button>
         )}
       </div>
-      {previewing && <ImagePreviewDialog attachment={attachment} onClose={() => setPreviewing(false)} />}
+      {previewing && (
+        <ImagePreviewDialog
+          attachment={attachment}
+          onClose={() => setPreviewing(false)}
+        />
+      )}
     </>
   );
 }
 
 /** Full-screen preview of an attached image, dismissed by backdrop click, X, or Escape. */
-function ImagePreviewDialog({ attachment, onClose }: { attachment: Attachment; onClose: () => void }) {
+function ImagePreviewDialog({
+  attachment,
+  onClose,
+}: {
+  attachment: Attachment;
+  onClose: () => void;
+}) {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -964,7 +1169,10 @@ function ImagePreviewDialog({ attachment, onClose }: { attachment: Attachment; o
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/80 p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-20 flex items-center justify-center bg-black/80 p-4"
+      onClick={onClose}
+    >
       <button
         onClick={onClose}
         className="absolute top-4 right-4 text-white/80 hover:text-white"
@@ -995,7 +1203,12 @@ function Composer({
   reason: string;
   onSend: (
     text: string,
-    opts?: { model?: string; maxThinkingTokens?: number | null; permissionMode?: PermissionModeKey; attachments?: Attachment[] },
+    opts?: {
+      model?: string;
+      maxThinkingTokens?: number | null;
+      permissionMode?: PermissionModeKey;
+      attachments?: Attachment[];
+    },
   ) => void;
   busy: boolean;
   onStop: () => void;
@@ -1013,14 +1226,23 @@ function Composer({
   // arrive and default it to the SDK's own recommended entry.
   const [model, setModelState] = useState(loadModel);
   const [effortKey, setEffortKeyState] = useState(loadEffortKey);
-  const [permissionMode, setPermissionModeState] = useState<PermissionModeKey>(loadPermissionMode);
-  const [capabilities, setCapabilities] = useState<CapabilitiesResponse>({ models: [], commands: [] });
+  const [permissionMode, setPermissionModeState] =
+    useState<PermissionModeKey>(loadPermissionMode);
+  const [capabilities, setCapabilities] = useState<CapabilitiesResponse>({
+    models: [],
+    commands: [],
+  });
   const [suggestionIndex, setSuggestionIndex] = useState(0);
-  const [openMenu, setOpenMenu] = useState<"model" | "effort" | "mode" | null>(null);
+  const [openMenu, setOpenMenu] = useState<"model" | "effort" | "mode" | null>(
+    null,
+  );
   const [customModel, setCustomModel] = useState("");
 
   useEffect(() => {
-    rest.getCapabilities().then(setCapabilities).catch(() => {});
+    rest
+      .getCapabilities()
+      .then(setCapabilities)
+      .catch(() => {});
   }, [rest]);
 
   // supportedModels() already includes its own "Default (recommended)" entry
@@ -1028,7 +1250,8 @@ function Composer({
   // the real list loads, default the selection to that entry rather than an
   // empty value that wouldn't match any <option>.
   useEffect(() => {
-    if (!model && capabilities.models.length > 0) setModel(capabilities.models[0]?.value ?? "");
+    if (!model && capabilities.models.length > 0)
+      setModel(capabilities.models[0]?.value ?? "");
   }, [capabilities, model]);
 
   // Move focus to the composer as soon as this device gains control (whether
@@ -1037,12 +1260,17 @@ function Composer({
     if (!disabled) textareaRef.current?.focus();
   }, [disabled]);
 
-  const effort = EFFORT_LEVELS.find((e) => e.key === effortKey) ?? EFFORT_LEVELS[0];
-  const mode = PERMISSION_MODES.find((m) => m.key === permissionMode) ?? PERMISSION_MODES[0];
+  const effort =
+    EFFORT_LEVELS.find((e) => e.key === effortKey) ?? EFFORT_LEVELS[0];
+  const mode =
+    PERMISSION_MODES.find((m) => m.key === permissionMode) ??
+    PERMISSION_MODES[0];
   const selectedModel = capabilities.models.find((m) => m.value === model);
   const suggestions =
     text.startsWith("/") && text.length > 1 && !text.includes(" ")
-      ? capabilities.commands.filter((c) => c.name.toLowerCase().startsWith(text.slice(1).toLowerCase()))
+      ? capabilities.commands.filter((c) =>
+          c.name.toLowerCase().startsWith(text.slice(1).toLowerCase()),
+        )
       : [];
 
   /**
@@ -1075,7 +1303,10 @@ function Composer({
       model: model || undefined,
       maxThinkingTokens: effort?.maxThinkingTokens ?? undefined,
       permissionMode,
-      attachments: attachments.length > 0 ? attachments.map(({ id: _id, ...a }) => a) : undefined,
+      attachments:
+        attachments.length > 0
+          ? attachments.map(({ id: _id, ...a }) => a)
+          : undefined,
     });
     setText("");
     setAttachments([]);
@@ -1089,14 +1320,25 @@ function Composer({
 
     const room = MAX_ATTACHMENTS_PER_PROMPT - attachments.length;
     if (room <= 0) {
-      setAttachError(`Up to ${MAX_ATTACHMENTS_PER_PROMPT} attachments per message.`);
+      setAttachError(
+        `Up to ${MAX_ATTACHMENTS_PER_PROMPT} attachments per message.`,
+      );
       return;
     }
 
-    const results = await Promise.all(list.slice(0, room).map(readFileAsAttachment));
-    const accepted = results.filter((r): r is PendingAttachment => !("error" in r));
-    const errors = results.filter((r): r is { error: string } => "error" in r).map((r) => r.error);
-    if (list.length > room) errors.push(`Only ${room} more attachment${room === 1 ? "" : "s"} allowed — dropped the rest.`);
+    const results = await Promise.all(
+      list.slice(0, room).map(readFileAsAttachment),
+    );
+    const accepted = results.filter(
+      (r): r is PendingAttachment => !("error" in r),
+    );
+    const errors = results
+      .filter((r): r is { error: string } => "error" in r)
+      .map((r) => r.error);
+    if (list.length > room)
+      errors.push(
+        `Only ${room} more attachment${room === 1 ? "" : "s"} allowed — dropped the rest.`,
+      );
 
     if (accepted.length > 0) setAttachments((prev) => [...prev, ...accepted]);
     setAttachError(errors[0] ?? null);
@@ -1130,6 +1372,117 @@ function Composer({
     setOpenMenu(null);
   }
 
+  /** The open picker's menu, anchored to its own button and opening upward. */
+  const menuPanel = (align: "start" | "end") =>
+    openMenu ? (
+      <div
+        className={`crc-enter absolute bottom-full z-50 mb-2 max-h-80 w-80 overflow-y-auto rounded-xl bg-(--crc-surface) p-1 text-xs shadow-(--crc-shadow-lg) ${
+          align === "end" ? "right-0" : "left-0"
+        }`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-3 pt-2 pb-1.5 text-[11px] font-medium text-(--crc-fg-muted)">
+          {openMenu === "model"
+            ? "Select a model"
+            : openMenu === "effort"
+              ? "Thinking effort"
+              : "Permissions"}
+        </div>
+        {openMenu === "model"
+          ? [
+              ...capabilities.models.map((m) => (
+                <button
+                  key={m.value}
+                  onClick={() => {
+                    setModel(m.value);
+                    setOpenMenu(null);
+                  }}
+                  className="flex w-full items-start justify-between gap-2 rounded-lg px-3 py-2 text-left hover:bg-(--crc-hover)"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-(--crc-fg)">
+                      {m.displayName}
+                    </div>
+                    {m.description && (
+                      <div className="truncate text-(--crc-fg-muted)">
+                        {m.description}
+                      </div>
+                    )}
+                  </div>
+                  {m.value === model && (
+                    <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />
+                  )}
+                </button>
+              )),
+              <div
+                key="custom"
+                className="mt-1 border-t border-(--crc-border)/60 p-2"
+              >
+                <div className="mb-1 text-(--crc-fg-muted)">
+                  Not listed? Enter a model ID directly:
+                </div>
+                <div className="flex gap-1.5">
+                  <input
+                    value={customModel}
+                    onChange={(ev) => setCustomModel(ev.target.value)}
+                    onKeyDown={(ev) => {
+                      if (ev.key === "Enter") useCustomModel();
+                    }}
+                    placeholder="claude-fable-5-1"
+                    spellCheck={false}
+                    autoComplete="off"
+                    className="crc-input min-w-0 flex-1 px-2 py-1 text-xs"
+                  />
+                  <Button
+                    variant="default"
+                    disabled={!customModel.trim()}
+                    onClick={useCustomModel}
+                    className="shrink-0"
+                  >
+                    Use
+                  </Button>
+                </div>
+              </div>,
+            ]
+          : openMenu === "effort"
+            ? EFFORT_LEVELS.map((e) => (
+                <button
+                  key={e.key}
+                  onClick={() => {
+                    setEffortKey(e.key);
+                    setOpenMenu(null);
+                  }}
+                  className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left hover:bg-(--crc-hover)"
+                >
+                  <span className="font-medium text-(--crc-fg)">{e.label}</span>
+                  {e.key === effortKey && (
+                    <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />
+                  )}
+                </button>
+              ))
+            : PERMISSION_MODES.map((m) => (
+                <button
+                  key={m.key}
+                  onClick={() => {
+                    setPermissionMode(m.key);
+                    setOpenMenu(null);
+                  }}
+                  className="flex w-full items-start justify-between gap-2 rounded-lg px-3 py-2 text-left hover:bg-(--crc-hover)"
+                >
+                  <div className="min-w-0">
+                    <div className="font-medium text-(--crc-fg)">{m.label}</div>
+                    <div className="truncate text-(--crc-fg-muted)">
+                      {m.description}
+                    </div>
+                  </div>
+                  {m.key === permissionMode && (
+                    <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />
+                  )}
+                </button>
+              ))}
+      </div>
+    ) : null;
+
   return (
     <div
       className="relative px-6 pb-3 pt-1"
@@ -1141,7 +1494,8 @@ function Composer({
       onDrop={(e) => {
         e.preventDefault();
         setDragOver(false);
-        if (e.dataTransfer.files.length > 0) void addFiles(e.dataTransfer.files);
+        if (e.dataTransfer.files.length > 0)
+          void addFiles(e.dataTransfer.files);
       }}
     >
       <div className="relative mx-auto w-full max-w-3xl">
@@ -1152,112 +1506,54 @@ function Composer({
                 key={c.name}
                 onClick={() => pickSuggestion(c.name)}
                 className={`flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-xs ${
-                  i === suggestionIndex ? "bg-(--crc-selected) text-(--crc-selected-fg)" : "text-(--crc-fg)"
+                  i === suggestionIndex
+                    ? "bg-(--crc-selected) text-(--crc-selected-fg)"
+                    : "text-(--crc-fg)"
                 }`}
               >
                 <span className="font-mono text-(--crc-link)">/{c.name}</span>
-                <span className="truncate text-(--crc-fg-muted)">{c.description}</span>
-                {c.argumentHint && <span className="ml-auto shrink-0 text-(--crc-fg-muted)">{c.argumentHint}</span>}
+                <span className="truncate text-(--crc-fg-muted)">
+                  {c.description}
+                </span>
+                {c.argumentHint && (
+                  <span className="ml-auto shrink-0 text-(--crc-fg-muted)">
+                    {c.argumentHint}
+                  </span>
+                )}
               </button>
             ))}
           </div>
         )}
 
-
         {openMenu && (
-          <>
-            <div className="fixed inset-0 z-40" onClick={() => setOpenMenu(null)} />
-            <div
-              className="crc-enter absolute bottom-full left-4 z-50 mb-2 max-h-72 w-80 overflow-y-auto rounded-xl border border-(--crc-border) bg-(--crc-surface) p-1 text-xs shadow-(--crc-shadow-lg)"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {openMenu === "model"
-                ? [
-                    ...capabilities.models.map((m) => (
-                      <button
-                        key={m.value}
-                        onClick={() => {
-                          setModel(m.value);
-                          setOpenMenu(null);
-                        }}
-                        className="flex w-full items-start justify-between gap-2 rounded-lg px-3 py-2 text-left hover:bg-(--crc-hover)"
-                      >
-                        <div className="min-w-0">
-                          <div className="truncate font-medium text-(--crc-fg)">{m.displayName}</div>
-                          {m.description && <div className="truncate text-(--crc-fg-muted)">{m.description}</div>}
-                        </div>
-                        {m.value === model && <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />}
-                      </button>
-                    )),
-                    <div key="custom" className="mt-1 border-t border-(--crc-border)/60 p-2">
-                      <div className="mb-1 text-(--crc-fg-muted)">Not listed? Enter a model ID directly:</div>
-                      <div className="flex gap-1.5">
-                        <input
-                          value={customModel}
-                          onChange={(ev) => setCustomModel(ev.target.value)}
-                          onKeyDown={(ev) => {
-                            if (ev.key === "Enter") useCustomModel();
-                          }}
-                          placeholder="claude-fable-5"
-                          spellCheck={false}
-                          autoComplete="off"
-                          className="crc-input min-w-0 flex-1 px-2 py-1 text-xs"
-                        />
-                        <Button variant="default" disabled={!customModel.trim()} onClick={useCustomModel} className="shrink-0">
-                          Use
-                        </Button>
-                      </div>
-                    </div>,
-                  ]
-                : openMenu === "effort"
-                  ? EFFORT_LEVELS.map((e) => (
-                      <button
-                        key={e.key}
-                        onClick={() => {
-                          setEffortKey(e.key);
-                          setOpenMenu(null);
-                        }}
-                        className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left hover:bg-(--crc-hover)"
-                      >
-                        <span className="font-medium text-(--crc-fg)">{e.label}</span>
-                        {e.key === effortKey && <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />}
-                      </button>
-                    ))
-                  : PERMISSION_MODES.map((m) => (
-                      <button
-                        key={m.key}
-                        onClick={() => {
-                          setPermissionMode(m.key);
-                          setOpenMenu(null);
-                        }}
-                        className="flex w-full items-start justify-between gap-2 rounded-lg px-3 py-2 text-left hover:bg-(--crc-hover)"
-                      >
-                        <div className="min-w-0">
-                          <div className="font-medium text-(--crc-fg)">{m.label}</div>
-                          <div className="truncate text-(--crc-fg-muted)">{m.description}</div>
-                        </div>
-                        {m.key === permissionMode && <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />}
-                      </button>
-                    ))}
-            </div>
-          </>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setOpenMenu(null)}
+          />
         )}
 
-
         <div
-          className={`rounded-2xl bg-(--crc-surface)/80 px-1 pt-1 pb-1 shadow-(--crc-shadow-sm) backdrop-blur transition-[box-shadow,opacity] duration-150 focus-within:ring-2 focus-within:ring-(--crc-accent)/25 ${
+          className={`rounded-2xl bg-(--crc-surface) px-1 pt-1 pb-1 shadow-(--crc-shadow-sm) transition-[box-shadow,opacity] duration-150 focus-within:ring-2 focus-within:ring-(--crc-accent)/25 ${
             dragOver ? "ring-2 ring-(--crc-accent)/40" : ""
-          } ${disabled ? "opacity-60" : ""}`}
+          }`}
         >
           {attachments.length > 0 && (
             <div className="flex flex-wrap gap-1.5 px-3 pt-2">
               {attachments.map((a) => (
-                <AttachmentChip key={a.id} attachment={a} onRemove={() => removeAttachment(a.id)} />
+                <AttachmentChip
+                  key={a.id}
+                  attachment={a}
+                  onRemove={() => removeAttachment(a.id)}
+                />
               ))}
             </div>
           )}
 
-          {attachError && <div className="px-3 pt-2 text-xs text-(--crc-danger)">{attachError}</div>}
+          {attachError && (
+            <div className="px-3 pt-2 text-xs text-(--crc-danger)">
+              {attachError}
+            </div>
+          )}
           <textarea
             ref={textareaRef}
             value={text}
@@ -1275,7 +1571,9 @@ function Composer({
                 }
                 if (e.key === "ArrowUp") {
                   e.preventDefault();
-                  setSuggestionIndex((i) => (i - 1 + suggestions.length) % suggestions.length);
+                  setSuggestionIndex(
+                    (i) => (i - 1 + suggestions.length) % suggestions.length,
+                  );
                   return;
                 }
                 if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
@@ -1296,45 +1594,67 @@ function Composer({
             }}
             rows={1}
             disabled={disabled}
-            placeholder={disabled ? reason : busy ? "Add to what Claude is doing…" : "Reply to Claude…"}
+            placeholder={
+              disabled
+                ? reason
+                : busy
+                  ? "Add to what Claude is doing…"
+                  : "Reply to Claude…"
+            }
             className="block max-h-48 w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[14px] leading-relaxed text-(--crc-fg) outline-none [field-sizing:content] placeholder:text-(--crc-fg-muted)"
           />
 
           <div className="flex items-center gap-1 px-1 pb-1">
             <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,.md,.json,.csv,.log,.yaml,.yml"
-            className="hidden"
-            onChange={(e) => {
-            if (e.target.files) void addFiles(e.target.files);
-            e.target.value = ""; // allow re-picking the same file
-            }}
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,.md,.json,.csv,.log,.yaml,.yml"
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files) void addFiles(e.target.files);
+                e.target.value = ""; // allow re-picking the same file
+              }}
             />
-            <Button variant="ghost" size="icon" disabled={disabled} onClick={() => fileInputRef.current?.click()} title="Attach images, PDFs, or text files" className="h-7 w-7">
+            <Button
+              variant="ghost"
+              size="icon"
+              disabled={disabled}
+              onClick={() => fileInputRef.current?.click()}
+              title="Attach images, PDFs, or text files"
+              className="h-7 w-7"
+            >
               <span className="codicon codicon-add" />
             </Button>
-            <PickerButton
-            label={mode?.label ?? "Manual"}
-            open={openMenu === "mode"}
-            onToggle={() => setOpenMenu((v) => (v === "mode" ? null : "mode"))}
-            />
+            <div className="relative">
+              <PickerButton
+                label={mode?.label ?? "Manual"}
+                open={openMenu === "mode"}
+                onToggle={() => setOpenMenu((v) => (v === "mode" ? null : "mode"))}
+              />
+              {openMenu === "mode" && menuPanel("start")}
+            </div>
             <div className="ml-auto flex items-center gap-1">
-              <PickerButton
-              label={
-              capabilities.models.length === 0 && !model
-              ? "Loading models…"
-              : (selectedModel?.displayName ?? model ?? "Default")
-              }
-              open={openMenu === "model"}
-              onToggle={() => setOpenMenu((v) => (v === "model" ? null : "model"))}
-              />
-              <PickerButton
-              label={effort?.label ?? "Medium"}
-              open={openMenu === "effort"}
-              onToggle={() => setOpenMenu((v) => (v === "effort" ? null : "effort"))}
-              />
+              <div className="relative">
+                <PickerButton
+                  label={
+                    capabilities.models.length === 0 && !model
+                      ? "Loading models…"
+                      : (selectedModel?.displayName ?? model ?? "Default")
+                  }
+                  open={openMenu === "model"}
+                  onToggle={() => setOpenMenu((v) => (v === "model" ? null : "model"))}
+                />
+                {openMenu === "model" && menuPanel("end")}
+              </div>
+              <div className="relative">
+                <PickerButton
+                  label={effort?.label ?? "Medium"}
+                  open={openMenu === "effort"}
+                  onToggle={() => setOpenMenu((v) => (v === "effort" ? null : "effort"))}
+                />
+                {openMenu === "effort" && menuPanel("end")}
+              </div>
               {busy ? (
                 <button
                   type="button"
@@ -1360,13 +1680,23 @@ function Composer({
             </div>
           </div>
         </div>
-        <div className="mt-2 text-center text-[11px] text-(--crc-fg-muted)">Enter to send · Shift+Enter newline · / for commands</div>
+        <div className="mt-2 text-center text-[11px] text-(--crc-fg-muted)">
+          Enter to send · Shift+Enter newline · / for commands
+        </div>
       </div>
     </div>
   );
 }
 
-function PickerButton({ label, open, onToggle }: { label: string; open: boolean; onToggle: () => void }) {
+function PickerButton({
+  label,
+  open,
+  onToggle,
+}: {
+  label: string;
+  open: boolean;
+  onToggle: () => void;
+}) {
   return (
     <button
       onClick={onToggle}

@@ -452,6 +452,23 @@ function hostOf(url: string | null): string | null {
   }
 }
 
+/** The outcome glyph at the right of a step row. */
+function Outcome({ kind, label }: { kind: "done" | "failed" | "running" | "stopped"; label?: string }) {
+  const map = {
+    done: { icon: "codicon-check", tone: "text-(--crc-success)", title: "Finished" },
+    failed: { icon: "codicon-close", tone: "text-(--crc-danger)", title: "Failed" },
+    running: { icon: "codicon-loading codicon-modifier-spin", tone: "text-(--crc-fg-muted)", title: "Running" },
+    stopped: { icon: "codicon-primitive-square", tone: "text-(--crc-fg-muted)", title: "Stopped" },
+  } as const;
+  const m = map[kind];
+  return (
+    <span className={`inline-flex items-center gap-1.5 ${m.tone}`} title={m.title} aria-label={label ? `${m.title} · ${label}` : m.title}>
+      {label && <span className="text-xs">{label}</span>}
+      <span className={`codicon ${m.icon} text-[13px]`} />
+    </span>
+  );
+}
+
 /**
  * A tool call as a quiet disclosure line — "Ran a command ›" with its
  * outcome at the right — instead of a bordered card. Opens itself while the
@@ -492,40 +509,23 @@ function ToolStep({
     wasRunning.current = nowRunning;
   }, [running, agentRunning, restingOpen]);
 
+  // One glyph language for every step: check = finished, cross = failed,
+  // spinner = still going, square = stopped. No "ok" vs "done" — same thing.
+  const toolCount = block.subagent?.blocks.filter((b) => b.kind === "tool_use").length ?? 0;
   const status = block.backgroundTask ? (
-    <span
-      className={
-        block.backgroundTask.status === "completed"
-          ? "text-(--crc-success)"
-          : block.backgroundTask.status === "stopped"
-            ? "text-(--crc-fg-muted)"
-            : "text-(--crc-danger)"
-      }
-    >
-      {block.backgroundTask.status === "completed"
-        ? "done"
-        : block.backgroundTask.status}
-    </span>
+    <Outcome
+      kind={block.backgroundTask.status === "completed" ? "done" : block.backgroundTask.status === "stopped" ? "stopped" : "failed"}
+    />
   ) : block.subagent ? (
     agentRunning ? (
-      <span className="text-(--crc-link)">
-        running ·{" "}
-        {block.subagent.blocks.filter((b) => b.kind === "tool_use").length}{" "}
-        tools
-      </span>
+      <Outcome kind="running" label={`${toolCount} ${toolCount === 1 ? "tool" : "tools"}`} />
     ) : (
-      <span className="text-(--crc-success)">done</span>
+      <Outcome kind="done" />
     )
   ) : block.result ? (
-    <span
-      className={
-        block.result.ok ? "text-(--crc-success)" : "text-(--crc-danger)"
-      }
-    >
-      {block.result.ok ? "ok" : "failed"}
-    </span>
+    <Outcome kind={block.result.ok ? "done" : "failed"} />
   ) : running ? (
-    <span className="codicon codicon-loading codicon-modifier-spin text-(--crc-fg-muted)" />
+    <Outcome kind="running" />
   ) : null;
 
   const command =

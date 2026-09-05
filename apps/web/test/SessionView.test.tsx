@@ -295,7 +295,7 @@ describe("SessionView", () => {
     fireEvent.click(screen.getByRole("button", { name: /Medium/ }));
     fireEvent.click(screen.getByText("Extra High"));
 
-    fireEvent.change(screen.getByPlaceholderText(/Ask Claude anything/), { target: { value: "hello" } });
+    fireEvent.change(screen.getByPlaceholderText(/Reply to Claude/), { target: { value: "hello" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     expect(calls).toEqual([
@@ -337,7 +337,7 @@ describe("SessionView", () => {
     // The trigger button now reflects the typed-in model, not the fetched list.
     expect(screen.getByRole("button", { name: "claude-fable-5" })).toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText(/Ask Claude anything/), { target: { value: "hi" } });
+    fireEvent.change(screen.getByPlaceholderText(/Reply to Claude/), { target: { value: "hi" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     expect(calls[0]).toMatchObject({ sid: sessionId, text: "hi", opts: { model: "claude-fable-5" } });
@@ -364,7 +364,7 @@ describe("SessionView", () => {
 
     renderSession(sessionId, events, "d1", capabilities);
 
-    const textarea = screen.getByPlaceholderText(/Ask Claude anything/) as HTMLTextAreaElement;
+    const textarea = screen.getByPlaceholderText(/Reply to Claude/) as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: "/comp" } });
 
     const suggestion = await screen.findByText("/compact");

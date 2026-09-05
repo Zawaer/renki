@@ -393,6 +393,33 @@ features. The throughline for everything below: shrink "found the repo" →
       streaks, sumRecent, tokensInPerspective — unit-tested) so mobile can
       reuse it verbatim.
 
+- [x] **Web, third pass — from the Lovable concept (2026-09-05).** Toivo
+      designed a "Claude Command Center" concept in Lovable (placed at the
+      repo root under `Claude Command Center (Lovable)/`, a TanStack/shadcn
+      prototype with mock data — reference only, not wired to anything). Taken
+      from it: the "golden-hour" oklch palette (warm brown surfaces, amber
+      accent with dark text, sidebar on a tone almost equal to the page), the
+      composer with **no panel** — a single soft-shadowed rounded box floating
+      on the page, attach + permission-mode on the left, model + effort as
+      quiet text and a round send/stop on the right, the keyboard hint
+      centered underneath; the permission request as a floating card with a
+      slow danger "alarm" ring above the composer instead of a strip; tool
+      calls as **disclosure rows** ("Ran a command ›", "Edited path ⌄",
+      "Agent name ⌄" with its nested steps, outcome at the right in colour)
+      instead of bordered cards — auto-open while running or when the payload
+      is a diff/plan/task list, folding shut once routine calls settle; quiet
+      text-only status pills; plain "18s · 740 tokens · $0.10" turn footers.
+      Settings got a proper redesign at the same time (Toivo flagged the
+      Connection and Accounts sections as unclear in both versions): cards
+      with a real title scale, Connection as a status line + key/value rows
+      with Copy/Show/verified, Accounts renamed "Claude accounts" with a plain
+      explanation of coding accounts vs. usage tracking, each account as a
+      tonal row with an Active badge or a Make active button and labelled
+      5-hour / 7-day meters, auto-switch as a real switch that reveals the
+      threshold only when on, and both add-flows as plus-links. Not taken:
+      the top bar with a context-window meter (we have no per-session
+      context-usage data yet — the SDK's getContextUsage() could feed one).
+
 ## 4. Known fragilities
 
 - **Per-session git worktrees + the `crc merge` conflict flow may not scale to

@@ -64,37 +64,35 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-(--crc-border) bg-(--crc-bg-elevated) px-5">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="truncate text-[15px] font-semibold tracking-tight text-(--crc-fg)">{conv.repoName ?? "…"}</span>
-              {displayBranch(conv.branch) && (
-                <span className="hidden shrink-0 items-center gap-1 rounded-md bg-(--crc-surface) px-1.5 py-0.5 font-mono text-[11px] text-(--crc-fg-muted) md:inline-flex">
-                  <span className="codicon codicon-git-branch text-[11px]" />
-                  {displayBranch(conv.branch)}
-                </span>
-              )}
-            </div>
-            <div className="mt-0.5 flex items-center gap-1.5 text-xs text-(--crc-fg-muted)">
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${
-                  conv.controller ? (isController ? "bg-(--crc-accent)" : "bg-(--crc-fg-muted)") : "bg-(--crc-border)"
-                }`}
-              />
-              {conv.controller
-                ? isController
-                  ? "You're in control"
-                  : `${conv.controllerName ?? conv.controller} is in control — you're watching`
-                : "Nobody is in control"}
-            </div>
+      <div className="flex shrink-0 items-center justify-between gap-3 px-6 py-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2.5">
+            <span className="truncate text-[15px] font-medium tracking-tight text-(--crc-fg)">{conv.repoName ?? "…"}</span>
+            <StatusBadge status={status} pendingPermission={conv.pending.length > 0} />
           </div>
+          {displayBranch(conv.branch) && (
+            <div className="mt-0.5 flex items-center gap-1.5 text-xs text-(--crc-fg-muted)">
+              <span className="codicon codicon-git-branch text-[11px]" />
+              <span className="truncate font-mono">{displayBranch(conv.branch)}</span>
+            </div>
+          )}
         </div>
-        <div className="flex items-center gap-2">
-          <StatusBadge status={status} pendingPermission={conv.pending.length > 0} />
+        <div className="flex items-center gap-3">
+          <span
+            className={`inline-flex items-center gap-1.5 text-xs font-medium ${
+              conv.controller && isController ? "text-(--crc-success)" : "text-(--crc-fg-muted)"
+            }`}
+          >
+            <span className={`codicon ${conv.controller && isController ? "codicon-verified" : conv.controller ? "codicon-eye" : "codicon-unlock"} text-[13px]`} />
+            {conv.controller
+              ? isController
+                ? "You're in control"
+                : `${conv.controllerName ?? conv.controller} is in control — you're watching`
+              : "Nobody is in control"}
+          </span>
           {!isController && (
             <Button variant="primary" onClick={() => realtime.takeControl(sessionId)}>
-              <span className="codicon codicon-record-keys" /> Take control
+              Take control
             </Button>
           )}
         </div>
@@ -102,7 +100,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
 
       {/* Timeline */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-4xl space-y-5 px-6 py-6">
+        <div className="mx-auto w-full max-w-3xl space-y-7 px-6 py-6">
           {conv.timeline.length === 0 && (
             <div className="flex flex-col items-center gap-3 py-24 text-center">
               <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-(--crc-surface) text-(--crc-fg-muted) shadow-(--crc-shadow-sm)">
@@ -124,8 +122,8 @@ export function SessionView({ sessionId }: { sessionId: string }) {
 
       {/* Pending permissions */}
       {conv.pending.length > 0 && (
-        <div className="border-t border-(--crc-border)/60 bg-(--crc-bg-elevated) px-6 py-3 shadow-[0_-12px_32px_-16px_rgba(0,0,0,0.45)]">
-          <div className="mx-auto w-full max-w-4xl space-y-2">
+        <div className="px-6 pb-3">
+          <div className="mx-auto w-full max-w-3xl space-y-2">
           {conv.pending.map((p) => (
             <PermissionCard
               key={p.requestId}
@@ -143,8 +141,8 @@ export function SessionView({ sessionId }: { sessionId: string }) {
           QueuedPromptView). Shown here as "up next", separate from the
           strictly-ordered conversation above. */}
       {conv.queuedPrompts.length > 0 && (
-        <div className="border-t border-(--crc-border)/60 bg-(--crc-bg-elevated)/60 px-6 py-2">
-          <div className="mx-auto w-full max-w-4xl space-y-1">
+        <div className="px-6 pb-2">
+          <div className="mx-auto w-full max-w-3xl space-y-1">
           <div className="text-[11px] text-(--crc-fg-muted)">
             {conv.queuedPrompts.length === 1 ? "1 message queued" : `${conv.queuedPrompts.length} messages queued`} — will send once the current turn finishes
           </div>
@@ -174,7 +172,7 @@ function TimelineRow({ item }: { item: TimelineItem }) {
   if (item.type === "prompt") {
     return (
       <div className="crc-enter flex justify-end">
-        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-(--crc-accent)/12 px-4 py-2.5 ring-1 ring-(--crc-accent)/20 ring-inset">
+        <div className="max-w-[85%] rounded-2xl bg-(--crc-surface) px-4 py-3">
           {item.text && <div className="whitespace-pre-wrap text-[14px] leading-relaxed text-(--crc-fg)">{item.text}</div>}
           {item.attachments && item.attachments.length > 0 && (
             <div className={`flex flex-wrap gap-1.5 ${item.text ? "mt-2" : ""}`}>
@@ -237,12 +235,16 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
         </div>
       )}
       {turn.status === "done" && turn.costUsd != null && (
-        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-(--crc-fg-muted)">
-          <MetaPill>${turn.costUsd.toFixed(4)}</MetaPill>
-          <MetaPill>{formatDuration(turn.durationMs ?? 0)}</MetaPill>
+        <div className="flex flex-wrap items-center gap-2 pt-1 text-[11.5px] text-(--crc-fg-muted)">
+          <span>{formatDuration(turn.durationMs ?? 0)}</span>
           {(turn.inputTokens != null || turn.outputTokens != null) && (
-            <MetaPill>{formatTokenCount((turn.inputTokens ?? 0) + (turn.outputTokens ?? 0))} tokens</MetaPill>
+            <>
+              <span>·</span>
+              <span>{formatTokenCount((turn.inputTokens ?? 0) + (turn.outputTokens ?? 0))} tokens</span>
+            </>
           )}
+          <span>·</span>
+          <span>${turn.costUsd.toFixed(4)}</span>
         </div>
       )}
       {turn.status === "error" && turn.interrupted && (
@@ -259,15 +261,11 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
   );
 }
 
-function MetaPill({ children }: { children: React.ReactNode }) {
-  return <span className="rounded-md bg-(--crc-surface) px-1.5 py-0.5 ring-1 ring-(--crc-border) ring-inset">{children}</span>;
-}
-
 /** A prompt the controller sent while this turn was already running — shown inside the turn, where Claude picked it up. */
 function SteeredPrompt({ prompt }: { prompt: SteeredPromptView }) {
   return (
     <div className="crc-enter flex justify-end" data-testid="steered-prompt">
-      <div className="max-w-[85%] rounded-2xl rounded-br-md bg-(--crc-accent)/12 px-4 py-2.5 ring-1 ring-(--crc-accent)/20 ring-inset">
+      <div className="max-w-[85%] rounded-2xl bg-(--crc-surface) px-4 py-3">
         {prompt.text && <div className="whitespace-pre-wrap text-[14px] leading-relaxed text-(--crc-fg)">{prompt.text}</div>}
         {prompt.attachments && prompt.attachments.length > 0 && (
           <div className={`flex flex-wrap gap-1.5 ${prompt.text ? "mt-2" : ""}`}>
@@ -305,115 +303,202 @@ function toolIcon(name: string): string {
 }
 
 function Block({ block, turnRunning }: { block: BlockView; turnRunning: boolean }) {
-  if (block.kind === "tool_use") {
-    const filePath = extractFilePath(block.toolInput);
-    const editView = parseEditView(block.toolName, block.toolInput);
-    const todos = block.toolName === "TodoWrite" ? parseTodos(block.toolInput) : null;
-    const plan = parsePlan(block.toolName, block.toolInput);
-    return (
-      <div className="overflow-hidden rounded-xl bg-(--crc-surface) text-xs shadow-(--crc-shadow-xs)">
-        <div className="flex items-center gap-2 px-3 py-2 text-(--crc-fg)">
-          <span className="flex h-5 w-5 items-center justify-center rounded-md bg-(--crc-bg-inset) text-(--crc-fg-muted)">
-            <span className={`codicon codicon-${toolIcon(block.toolName)} text-[12px]`} />
-          </span>
-          <span className="font-mono font-medium">{block.toolName}</span>
-          {block.result && (
-            <span
-              className={`ml-1 h-1.5 w-1.5 rounded-full ${block.result.ok ? "bg-(--crc-success)" : "bg-(--crc-danger)"}`}
-              title={block.result.ok ? "Succeeded" : "Failed"}
-            />
-          )}
-          {!block.result && turnRunning && !block.backgroundTask && (
-            <span className="codicon codicon-loading codicon-modifier-spin ml-1 text-[11px] text-(--crc-fg-muted)" />
-          )}
-          {filePath && isHosted() && (
-            <button
-              onClick={() => hostOpenFile(filePath)}
-              className="ml-auto truncate text-(--crc-link) hover:underline"
-              title={`Open ${filePath} in editor`}
-            >
-              {filePath.split("/").pop()}
-            </button>
-          )}
-        </div>
-        {editView ? (
-          <DiffView view={editView} />
-        ) : todos ? (
-          <TodoChecklist todos={todos} />
-        ) : plan ? (
-          <div className="border-t border-(--crc-border)/60 px-3 py-2">
-            <Markdown content={plan} />
-          </div>
-        ) : (
-          <pre className="overflow-x-auto border-t border-(--crc-border)/60 bg-(--crc-bg-inset)/50 px-3 py-2 font-mono leading-relaxed text-(--crc-fg-muted)">
-            {truncate(JSON.stringify(block.toolInput, null, 2), 800)}
-          </pre>
-        )}
-        {block.result && (
-          <pre
-            className={`max-h-72 overflow-auto border-t border-(--crc-border)/60 px-3 py-2 font-mono leading-relaxed ${
-              block.result.ok ? "text-(--crc-fg-muted)" : "bg-(--crc-danger)/8 text-(--crc-danger)"
-            }`}
-          >
-            {block.result.ok ? "" : "error: "}
-            {truncate(block.result.summary, 800)}
-          </pre>
-        )}
-        {block.subagent && <SubagentActivity subagent={block.subagent} />}
-        {block.backgroundTask && (
-          <div className="flex items-start gap-1.5 border-t border-(--crc-border)/60 bg-(--crc-bg-inset)/40 px-3 py-2 text-(--crc-fg-muted)">
-            <span
-              className={`codicon mt-0.5 ${
-                block.backgroundTask.status === "completed"
-                  ? "codicon-pass-filled text-(--crc-success)"
-                  : block.backgroundTask.status === "stopped"
-                    ? "codicon-debug-stop"
-                    : "codicon-error text-(--crc-danger)"
-              }`}
-            />
-            <span>{truncate(block.backgroundTask.summary, 800)}</span>
-          </div>
-        )}
-      </div>
-    );
-  }
+  if (block.kind === "tool_use") return <ToolStep block={block} turnRunning={turnRunning} />;
   if (block.kind === "thinking") {
     return <ThinkingBlock block={block} live={turnRunning && block.endedAtMs == null} />;
   }
   return <Markdown content={block.text} />;
 }
 
-/** A Task call's own nested activity, live-streamed via the Agent SDK's forwardSubagentText — collapsible, open by default while running. */
-function SubagentActivity({ subagent }: { subagent: SubagentView }) {
-  const detailsRef = useRef<HTMLDetailsElement>(null);
-  const prevStatus = useRef(subagent.status);
+/** What a tool call is, in words: the row label and the mono detail beside it. */
+function describeTool(name: string, input: unknown): { label: string; meta: string | null } {
+  const inp = (input ?? {}) as Record<string, unknown>;
+  const str = (k: string) => (typeof inp[k] === "string" ? (inp[k] as string) : null);
+  const base = (path: string | null) => (path ? path.split("/").filter(Boolean).slice(-2).join("/") : null);
+  switch (name) {
+    case "Bash":
+      return { label: "Ran a command", meta: str("description") ?? truncate(str("command") ?? "", 72) };
+    case "BashOutput":
+      return { label: "Checked command output", meta: null };
+    case "Read":
+      return { label: "Read", meta: base(str("file_path")) };
+    case "Write":
+      return { label: "Wrote", meta: base(str("file_path")) };
+    case "Edit":
+    case "MultiEdit":
+    case "NotebookEdit":
+      return { label: "Edited", meta: base(str("file_path") ?? str("notebook_path")) };
+    case "Grep":
+    case "Glob":
+      return { label: "Searched", meta: str("pattern") };
+    case "WebFetch":
+      return { label: "Fetched", meta: hostOf(str("url")) };
+    case "WebSearch":
+      return { label: "Searched the web", meta: str("query") };
+    case "Agent":
+    case "Task":
+      return { label: "Agent", meta: str("description") ?? str("subagent_type") };
+    case "TodoWrite":
+      return { label: "Updated tasks", meta: null };
+    case "AskUserQuestion":
+      return { label: "Asked a question", meta: null };
+    case "ExitPlanMode":
+      return { label: "Proposed a plan", meta: null };
+    default:
+      return { label: name, meta: null };
+  }
+}
 
+function hostOf(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * A tool call as a quiet disclosure line — "Ran a command ›" with its
+ * outcome at the right — instead of a bordered card. Opens itself while the
+ * call is running or when the payload is worth seeing unprompted (a diff, a
+ * plan, a task list, a live agent), and folds shut once a routine call is done.
+ */
+function ToolStep({ block, turnRunning }: { block: Extract<BlockView, { kind: "tool_use" }>; turnRunning: boolean }) {
+  const filePath = extractFilePath(block.toolInput);
+  const editView = parseEditView(block.toolName, block.toolInput);
+  const todos = block.toolName === "TodoWrite" ? parseTodos(block.toolInput) : null;
+  const plan = parsePlan(block.toolName, block.toolInput);
+  const { label, meta } = describeTool(block.toolName, block.toolInput);
+  const isAgent = block.toolName === "Agent" || block.toolName === "Task";
+  // A background agent's nested feed never gets a closing tool_result (its
+  // Task call returned immediately), so its completion notification is the
+  // real "done" signal.
+  const agentRunning = block.subagent?.status === "running" && !block.backgroundTask;
+  const running = !block.result && !block.backgroundTask && turnRunning;
+  const richPayload = editView != null || todos != null || plan != null || block.subagent != null;
+  const restingOpen = richPayload && (agentRunning || block.subagent == null);
+  const [open, setOpen] = useState(running || restingOpen);
+  const userToggled = useRef(false);
+  const wasRunning = useRef(running || agentRunning);
   useEffect(() => {
-    // Native <details>'s `open` attribute isn't reliably reactive as a React
-    // prop across re-renders (React applies it at mount but doesn't force-sync
-    // it on later updates) — drive the one transition we care about
-    // (running -> done) imperatively so it actually collapses once finished.
-    if (prevStatus.current === "running" && subagent.status === "done" && detailsRef.current) {
-      detailsRef.current.open = false;
-    }
-    prevStatus.current = subagent.status;
-  }, [subagent.status]);
+    // Auto-collapse a routine call once it settles — unless the user opened it themselves.
+    const nowRunning = running || agentRunning;
+    if (wasRunning.current && !nowRunning && !userToggled.current) setOpen(restingOpen);
+    wasRunning.current = nowRunning;
+  }, [running, agentRunning, restingOpen]);
+
+  const status = block.backgroundTask ? (
+    <span className={block.backgroundTask.status === "completed" ? "text-(--crc-success)" : block.backgroundTask.status === "stopped" ? "text-(--crc-fg-muted)" : "text-(--crc-danger)"}>
+      {block.backgroundTask.status === "completed" ? "done" : block.backgroundTask.status}
+    </span>
+  ) : block.subagent ? (
+    agentRunning ? (
+      <span className="text-(--crc-link)">running · {block.subagent.blocks.filter((b) => b.kind === "tool_use").length} tools</span>
+    ) : (
+      <span className="text-(--crc-success)">done</span>
+    )
+  ) : block.result ? (
+    <span className={block.result.ok ? "text-(--crc-success)" : "text-(--crc-danger)"}>{block.result.ok ? "ok" : "failed"}</span>
+  ) : running ? (
+    <span className="codicon codicon-loading codicon-modifier-spin text-(--crc-fg-muted)" />
+  ) : null;
+
+  const command = block.toolName === "Bash" ? ((block.toolInput as { command?: string } | null)?.command ?? null) : null;
 
   return (
-    <details ref={detailsRef} className="border-t border-(--crc-border)/60 px-3 py-2" open={subagent.status === "running"}>
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-md text-(--crc-fg-muted) hover:text-(--crc-fg)">
-        <span
-          className={`codicon ${subagent.status === "running" ? "codicon-loading codicon-modifier-spin" : "codicon-pass-filled text-(--crc-success)"}`}
-        />
-        <span className="font-medium text-(--crc-fg)">{subagent.subagentType ?? "Subagent"}</span>
-        {subagent.taskDescription && <span className="truncate">— {subagent.taskDescription}</span>}
-      </summary>
-      <div className="mt-2 space-y-2 border-l-2 border-(--crc-accent)/30 pl-3">
-        {subagent.blocks.map((b, i) => (
-          <Block key={i} block={b} turnRunning={subagent.status === "running"} />
-        ))}
-      </div>
-    </details>
+    <div className="my-1">
+      <button
+        type="button"
+        onClick={() => {
+          userToggled.current = true;
+          setOpen((o) => !o);
+        }}
+        className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 py-1 text-left text-[13px] text-(--crc-fg-muted) transition-colors hover:bg-(--crc-surface)/60 hover:text-(--crc-fg)"
+      >
+        <span className="font-medium text-(--crc-fg)/85">{label}</span>
+        {meta && <span className="truncate font-mono text-xs">{meta}</span>}
+        <span className={`codicon ${open ? "codicon-chevron-down" : "codicon-chevron-right"} shrink-0 text-[12px]`} />
+        {filePath && isHosted() && (
+          <span
+            role="link"
+            onClick={(e) => {
+              e.stopPropagation();
+              hostOpenFile(filePath);
+            }}
+            className="truncate text-xs text-(--crc-link) hover:underline"
+            title={`Open ${filePath} in editor`}
+          >
+            open
+          </span>
+        )}
+        {status && <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs">{status}</span>}
+      </button>
+      {open && (
+        <div className="mt-1.5 space-y-1.5 pl-0.5 text-xs">
+          {editView ? (
+            <div className="overflow-hidden rounded-lg bg-(--crc-bg-inset)/70">
+              <DiffView view={editView} />
+            </div>
+          ) : todos ? (
+            <div className="rounded-lg bg-(--crc-bg-inset)/70">
+              <TodoChecklist todos={todos} />
+            </div>
+          ) : plan ? (
+            <div className="rounded-lg bg-(--crc-bg-inset)/70 px-3 py-2">
+              <Markdown content={plan} />
+            </div>
+          ) : command ? (
+            <pre className="overflow-x-auto rounded-lg bg-(--crc-bg-inset)/70 px-3 py-2 font-mono leading-relaxed text-(--crc-fg)">$ {command}</pre>
+          ) : block.toolName !== "Agent" && block.toolName !== "Task" ? (
+            <pre className="overflow-x-auto rounded-lg bg-(--crc-bg-inset)/70 px-3 py-2 font-mono leading-relaxed text-(--crc-fg-muted)">
+              {truncate(JSON.stringify(block.toolInput, null, 2), 800)}
+            </pre>
+          ) : null}
+          {block.result && block.result.summary && !isAgent && (
+            <pre
+              className={`max-h-72 overflow-auto rounded-lg px-3 py-2 font-mono leading-relaxed ${
+                block.result.ok ? "text-(--crc-fg-muted)" : "bg-(--crc-danger)/8 text-(--crc-danger)"
+              }`}
+            >
+              {block.result.ok ? "" : "error: "}
+              {truncate(block.result.summary, 800)}
+            </pre>
+          )}
+          {block.subagent && <SubagentActivity subagent={block.subagent} />}
+          {block.backgroundTask && !block.subagent?.blocks.some((b) => b.kind === "text") && (
+            <div className="flex items-start gap-1.5 rounded-lg bg-(--crc-bg-inset)/50 px-3 py-2 text-(--crc-fg-muted)">
+              <span
+                className={`codicon mt-0.5 ${
+                  block.backgroundTask.status === "completed"
+                    ? "codicon-pass-filled text-(--crc-success)"
+                    : block.backgroundTask.status === "stopped"
+                      ? "codicon-debug-stop"
+                      : "codicon-error text-(--crc-danger)"
+                }`}
+              />
+              <span>{truncate(block.backgroundTask.summary, 800)}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A Task call's own nested activity, live-streamed via the Agent SDK's forwardSubagentText — the agent's own steps, indented under its row. */
+function SubagentActivity({ subagent }: { subagent: SubagentView }) {
+  return (
+    <div className="ml-1 space-y-1 border-l border-(--crc-border)/60 pl-3">
+      {subagent.taskDescription && (
+        <div className="text-[12px] text-(--crc-fg-muted)">
+          {subagent.subagentType ?? "Subagent"} — {subagent.taskDescription}
+        </div>
+      )}
+      {subagent.blocks.map((b, i) => (
+        <Block key={i} block={b} turnRunning={subagent.status === "running"} />
+      ))}
+    </div>
   );
 }
 
@@ -424,7 +509,7 @@ function DiffView({ view }: { view: EditToolView }) {
   const totalLines = view.hunks.reduce((n, h) => n + h.lines.length, 0);
   let shown = 0;
   return (
-    <div className="overflow-x-auto border-t border-(--crc-border)/60 font-mono">
+    <div className="overflow-x-auto font-mono">
       {view.hunks.map((hunk, hi) => {
         if (shown >= MAX_DIFF_LINES_SHOWN) return null;
         const remaining = MAX_DIFF_LINES_SHOWN - shown;
@@ -459,7 +544,7 @@ function DiffView({ view }: { view: EditToolView }) {
 
 function TodoChecklist({ todos }: { todos: TodoItemView[] }) {
   return (
-    <div className="border-t border-(--crc-border)/60 px-3 py-1.5">
+    <div className="px-3 py-2">
       {todos.map((t, i) => (
         <div key={i} className="flex items-start gap-2 py-0.5">
           <span
@@ -550,6 +635,33 @@ function useThinkingVerb(live: boolean): string {
   return THINKING_VERBS[i] ?? "Thinking";
 }
 
+function permissionTitle(toolName: string): string {
+  switch (toolName) {
+    case "Bash":
+      return "Claude wants to run a command";
+    case "Edit":
+    case "MultiEdit":
+    case "NotebookEdit":
+      return "Claude wants to edit a file";
+    case "Write":
+      return "Claude wants to write a file";
+    case "Read":
+      return "Claude wants to read a file";
+    case "WebFetch":
+    case "WebSearch":
+      return "Claude wants to reach the web";
+    default:
+      return "Claude wants to run a tool";
+  }
+}
+
+/** The one line that matters for approving: the command itself for Bash, otherwise the input. */
+function permissionPreview(toolName: string, input: unknown): string {
+  const command = (input as { command?: unknown } | null)?.command;
+  if (toolName === "Bash" && typeof command === "string") return `$ ${command}`;
+  return truncate(JSON.stringify(input, null, 2), 500);
+}
+
 function formatDuration(ms: number): string {
   const totalSeconds = Math.max(0, Math.round(ms / 1000));
   if (totalSeconds < 60) return `${totalSeconds}s`;
@@ -585,17 +697,16 @@ function PermissionCard({
   }
 
   return (
-    <div className="crc-enter rounded-xl border border-(--crc-warning)/40 bg-(--crc-warning)/8 p-4 shadow-(--crc-shadow-md)">
-      <div className="flex items-center gap-2.5 text-sm text-(--crc-fg)">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-(--crc-warning)/15 text-(--crc-warning)">
-          <span className={`codicon ${plan != null ? "codicon-checklist" : "codicon-shield"}`} />
-        </span>
+    <div className="crc-enter crc-alarm rounded-2xl bg-(--crc-surface) px-4 py-3 shadow-(--crc-shadow-alarm)">
+      <div className="flex items-center gap-3 text-sm text-(--crc-fg)">
+        <span className={`codicon ${plan != null ? "codicon-checklist text-(--crc-warning)" : "codicon-shield text-(--crc-danger)"} shrink-0 text-[15px]`} />
         {plan != null ? (
           <span className="font-medium">Plan ready for review</span>
         ) : (
-          <span className="flex flex-wrap items-center gap-x-1.5">
-            <span className="font-medium">Claude wants to run</span>
-            <span className="rounded-md bg-(--crc-surface) px-1.5 py-0.5 font-mono text-xs ring-1 ring-(--crc-border) ring-inset">{perm.toolName}</span>
+          <span className="flex flex-wrap items-center gap-x-1.5 text-[13px]">
+            <span className="font-medium">{permissionTitle(perm.toolName)}</span>
+            <span className="text-(--crc-fg-muted)">·</span>
+            <span className="font-mono text-xs text-(--crc-fg-muted)">{perm.toolName}</span>
           </span>
         )}
       </div>
@@ -612,8 +723,8 @@ function PermissionCard({
           <TodoChecklist todos={todos} />
         </div>
       ) : (
-        <pre className="mt-3 max-h-32 overflow-auto rounded-lg bg-(--crc-bg-inset)/70 px-3 py-2 font-mono text-xs leading-relaxed text-(--crc-fg-muted)">
-          {truncate(JSON.stringify(perm.toolInput, null, 2), 500)}
+        <pre className="mt-2.5 max-h-32 overflow-auto rounded-lg bg-(--crc-bg-inset)/70 px-3 py-2 font-mono text-xs leading-relaxed text-(--crc-fg)">
+          {permissionPreview(perm.toolName, perm.toolInput)}
         </pre>
       )}
       {canAct ? (
@@ -1021,7 +1132,7 @@ function Composer({
 
   return (
     <div
-      className="relative border-t border-(--crc-border)/60 bg-(--crc-bg-elevated) px-6 pb-4 pt-3"
+      className="relative px-6 pb-3 pt-1"
       onDragOver={(e) => {
         e.preventDefault();
         setDragOver(true);
@@ -1033,7 +1144,7 @@ function Composer({
         if (e.dataTransfer.files.length > 0) void addFiles(e.dataTransfer.files);
       }}
     >
-      <div className="relative mx-auto w-full max-w-4xl">
+      <div className="relative mx-auto w-full max-w-3xl">
         {suggestions.length > 0 && (
           <div className="crc-enter absolute bottom-full left-4 right-4 z-10 mb-2 max-h-48 overflow-y-auto rounded-xl border border-(--crc-border) bg-(--crc-surface) p-1 shadow-(--crc-shadow-lg)">
             {suggestions.map((c, i) => (
@@ -1134,19 +1245,19 @@ function Composer({
 
 
         <div
-          className={`rounded-2xl border bg-(--crc-surface) shadow-(--crc-shadow-sm) transition-[border-color,box-shadow] duration-150 focus-within:border-(--crc-accent)/60 focus-within:ring-3 focus-within:ring-(--crc-accent)/12 ${
-            dragOver ? "border-(--crc-accent) ring-3 ring-(--crc-accent)/15" : "border-(--crc-border)"
-          } ${disabled ? "opacity-80" : ""}`}
+          className={`rounded-2xl bg-(--crc-surface)/80 px-1 pt-1 pb-1 shadow-(--crc-shadow-sm) backdrop-blur transition-[box-shadow,opacity] duration-150 focus-within:ring-2 focus-within:ring-(--crc-accent)/25 ${
+            dragOver ? "ring-2 ring-(--crc-accent)/40" : ""
+          } ${disabled ? "opacity-60" : ""}`}
         >
           {attachments.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 px-3 pt-3">
+            <div className="flex flex-wrap gap-1.5 px-3 pt-2">
               {attachments.map((a) => (
                 <AttachmentChip key={a.id} attachment={a} onRemove={() => removeAttachment(a.id)} />
               ))}
             </div>
           )}
 
-          {attachError && <div className="px-4 pt-3 text-xs text-(--crc-danger)">{attachError}</div>}
+          {attachError && <div className="px-3 pt-2 text-xs text-(--crc-danger)">{attachError}</div>}
           <textarea
             ref={textareaRef}
             value={text}
@@ -1183,80 +1294,73 @@ function Composer({
                 send();
               }
             }}
-            rows={2}
+            rows={1}
             disabled={disabled}
-            placeholder={disabled ? "Watching only" : busy ? "Add to what Claude is doing… it picks this up at its next step" : "Ask Claude anything… ⏎ to send, ⇧⏎ for a new line, / for commands"}
-            className="block w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-[14px] leading-relaxed text-(--crc-fg) outline-none placeholder:text-(--crc-fg-muted) disabled:opacity-60"
+            placeholder={disabled ? reason : busy ? "Add to what Claude is doing…" : "Reply to Claude…"}
+            className="block max-h-48 w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[14px] leading-relaxed text-(--crc-fg) outline-none [field-sizing:content] placeholder:text-(--crc-fg-muted)"
           />
 
-          <div className="flex items-center justify-between gap-2 px-2 pb-2">
-            <div className="flex min-w-0 items-center gap-0.5">
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,.md,.json,.csv,.log,.yaml,.yml"
-                className="hidden"
-                onChange={(e) => {
-                  if (e.target.files) void addFiles(e.target.files);
-                  e.target.value = ""; // allow re-picking the same file
-                }}
+          <div className="flex items-center gap-1 px-1 pb-1">
+            <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,.md,.json,.csv,.log,.yaml,.yml"
+            className="hidden"
+            onChange={(e) => {
+            if (e.target.files) void addFiles(e.target.files);
+            e.target.value = ""; // allow re-picking the same file
+            }}
+            />
+            <Button variant="ghost" size="icon" disabled={disabled} onClick={() => fileInputRef.current?.click()} title="Attach images, PDFs, or text files" className="h-7 w-7">
+              <span className="codicon codicon-add" />
+            </Button>
+            <PickerButton
+            label={mode?.label ?? "Manual"}
+            open={openMenu === "mode"}
+            onToggle={() => setOpenMenu((v) => (v === "mode" ? null : "mode"))}
+            />
+            <div className="ml-auto flex items-center gap-1">
+              <PickerButton
+              label={
+              capabilities.models.length === 0 && !model
+              ? "Loading models…"
+              : (selectedModel?.displayName ?? model ?? "Default")
+              }
+              open={openMenu === "model"}
+              onToggle={() => setOpenMenu((v) => (v === "model" ? null : "model"))}
               />
-
-              <Button
-                variant="ghost"
-                size="icon"
-                disabled={disabled}
-                onClick={() => fileInputRef.current?.click()}
-                title="Attach images, PDFs, or text files"
-              >
-                <span className="codicon codicon-attach" />
-              </Button>
-              <span className="mx-1 h-4 w-px bg-(--crc-border)" />
-                <PickerButton
-                  label={
-                    capabilities.models.length === 0 && !model
-                      ? "Loading models…"
-                      : (selectedModel?.displayName ?? model ?? "Default")
-                  }
-                  open={openMenu === "model"}
-                  onToggle={() => setOpenMenu((v) => (v === "model" ? null : "model"))}
-                />
-                <PickerButton
-                  label={effort?.label ?? "Medium"}
-                  open={openMenu === "effort"}
-                  onToggle={() => setOpenMenu((v) => (v === "effort" ? null : "effort"))}
-                />
-                <PickerButton
-                  label={mode?.label ?? "Manual"}
-                  open={openMenu === "mode"}
-                  onToggle={() => setOpenMenu((v) => (v === "mode" ? null : "mode"))}
-                />
-
+              <PickerButton
+              label={effort?.label ?? "Medium"}
+              open={openMenu === "effort"}
+              onToggle={() => setOpenMenu((v) => (v === "effort" ? null : "effort"))}
+              />
+              {busy ? (
+                <button
+                  type="button"
+                  onClick={onStop}
+                  aria-label="Stop"
+                  title="Stop the current turn"
+                  className="grid h-8 w-8 place-items-center rounded-full bg-(--crc-bg-inset) text-(--crc-fg) transition-colors hover:bg-(--crc-hover)"
+                >
+                  <span className="codicon codicon-primitive-square text-[11px]" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={send}
+                  aria-label="Send"
+                  title="Send (Enter)"
+                  disabled={disabled || (!text.trim() && attachments.length === 0)}
+                  className="grid h-8 w-8 place-items-center rounded-full bg-(--crc-accent) text-(--crc-accent-fg) transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <span className="codicon codicon-arrow-up text-base" />
+                </button>
+              )}
             </div>
-            {busy ? (
-              <Button variant="danger" size="sm" onClick={onStop} title="Stop the current turn">
-                <span className="codicon codicon-debug-stop" /> Stop
-              </Button>
-            ) : (
-              <Button
-                variant="primary"
-                size="icon"
-                title="Send (Enter)"
-                aria-label="Send"
-                disabled={disabled || (!text.trim() && attachments.length === 0)}
-                onClick={send}
-              >
-                <span className="codicon codicon-arrow-up text-base" />
-              </Button>
-            )}
           </div>
         </div>
-        {disabled && reason && (
-          <div className="mt-2 flex items-center gap-1.5 text-[11px] text-(--crc-fg-muted)">
-            <span className="codicon codicon-lock-small" /> {reason}
-          </div>
-        )}
+        <div className="mt-2 text-center text-[11px] text-(--crc-fg-muted)">Enter to send · Shift+Enter newline · / for commands</div>
       </div>
     </div>
   );
@@ -1266,8 +1370,8 @@ function PickerButton({ label, open, onToggle }: { label: string; open: boolean;
   return (
     <button
       onClick={onToggle}
-      className={`flex h-7 max-w-44 items-center gap-1 rounded-md px-2 text-xs transition-colors hover:bg-(--crc-hover) hover:text-(--crc-fg) ${
-        open ? "bg-(--crc-hover) text-(--crc-fg)" : "text-(--crc-fg-muted)"
+      className={`flex h-7 max-w-44 items-center gap-1 rounded-lg px-1.5 text-xs transition-colors hover:bg-(--crc-bg-inset) hover:text-(--crc-fg) ${
+        open ? "bg-(--crc-bg-inset) text-(--crc-fg)" : "text-(--crc-fg-muted)"
       }`}
     >
       <span className="truncate">{label}</span>

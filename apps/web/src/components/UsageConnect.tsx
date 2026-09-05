@@ -85,11 +85,8 @@ export function UsageConnect({ configured, onConnected }: { configured: boolean;
 
   if (!open) {
     return (
-      <button
-        onClick={() => setOpen(true)}
-        className="text-[11px] text-(--crc-link) hover:underline"
-      >
-        {configured ? "+ Add usage account" : "Connect usage %"}
+      <button onClick={() => setOpen(true)} className="inline-flex items-center gap-1 text-(--crc-link) hover:underline">
+        <span className="codicon codicon-add text-[12px]" /> {configured ? "Add usage tracking for another account" : "Connect usage tracking"}
       </button>
     );
   }
@@ -98,7 +95,7 @@ export function UsageConnect({ configured, onConnected }: { configured: boolean;
     o.usage ? `5h ${Math.round(o.usage.fiveHour.pct)}% · 7d ${Math.round(o.usage.sevenDay.pct)}%` : "no usage data";
 
   return (
-    <div className="space-y-2 rounded-sm border border-(--crc-border) bg-(--crc-bg-inset) p-2.5">
+    <div className="w-full space-y-2 rounded-xl bg-(--crc-bg-inset)/70 p-3.5">
       {orgs ? (
         <>
           <p className="text-[11px] text-(--crc-fg-muted)">Pick which organization's usage to track:</p>

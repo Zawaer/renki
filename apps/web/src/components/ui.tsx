@@ -87,16 +87,21 @@ export function SessionGlyph({ status, pendingPermission }: { status: SessionSta
   );
 }
 
+/**
+ * Quiet status label: a dot and tinted text, no capsule — the Claude desktop
+ * app's idiom. Turns red and says so when a permission is waiting.
+ */
 export function StatusBadge({ status, pendingPermission }: { status: SessionStatus; pendingPermission?: boolean }) {
   const needsYou = pendingPermission && status === "busy";
+  const tone = needsYou
+    ? "text-(--crc-danger)"
+    : status === "busy"
+      ? "text-(--crc-warning)"
+      : status === "error"
+        ? "text-(--crc-danger)"
+        : "text-(--crc-fg-muted)";
   return (
-    <span
-      className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-medium ${
-        needsYou
-          ? "border-(--crc-danger)/40 bg-(--crc-danger)/10 text-(--crc-danger)"
-          : "border-(--crc-border) bg-(--crc-surface) text-(--crc-fg-muted)"
-      }`}
-    >
+    <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${tone}`}>
       <StatusDot status={status} pendingPermission={pendingPermission} />
       {needsYou ? "Needs your approval" : STATUS_LABEL[status]}
     </span>

@@ -31,75 +31,84 @@
 :root {
   color-scheme: dark;
 
-  /* Surfaces, darkest to lightest: inset < bg < elevated < surface */
-  --crc-bg: #141416;
-  --crc-bg-elevated: #191a1d;
-  --crc-surface: #1f2024;
-  --crc-bg-inset: #0f0f11;
-  --crc-hover: #26272c;
+  /*
+   * "Golden-hour mission control" — warm browns from the Lovable concept
+   * (Claude Command Center). Surfaces, darkest to lightest:
+   * inset < bg ≈ elevated < surface. The sidebar sits on bg-elevated, which
+   * is deliberately almost the page colour: hierarchy comes from tone and
+   * spacing, not from panels.
+   */
+  --crc-bg: oklch(0.18 0.014 63);
+  --crc-bg-elevated: oklch(0.19 0.015 63);
+  --crc-surface: oklch(0.23 0.018 63);
+  --crc-bg-inset: oklch(0.15 0.012 63);
+  --crc-hover: oklch(0.25 0.018 63);
 
-  --crc-fg: #ececef;
-  --crc-fg-muted: #8f909a;
-  --crc-border: #2b2c32;
+  --crc-fg: oklch(0.95 0.019 79);
+  --crc-fg-muted: oklch(0.7 0.024 72);
+  --crc-border: oklch(0.26 0.016 66);
 
-  /* Terracotta accent — dark text on it reads far better than white. */
-  --crc-accent: #e0865f;
-  --crc-accent-hover: #ea9770;
-  --crc-accent-fg: #17110e;
-  --crc-selected: color-mix(in oklab, var(--crc-accent) 16%, transparent);
-  --crc-selected-fg: #f6f6f7;
-  --crc-link: #9db7ff;
-  --crc-input-bg: #1a1b1f;
+  /* Amber accent with dark text on it. */
+  --crc-accent: oklch(0.76 0.13 62);
+  --crc-accent-hover: oklch(0.8 0.13 62);
+  --crc-accent-fg: oklch(0.22 0.06 52);
+  --crc-selected: color-mix(in oklab, var(--crc-accent) 14%, transparent);
+  --crc-selected-fg: oklch(0.97 0.015 79);
+  --crc-link: oklch(0.76 0.07 236);
+  --crc-input-bg: oklch(0.16 0.013 63);
 
-  --crc-success: #5ecb92;
-  --crc-warning: #e6b455;
-  --crc-danger: #f26b63;
-  --crc-focus: #e0865f;
-  --crc-chart-input: #7aa2ff;
-  --crc-chart-output: #e0865f;
+  --crc-success: oklch(0.79 0.15 156);
+  --crc-warning: oklch(0.85 0.14 88);
+  --crc-danger: oklch(0.68 0.16 26);
+  --crc-focus: oklch(0.8 0.11 66);
+  --crc-chart-input: oklch(0.72 0.1 236);
+  --crc-chart-output: oklch(0.76 0.13 62);
 
-  --crc-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.25);
-  --crc-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 8px -2px rgba(0, 0, 0, 0.35);
-  --crc-shadow-md: 0 2px 6px rgba(0, 0, 0, 0.3), 0 10px 28px -10px rgba(0, 0, 0, 0.5);
-  --crc-shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.35), 0 24px 56px -16px rgba(0, 0, 0, 0.6);
+  --crc-shadow-xs: 0 1px 2px oklch(0 0 0 / 0.25);
+  --crc-shadow-sm: 0 2px 8px oklch(0 0 0 / 0.3);
+  --crc-shadow-md: 0 8px 24px oklch(0 0 0 / 0.38);
+  --crc-shadow-lg: 0 12px 34px oklch(0 0 0 / 0.45);
+  /* The permission card: a faint danger ring plus a deep lift, so it reads from across the room. */
+  --crc-shadow-alarm: 0 0 0 1px color-mix(in oklab, var(--crc-danger) 22%, transparent), 0 18px 44px oklch(0 0 0 / 0.5);
 
   --crc-font-ui: "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --crc-font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Courier New", monospace;
+  --crc-font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, "Courier New", monospace;
 }
 
 @media (prefers-color-scheme: light) {
   :root {
     color-scheme: light;
 
-    --crc-bg: #f5f4f1;
-    --crc-bg-elevated: #faf9f7;
-    --crc-surface: #ffffff;
-    --crc-bg-inset: #eeece8;
-    --crc-hover: #ebe9e4;
+    --crc-bg: oklch(0.98 0.008 84);
+    --crc-bg-elevated: oklch(0.975 0.008 84);
+    --crc-surface: oklch(1 0 0);
+    --crc-bg-inset: oklch(0.955 0.012 82);
+    --crc-hover: oklch(0.94 0.012 82);
 
-    --crc-fg: #1d1c1a;
-    --crc-fg-muted: #6c6b66;
-    --crc-border: #e2e0da;
+    --crc-fg: oklch(0.26 0.024 60);
+    --crc-fg-muted: oklch(0.52 0.02 65);
+    --crc-border: oklch(0.92 0.01 78);
 
-    --crc-accent: #c9633c;
-    --crc-accent-hover: #b6552f;
-    --crc-accent-fg: #ffffff;
+    --crc-accent: oklch(0.66 0.14 55);
+    --crc-accent-hover: oklch(0.62 0.14 55);
+    --crc-accent-fg: oklch(0.99 0.01 80);
     --crc-selected: color-mix(in oklab, var(--crc-accent) 14%, transparent);
-    --crc-selected-fg: #1d1c1a;
-    --crc-link: #2f66c9;
-    --crc-input-bg: #ffffff;
+    --crc-selected-fg: oklch(0.26 0.024 60);
+    --crc-link: oklch(0.52 0.11 245);
+    --crc-input-bg: oklch(1 0 0);
 
-    --crc-success: #2f9e63;
-    --crc-warning: #b7841a;
-    --crc-danger: #d4453d;
-    --crc-focus: #c9633c;
-    --crc-chart-input: #3b74d9;
-    --crc-chart-output: #d9744b;
+    --crc-success: oklch(0.58 0.14 155);
+    --crc-warning: oklch(0.68 0.14 78);
+    --crc-danger: oklch(0.56 0.18 26);
+    --crc-focus: oklch(0.66 0.14 55);
+    --crc-chart-input: oklch(0.55 0.11 245);
+    --crc-chart-output: oklch(0.66 0.14 55);
 
-    --crc-shadow-xs: 0 1px 2px rgba(28, 25, 20, 0.06);
-    --crc-shadow-sm: 0 1px 2px rgba(28, 25, 20, 0.06), 0 2px 8px -2px rgba(28, 25, 20, 0.08);
-    --crc-shadow-md: 0 2px 6px rgba(28, 25, 20, 0.06), 0 10px 28px -10px rgba(28, 25, 20, 0.14);
-    --crc-shadow-lg: 0 4px 12px rgba(28, 25, 20, 0.08), 0 24px 56px -16px rgba(28, 25, 20, 0.2);
+    --crc-shadow-xs: 0 1px 2px oklch(0.4 0.03 60 / 0.08);
+    --crc-shadow-sm: 0 1px 3px oklch(0.4 0.03 60 / 0.1);
+    --crc-shadow-md: 0 8px 22px oklch(0.4 0.03 60 / 0.12);
+    --crc-shadow-lg: 0 12px 30px oklch(0.4 0.03 60 / 0.14);
+    --crc-shadow-alarm: 0 0 0 1px color-mix(in oklab, var(--crc-danger) 25%, transparent), 0 16px 36px oklch(0.4 0.03 60 / 0.18);
   }
 }
 
@@ -130,6 +139,7 @@ body.vscode-high-contrast-light {
   --crc-focus: var(--vscode-focusBorder);
   --crc-chart-input: var(--vscode-charts-blue, #3987e5);
   --crc-chart-output: var(--vscode-charts-orange, #d95926);
+  --crc-shadow-alarm: 0 0 0 1px color-mix(in oklab, var(--crc-danger) 25%, transparent), 0 12px 32px rgba(0, 0, 0, 0.45);
   --crc-font-ui: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif);
   --crc-font-mono: var(--vscode-editor-font-family, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
 }
@@ -212,6 +222,21 @@ input:focus-visible {
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--crc-danger) 30%, transparent);
 }
 
+@keyframes crc-alarm {
+  0%,
+  100% {
+    box-shadow: var(--crc-shadow-alarm);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px color-mix(in oklab, var(--crc-danger) 45%, transparent),
+      0 18px 44px oklch(0 0 0 / 0.5);
+  }
+}
+.crc-alarm {
+  animation: crc-alarm 2.4s ease-in-out infinite;
+}
+
 @keyframes crc-fade-up {
   from {
     opacity: 0;
@@ -228,6 +253,7 @@ input:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   .crc-enter,
+  .crc-alarm,
   .animate-pulse,
   .codicon-modifier-spin {
     animation: none !important;

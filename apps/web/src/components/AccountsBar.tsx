@@ -140,15 +140,15 @@ export function Meter({ label, pct, resetsAt }: { label: string; pct: number; re
   const color = clamped >= 90 ? "bg-(--crc-danger)" : clamped >= 70 ? "bg-(--crc-warning)" : "bg-(--crc-success)";
   const resetIn = formatResetIn(resetsAt, Date.now());
   return (
-    <div className="flex-1">
-      <div className="flex items-center gap-1">
-        <span className="text-[10px] text-(--crc-fg-muted)">{label}</span>
-        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-(--crc-bg-elevated)">
-          <div className={`h-full ${color}`} style={{ width: `${clamped}%` }} />
+    <div className="min-w-0 flex-1">
+      <div className="flex items-center gap-2">
+        <span className="w-11 shrink-0 font-mono text-[11px] text-(--crc-fg-muted)">{label}</span>
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-(--crc-bg-inset)">
+          <div className={`h-full rounded-full ${color}`} style={{ width: `${clamped}%` }} />
         </div>
-        <span className="w-8 text-right text-[10px] text-(--crc-fg-muted)">{Math.round(clamped)}%</span>
+        <span className="w-9 shrink-0 text-right font-mono text-[11px] text-(--crc-fg-muted)">{Math.round(clamped)}%</span>
       </div>
-      {resetIn && <div className="pl-4 text-[9px] text-(--crc-fg-muted)">resets in {resetIn}</div>}
+      {resetIn && <div className="mt-1 pl-[52px] text-[11px] text-(--crc-fg-muted)">resets in {resetIn}</div>}
     </div>
   );
 }
@@ -157,12 +157,12 @@ export function ExtraUsageMeter({ extra }: { extra: AccountUsageExtra }) {
   const clamped = Math.max(0, Math.min(100, extra.pct));
   const color = clamped >= 90 ? "bg-(--crc-danger)" : clamped >= 70 ? "bg-(--crc-warning)" : "bg-(--crc-success)";
   return (
-    <div className="flex items-center gap-1">
-      <span className="text-[10px] text-(--crc-fg-muted)">extra</span>
-      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-(--crc-bg-elevated)">
-        <div className={`h-full ${color}`} style={{ width: `${clamped}%` }} />
+    <div className="flex items-center gap-2">
+      <span className="w-11 shrink-0 font-mono text-[11px] text-(--crc-fg-muted)">extra</span>
+      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-(--crc-bg-inset)">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${clamped}%` }} />
       </div>
-      <span className="w-24 text-right text-[10px] text-(--crc-fg-muted)">
+      <span className="shrink-0 text-right font-mono text-[11px] text-(--crc-fg-muted)">
         {formatUsd(extra.usedDollars)} / {formatUsd(extra.limitDollars)}
       </span>
     </div>

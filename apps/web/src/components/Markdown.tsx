@@ -50,9 +50,22 @@ const components: Components = {
   td: ({ node, ...p }) => <td className="border border-(--crc-border) px-2 py-1 align-top" {...p} />,
 };
 
-export const Markdown = memo(function Markdown({ content, muted = false }: { content: string; muted?: boolean }) {
+export const Markdown = memo(function Markdown({
+  content,
+  muted = false,
+  streaming = false,
+}: {
+  content: string;
+  muted?: boolean;
+  /** While true, each newly rendered node eases in as the reply arrives. */
+  streaming?: boolean;
+}) {
   return (
-    <div className={`space-y-2.5 wrap-break-word text-[14px] leading-relaxed ${muted ? "text-(--crc-fg-muted)" : "text-(--crc-fg)"}`}>
+    <div
+      className={`space-y-2.5 wrap-break-word text-[14px] leading-relaxed ${muted ? "text-(--crc-fg-muted)" : "text-(--crc-fg)"} ${
+        streaming ? "crc-stream-md" : ""
+      }`}
+    >
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {content}
       </ReactMarkdown>

@@ -489,7 +489,7 @@ function Block({
       />
     );
   }
-  return <Markdown content={block.text} />;
+  return <Markdown content={block.text} streaming={turnRunning && block.endedAtMs == null} />;
 }
 
 /** What a tool call is, in words: the row label and the mono detail beside it. */
@@ -858,7 +858,7 @@ function ThinkingBlock({
           </>
         )}
       </div>
-      <Markdown content={block.text} muted />
+      <Markdown content={block.text} muted streaming={live} />
     </div>
   );
 }

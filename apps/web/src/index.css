@@ -273,6 +273,15 @@ input:focus-visible {
   animation: crc-stream-in 320ms ease-out both;
 }
 
+/*
+ * Markdown that is still streaming: every direct child (a paragraph, a list, a
+ * heading) fades in as it first mounts. Nodes already on screen keep their
+ * finished animation, so text doesn't re-flash on every token.
+ */
+.crc-stream-md > * {
+  animation: crc-stream-in 380ms ease-out both;
+}
+
 @keyframes crc-fade-up {
   from {
     opacity: 0;

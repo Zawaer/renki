@@ -4,7 +4,6 @@ import { ClientProvider, useClient, useStoreValue } from "./lib/client.js";
 import { type AppConfig, clearConfig, loadConfig, saveConfig } from "./lib/config.js";
 import { AccountsBar } from "./components/AccountsBar.js";
 import { Home } from "./components/Home.js";
-import { RtkGainBadge } from "./components/RtkGainBadge.js";
 import { SessionList } from "./components/SessionList.js";
 import { SessionView } from "./components/SessionView.js";
 import { Settings } from "./components/Settings.js";
@@ -97,13 +96,11 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
           </button>
           <HeaderButton active={false} title="Show sidebar (⌘B)" icon="layout-sidebar-left" onClick={() => setSidebarOpen(true)} />
           <div className="flex-1" />
-          <span className="mb-1 flex h-8 w-8 items-center justify-center" title={`${config.deviceName} · ${status}`}>
-            <span
-              className={`h-2 w-2 rounded-full ${
-                status === "open" ? "bg-(--crc-success)" : status === "connecting" ? "bg-(--crc-warning) animate-pulse" : "bg-(--crc-danger)"
-              }`}
-            />
-          </span>
+          {status !== "open" && (
+            <span className="mb-1 flex h-8 w-8 items-center justify-center" title={status === "connecting" ? "Connecting…" : "Offline — retrying"}>
+              <span className={`h-2 w-2 rounded-full ${status === "connecting" ? "bg-(--crc-warning) animate-pulse" : "bg-(--crc-danger)"}`} />
+            </span>
+          )}
           <HeaderButton active={onStats} title="Stats" icon="graph-line" onClick={() => navigate(onStats ? "/" : "/stats")} />
           <HeaderButton active={onSettings} title="Settings" icon="gear" onClick={() => navigate(onSettings ? "/" : "/settings")} />
         </aside>
@@ -135,13 +132,19 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
           />
         </div>
 
-        {/* Identity + connection + utilities live down here, like a native app's account chip — the main column keeps its full height for the conversation. */}
+        {/*
+          * The quiet corner. It carries only what you'd act on: how much usage
+          * headroom is left (AccountsBar's trigger), and the two places you
+          * navigate to. Your own device name and a permanently-green
+          * "connected" dot told you nothing, so they're gone — the connection
+          * only speaks up when it's actually broken.
+          */}
         <div className="flex shrink-0 items-center gap-0.5 border-t border-(--crc-border) p-2">
-          <ConnChip status={status} deviceName={config.deviceName} />
-          <HeaderButton active={onStats} title="Stats" icon="graph-line" onClick={() => navigate(onStats ? "/" : "/stats")} />
-          <AccountsBar />
-          <RtkGainBadge />
-          <HeaderButton active={onSettings} title="Settings" icon="gear" onClick={() => navigate(onSettings ? "/" : "/settings")} />
+          {status === "open" ? <AccountsBar /> : <ConnectionAlert status={status} />}
+          <div className="ml-auto flex items-center gap-0.5">
+            <HeaderButton active={onStats} title="Stats" icon="graph-line" onClick={() => navigate(onStats ? "/" : "/stats")} />
+            <HeaderButton active={onSettings} title="Settings" icon="gear" onClick={() => navigate(onSettings ? "/" : "/settings")} />
+          </div>
         </div>
       </aside>
 
@@ -205,19 +208,16 @@ function HeaderButton({ active, title, icon, onClick }: { active: boolean; title
   );
 }
 
-function ConnChip({ status, deviceName }: { status: "connecting" | "open" | "closed"; deviceName: string }) {
-  const map = {
-    open: { color: "bg-(--crc-success)", label: "Connected", tone: "text-(--crc-fg-muted)" },
-    connecting: { color: "bg-(--crc-warning) animate-pulse", label: "Connecting…", tone: "text-(--crc-warning)" },
-    closed: { color: "bg-(--crc-danger)", label: "Offline", tone: "text-(--crc-danger)" },
-  } as const;
-  const s = map[status];
+/** Shown only while the daemon is unreachable — silence is the healthy state. */
+function ConnectionAlert({ status }: { status: "connecting" | "closed" }) {
+  const s =
+    status === "connecting"
+      ? { dot: "bg-(--crc-warning) animate-pulse", tone: "text-(--crc-warning)", label: "Connecting…" }
+      : { dot: "bg-(--crc-danger)", tone: "text-(--crc-danger)", label: "Offline — retrying" };
   return (
-    <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg px-2" title={`${deviceName} · ${s.label}`}>
-      <span className={`h-2 w-2 shrink-0 rounded-full ${s.color}`} />
-      <span className={`truncate text-xs font-medium ${status === "open" ? "text-(--crc-fg)" : s.tone}`}>
-        {status === "open" ? deviceName : s.label}
-      </span>
-    </div>
+    <span className={`inline-flex h-8 items-center gap-1.5 px-2 text-xs font-medium ${s.tone}`}>
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${s.dot}`} />
+      {s.label}
+    </span>
   );
 }

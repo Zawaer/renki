@@ -55,14 +55,17 @@ describe("AccountsBar", () => {
   it("shows a badge trigger, and the account row + usage meters once opened", async () => {
     renderAccountsBar(SAMPLE);
 
-    const trigger = await screen.findByRole("button", { name: "Accounts & usage" });
-    // Closed by default — a header badge, not an always-visible panel.
+    const trigger = await screen.findByRole("button", { name: /Accounts & usage/ });
+    // The trigger shows the worst usage figure — the one number worth glancing at.
+    expect(trigger.textContent).toContain("42%");
+    // Closed by default — a footer badge, not an always-visible panel.
     expect(screen.queryByText("dev@example.com")).not.toBeInTheDocument();
 
     fireEvent.click(trigger);
 
     expect(screen.getByText("dev@example.com")).toBeInTheDocument();
-    expect(screen.getByText("42%")).toBeInTheDocument();
+    // 42% is the worst window, so it shows twice once open: on the trigger and on its meter.
+    expect(screen.getAllByText("42%")).toHaveLength(2);
     expect(screen.getByText("18%")).toBeInTheDocument();
     expect(screen.getByText(/auto @ 90%/)).toBeInTheDocument();
   });
@@ -83,7 +86,7 @@ describe("AccountsBar", () => {
       ],
     });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Accounts & usage" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Accounts & usage/ }));
 
     expect(screen.getByText("resets in 3h 12m")).toBeInTheDocument();
     expect(screen.getByText("$39.53 / $50.00")).toBeInTheDocument();

@@ -52,20 +52,34 @@ export function AccountsBar() {
 
   return (
     <div className="relative">
+      {/*
+        * Usage headroom is the only number in this corner that changes what you
+        * do next — whether to keep going or switch accounts — so it's the thing
+        * on show, not an anonymous icon. Falls back to the plain icon until the
+        * daemon has usage data (an account with no usage key tracked).
+        */}
       <button
         onClick={() => setOpen((v) => !v)}
-        title="Accounts & usage"
-        className="flex h-8 items-center gap-1 rounded-lg px-2 text-(--crc-fg-muted) transition-colors hover:bg-(--crc-hover) hover:text-(--crc-fg)"
+        title={`Accounts & usage${active ? ` · ${active.email}` : ""}`}
+        // The visible "45%" would otherwise become the accessible name.
+        aria-label={`Accounts & usage${active ? ` · ${active.email}` : ""}`}
+        className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-(--crc-fg-muted) transition-colors hover:bg-(--crc-hover) hover:text-(--crc-fg)"
       >
-        <span className="codicon codicon-account" />
-        {worstPct != null && <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />}
+        {worstPct == null ? (
+          <span className="codicon codicon-account" />
+        ) : (
+          <>
+            <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />
+            <span className="text-xs font-medium tabular-nums">{Math.round(worstPct)}%</span>
+          </>
+        )}
       </button>
 
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div
-            className="crc-enter absolute bottom-full left-0 z-50 mb-2 w-72 space-y-2 rounded-xl border border-(--crc-border) bg-(--crc-surface) p-3 text-xs shadow-(--crc-shadow-lg)"
+            className="crc-enter absolute bottom-full left-0 z-50 mb-2 w-80 space-y-3 rounded-xl border border-(--crc-border) bg-(--crc-surface) p-3.5 text-xs shadow-(--crc-shadow-lg)"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
@@ -74,7 +88,7 @@ export function AccountsBar() {
               </span>
               {switching && <span className="text-(--crc-fg-muted)">switching…</span>}
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {data.accounts.map((a) => (
                 <AccountRow key={a.number} account={a} onSwitch={switchTo} switching={switching} />
               ))}
@@ -121,15 +135,13 @@ function AccountRow({
         </button>
       </div>
       {account.usage ? (
-        <div className="mt-1 space-y-1 pl-3">
-          <div className="flex gap-2">
-            <Meter label="5h" pct={account.usage.fiveHour.pct} resetsAt={account.usage.fiveHour.resetsAt} />
-            <Meter label="7d" pct={account.usage.sevenDay.pct} resetsAt={account.usage.sevenDay.resetsAt} />
-          </div>
+        <div className="mt-1.5 space-y-1.5 pl-3">
+          <Meter label="5h" pct={account.usage.fiveHour.pct} resetsAt={account.usage.fiveHour.resetsAt} />
+          <Meter label="7d" pct={account.usage.sevenDay.pct} resetsAt={account.usage.sevenDay.resetsAt} />
           {account.usage.extra && <ExtraUsageMeter extra={account.usage.extra} />}
         </div>
       ) : (
-        <div className="pl-3 text-[11px] text-(--crc-fg-muted)">usage n/a</div>
+        <div className="pl-3 text-[11px] text-(--crc-fg-muted)">usage not tracked</div>
       )}
     </div>
   );
@@ -148,7 +160,7 @@ export function Meter({ label, pct, resetsAt }: { label: string; pct: number; re
         </div>
         <span className="w-9 shrink-0 text-right font-mono text-[11px] text-(--crc-fg-muted)">{Math.round(clamped)}%</span>
       </div>
-      {resetIn && <div className="mt-1 pl-[52px] text-[11px] text-(--crc-fg-muted)">resets in {resetIn}</div>}
+      {resetIn && <div className="mt-0.5 pl-[52px] text-[10px] whitespace-nowrap text-(--crc-fg-muted)">resets in {resetIn}</div>}
     </div>
   );
 }

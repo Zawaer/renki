@@ -394,9 +394,9 @@ features. The throughline for everything below: shrink "found the repo" →
       reuse it verbatim.
 
 - [x] **Web, third pass — from the Lovable concept (2026-09-05).** Toivo
-      designed a "Claude Command Center" concept in Lovable (placed at the
-      repo root under `Claude Command Center (Lovable)/`, a TanStack/shadcn
-      prototype with mock data — reference only, not wired to anything). Taken
+      designed a "Claude Command Center" concept in Lovable (a TanStack/shadcn
+      prototype with mock data; it lived briefly at the repo root as a
+      reference and was deleted once its ideas were absorbed). Taken
       from it: the "golden-hour" oklch palette (warm brown surfaces, amber
       accent with dark text, sidebar on a tone almost equal to the page), the
       composer with **no panel** — a single soft-shadowed rounded box floating

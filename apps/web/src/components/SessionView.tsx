@@ -365,7 +365,10 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
           {/* While a reply streams, each block eases in as it arrives instead of
               popping into place. Finished turns render flat — a replayed
               transcript animating every block at once would just be noise. */}
-          <div className={turn.status === "running" ? "crc-stream-in" : undefined}>
+          {/* Prose fades word by word inside Markdown, so only non-text blocks
+              (tool rows, diffs) get the block-level fade — otherwise the two
+              animations would stack on the same text. */}
+          <div className={turn.status === "running" && blk.kind === "tool_use" ? "crc-stream-in" : undefined}>
             <Block block={blk} turnRunning={turn.status === "running"} />
           </div>
           {steeredAfter(i).map((p) => (

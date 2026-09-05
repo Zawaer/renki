@@ -274,12 +274,22 @@ input:focus-visible {
 }
 
 /*
- * Markdown that is still streaming: every direct child (a paragraph, a list, a
- * heading) fades in as it first mounts. Nodes already on screen keep their
- * finished animation, so text doesn't re-flash on every token.
+ * Markdown that is still streaming fades in a word at a time: the renderer
+ * wraps each word in `.crc-word`, so a word that has just arrived animates
+ * while everything already on screen stays put (React reuses those nodes, so
+ * their animation never restarts). Opacity only — hundreds of these can be on
+ * screen at once and transforms would cost layout work per frame.
  */
-.crc-stream-md > * {
-  animation: crc-stream-in 380ms ease-out both;
+@keyframes crc-word-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.crc-stream-md .crc-word {
+  animation: crc-word-in 420ms ease-out both;
 }
 
 @keyframes crc-fade-up {
@@ -299,6 +309,7 @@ input:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .crc-enter,
   .crc-stream-in,
+  .crc-stream-md .crc-word,
   .crc-alarm,
   .crc-skeleton,
   .animate-pulse,

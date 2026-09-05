@@ -13,6 +13,37 @@ import remarkGfm from "remark-gfm";
  * margins so inter-block spacing comes from the wrapper's `space-y-*`.
  */
 
+/**
+ * Wrap every word in a span so a streaming reply can fade in word by word
+ * (see `.crc-word` in index.css). Whitespace stays as plain text between the
+ * spans, so wrapping and selection behave exactly as before, and anything
+ * inside `code`/`pre` is left alone — splitting code would fight its own
+ * whitespace handling. Only applied while a reply streams: once it settles the
+ * spans go away, so a finished transcript stays plain text (lighter DOM, and
+ * ordinary text queries still see whole sentences).
+ */
+function rehypeWrapWords() {
+  type Node = { type: string; tagName?: string; value?: string; children?: Node[]; properties?: Record<string, unknown> };
+  const walk = (node: Node, inCode: boolean): void => {
+    if (!node.children) return;
+    const next: Node[] = [];
+    for (const child of node.children) {
+      if (child.type === "text" && !inCode && child.value) {
+        for (const part of child.value.split(/(\s+)/)) {
+          if (!part) continue;
+          if (/^\s+$/.test(part)) next.push({ type: "text", value: part });
+          else next.push({ type: "element", tagName: "span", properties: { className: ["crc-word"] }, children: [{ type: "text", value: part }] });
+        }
+        continue;
+      }
+      walk(child, inCode || (child.type === "element" && (child.tagName === "code" || child.tagName === "pre")));
+      next.push(child);
+    }
+    node.children = next;
+  };
+  return (tree: Node) => walk(tree, false);
+}
+
 const components: Components = {
   h1: ({ node, ...p }) => <h1 className="text-base font-semibold text-(--crc-fg)" {...p} />,
   h2: ({ node, ...p }) => <h2 className="text-sm font-semibold text-(--crc-fg)" {...p} />,
@@ -66,7 +97,7 @@ export const Markdown = memo(function Markdown({
         streaming ? "crc-stream-md" : ""
       }`}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={streaming ? [rehypeWrapWords] : []} components={components}>
         {content}
       </ReactMarkdown>
     </div>

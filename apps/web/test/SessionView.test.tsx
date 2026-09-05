@@ -125,7 +125,7 @@ describe("SessionView", () => {
     expect(screen.getByText("Let me look at the repo first.")).toBeInTheDocument();
     expect(screen.getByText("Read")).toBeInTheDocument();
     expect(screen.getByText("Done — added a README.")).toBeInTheDocument();
-    expect(screen.getByText("$0.0123")).toBeInTheDocument();
+    expect(screen.getByText("$0.01")).toBeInTheDocument();
     expect(screen.getByText("4s")).toBeInTheDocument();
     expect(screen.getByText("1.5k tokens")).toBeInTheDocument();
     expect(screen.getByText("Switched account — retrying.")).toBeInTheDocument();

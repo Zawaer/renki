@@ -7,9 +7,15 @@ export function formatSuccessRate(bucket: { turnCount: number; okCount: number }
   return `${Math.round((bucket.okCount / bucket.turnCount) * 100)}%`;
 }
 
+/**
+ * Money, to the cent. Four decimals were precise but unreadable — nobody
+ * budgets in hundredths of a cent. Anything above zero but below a cent shows
+ * as "<$0.01" rather than "$0.00", so a real (tiny) charge never reads as free.
+ */
 export function formatCost(usd: number): string {
-  if (usd === 0) return "$0.00";
-  return usd < 1 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(2)}`;
+  if (usd <= 0) return "$0.00";
+  if (usd < 0.005) return "<$0.01";
+  return "$" + usd.toFixed(2);
 }
 
 export function formatDuration(ms: number): string {

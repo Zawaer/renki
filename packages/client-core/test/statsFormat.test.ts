@@ -25,8 +25,10 @@ describe("formatCost", () => {
   });
 
   it("uses 4 decimal places under a dollar", () => {
-    expect(formatCost(0.0268)).toBe("$0.0268");
-    expect(formatCost(0.999)).toBe("$0.9990");
+    expect(formatCost(0.0268)).toBe("$0.03");
+    expect(formatCost(0.999)).toBe("$1.00");
+    expect(formatCost(0.0021)).toBe("<$0.01");
+    expect(formatCost(0.093)).toBe("$0.09");
   });
 
   it("uses 2 decimal places at a dollar or over", () => {

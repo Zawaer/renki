@@ -231,3 +231,41 @@ export function Select({
     </div>
   );
 }
+
+/**
+ * Copy-to-clipboard button. Quiet by default, revealed on hover of an
+ * ancestor marked `group`; confirms with a check for a moment so you know it
+ * landed. No-ops (silently) where the clipboard API is unavailable, e.g. an
+ * insecure origin.
+ */
+export function CopyButton({ text, label = "Copy", className = "" }: { text: string; label?: string; className?: string }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => (timer.current ? clearTimeout(timer.current) : undefined), []);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // Clipboard blocked (insecure context / permission) — nothing useful to say.
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      title={copied ? "Copied" : label}
+      aria-label={copied ? "Copied" : label}
+      className={`inline-flex h-6 w-6 items-center justify-center rounded-md text-(--crc-fg-muted) opacity-0 transition-[opacity,color,background-color] group-hover:opacity-100 hover:bg-(--crc-hover) hover:text-(--crc-fg) focus-visible:opacity-100 ${
+        copied ? "text-(--crc-success) opacity-100" : ""
+      } ${className}`}
+    >
+      <span className={`codicon ${copied ? "codicon-check" : "codicon-copy"} text-[13px]`} />
+    </button>
+  );
+}

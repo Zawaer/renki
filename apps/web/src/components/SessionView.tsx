@@ -2,6 +2,7 @@ import {
   classifyAttachment,
   EFFORT_LEVELS,
   estimateTokens,
+  formatCost,
   formatTokenCount,
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS_PER_PROMPT,
@@ -37,8 +38,9 @@ import {
   saveModel,
   savePermissionMode,
 } from "../lib/composerPrefs.js";
+import { JsonCode, ShellCode } from "./Code.js";
 import { Markdown } from "./Markdown.js";
-import { Button, Skeleton, StatusBadge } from "./ui.js";
+import { Button, CopyButton, Skeleton, StatusBadge } from "./ui.js";
 
 export function SessionView({ sessionId }: { sessionId: string }) {
   const { realtime, config } = useClient();
@@ -217,7 +219,8 @@ export function SessionView({ sessionId }: { sessionId: string }) {
 function TimelineRow({ item }: { item: TimelineItem }) {
   if (item.type === "prompt") {
     return (
-      <div className="crc-enter flex justify-end">
+      <div className="crc-enter group flex items-center justify-end gap-1">
+        {item.text && <CopyButton text={item.text} label="Copy message" />}
         <div className="max-w-[85%] rounded-2xl bg-(--crc-surface) px-4 py-3">
           {item.text && (
             <div className="whitespace-pre-wrap text-[14px] leading-relaxed text-(--crc-fg)">
@@ -258,12 +261,20 @@ function TimelineRow({ item }: { item: TimelineItem }) {
   return <AssistantTurn turn={item.turn} />;
 }
 
+/** Claude's prose for this turn — what "copy the reply" puts on the clipboard (no thinking, no tool payloads). */
+function replyTextOf(turn: TurnView): string {
+  // BlockView's prose variant covers both "text" and "thinking", so narrow by
+  // hand rather than with Extract (which collapses to never here).
+  return turn.blocks.flatMap((blk) => (blk.kind === "text" && blk.text.trim() ? [blk.text.trim()] : [])).join("\n\n");
+}
+
 function AssistantTurn({ turn }: { turn: TurnView }) {
   const label = turnTriggerLabel(turn);
+  const replyText = replyTextOf(turn);
   const steeredAfter = (index: number) =>
     turn.steeredPrompts.filter((p) => p.afterBlockIndex === index);
   return (
-    <div className="crc-enter space-y-3">
+    <div className="crc-enter group space-y-3">
       {label && (
         <div className="flex items-center gap-1.5 text-[11px] font-medium text-(--crc-fg-muted)">
           <span className="flex h-5 w-5 items-center justify-center rounded-md bg-(--crc-surface) ring-1 ring-(--crc-border) ring-inset">
@@ -289,22 +300,33 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
           Working…
         </div>
       )}
-      {turn.status === "done" && turn.costUsd != null && (
+      {(turn.status !== "running" || replyText) && (
         <div className="flex flex-wrap items-center gap-2 pt-1 text-[11.5px] text-(--crc-fg-muted)">
-          <span>{formatDuration(turn.durationMs ?? 0)}</span>
-          {(turn.inputTokens != null || turn.outputTokens != null) && (
+          {turn.status === "done" && turn.costUsd != null && (
             <>
+              <span>{formatDuration(turn.durationMs ?? 0)}</span>
+              {(turn.inputTokens != null || turn.outputTokens != null) && (
+                <>
+                  <span>·</span>
+                  <span>{formatTokenCount((turn.inputTokens ?? 0) + (turn.outputTokens ?? 0))} tokens</span>
+                </>
+              )}
               <span>·</span>
-              <span>
-                {formatTokenCount(
-                  (turn.inputTokens ?? 0) + (turn.outputTokens ?? 0),
-                )}{" "}
-                tokens
-              </span>
+              <span>{formatCost(turn.costUsd)}</span>
+              {/* One turn can answer several prompts — anything steered into it
+                  mid-flight — so say what these totals cover; otherwise they
+                  look like they belong to the last message alone. */}
+              {turn.steeredPrompts.length > 0 && (
+                <>
+                  <span>·</span>
+                  <span title="This turn answered your original message plus everything you sent while it was working.">
+                    covers {turn.steeredPrompts.length + 1} messages
+                  </span>
+                </>
+              )}
             </>
           )}
-          <span>·</span>
-          <span>${turn.costUsd.toFixed(4)}</span>
+          {replyText && <CopyButton text={replyText} label="Copy reply" className="ml-auto" />}
         </div>
       )}
       {turn.status === "error" && turn.interrupted && (
@@ -325,7 +347,8 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
 /** A prompt the controller sent while this turn was already running — shown inside the turn, where Claude picked it up. */
 function SteeredPrompt({ prompt }: { prompt: SteeredPromptView }) {
   return (
-    <div className="crc-enter flex justify-end" data-testid="steered-prompt">
+    <div className="crc-enter group flex items-center justify-end gap-1" data-testid="steered-prompt">
+      {prompt.text && <CopyButton text={prompt.text} label="Copy message" />}
       <div className="max-w-[85%] rounded-2xl bg-(--crc-surface) px-4 py-3">
         {prompt.text && (
           <div className="whitespace-pre-wrap text-[14px] leading-relaxed text-(--crc-fg)">
@@ -582,13 +605,9 @@ function ToolStep({
               <Markdown content={plan} />
             </div>
           ) : command ? (
-            <pre className="overflow-x-auto rounded-lg bg-(--crc-bg-inset)/70 px-3 py-2 font-mono leading-relaxed text-(--crc-fg)">
-              $ {command}
-            </pre>
+            <ShellCode command={command} />
           ) : block.toolName !== "Agent" && block.toolName !== "Task" ? (
-            <pre className="overflow-x-auto rounded-lg bg-(--crc-bg-inset)/70 px-3 py-2 font-mono leading-relaxed text-(--crc-fg-muted)">
-              {truncate(JSON.stringify(block.toolInput, null, 2), 800)}
-            </pre>
+            <JsonCode json={truncate(JSON.stringify(block.toolInput, null, 2), 800)} />
           ) : null}
           {block.result && block.result.summary && !isAgent && (
             <pre
@@ -812,11 +831,10 @@ function permissionTitle(toolName: string): string {
   }
 }
 
-/** The one line that matters for approving: the command itself for Bash, otherwise the input. */
-function permissionPreview(toolName: string, input: unknown): string {
+/** The one line that matters for approving a Bash call: the command itself. Null for every other tool. */
+function permissionCommand(toolName: string, input: unknown): string | null {
   const command = (input as { command?: unknown } | null)?.command;
-  if (toolName === "Bash" && typeof command === "string") return `$ ${command}`;
-  return truncate(JSON.stringify(input, null, 2), 500);
+  return toolName === "Bash" && typeof command === "string" ? command : null;
 }
 
 function formatDuration(ms: number): string {
@@ -898,9 +916,13 @@ function PermissionCard({
           <TodoChecklist todos={todos} />
         </div>
       ) : (
-        <pre className="mt-2.5 max-h-32 overflow-auto rounded-lg bg-(--crc-bg-inset)/70 px-3 py-2 font-mono text-xs leading-relaxed text-(--crc-fg)">
-          {permissionPreview(perm.toolName, perm.toolInput)}
-        </pre>
+        <div className="mt-2.5 max-h-32 overflow-auto text-xs">
+          {permissionCommand(perm.toolName, perm.toolInput) ? (
+            <ShellCode command={permissionCommand(perm.toolName, perm.toolInput)!} />
+          ) : (
+            <JsonCode json={truncate(JSON.stringify(perm.toolInput, null, 2), 500)} />
+          )}
+        </div>
       )}
       {canAct ? (
         <div className="mt-3 flex gap-2">

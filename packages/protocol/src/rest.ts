@@ -37,6 +37,45 @@ export const ListReposResponse = z.object({
 });
 export type ListReposResponse = z.infer<typeof ListReposResponse>;
 
+/** One repository the daemon's GitHub login can see — the list behind "clone a repo you haven't checked out yet". */
+export const GithubRepo = z.object({
+  /** owner/name — what you'd type, and what the clone endpoint takes. */
+  fullName: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  isPrivate: z.boolean(),
+  isFork: z.boolean(),
+  /** ISO timestamp of the last push, or null; the list is ordered by it. */
+  pushedAt: z.string().nullable(),
+  defaultBranch: z.string().nullable(),
+});
+export type GithubRepo = z.infer<typeof GithubRepo>;
+
+export const GithubReposResponse = z.object({
+  /** False when the daemon has no usable GitHub CLI login; clients then hide the flow and show `reason`. */
+  available: z.boolean(),
+  login: z.string().nullable(),
+  reason: z.string().nullable(),
+  repos: z.array(GithubRepo),
+});
+export type GithubReposResponse = z.infer<typeof GithubReposResponse>;
+
+export const CloneRepoRequest = z.object({
+  /** owner/name, or any github.com URL for it. */
+  repo: z.string().min(1),
+});
+export type CloneRepoRequest = z.infer<typeof CloneRepoRequest>;
+
+export const CloneRepoResponse = z.object({
+  ok: z.boolean(),
+  message: z.string().nullable(),
+  /** The cloned (or already-present) repo, ready to start a session on. */
+  repo: Repo.nullable(),
+  /** True when the directory was already there, so nothing was fetched. */
+  alreadyPresent: z.boolean(),
+});
+export type CloneRepoResponse = z.infer<typeof CloneRepoResponse>;
+
 /** Omit `repoId` entirely for a repo-less session — just a plain directory to chat in, no git worktree. */
 export const CreateSessionRequest = z
   .object({

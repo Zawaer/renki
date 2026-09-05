@@ -1,6 +1,7 @@
 import websocketPlugin from "@fastify/websocket";
 import {
   AddSetupTokenRequest,
+  CloneRepoRequest,
   ConnectUsageKeyRequest,
   CreateSessionRequest,
   RegisterPushTokenRequest,
@@ -20,6 +21,7 @@ import { logger } from "../logger.js";
 import type { DeviceRegistry } from "../push/devices.js";
 import type { PushTokenStore } from "../push/tokens.js";
 import { branchStatus, pullBranch } from "../git/remoteStatus.js";
+import { cloneGithubRepo, githubStatus, listGithubRepos } from "../github.js";
 import { findRepo, scanRepos } from "../repos.js";
 import { SessionError } from "../sessions/errors.js";
 import type { SessionManager } from "../sessions/manager.js";
@@ -95,6 +97,44 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
   app.get("/health", async () => ({ ok: true }));
 
   app.get("/repos", async () => ({ repos: await scanRepos(config), root: config.reposRoot }));
+
+  /**
+   * Repos on GitHub this daemon's login can see, so a session can be started on
+   * a project that was never checked out on the host. Never fails the request
+   * when GitHub is unavailable: `available: false` plus a reason lets clients
+   * hide the flow gracefully instead of showing an error.
+   */
+  app.get("/github/repos", async () => {
+    const status = await githubStatus();
+    if (!status.available) return { ...status, repos: [] };
+    try {
+      return { ...status, repos: await listGithubRepos() };
+    } catch (err) {
+      logger.warn("github repo list failed", { err: String(err) });
+      return { available: false, login: status.login, reason: "Couldn't list your GitHub repos.", repos: [] };
+    }
+  });
+
+  /** Clone owner/name into the repos root and hand back the repo to start a session on. */
+  app.post("/github/clone", async (req, reply) => {
+    const parsed = CloneRepoRequest.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues });
+
+    const outcome = await cloneGithubRepo(config, parsed.data.repo);
+    if (!outcome.ok) return reply.code(400).send({ ok: false, message: outcome.message, repo: null, alreadyPresent: false });
+
+    // Re-scan so the answer carries the same shape (id, default branch) every
+    // other repo endpoint returns, rather than a hand-built guess.
+    const repo = (await scanRepos(config)).find((r) => r.name === outcome.dirName) ?? null;
+    if (!repo)
+      return reply.code(500).send({
+        ok: false,
+        message: "Cloned, but the repo didn't appear under the repos root.",
+        repo: null,
+        alreadyPresent: outcome.alreadyPresent,
+      });
+    return { ok: true, message: null, repo, alreadyPresent: outcome.alreadyPresent };
+  });
 
   // How far a repo's branch has diverged from `origin/<branch>` — lets a
   // client warn "main is behind origin, pull first?" before basing a new

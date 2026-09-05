@@ -4,11 +4,13 @@ import type {
   BranchStatusResponse,
   CapabilitiesResponse,
   ConnectUsageKeyResponse,
+  CloneRepoResponse,
   CreateSessionRequest,
   CreateSessionResponse,
   DeleteSessionResponse,
   DisconnectUsageKeyResponse,
   GetTranscriptResponse,
+  GithubReposResponse,
   ListReposResponse,
   ListSessionsResponse,
   PullBranchResponse,
@@ -50,6 +52,16 @@ export class RestClient {
 
   async listRepos(): Promise<ListReposResponse["repos"]> {
     return (await this.get<ListReposResponse>("/repos")).repos;
+  }
+
+  /** Repos on GitHub the daemon's login can see. `available: false` means it has no usable GitHub login. */
+  async listGithubRepos(): Promise<GithubReposResponse> {
+    return this.get<GithubReposResponse>("/github/repos");
+  }
+
+  /** Clone `owner/name` (or any github.com URL for it) into the daemon's repos root. */
+  async cloneGithubRepo(repo: string): Promise<CloneRepoResponse> {
+    return this.post<CloneRepoResponse>("/github/clone", { repo });
   }
 
   async listSessions(): Promise<Session[]> {

@@ -1,10 +1,12 @@
-import type { Repo, Session } from "@crc/protocol";
+import type { GithubRepo, Repo, Session } from "@crc/protocol";
 import { useEffect, useState } from "react";
 import { useClient } from "../lib/client.js";
 import { Button, Select } from "./ui.js";
 
 /** Sentinel repoId value for "no repo" — a real repo's id is never empty. */
 const NO_REPO = "";
+/** Sentinel that opens the GitHub browser instead of selecting anything. */
+const FROM_GITHUB = "__github";
 
 /** Create a session: pick a repo (or "No repo" for a plain scratch dir), base branch, optional new-branch name + title. */
 export function NewSessionDialog({
@@ -30,6 +32,12 @@ export function NewSessionDialog({
   // default branch, an auto `crc/xxxxxx` worktree handle, and a title the
   // daemon generates from the first message), so they stay folded away.
   const [advanced, setAdvanced] = useState(false);
+  // The GitHub browser: a repo you haven't checked out on the host yet is the
+  // one case where "pick a repo" can't be answered from the repos root alone.
+  const [browsing, setBrowsing] = useState(false);
+  const [gh, setGh] = useState<{ available: boolean; reason: string | null; repos: GithubRepo[] } | null>(null);
+  const [ghQuery, setGhQuery] = useState("");
+  const [cloning, setCloning] = useState<string | null>(null);
 
   useEffect(() => {
     rest
@@ -45,7 +53,44 @@ export function NewSessionDialog({
       .catch((e) => setError(String(e)));
   }, [rest, initialRepoId]);
 
+  function openGithubBrowser() {
+    setBrowsing(true);
+    setError(null);
+    if (gh) return;
+    rest
+      .listGithubRepos()
+      .then((res) => setGh({ available: res.available, reason: res.reason, repos: res.repos }))
+      .catch(() => setGh({ available: false, reason: "Couldn't reach the daemon.", repos: [] }));
+  }
+
+  /** Clone the picked repo, then fall straight through to selecting it. */
+  async function cloneAndSelect(full: string) {
+    setCloning(full);
+    setError(null);
+    try {
+      const res = await rest.cloneGithubRepo(full);
+      if (!res.ok || !res.repo) {
+        setError(res.message ?? "Couldn't clone that repo.");
+        return;
+      }
+      const cloned = res.repo;
+      setRepos((prev) => (prev.some((r) => r.id === cloned.id) ? prev : [...prev, cloned].sort((a, b) => a.name.localeCompare(b.name))));
+      setRepoId(cloned.id);
+      setBaseBranch(cloned.defaultBranch);
+      setBehindInfo(null);
+      setBrowsing(false);
+    } catch {
+      setError("Couldn't reach the daemon.");
+    } finally {
+      setCloning(null);
+    }
+  }
+
   function pickRepo(id: string) {
+    if (id === FROM_GITHUB) {
+      openGithubBrowser();
+      return;
+    }
     setRepoId(id);
     const repo = repos.find((r) => r.id === id);
     setBaseBranch(repo?.defaultBranch ?? "");
@@ -143,6 +188,17 @@ export function NewSessionDialog({
           </p>
         </div>
 
+        {browsing ? (
+          <GithubBrowser
+            gh={gh}
+            query={ghQuery}
+            onQuery={setGhQuery}
+            cloning={cloning}
+            alreadyCloned={new Set(repos.map((r) => r.name.toLowerCase()))}
+            onPick={cloneAndSelect}
+            onCancel={() => setBrowsing(false)}
+          />
+        ) : (
         <div className="space-y-1">
           <span className="block text-xs font-medium text-(--crc-fg-muted)">Repository</span>
           <Select
@@ -151,6 +207,7 @@ export function NewSessionDialog({
             options={[
               { value: NO_REPO, label: "No repo", description: "Just chat — a scratch directory, no git" },
               ...repos.map((r) => ({ value: r.id, label: r.name, description: r.defaultBranch })),
+              { value: FROM_GITHUB, label: "Clone from GitHub…", description: "Start on a repo this host hasn't checked out yet" },
             ]}
           />
           {/* The defaults everyone actually uses, stated rather than asked for. */}
@@ -167,8 +224,9 @@ export function NewSessionDialog({
             </p>
           )}
         </div>
+        )}
 
-        {advanced && (
+        {!browsing && advanced && (
           <div className="space-y-4">
             {repoId !== NO_REPO && (
               <>
@@ -201,9 +259,9 @@ export function NewSessionDialog({
           </div>
         )}
 
-        {error && <p className="text-sm text-(--crc-danger)">{error}</p>}
+        {error && <p className="rounded-lg bg-(--crc-danger)/10 px-3 py-2 text-sm text-(--crc-danger)">{error}</p>}
 
-        {behindInfo && (
+        {!browsing && behindInfo && (
           <div className="space-y-2 rounded-xl border border-(--crc-warning)/30 bg-(--crc-warning)/8 p-3">
             <p className="text-sm text-(--crc-fg)">
               <span className="font-medium">{baseBranch}</span> is {behindInfo.behind} commit
@@ -221,7 +279,7 @@ export function NewSessionDialog({
           </div>
         )}
 
-        {!behindInfo && (
+        {!browsing && !behindInfo && (
           <div className="flex items-center justify-between gap-2 pt-1">
             <button
               onClick={() => setAdvanced((v) => !v)}
@@ -244,5 +302,118 @@ export function NewSessionDialog({
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Pick a repo from GitHub that isn't on the host yet. Cloning is the point:
+ * CRC can only start a session on a repo under its repos root, and getting one
+ * there otherwise means an SSH session — the exact thing that stops you
+ * starting work from a phone.
+ */
+function GithubBrowser({
+  gh,
+  query,
+  onQuery,
+  cloning,
+  alreadyCloned,
+  onPick,
+  onCancel,
+}: {
+  gh: { available: boolean; reason: string | null; repos: GithubRepo[] } | null;
+  query: string;
+  onQuery: (q: string) => void;
+  cloning: string | null;
+  alreadyCloned: Set<string>;
+  onPick: (fullName: string) => void;
+  onCancel: () => void;
+}) {
+  const q = query.trim().toLowerCase();
+  const matches = (gh?.repos ?? []).filter((r) => !q || r.fullName.toLowerCase().includes(q) || (r.description ?? "").toLowerCase().includes(q));
+  // Anything typed that looks like a repo can be cloned even if it's not in the
+  // list — an org repo the list didn't reach, or one you know by name.
+  const typedRef = /^[\w.-]+\/[\w.-]+$/.test(query.trim()) ? query.trim() : null;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <button onClick={onCancel} className="flex h-7 w-7 items-center justify-center rounded-lg text-(--crc-fg-muted) hover:bg-(--crc-hover) hover:text-(--crc-fg)" title="Back">
+          <span className="codicon codicon-arrow-left" />
+        </button>
+        <span className="text-sm font-medium text-(--crc-fg)">Clone from GitHub</span>
+      </div>
+
+      {gh && !gh.available ? (
+        <div className="rounded-xl bg-(--crc-bg-inset)/70 px-3.5 py-3 text-xs text-(--crc-fg-muted)">
+          {gh.reason ?? "The daemon has no GitHub login."}
+        </div>
+      ) : (
+        <>
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => onQuery(e.target.value)}
+            placeholder="Search your repos, or type owner/name"
+            spellCheck={false}
+            className="crc-input"
+          />
+          <div className="max-h-64 space-y-1 overflow-y-auto">
+            {!gh && <div className="px-1 py-2 text-xs text-(--crc-fg-muted)">Loading your repos…</div>}
+            {gh && matches.length === 0 && !typedRef && (
+              <div className="px-1 py-2 text-xs text-(--crc-fg-muted)">Nothing matches. Type an exact owner/name to clone it anyway.</div>
+            )}
+            {typedRef && !matches.some((r) => r.fullName.toLowerCase() === typedRef.toLowerCase()) && (
+              <RepoRow full={typedRef} description="Clone by name" cloned={false} busy={cloning === typedRef} onPick={onPick} />
+            )}
+            {matches.map((r) => (
+              <RepoRow
+                key={r.fullName}
+                full={r.fullName}
+                description={r.description}
+                isPrivate={r.isPrivate}
+                cloned={alreadyCloned.has(r.name.toLowerCase())}
+                busy={cloning === r.fullName}
+                onPick={onPick}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function RepoRow({
+  full,
+  description,
+  isPrivate,
+  cloned,
+  busy,
+  onPick,
+}: {
+  full: string;
+  description?: string | null;
+  isPrivate?: boolean;
+  cloned: boolean;
+  busy: boolean;
+  onPick: (fullName: string) => void;
+}) {
+  return (
+    <button
+      onClick={() => onPick(full)}
+      disabled={busy}
+      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-(--crc-hover) disabled:opacity-60"
+    >
+      <span className={`codicon shrink-0 text-[13px] ${isPrivate ? "codicon-lock-small" : "codicon-repo"} text-(--crc-fg-muted)`} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] text-(--crc-fg)">{full}</span>
+        {description && <span className="block truncate text-[11px] text-(--crc-fg-muted)">{description}</span>}
+      </span>
+      {busy ? (
+        <span className="shrink-0 text-[11px] text-(--crc-fg-muted)">Cloning…</span>
+      ) : cloned ? (
+        <span className="shrink-0 text-[11px] text-(--crc-fg-muted)">Already here</span>
+      ) : null}
+    </button>
   );
 }

@@ -52,12 +52,25 @@ async function main() {
 
   const sweep = startIdleSweep(manager, config.controlIdleMs);
 
+  let shuttingDown = false;
   const shutdown = async (signal: string) => {
-    logger.info("shutting down", { signal });
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info("shutting down", { signal, busySessions: manager.busySessionCount() });
     clearInterval(sweep);
     accounts.stop();
-    // Kill every live `claude` child; in-flight turns fail cleanly and resume on the next prompt after restart.
-    manager.closeAll("shutdown");
+    // Let running turns finish first — a killed turn costs the user their
+    // prompt. The process manager's own kill timeout must exceed this grace
+    // (see stop_grace_period in docker-compose.yml / kill_timeout in
+    // ecosystem.config.cjs) or it will SIGKILL us mid-drain anyway.
+    if (config.shutdownGraceMs > 0 && manager.busySessionCount() > 0) {
+      const drained = await manager.drain(config.shutdownGraceMs);
+      logger.info(drained ? "all turns finished; shutting down" : "shutdown grace expired with turns still running", {
+        busySessions: manager.busySessionCount(),
+      });
+    }
+    // Whatever is still running fails cleanly with a resend hint and resumes on the next prompt after restart.
+    manager.closeAll();
     await app.close().catch(() => {});
     process.exit(0);
   };

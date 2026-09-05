@@ -32,6 +32,13 @@ const Env = z.object({
    * until archive/delete/shutdown).
    */
   CRC_LIVE_IDLE_MINUTES: z.coerce.number().min(0).default(60),
+  /**
+   * Seconds a shutdown (SIGTERM/SIGINT — a deploy, `docker compose up`, pm2
+   * restart) waits for in-flight turns to finish before closing their
+   * processes. 0 = close immediately. Your process manager's kill timeout
+   * must be longer than this or the drain is cut short.
+   */
+  CRC_SHUTDOWN_GRACE_SECONDS: z.coerce.number().min(0).default(600),
   /** Seconds a pending permission request waits for the controller before denying. */
   CRC_PERMISSION_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(300),
   /** Port the HTTP+WS server listens on. */
@@ -98,6 +105,7 @@ export type Config = {
   authToken: string;
   controlIdleMs: number;
   liveIdleMs: number;
+  shutdownGraceMs: number;
   permissionTimeoutMs: number;
   port: number;
   host: string;
@@ -185,6 +193,7 @@ export function loadConfig(): Config {
     authToken: resolveAuthToken(env.CRC_AUTH_TOKEN, dataDir),
     controlIdleMs: env.CRC_CONTROL_IDLE_MINUTES * 60_000,
     liveIdleMs: env.CRC_LIVE_IDLE_MINUTES * 60_000,
+    shutdownGraceMs: env.CRC_SHUTDOWN_GRACE_SECONDS * 1000,
     permissionTimeoutMs: env.CRC_PERMISSION_TIMEOUT_SECONDS * 1000,
     port: env.CRC_PORT,
     host: env.CRC_HOST,

@@ -626,8 +626,31 @@ export class SessionManager {
 
   // ── Live process pool ────────────────────────────────────────────────────────
 
+  /** How many sessions have a turn (prompted or auto) in flight right now. */
+  busySessionCount(): number {
+    let n = 0;
+    for (const live of this.live.values()) if (live.busy) n++;
+    return n;
+  }
+
+  /**
+   * Wait for in-flight turns to finish before a shutdown, up to `maxMs`.
+   * Killing a running turn loses the user's prompt (they see "turn failed"
+   * and have to resend), so a deploy should let the current turn land first.
+   * Resolves true when everything is idle, false when the deadline passed
+   * with work still running (the caller then closes anyway).
+   */
+  async drain(maxMs: number, pollMs = 500): Promise<boolean> {
+    const deadline = Date.now() + maxMs;
+    while (this.busySessionCount() > 0) {
+      if (Date.now() >= deadline) return false;
+      await new Promise((r) => setTimeout(r, Math.min(pollMs, Math.max(0, deadline - Date.now()))));
+    }
+    return true;
+  }
+
   /** Tear down every live process (daemon shutdown / CLI exit). Idle sessions resume transparently on their next prompt. */
-  closeAll(reason = "shutdown"): void {
+  closeAll(reason = "The daemon restarted while this turn was running — send the prompt again."): void {
     for (const id of [...this.live.keys()]) this.closeLive(id, reason);
     if (this.reaper) {
       clearInterval(this.reaper);

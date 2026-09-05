@@ -18,6 +18,8 @@ module.exports = {
   apps: [
     {
       name: "crc-daemon",
+      // Let a restart drain running turns (CRC_SHUTDOWN_GRACE_SECONDS, default 600) before SIGKILL.
+      kill_timeout: 660_000,
       script: "apps/daemon/dist/index.js",
       cwd: __dirname,
       interpreter: "node",

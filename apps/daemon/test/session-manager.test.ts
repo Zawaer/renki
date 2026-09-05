@@ -701,6 +701,22 @@ describe("live process pool", () => {
     expect(liveInstances[0]!.steered).toEqual([]);
   });
 
+  it("drain waits for in-flight turns and reports whether it finished in time", async () => {
+    const { manager, repoId } = setup();
+    await prompted(manager, repoId);
+    const live = liveInstances[0]!;
+    expect(await manager.drain(1000, 10)).toBe(true); // nothing running
+
+    live.busy = true;
+    expect(manager.busySessionCount()).toBe(1);
+    expect(await manager.drain(60, 10)).toBe(false); // still running at the deadline
+
+    setTimeout(() => {
+      live.busy = false;
+    }, 30);
+    expect(await manager.drain(2000, 10)).toBe(true); // finished before the deadline
+  });
+
   it("interruptSession reaches the live process only while it is busy", async () => {
     const { manager, repoId } = setup();
     const s = await prompted(manager, repoId);

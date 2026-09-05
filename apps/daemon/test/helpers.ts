@@ -33,6 +33,7 @@ export function makeTestConfig(overrides: Partial<Config> = {}): Config {
     authToken: "test-token",
     controlIdleMs: 15 * 60_000,
     liveIdleMs: 60 * 60_000,
+    shutdownGraceMs: 600_000,
     permissionTimeoutMs: 300_000,
     port: 4517,
     host: "127.0.0.1",

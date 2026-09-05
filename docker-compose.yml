@@ -1,5 +1,8 @@
 services:
   daemon:
+    # Give the daemon time to let running turns finish before a restart kills
+    # them (CRC_SHUTDOWN_GRACE_SECONDS, default 600) — a little longer than the grace itself.
+    stop_grace_period: 11m
     build: .
     container_name: crc-daemon
     restart: unless-stopped

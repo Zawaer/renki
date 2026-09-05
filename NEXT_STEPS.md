@@ -319,6 +319,15 @@ features. The throughline for everything below: shrink "found the repo" →
       credentials), and after `CRC_LIVE_IDLE_MINUTES` (default 60) of true
       idleness. The RAM ceiling that originally motivated resume-per-prompt
       (~1 GiB/process) is now a config knob instead of an architecture.
+      **Graceful restarts (same day, after a deploy killed a running turn):**
+      SIGTERM/SIGINT now drain in-flight turns for up to
+      `CRC_SHUTDOWN_GRACE_SECONDS` (default 600) before closing processes;
+      `docker-compose.yml` (`stop_grace_period: 11m`) and
+      `ecosystem.config.cjs` (`kill_timeout`) are set above that so the
+      process manager doesn't SIGKILL mid-drain. A turn that still gets cut
+      fails with "The daemon restarted while this turn was running — send the
+      prompt again." rather than the bare reason string. When deploying by
+      hand: build the image first, check for busy sessions, then recreate.
       Follow-ups worth doing on real hardware:
       - **Resume across a restart after queued messages.** Upstream #67 (queued
         streaming-input messages missing from the CLI's transcript) is still

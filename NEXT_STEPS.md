@@ -382,9 +382,16 @@ features. The throughline for everything below: shrink "found the repo" →
       the top of the sidebar and device/connection/stats/accounts/RTK/settings
       form a footer chip row (popovers there open upward); cards lost their
       hairline borders in favor of tonal surfaces (tool calls, stat tiles,
-      settings sections), inner separators are 60% borders. Not yet taken from
-      that app: the "what's up next" home screen with a compact stats card and
-      activity heatmap — the data exists on the Stats page, worth a follow-up.
+      settings sections), inner separators are 60% borders. The "what's up
+      next" home screen followed the same day: `apps/web/src/components/Home.tsx`
+      replaces the empty "no session open" route with a time-of-day greeting
+      and one compact card — Overview/Models tabs, an All/30d/7d range, eight
+      tiles (sessions, replies, tokens, spend, active days, current + longest
+      streak, success rate), a 26-week Monday-first activity heatmap in the
+      accent, and a perspective line ("~59× more tokens than The Lord of the
+      Rings"). The math lives in client-core (`activity.ts`: activityGrid,
+      streaks, sumRecent, tokensInPerspective — unit-tested) so mobile can
+      reuse it verbatim.
 
 ## 4. Known fragilities
 

@@ -3,6 +3,7 @@ import { BrowserRouter, MemoryRouter, Route, Routes, useLocation, useNavigate } 
 import { ClientProvider, useClient, useStoreValue } from "./lib/client.js";
 import { type AppConfig, clearConfig, loadConfig, saveConfig } from "./lib/config.js";
 import { AccountsBar } from "./components/AccountsBar.js";
+import { Home } from "./components/Home.js";
 import { RtkGainBadge } from "./components/RtkGainBadge.js";
 import { SessionList } from "./components/SessionList.js";
 import { SessionView } from "./components/SessionView.js";
@@ -105,20 +106,7 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
             <Route path="/stats" element={<StatsView />} />
             <Route path="/settings" element={<Settings onReset={onReset} managed={managed} />} />
             <Route path="/session/:id" element={selected ? <SessionView key={selected} sessionId={selected} /> : null} />
-            <Route
-              path="*"
-              element={
-                <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-(--crc-surface) text-(--crc-fg-muted) shadow-(--crc-shadow-sm)">
-                    <span className="codicon codicon-comment-discussion text-xl" />
-                  </span>
-                  <div>
-                    <div className="text-sm font-medium text-(--crc-fg)">No session open</div>
-                    <div className="mt-1 text-xs text-(--crc-fg-muted)">Pick one from the sidebar, or start a new one.</div>
-                  </div>
-                </div>
-              }
-            />
+            <Route path="*" element={<Home />}             />
           </Routes>
         </div>
       </main>

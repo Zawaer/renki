@@ -125,12 +125,18 @@ describe("SessionView", () => {
     expect(screen.getByText("Let me look at the repo first.")).toBeInTheDocument();
     expect(screen.getByText("Read")).toBeInTheDocument();
     expect(screen.getByText("Done — added a README.")).toBeInTheDocument();
-    expect(screen.getByText("$0.01")).toBeInTheDocument();
     expect(screen.getByText("4s")).toBeInTheDocument();
-    // Input and output are reported separately: a single total read as though
-    // the user's prompt itself were thousands of tokens.
-    expect(screen.getByText("1.2k in")).toBeInTheDocument();
-    expect(screen.getByText("340 out")).toBeInTheDocument();
+    // How long it took is the only figure on the footer. Tokens and cost are
+    // trivia — they sat there on every turn making the transcript busy — so
+    // they wait behind the info icon.
+    expect(screen.queryByText("$0.01")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Tokens and cost" }));
+    // Input and cache re-reads stay separate figures: added together they read
+    // as though the user's one-line prompt were tens of thousands of tokens.
+    expect(screen.getByText("Input")).toBeInTheDocument();
+    expect(screen.getByText("1.2k tokens")).toBeInTheDocument();
+    expect(screen.getByText("340 tokens")).toBeInTheDocument();
+    expect(screen.getByText("$0.01")).toBeInTheDocument();
     expect(screen.getByText("Switched account — retrying.")).toBeInTheDocument();
     // No control button at all — this device already holds the lock, and
     // there's nothing useful to do about it (taking control is a unilateral

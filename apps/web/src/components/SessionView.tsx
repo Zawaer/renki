@@ -44,7 +44,7 @@ import {
 } from "../lib/composerPrefs.js";
 import { JsonCode, ShellCode } from "./Code.js";
 import { Markdown } from "./Markdown.js";
-import { Button, CopyButton, Skeleton, StatusBadge } from "./ui.js";
+import { Button, CopyButton, InfoHint, Skeleton, StatusBadge } from "./ui.js";
 
 export function SessionView({ sessionId }: { sessionId: string }) {
   const { realtime, config } = useClient();
@@ -339,6 +339,35 @@ function ContextMeter({ context }: { context: ContextUsageView }) {
 }
 
 /** Claude's prose for this turn — what "copy the reply" puts on the clipboard (no thinking, no tool payloads). */
+/**
+ * The stats for one turn, behind an info icon.
+ *
+ * Input is kept apart from cache re-reads because they read as a bug together:
+ * for a one-word prompt the input is the whole session context being ingested,
+ * so a single figure looked absurdly large for "hey".
+ */
+function TurnDetails({ turn }: { turn: TurnView }) {
+  const rows: Array<[string, string]> = [];
+  if (turn.inputTokens != null) rows.push(["Input", `${formatTokenCount(turn.inputTokens)} tokens`]);
+  if (turn.cachedInputTokens) rows.push(["Cached", `${formatTokenCount(turn.cachedInputTokens)} tokens`]);
+  if (turn.outputTokens != null) rows.push(["Output", `${formatTokenCount(turn.outputTokens)} tokens`]);
+  if (turn.costUsd != null) rows.push(["API cost", formatCost(turn.costUsd)]);
+  if (rows.length === 0) return null;
+
+  return (
+    <InfoHint label="Tokens and cost">
+      <span className="grid grid-cols-[auto_auto] gap-x-3 gap-y-0.5">
+        {rows.map(([label, value]) => (
+          <Fragment key={label}>
+            <span className="text-(--crc-fg-muted)">{label}</span>
+            <span className="text-right tabular-nums text-(--crc-fg)">{value}</span>
+          </Fragment>
+        ))}
+      </span>
+    </InfoHint>
+  );
+}
+
 function replyTextOf(turn: TurnView): string {
   // BlockView's prose variant covers both "text" and "thinking", so narrow by
   // hand rather than with Extract (which collapses to never here).
@@ -386,41 +415,19 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
         </div>
       )}
       {(turn.status !== "running" || replyText) && (
-        <div className="flex flex-wrap items-center gap-2 pt-1 text-[11.5px] text-(--crc-fg-muted)">
-          {turn.status === "done" && turn.costUsd != null && (
+        <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11.5px] text-(--crc-fg-muted)">
+          {turn.status === "done" && (
             <>
               <span>{formatDuration(turn.durationMs ?? 0)}</span>
-              {/*
-                * Input and output stay separate. A single "N tokens" figure
-                * invited the wrong reading: for a one-word prompt the input is
-                * the session's whole context being ingested, not the word, so
-                * "5.6k tokens" looked like a bug when it wasn't.
-                */}
-              {turn.inputTokens != null && (
-                <>
-                  <span>·</span>
-                  <span
-                    title={
-                      turn.cachedInputTokens
-                        ? `Context ingested this turn. A further ${formatTokenCount(turn.cachedInputTokens)} was re-read from the prompt cache.`
-                        : "Context ingested this turn"
-                    }
-                  >
-                    {formatTokenCount(turn.inputTokens)} in
-                  </span>
-                </>
-              )}
-              {turn.outputTokens != null && (
-                <>
-                  <span>·</span>
-                  <span title="Tokens Claude wrote">{formatTokenCount(turn.outputTokens)} out</span>
-                </>
-              )}
-              <span>·</span>
-              <span>{formatCost(turn.costUsd)}</span>
+              {/* Tokens and cost live behind the icon. They are stats, not
+                  something to act on: the cost is a notional API-equivalent
+                  figure rather than anything billed, and the Stats page carries
+                  the real breakdown. On the footer of every turn they were just
+                  noise. */}
+              <TurnDetails turn={turn} />
               {/* One turn can answer several prompts — anything steered into it
-                  mid-flight — so say what these totals cover; otherwise they
-                  look like they belong to the last message alone. */}
+                  mid-flight — so this stays visible: it changes what the
+                  transcript above means, which a token count does not. */}
               {turn.steeredPrompts.length > 0 && (
                 <>
                   <span>·</span>

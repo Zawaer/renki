@@ -269,3 +269,51 @@ export function CopyButton({ text, label = "Copy", className = "" }: { text: str
     </button>
   );
 }
+
+/**
+ * A muted info glyph that reveals a small panel of secondary detail.
+ *
+ * Hover alone would strand phone users, and a bare `title` attribute never
+ * appears on touch at all — so a tap toggles it too. The pointer check keeps
+ * the two from fighting: on touch, tapping fires a synthetic enter *and* the
+ * click, which would open then immediately close it.
+ */
+export function InfoHint({
+  children,
+  label = "Details",
+  className = "",
+}: {
+  children: React.ReactNode;
+  label?: string;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const hover = (next: boolean) => (e: React.PointerEvent) => {
+    if (e.pointerType === "mouse") setOpen(next);
+  };
+
+  return (
+    <span className={`relative inline-flex ${className}`}>
+      <button
+        type="button"
+        aria-label={label}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        onBlur={() => setOpen(false)}
+        onPointerEnter={hover(true)}
+        onPointerLeave={hover(false)}
+        className="inline-flex h-4 w-4 items-center justify-center rounded-full text-(--crc-fg-muted)/70 transition-colors hover:text-(--crc-fg) focus-visible:text-(--crc-fg)"
+      >
+        <span className="codicon codicon-info text-[12px]" />
+      </button>
+      {open && (
+        <span
+          role="tooltip"
+          className="absolute bottom-full left-1/2 z-20 mb-1.5 w-max -translate-x-1/2 rounded-lg border border-(--crc-border) bg-(--crc-surface) px-2.5 py-2 text-left text-[11.5px] shadow-(--crc-shadow-md)"
+        >
+          {children}
+        </span>
+      )}
+    </span>
+  );
+}

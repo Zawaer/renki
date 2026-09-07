@@ -596,6 +596,50 @@ Anthropic has confirmed is within the Consumer Terms.
 Pair this with `CRC_FORCE_PERMISSION_PROMPTS=1` if you want tool approvals to
 reach your phone rather than being auto-allowed.
 
+## Previewing what a session builds (optional)
+
+Sessions run inside the daemon container, so a dev server they start is
+unreachable by default — not because of the filesystem, but because nothing
+routes to that port. Without this, every time Claude builds something you can
+look at, someone has to hand-make an SSH tunnel.
+
+If you already reverse-proxy CRC (§ Advanced networking), the tidiest fix is a
+wildcard host that maps a port onto a hostname. With Caddy on the same Docker
+network as the daemon:
+
+```caddyfile
+*.preview.internal {
+	@port header_regexp pport Host ^p([0-9]{2,5})\.preview\.internal$
+	handle @port {
+		reverse_proxy crc-daemon:{re.pport.1}
+	}
+	handle {
+		respond "Use https://p<port>.preview.internal" 404
+	}
+	tls internal
+}
+```
+
+A server on port 3000 is then `https://p3000.preview.internal`, on 5173
+`https://p5173.preview.internal`, and so on — any port, no configuration per
+project. Nothing is published to the host, so a port already taken there (say
+another service on 3000) can't clash: this reaches the container's own port
+space. Requires a wildcard DNS entry for `*.internal` (Tailscale split DNS or
+your own resolver) pointing at the proxy.
+
+Two things sessions must get right, which is why it's worth putting in the
+`CLAUDE.md` inside the `~/.claude` you mount into the daemon:
+
+- **Bind `0.0.0.0`,** not localhost — Docker networking can't reach the
+  container's loopback (`next dev -H 0.0.0.0`, `vite --host`).
+- **Pick an unlikely port,** since two sessions running at once can collide
+  with each other even though the host can't.
+
+**What this exposes.** Any port inside the daemon container becomes reachable
+on your private network without authentication. The daemon's own API stays
+token-protected, but anything a session starts is open to devices on that
+network — fine for a personal tailnet, not something to put on the internet.
+
 ## Pushing to GitHub (optional)
 
 Sessions run **inside the daemon container**, which has no GitHub login of its

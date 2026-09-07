@@ -390,20 +390,30 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
           {turn.status === "done" && turn.costUsd != null && (
             <>
               <span>{formatDuration(turn.durationMs ?? 0)}</span>
-              {(turn.inputTokens != null || turn.outputTokens != null) && (
+              {/*
+                * Input and output stay separate. A single "N tokens" figure
+                * invited the wrong reading: for a one-word prompt the input is
+                * the session's whole context being ingested, not the word, so
+                * "5.6k tokens" looked like a bug when it wasn't.
+                */}
+              {turn.inputTokens != null && (
                 <>
                   <span>·</span>
                   <span
-                    title={[
-                      `${formatTokenCount(turn.inputTokens ?? 0)} in`,
-                      `${formatTokenCount(turn.outputTokens ?? 0)} out`,
-                      turn.cachedInputTokens ? `${formatTokenCount(turn.cachedInputTokens)} re-read from cache` : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
+                    title={
+                      turn.cachedInputTokens
+                        ? `Context ingested this turn. A further ${formatTokenCount(turn.cachedInputTokens)} was re-read from the prompt cache.`
+                        : "Context ingested this turn"
+                    }
                   >
-                    {formatTokenCount((turn.inputTokens ?? 0) + (turn.outputTokens ?? 0))} tokens
+                    {formatTokenCount(turn.inputTokens)} in
                   </span>
+                </>
+              )}
+              {turn.outputTokens != null && (
+                <>
+                  <span>·</span>
+                  <span title="Tokens Claude wrote">{formatTokenCount(turn.outputTokens)} out</span>
                 </>
               )}
               <span>·</span>

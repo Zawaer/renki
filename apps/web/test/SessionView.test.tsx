@@ -127,7 +127,10 @@ describe("SessionView", () => {
     expect(screen.getByText("Done — added a README.")).toBeInTheDocument();
     expect(screen.getByText("$0.01")).toBeInTheDocument();
     expect(screen.getByText("4s")).toBeInTheDocument();
-    expect(screen.getByText("1.5k tokens")).toBeInTheDocument();
+    // Input and output are reported separately: a single total read as though
+    // the user's prompt itself were thousands of tokens.
+    expect(screen.getByText("1.2k in")).toBeInTheDocument();
+    expect(screen.getByText("340 out")).toBeInTheDocument();
     expect(screen.getByText("Switched account — retrying.")).toBeInTheDocument();
     // No control button at all — this device already holds the lock, and
     // there's nothing useful to do about it (taking control is a unilateral

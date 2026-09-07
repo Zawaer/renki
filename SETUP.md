@@ -627,13 +627,20 @@ another service on 3000) can't clash: this reaches the container's own port
 space. Requires a wildcard DNS entry for `*.internal` (Tailscale split DNS or
 your own resolver) pointing at the proxy.
 
-Two things sessions must get right, which is why it's worth putting in the
-`CLAUDE.md` inside the `~/.claude` you mount into the daemon:
+Two things sessions must get right, which is why they belong in the
+`CLAUDE.md` inside the `~/.claude` you mount into the daemon — copy
+`session-guide.example.md` from this repo to `~/.claude/CLAUDE.md` and edit the
+preview hostname to match your proxy:
 
 - **Bind `0.0.0.0`,** not localhost — Docker networking can't reach the
   container's loopback (`next dev -H 0.0.0.0`, `vite --host`).
 - **Pick an unlikely port,** since two sessions running at once can collide
   with each other even though the host can't.
+
+A preview dies whenever the daemon is rebuilt or restarted, since the container
+it runs inside is replaced — a 502 on a preview URL means the route is fine and
+nothing is listening. The session guide tells sessions that too, so they restart
+the server instead of debugging the proxy.
 
 **What this exposes.** Any port inside the daemon container becomes reachable
 on your private network without authentication. The daemon's own API stays

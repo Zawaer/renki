@@ -9,6 +9,7 @@ import { logger } from "./logger.js";
 import { DeviceRegistry } from "./push/devices.js";
 import { Notifier } from "./push/notifier.js";
 import { PushTokenStore } from "./push/tokens.js";
+import { shouldReleaseIdleControl } from "./sessions/idleControl.js";
 import { SessionManager } from "./sessions/manager.js";
 import { createServer } from "./server/http.js";
 import { PermissionBroker } from "./server/permissions.js";
@@ -50,7 +51,7 @@ async function main() {
     });
   }
 
-  const sweep = startIdleSweep(manager, config.controlIdleMs);
+  const sweep = startIdleSweep(manager, devices, config.controlIdleMs);
 
   let shuttingDown = false;
   const shutdown = async (signal: string) => {
@@ -79,19 +80,18 @@ async function main() {
 }
 
 /**
- * Every 30s, release control on any idle session whose controller has been
- * silent past the timeout. We never touch a `busy` session — a long-running
- * turn is legitimate activity even if no message has been sent.
+ * Every 30s, hand back the take-control lock held by a device that has gone
+ * away — see shouldReleaseIdleControl for exactly when that applies. A
+ * connected controller keeps the lock however long they sit reading.
  */
-function startIdleSweep(manager: SessionManager, idleMs: number): NodeJS.Timeout {
+function startIdleSweep(manager: SessionManager, devices: DeviceRegistry, idleMs: number): NodeJS.Timeout {
   const interval = setInterval(() => {
     const now = Date.now();
+    const isOnline = (deviceId: string) => devices.isOnline(deviceId);
     for (const session of manager.listSessions()) {
-      if (!session.controller || session.status === "busy") continue;
-      if (now - session.lastActivityAt > idleMs) {
-        manager.releaseControl(session.id, session.controller);
-        logger.info("auto-released idle control", { sessionId: session.id });
-      }
+      if (!shouldReleaseIdleControl(session, isOnline, now, idleMs)) continue;
+      manager.releaseControl(session.id, session.controller!);
+      logger.info("auto-released control from a device that went away", { sessionId: session.id });
     }
   }, 30_000);
   interval.unref();

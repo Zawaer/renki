@@ -380,7 +380,11 @@ export class SessionManager {
     if (session.status === "archived") throw new SessionError("session_archived", "Session is archived.");
     if (session.controller === deviceId) return session; // already in control; no-op
 
-    this.patch(id, { controller: deviceId });
+    // Taking control IS activity. Without this stamp, opening an older session
+    // leaves lastActivityAt hours in the past, and the idle sweep (which runs
+    // every 30s) hands the lock straight back — losing it seconds after
+    // claiming it, over and over.
+    this.patch(id, { controller: deviceId, lastActivityAt: Date.now() });
     this.events.append(id, {
       kind: "control_changed",
       controller: deviceId,

@@ -32,9 +32,12 @@ import { useEffect, useRef, useState, Fragment } from "react";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { hostOpenFile, isHosted } from "../lib/host.js";
 import {
+  clearDraft,
+  loadDraft,
   loadEffortKey,
   loadModel,
   loadPermissionMode,
+  saveDraft,
   saveEffortKey,
   saveModel,
   savePermissionMode,
@@ -1338,8 +1341,14 @@ function Composer({
   const { rest, realtime } = useClient();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [text, setText] = useState("");
-  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  // Restore whatever was half-typed for THIS session — switching sessions or
+  // closing the tab shouldn't throw away a prompt in progress.
+  const restored = useRef(loadDraft(sessionId));
+  const [text, setText] = useState(() => restored.current?.text ?? "");
+  const [attachments, setAttachments] = useState<PendingAttachment[]>(() =>
+    (restored.current?.attachments ?? []).map((a) => ({ ...a, id: crypto.randomUUID() })),
+  );
+  const [draftNote, setDraftNote] = useState(restored.current?.attachmentsDropped ?? false);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   // All three persisted in localStorage (see composerPrefs.ts) so they don't
@@ -1366,6 +1375,24 @@ function Composer({
       .then(setCapabilities)
       .catch(() => {});
   }, [rest]);
+
+  // Persist the in-progress prompt, debounced so a fast typist isn't writing
+  // to storage on every keystroke.
+  useEffect(() => {
+    const id = setTimeout(() => saveDraft(sessionId, text, attachments.map(({ id: _id, ...a }) => a)), 250);
+    return () => clearTimeout(id);
+  }, [sessionId, text, attachments]);
+
+  // A closing tab doesn't reliably run the debounce, so flush on the way out
+  // (and when switching sessions unmounts this composer).
+  useEffect(() => {
+    const flush = () => saveDraft(sessionId, text, attachments.map(({ id: _id, ...a }) => a));
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, [sessionId, text, attachments]);
 
   // supportedModels() already includes its own "Default (recommended)" entry
   // (first in the list) — no need for our own placeholder on top of it. Once
@@ -1433,6 +1460,8 @@ function Composer({
     setText("");
     setAttachments([]);
     setAttachError(null);
+    setDraftNote(false);
+    clearDraft(sessionId);
   }
 
   /** Reads and validates dropped/picked/pasted files, appending whatever's accepted. */
@@ -1674,6 +1703,11 @@ function Composer({
           {attachError && (
             <div className="px-3 pt-2 text-xs text-(--crc-danger)">
               {attachError}
+            </div>
+          )}
+          {draftNote && !attachError && (
+            <div className="flex items-center gap-1.5 px-3 pt-2 text-xs text-(--crc-fg-muted)">
+              <span className="codicon codicon-info text-[12px]" /> Your text was kept, but the attachments were too large to save — add them again.
             </div>
           )}
           <textarea

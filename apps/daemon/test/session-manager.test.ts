@@ -180,6 +180,20 @@ describe("take / release control", () => {
     expect(kinds(manager, s.id).filter((k) => k === "control_changed")).toHaveLength(1);
   });
 
+  it("takeControl refreshes lastActivityAt, so the idle sweep can't immediately reclaim the lock", async () => {
+    const { manager, db, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    // An older session: last activity long before the idle timeout.
+    const stale = Date.now() - 6 * 60 * 60_000;
+    db.update(sessions).set({ lastActivityAt: stale }).where(eq(sessions.id, s.id)).run();
+
+    const taken = manager.takeControl(s.id, "d1");
+
+    expect(taken.controller).toBe("d1");
+    expect(taken.lastActivityAt).toBeGreaterThan(stale);
+    expect(Date.now() - taken.lastActivityAt).toBeLessThan(5_000);
+  });
+
   it("releaseControl by a non-holder is a no-op", async () => {
     const { manager, repoId } = setup();
     const s = await newSession(manager, repoId);

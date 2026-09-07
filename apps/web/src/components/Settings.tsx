@@ -394,7 +394,8 @@ function AccountRow({
         <UsageLimits usage={account.usage} className="mt-3 pl-4" />
       ) : (
         <div className="mt-1.5 pl-4 text-xs text-(--crc-fg-muted)">
-          {usageConnected ? "Usage not available right now." : "Usage not tracked — connect it below to see limits."}
+          {account.usageError ??
+            (usageConnected ? "Usage not available right now." : "Usage not tracked — connect it below to see limits.")}
         </div>
       )}
     </div>

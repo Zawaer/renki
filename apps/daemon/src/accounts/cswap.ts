@@ -119,6 +119,9 @@ function normalizeAccount(a: any): Account {
     email: String(a?.email ?? ""),
     active: Boolean(a?.active),
     usageStatus: String(a?.usageStatus ?? "unavailable"),
+    // The rotator fills this in from the usage reader, which is the only thing
+    // that knows why a fetch failed; cswap itself has no opinion.
+    usageError: null,
     usage,
   };
 }

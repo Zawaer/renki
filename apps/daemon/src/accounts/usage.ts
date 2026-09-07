@@ -70,6 +70,8 @@ export function parseLimits(body: any): AccountUsageLimit[] {
 export class UsageReader {
   private entries: UsageEntry[] = [];
   private readonly cache = new Map<string, { usage: AccountUsage | null; at: number }>();
+  /** email -> why its last fetch failed, so clients can say what to do about it. */
+  private readonly errors = new Map<string, string>();
   // Impersonates a real browser's TLS/HTTP2 fingerprint. claude.ai's API is
   // fronted by Cloudflare bot management, which 403s a plain server-side fetch
   // (non-browser fingerprint) regardless of headers — this is what lets a bare
@@ -89,6 +91,15 @@ export class UsageReader {
   }
 
   /** Emails (lowercased) we currently hold a usage key for. */
+  /**
+   * Why this account has no usage, if it's configured but failing. A rejected
+   * cookie needs re-connecting; anything else is likely transient and worth
+   * retrying, so the two are worded differently.
+   */
+  errorFor(email: string): string | null {
+    return this.errors.get(email.toLowerCase()) ?? null;
+  }
+
   connectedEmails(): string[] {
     return this.entries.map((e) => e.email?.toLowerCase()).filter((e): e is string => Boolean(e));
   }
@@ -213,9 +224,20 @@ export class UsageReader {
     const cached = this.cache.get(cacheKey);
     if (cached && Date.now() - cached.at < CACHE_MS) return cached.usage;
     const usage = await this.fetchEntry(entry).catch((err) => {
-      logger.warn("usage fetch failed; keeping last known", { email: entry.email, err: String(err) });
+      const message = String(err);
+      logger.warn("usage fetch failed; keeping last known", { email: entry.email, err: message });
+      if (entry.email) {
+        const rejected = /rejected|401|403|account_session_invalid|Invalid authorization/i.test(message);
+        this.errors.set(
+          entry.email.toLowerCase(),
+          rejected
+            ? "Sign-in expired — reconnect usage tracking for this account."
+            : "Usage unavailable right now (claude.ai didn't answer).",
+        );
+      }
       return cached?.usage ?? null; // fail-safe: last-known, else null
     });
+    if (usage && entry.email) this.errors.delete(entry.email.toLowerCase());
     this.cache.set(cacheKey, { usage, at: Date.now() });
     return usage;
   }

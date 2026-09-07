@@ -89,6 +89,12 @@ export const Account = z.object({
   active: z.boolean(),
   /** "ok" when usage is fresh; anything else (e.g. "unavailable") => hold. */
   usageStatus: z.string(),
+  /**
+   * Why usage is missing, as a sentence to show the user — null when it isn't
+   * missing. "Not tracked" and "tracked but the sign-in expired" look identical
+   * from the outside but need opposite actions, so the daemon says which.
+   */
+  usageError: z.string().nullable().default(null),
   usage: AccountUsage.nullable(),
 });
 export type Account = z.infer<typeof Account>;

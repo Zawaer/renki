@@ -92,9 +92,17 @@ export class AccountRotator {
     const { activeAccountNumber, accounts } = await this.cswap.list();
     if (!this.usage.configured) return { activeAccountNumber, accounts };
     const byEmail = await this.usage.usageByEmail();
+    const connected = new Set(this.usage.connectedEmails());
     const merged = accounts.map((a) => {
-      const u = byEmail.get(a.email.toLowerCase());
-      return u ? { ...a, usage: u, usageStatus: "ok" } : a;
+      const email = a.email.toLowerCase();
+      const u = byEmail.get(email);
+      if (u) return { ...a, usage: u, usageStatus: "ok", usageError: null };
+      // Configured but not answering: say which, since "not tracked" and
+      // "sign-in expired" call for opposite actions.
+      const usageError = connected.has(email)
+        ? (this.usage.errorFor(email) ?? "Usage unavailable right now.")
+        : "Usage tracking not connected for this account.";
+      return { ...a, usageError };
     });
     return { activeAccountNumber, accounts: merged };
   }

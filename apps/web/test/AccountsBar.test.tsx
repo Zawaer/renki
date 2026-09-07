@@ -76,7 +76,8 @@ describe("AccountsBar", () => {
     expect(screen.getByText("Fable")).toBeInTheDocument();
     expect(screen.getByText("32%")).toBeInTheDocument();
     expect(screen.getAllByText("Weekly")).toHaveLength(2);
-    expect(screen.getByText(/auto @ 90%/)).toBeInTheDocument();
+    // "auto off"/"auto @ 90%" never said auto-what.
+    expect(screen.getByText("Auto-switch at 90%")).toBeInTheDocument();
   });
 
   it("shows every window (including a per-model weekly cap), its reset and any overage", async () => {
@@ -115,5 +116,34 @@ describe("AccountsBar", () => {
     // Give the listAccounts().then(setData) microtask a tick to resolve.
     await new Promise((r) => setTimeout(r, 0));
     expect(screen.queryByRole("button", { name: "Accounts & usage" })).not.toBeInTheDocument();
+  });
+});
+
+describe("why usage is missing", () => {
+  it("shows the daemon's reason verbatim, so an expired sign-in isn't reported as untracked", async () => {
+    renderAccountsBar({
+      ...SAMPLE,
+      accounts: [
+        {
+          ...SAMPLE.accounts[0],
+          usage: null,
+          usageStatus: "unavailable",
+          usageError: "Sign-in expired — reconnect usage tracking for this account.",
+        },
+      ],
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: /Accounts & usage/ }));
+    expect(screen.getByText(/Sign-in expired/)).toBeInTheDocument();
+    expect(screen.queryByText(/not tracked/i)).not.toBeInTheDocument();
+  });
+
+  it("falls back to a plain message when the daemon offers no reason", async () => {
+    renderAccountsBar({
+      ...SAMPLE,
+      accounts: [{ ...SAMPLE.accounts[0], usage: null, usageStatus: "unavailable", usageError: null }],
+    });
+    fireEvent.click(await screen.findByRole("button", { name: /Accounts & usage/ }));
+    expect(screen.getByText("Usage not tracked for this account.")).toBeInTheDocument();
   });
 });

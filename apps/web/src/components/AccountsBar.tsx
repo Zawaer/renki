@@ -92,11 +92,15 @@ export function AccountsBar() {
             className="crc-enter absolute bottom-full left-0 z-50 mb-2 w-80 space-y-3 rounded-xl border border-(--crc-border) bg-(--crc-surface) p-3.5 text-xs shadow-(--crc-shadow-lg)"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between">
-              <span className="font-medium text-(--crc-fg-muted)">
-                Accounts {data.rotation.enabled ? `· auto @ ${data.rotation.threshold}%` : "· auto off"}
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-[13px] font-semibold text-(--crc-fg)">Accounts</span>
+              <span className="text-[11px] text-(--crc-fg-muted)">
+                {switching
+                  ? "switching…"
+                  : data.rotation.enabled
+                    ? `Auto-switch at ${data.rotation.threshold}%`
+                    : "Auto-switch off"}
               </span>
-              {switching && <span className="text-(--crc-fg-muted)">switching…</span>}
             </div>
             <div className="space-y-2.5">
               {data.accounts.map((a) => (
@@ -147,7 +151,9 @@ function AccountRow({
       {account.usage ? (
         <UsageLimits usage={account.usage} className="mt-2 pl-3" />
       ) : (
-        <div className="pl-3 text-[11px] text-(--crc-fg-muted)">usage not tracked</div>
+        <div className="pl-3 text-[11px] text-(--crc-fg-muted)">
+          {account.usageError ?? "Usage not tracked for this account."}
+        </div>
       )}
     </div>
   );

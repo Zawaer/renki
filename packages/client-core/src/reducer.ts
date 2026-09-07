@@ -73,6 +73,8 @@ export type TurnView = {
   /** Real usage from the SDK's result message — only known once the turn finishes. */
   inputTokens: number | null;
   outputTokens: number | null;
+  /** Context re-read from the prompt cache — counted apart from inputTokens; see the event's own doc. */
+  cachedInputTokens: number | null;
   /** True when `status === "error"` because the controller stopped the turn, not a real failure. */
   interrupted: boolean;
 };
@@ -283,6 +285,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
         errorMessage: e.errorMessage,
         inputTokens: e.inputTokens,
         outputTokens: e.outputTokens,
+        cachedInputTokens: e.cachedInputTokens ?? null,
         interrupted: e.interrupted ?? false,
       }));
       // The rate-limit auto-retry (manager.submitPrompt) reruns a failed prompt as a
@@ -522,6 +525,7 @@ function emptyTurn(turnId: string): TurnView {
     errorMessage: null,
     inputTokens: null,
     outputTokens: null,
+    cachedInputTokens: null,
     interrupted: false,
   };
 }

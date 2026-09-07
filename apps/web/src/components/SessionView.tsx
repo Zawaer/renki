@@ -393,7 +393,17 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
               {(turn.inputTokens != null || turn.outputTokens != null) && (
                 <>
                   <span>·</span>
-                  <span>{formatTokenCount((turn.inputTokens ?? 0) + (turn.outputTokens ?? 0))} tokens</span>
+                  <span
+                    title={[
+                      `${formatTokenCount(turn.inputTokens ?? 0)} in`,
+                      `${formatTokenCount(turn.outputTokens ?? 0)} out`,
+                      turn.cachedInputTokens ? `${formatTokenCount(turn.cachedInputTokens)} re-read from cache` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  >
+                    {formatTokenCount((turn.inputTokens ?? 0) + (turn.outputTokens ?? 0))} tokens
+                  </span>
                 </>
               )}
               <span>·</span>

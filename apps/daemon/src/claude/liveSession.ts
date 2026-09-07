@@ -598,14 +598,15 @@ export class LiveClaudeSession {
       usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
     }).usage;
     /**
-     * `input_tokens` counts only what wasn't served from the prompt cache — for
-     * a resumed conversation that's a couple of tokens while the real context
-     * is tens of thousands. Summing all three is the honest "input processed".
+     * What this turn actually ingested: fresh input plus whatever it wrote to
+     * the cache. Cache READS are reported separately — the CLI sums usage over
+     * every API call in the turn, so a turn with four tool round-trips re-reads
+     * the same context three extra times (measured: 31k ingested, 92k re-read).
+     * Folding those in made short turns read as hundreds of thousands of
+     * tokens and long sessions as millions.
      */
-    const inputTokens =
-      usage == null
-        ? null
-        : (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
+    const inputTokens = usage == null ? null : (usage.input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
+    const cachedInputTokens = usage == null ? null : (usage.cache_read_input_tokens ?? 0);
     const sawRateLimit = this.inflight?.sawRateLimitError ?? false;
 
     const promptIds = this.takeSteered(target.promptId);
@@ -620,6 +621,7 @@ export class LiveClaudeSession {
       durationMs: message.duration_ms ?? null,
       errorMessage,
       inputTokens,
+      cachedInputTokens,
       outputTokens: usage?.output_tokens ?? null,
       interrupted,
       model: this.inflight?.model ?? null,

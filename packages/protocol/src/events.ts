@@ -184,8 +184,17 @@ const payloads = [
     costUsd: z.number().nullable(),
     durationMs: z.number().int().nullable(),
     errorMessage: z.string().nullable(),
+    /** Tokens genuinely ingested this turn: fresh input plus anything newly written to the prompt cache. */
     inputTokens: z.number().int().nullable(),
     outputTokens: z.number().int().nullable(),
+    /**
+     * Context re-read from the prompt cache, summed over the turn's API calls.
+     * Kept apart from `inputTokens` because a turn with several tool
+     * round-trips re-reads the same context each time: adding it in made a
+     * turn that ingested 31k of new content report 124k, and a long session
+     * report millions. Absent on events recorded before this was split out.
+     */
+    cachedInputTokens: z.number().int().nullable().optional(),
     /** True when this failure is the controller stopping the turn (the "stop" button), not a real error. */
     interrupted: z.boolean().optional(),
     /** The per-turn model override the client sent, or null when it ran the SDK's own default. Optional so events stored before this field existed still parse. */

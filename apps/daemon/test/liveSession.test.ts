@@ -437,15 +437,22 @@ describe("LiveClaudeSession cost accounting", () => {
     expect(costs).toEqual([0.184893, 0.009612, 0.009629]);
   });
 
-  it("counts cached input as input, not as nothing", async () => {
+  it("counts what a turn ingested, and reports cache re-reads separately", async () => {
     const { live, fake, events } = makeLive();
     const t = live.runTurn({ prompt: "hi", promptId: "p1", resolvePermission: allow });
     await new Promise((r) => setTimeout(r, 0));
+    // Measured shape of a real multi-tool turn: the same context is re-read on
+    // every API call, so folding reads into inputTokens reported 124k for a
+    // turn that actually ingested 31k.
     await fake.emit({
       ...okResult,
-      usage: { input_tokens: 2, output_tokens: 3, cache_read_input_tokens: 30_709, cache_creation_input_tokens: 58 },
+      usage: { input_tokens: 372, output_tokens: 251, cache_read_input_tokens: 92_474, cache_creation_input_tokens: 30_709 },
     } as never);
     await t;
-    expect(events.find((e) => e.kind === "turn_result")).toMatchObject({ inputTokens: 30_769, outputTokens: 3 });
+    expect(events.find((e) => e.kind === "turn_result")).toMatchObject({
+      inputTokens: 31_081,
+      cachedInputTokens: 92_474,
+      outputTokens: 251,
+    });
   });
 });

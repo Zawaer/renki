@@ -261,7 +261,7 @@ describe("AccountRotator settings persistence", () => {
     expect(status.threshold).toBe(75);
 
     const persisted = JSON.parse(readFileSync(config.rotationConfigPath, "utf8"));
-    expect(persisted).toEqual({ enabled: true, threshold: 75 });
+    expect(persisted).toEqual({ enabled: true, threshold: 75, preferredEmail: null });
 
     // A fresh instance pointed at the same path picks up the persisted override.
     const reloaded = new AccountRotator(config, fakeManager(false), fakeUsage());
@@ -277,5 +277,80 @@ describe("AccountRotator settings persistence", () => {
     const rotator = new AccountRotator(config, fakeManager(false), fakeUsage());
     expect(rotator.status().threshold).toBe(90); // out-of-range (1-100) rejected, falls back to config default
     expect(rotator.status().enabled).toBe(true); // enabled is still honored independently
+  });
+});
+
+describe("preferred account", () => {
+  /**
+   * The case this exists for: one login is used for coding, the other's quota
+   * is reserved for chatting elsewhere. So CRC should sit on the preferred
+   * account whenever it can work, borrow the other only while the preferred
+   * is over the threshold, and come back the moment it resets.
+   */
+  const account = (number: number, email: string, active: boolean, pct: number): Account => ({
+    number,
+    email,
+    active,
+    usageStatus: "ok",
+    usageError: null,
+    usage: {
+      fiveHour: { pct, resetsAt: null },
+      sevenDay: { pct: 10, resetsAt: null },
+      limits: [],
+      extra: null,
+    },
+  });
+
+  function setup(accounts: Account[]) {
+    const config = makeTestConfig({
+      rotation: { enabled: true, cswapBin: "cswap", threshold: 90, cooldownMs: 0, pollMs: 60_000, strategy: "best", autoRetry: true },
+    });
+    const rotator = new AccountRotator(config, fakeManager(false), fakeUsage());
+    const switchTo = vi.fn(async (n: number) => n);
+    const switchAny = vi.fn(async () => 1);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (rotator as any).cswap = { list: async () => ({ activeAccountNumber: accounts.find((a) => a.active)?.number ?? null, accounts }), switchTo, switch: switchAny };
+    return { rotator, switchTo, switchAny };
+  }
+
+  it("returns to the preferred account as soon as it has headroom", async () => {
+    const { rotator, switchTo } = setup([account(1, "coding@example.com", false, 5), account(2, "chat@example.com", true, 20)]);
+    rotator.updateSettings({ preferredEmail: "coding@example.com" });
+
+    await rotator.tick();
+
+    expect(switchTo).toHaveBeenCalledWith(1);
+  });
+
+  it("stays put when the preferred account is already active and healthy", async () => {
+    const { rotator, switchTo, switchAny } = setup([account(1, "coding@example.com", true, 5), account(2, "chat@example.com", false, 20)]);
+    rotator.updateSettings({ preferredEmail: "coding@example.com" });
+
+    await rotator.tick();
+
+    expect(switchTo).not.toHaveBeenCalled();
+    expect(switchAny).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the other account only once the preferred one is over the threshold", async () => {
+    const { rotator, switchTo } = setup([account(1, "coding@example.com", true, 96), account(2, "chat@example.com", false, 20)]);
+    rotator.updateSettings({ preferredEmail: "coding@example.com" });
+
+    await rotator.tick();
+
+    // Targets the fallback explicitly rather than letting cswap's strategy
+    // possibly pick the reserved account back.
+    expect(switchTo).toHaveBeenCalledWith(2);
+  });
+
+  it("holds when both are full rather than thrashing", async () => {
+    const { rotator, switchTo, switchAny } = setup([account(1, "coding@example.com", true, 99), account(2, "chat@example.com", false, 97)]);
+    rotator.updateSettings({ preferredEmail: "coding@example.com" });
+
+    await rotator.tick();
+
+    expect(switchTo).not.toHaveBeenCalled();
+    expect(switchAny).not.toHaveBeenCalled();
+    expect(rotator.updateSettings({}).lastHoldReason).toBe("all accounts at limit");
   });
 });

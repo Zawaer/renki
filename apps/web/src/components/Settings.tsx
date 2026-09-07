@@ -5,7 +5,7 @@ import { useClient, useStoreValue } from "../lib/client.js";
 import { UsageLimits } from "./UsageLimits.js";
 import { PairDevice } from "./PairDevice.js";
 import { UsageConnect } from "./UsageConnect.js";
-import { Button, Skeleton } from "./ui.js";
+import { Button, Select, Skeleton } from "./ui.js";
 
 /**
  * Everything about this connection that used to be scattered across the
@@ -228,7 +228,7 @@ function AccountsSection() {
         </div>
       )}
 
-      {data && accounts.length > 1 && <RotationSettings rotation={data.rotation} onChanged={refresh} />}
+      {data && accounts.length > 1 && <RotationSettings rotation={data.rotation} accounts={accounts} onChanged={refresh} />}
 
       <div className="mt-5 flex flex-col items-start gap-2 text-[13px]">
         <UsageConnect configured={data?.usageConfigured ?? false} onConnected={refresh} />
@@ -239,7 +239,15 @@ function AccountsSection() {
 }
 
 /** Auto-switch accounts once the active one's usage crosses a threshold — the policy `AccountRotator` polls for. */
-function RotationSettings({ rotation, onChanged }: { rotation: RotationStatus; onChanged: () => void }) {
+function RotationSettings({
+  rotation,
+  accounts,
+  onChanged,
+}: {
+  rotation: RotationStatus;
+  accounts: Account[];
+  onChanged: () => void;
+}) {
   const { rest } = useClient();
   const [threshold, setThreshold] = useState(String(rotation.threshold));
   const [busy, setBusy] = useState(false);
@@ -252,6 +260,16 @@ function RotationSettings({ rotation, onChanged }: { rotation: RotationStatus; o
     setBusy(true);
     try {
       await rest.updateRotation({ enabled: !rotation.enabled });
+    } finally {
+      setBusy(false);
+      onChanged();
+    }
+  }
+
+  async function savePreferred(email: string) {
+    setBusy(true);
+    try {
+      await rest.updateRotation({ preferredEmail: email || null });
     } finally {
       setBusy(false);
       onChanged();
@@ -298,14 +316,34 @@ function RotationSettings({ rotation, onChanged }: { rotation: RotationStatus; o
             className="crc-input w-20 border-transparent bg-(--crc-surface) px-2.5 py-1.5 font-mono text-[12.5px]"
           />
           <span className="text-(--crc-fg-muted)">% of either window</span>
+          {rotation.lastHoldReason && (
+            <span className="ml-auto text-xs text-(--crc-fg-muted)">Holding: {rotation.lastHoldReason}</span>
+          )}
           {thresholdDirty && (
             <Button variant="primary" size="sm" onClick={saveThreshold}>
               Save
             </Button>
           )}
-          {rotation.lastHoldReason && (
-            <span className="ml-auto text-xs text-(--crc-fg-muted)">Holding: {rotation.lastHoldReason}</span>
-          )}
+        </div>
+      )}
+      {rotation.enabled && accounts.length > 1 && (
+        <div className="mt-3 border-t border-(--crc-border)/60 pt-3">
+          <div className="text-[13px] text-(--crc-fg-muted)">Prefer</div>
+          <div className="mt-2">
+            <Select
+              value={rotation.preferredEmail ?? ""}
+              onChange={savePreferred}
+              options={[
+                { value: "", label: "No preference", description: "Use whichever account has headroom" },
+                ...accounts.map((a) => ({ value: a.email.toLowerCase(), label: a.email, description: "Run as this account whenever it has headroom" })),
+              ]}
+            />
+          </div>
+          <div className="mt-2 text-xs text-(--crc-fg-muted)">
+            {rotation.preferredEmail
+              ? "Sessions run as this account whenever it has headroom, borrow another only while it's over the threshold, and come back as soon as it resets — so the other account's quota stays free for use elsewhere."
+              : "Any account with headroom will do."}
+          </div>
         </div>
       )}
     </div>
@@ -323,9 +361,15 @@ function Switch({ checked, disabled, onChange, label }: { checked: boolean; disa
       onClick={onChange}
       className={`relative h-6 w-10 shrink-0 rounded-full transition-colors disabled:opacity-50 ${checked ? "bg-(--crc-accent)" : "bg-(--crc-border)"}`}
     >
+      {/*
+        * left-0.5 is load-bearing: with no inset the knob takes its *static*
+        * position, which is already 20px into a 40px track, so the "on"
+        * translate pushed it clean outside the pill. Anchored at 2px, the
+        * travel is exactly 40 - 20 - 2*2 = 16px.
+        */}
       <span
-        className={`absolute top-0.5 h-5 w-5 rounded-full bg-(--crc-surface) shadow-(--crc-shadow-xs) transition-transform ${
-          checked ? "translate-x-[18px]" : "translate-x-0.5"
+        className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-(--crc-shadow-sm) transition-transform duration-150 ${
+          checked ? "translate-x-4" : "translate-x-0"
         }`}
       />
     </button>

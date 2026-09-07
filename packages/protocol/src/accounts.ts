@@ -109,6 +109,14 @@ export const RotationStatus = z.object({
   lastSwitchAt: z.number().int().nullable(),
   /** Why the rotator last held off (e.g. "usage unavailable", "session busy"). */
   lastHoldReason: z.string().nullable(),
+  /**
+   * The account to run as whenever it has headroom, falling back to another
+   * only while it's over the threshold and returning as soon as it resets.
+   * Null means no preference: any account with headroom will do. Useful when
+   * one login is for coding and another needs its quota kept free for
+   * chatting elsewhere.
+   */
+  preferredEmail: z.string().nullable().default(null),
 });
 export type RotationStatus = z.infer<typeof RotationStatus>;
 
@@ -140,6 +148,8 @@ export type SwitchAccountResponse = z.infer<typeof SwitchAccountResponse>;
 export const UpdateRotationRequest = z.object({
   enabled: z.boolean().optional(),
   threshold: z.number().min(1).max(100).optional(),
+  /** An account's email to prefer, or null to clear the preference. Omit to leave it alone. */
+  preferredEmail: z.string().nullable().optional(),
 });
 export type UpdateRotationRequest = z.infer<typeof UpdateRotationRequest>;
 

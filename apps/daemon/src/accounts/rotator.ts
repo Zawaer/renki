@@ -7,7 +7,7 @@ import type { SessionManager } from "../sessions/manager.js";
 import { Cswap } from "./cswap.js";
 import type { UsageReader } from "./usage.js";
 
-type PersistedRotationSettings = { enabled?: boolean; threshold?: number };
+type PersistedRotationSettings = { enabled?: boolean; threshold?: number; preferredEmail?: string | null };
 
 /**
  * Automates the manual "hit the limit, run cswap --switch, keep going" habit.
@@ -38,6 +38,8 @@ export class AccountRotator {
   /** Live-mutable policy — seeded from config, then a persisted override (if any), then editable from Settings. */
   private enabled: boolean;
   private threshold: number;
+  /** Lower-cased email of the account to run as whenever it has headroom; null = no preference. */
+  private preferredEmail: string | null = null;
 
   constructor(
     private readonly config: Config,
@@ -62,6 +64,7 @@ export class AccountRotator {
       const raw = JSON.parse(readFileSync(path, "utf8")) as PersistedRotationSettings;
       if (typeof raw.enabled === "boolean") this.enabled = raw.enabled;
       if (typeof raw.threshold === "number" && raw.threshold >= 1 && raw.threshold <= 100) this.threshold = raw.threshold;
+      if (typeof raw.preferredEmail === "string" || raw.preferredEmail === null) this.preferredEmail = raw.preferredEmail;
     } catch (err) {
       logger.warn("could not read rotation config", { path, err: String(err) });
     }
@@ -71,7 +74,7 @@ export class AccountRotator {
     const path = this.config.rotationConfigPath;
     try {
       mkdirSync(dirname(path), { recursive: true });
-      const body: PersistedRotationSettings = { enabled: this.enabled, threshold: this.threshold };
+      const body: PersistedRotationSettings = { enabled: this.enabled, threshold: this.threshold, preferredEmail: this.preferredEmail };
       writeFileSync(path, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
     } catch (err) {
       logger.warn("could not write rotation config", { path, err: String(err) });
@@ -79,8 +82,9 @@ export class AccountRotator {
   }
 
   /** Update the rotation policy from Settings. Persists so it survives a restart. */
-  updateSettings(patch: { enabled?: boolean; threshold?: number }): RotationStatus {
+  updateSettings(patch: { enabled?: boolean; threshold?: number; preferredEmail?: string | null }): RotationStatus {
     if (patch.enabled !== undefined) this.enabled = patch.enabled;
+    if (patch.preferredEmail !== undefined) this.preferredEmail = patch.preferredEmail?.toLowerCase() || null;
     if (patch.threshold !== undefined) this.threshold = patch.threshold;
     this.persistSettings();
     logger.info("rotation settings updated", { enabled: this.enabled, threshold: this.threshold });
@@ -211,7 +215,19 @@ export class AccountRotator {
       cooldownMs: this.config.rotation.cooldownMs,
       lastSwitchAt: this.lastSwitchAt,
       lastHoldReason: this.lastHoldReason,
+      preferredEmail: this.preferredEmail,
     };
+  }
+
+  /** Worst window across every limit an account reports — what the threshold is measured against. */
+  private worstPct(account: Account): number {
+    if (!account.usage) return 0;
+    return Math.max(account.usage.fiveHour.pct, account.usage.sevenDay.pct);
+  }
+
+  /** Has this account got room to work under the current threshold? */
+  private hasHeadroom(account: Account): boolean {
+    return account.usageStatus === "ok" && !!account.usage && this.worstPct(account) < this.threshold;
   }
 
   /** Run one evaluation. Called on the interval; also exposed for tests. */
@@ -237,23 +253,47 @@ export class AccountRotator {
 
     const active = accounts.find((a) => a.active);
     if (!active) return this.hold("no active account");
+
+    /**
+     * A preferred account is one you want to be on whenever it can work —
+     * typically because the other login's quota is reserved for something
+     * else (chatting on a phone, say). So as soon as it has headroom again we
+     * come back to it, rather than drifting on the fallback until that one
+     * fills up too.
+     */
+    const preferred = this.preferredEmail ? accounts.find((a) => a.email.toLowerCase() === this.preferredEmail) : undefined;
+    if (preferred && !preferred.active && this.hasHeadroom(preferred)) {
+      if (this.lastSwitchAt && Date.now() - this.lastSwitchAt < cooldownMs) return this.hold("cooldown");
+      if (this.anyBusy()) return this.hold("session busy");
+      await this.cswap.switchTo(preferred.number);
+      this.onSwitched?.();
+      this.lastSwitchAt = Date.now();
+      this.lastHoldReason = null;
+      logger.info("returned to the preferred account", { email: preferred.email, worstPct: this.worstPct(preferred) });
+      return;
+    }
+
     if (active.usageStatus !== "ok" || !active.usage) return this.hold("usage unavailable");
 
-    const worst = Math.max(active.usage.fiveHour.pct, active.usage.sevenDay.pct);
+    const worst = this.worstPct(active);
     if (worst < threshold) return this.hold(null); // healthy — nothing to do
 
     // A switch only helps if another account actually has room.
-    const hasHeadroom = accounts.some(
-      (a) => !a.active && a.usageStatus === "ok" && a.usage && Math.max(a.usage.fiveHour.pct, a.usage.sevenDay.pct) < threshold,
-    );
-    if (!hasHeadroom) return this.hold("all accounts at limit");
+    const alternatives = accounts.filter((a) => !a.active && this.hasHeadroom(a));
+    if (alternatives.length === 0) return this.hold("all accounts at limit");
 
     if (this.lastSwitchAt && Date.now() - this.lastSwitchAt < cooldownMs) return this.hold("cooldown");
 
     // Never swap while a turn is live — defer to a later tick.
     if (this.anyBusy()) return this.hold("session busy");
 
-    const newActive = await this.cswap.switch(strategy);
+    // With a preference set, the target must be a specific account — cswap's
+    // own "best" strategy could otherwise pick the very account being
+    // reserved. Without one, let cswap choose.
+    const target = this.preferredEmail
+      ? (alternatives.find((a) => a.email.toLowerCase() !== this.preferredEmail) ?? alternatives[0]!)
+      : null;
+    const newActive = target ? await this.cswap.switchTo(target.number) : await this.cswap.switch(strategy);
     this.onSwitched?.();
     this.lastSwitchAt = Date.now();
     this.lastHoldReason = null;

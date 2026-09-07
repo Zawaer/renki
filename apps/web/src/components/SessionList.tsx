@@ -100,13 +100,13 @@ export function SessionList({
   }
 
   /**
-   * The ordinary delete, which now only moves the session to the trash. The
-   * confirm stays, downgraded to say where it went: it is still a disruptive
-   * action (the live process closes, control is dropped), just no longer a
-   * destructive one.
+   * The ordinary delete, which now moves the session to the trash. The confirm
+   * stays and says exactly what survives: the transcript is recoverable for a
+   * month, the worktree and branch are not — they go now, as with archiving.
    */
   async function del(id: string) {
-    if (!confirm("Move this session to the trash? You can restore it for the next 30 days.")) return;
+    if (!confirm("Move to trash? The transcript stays restorable for 30 days. The worktree and branch are cleaned up now."))
+      return;
     await rest.trashSession(id);
     onDeleted(id);
     refresh();
@@ -118,7 +118,7 @@ export function SessionList({
   }
 
   async function purge(id: string) {
-    if (!confirm("Delete permanently? The transcript, worktree and branch all go, with no undo.")) return;
+    if (!confirm("Delete permanently? The transcript goes too, with no undo.")) return;
     await rest.purgeSession(id);
     onDeleted(id);
     refresh();

@@ -146,9 +146,11 @@ describe("REST: sessions CRUD", () => {
     const transcript = await authed(`/sessions/${soft.id}/transcript`);
     expect(transcript.status).toBe(200);
 
+    // Restored as archived, not idle: the worktree went at delete time, so a
+    // promptable session would be a promise the working directory can't keep.
     const restoreRes = await authed(`/sessions/${soft.id}/restore`, { method: "POST" });
     expect(restoreRes.status).toBe(200);
-    expect((await restoreRes.json()).session.status).toBe("idle");
+    expect((await restoreRes.json()).session.status).toBe("archived");
 
     const hard = await create();
     const purgeRes = await authed(`/sessions/${hard.id}?purge=true`, { method: "DELETE" });

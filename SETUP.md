@@ -91,13 +91,19 @@ next prompt simply resumes it in a fresh process. Set it to `0` to keep
 processes until archive/delete/shutdown if you have the memory to spare.
 
 Deleting a session moves it to a **Trash** section in the sidebar rather than
-destroying it. Nothing is lost while it sits there — transcript, worktree and
-branch are all intact, so **Restore** puts the session back as it was — and the
-daemon purges it after `CRC_TRASH_RETENTION_DAYS` (default 30). That means a
-deleted session keeps occupying its worktree on disk for a month; if you want
-the space back sooner, use **Empty** on the Trash header or **Delete
-permanently** on a single session. Set `CRC_TRASH_RETENTION_DAYS=0` to switch
-the bin off entirely and have delete mean delete, as it did before.
+destroying it outright. Think of it as **archive plus a timer**: the worktree
+and branch are cleaned up straight away, exactly as archiving does, and what
+the bin keeps is the **transcript** — **Restore** brings that back as an
+archived (read-only) session. After `CRC_TRASH_RETENTION_DAYS` (default 30) the
+daemon purges it and the transcript goes too; **Empty** on the Trash header or
+**Delete permanently** on a row does that immediately.
+
+So the conversation is recoverable for a month, but uncommitted work in the
+worktree and commits on the session branch are gone the moment you delete — if
+a session has work worth keeping, `crc merge` it (or push it) first. Nothing
+here ever touches GitHub: session branches have no upstream and CRC never
+pushes them. Set `CRC_TRASH_RETENTION_DAYS=0` to switch the bin off entirely
+and have delete mean delete, as it did before.
 
 Quick sanity check:
 

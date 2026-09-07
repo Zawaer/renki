@@ -31,17 +31,3 @@ export function dueForPurge(
     .sort((a, b) => a.trashedAt! - b.trashedAt!)
     .map((s) => s.id);
 }
-
-/**
- * The status a restored session comes back as.
- *
- * "busy" never survives a trip through the trash: the live process was closed
- * on the way in, so a restored session that claimed to be mid-turn would sit
- * there refusing prompts forever. Anything unrecognised falls back to idle,
- * which is the safe direction — a session you can prompt.
- */
-export function restoreStatus(trashedFrom: string | null): SessionStatus {
-  if (trashedFrom === "archived") return "archived";
-  if (trashedFrom === "error") return "error";
-  return "idle";
-}

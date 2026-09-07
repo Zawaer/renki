@@ -34,11 +34,11 @@ export type Repo = z.infer<typeof Repo>;
  *   busy     — a Claude turn is streaming right now; new prompts are rejected
  *   error    — last turn failed; still resumable
  *   archived — worktree cleaned up; kept for transcript history only
- *   trashed  — in the recycle bin: hidden from the session list and not
- *              resumable, but NOTHING has been destroyed yet. Transcript,
- *              worktree and branch are all still there, so `restore` puts it
- *              back exactly as it was. Purged automatically once `purgeAt`
- *              passes (CRC_TRASH_RETENTION_DAYS, 30 by default).
+ *   trashed  — in the recycle bin: archive plus a timer. The worktree and
+ *              branch are cleaned up on the way in, exactly as archiving does;
+ *              what's kept is the TRANSCRIPT, which `restore` brings back as an
+ *              archived session. Purged for good once `purgeAt` passes
+ *              (CRC_TRASH_RETENTION_DAYS, 30 by default).
  *   deleted  — purged: transcript wiped, worktree gone, branch force-deleted,
  *              not shown or resumable, but the row survives as a tombstone
  *              (repoId/repoName only) so its turn_result stats keep counting

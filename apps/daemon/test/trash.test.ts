@@ -1,6 +1,6 @@
 import type { Session } from "@crc/protocol";
 import { describe, expect, it } from "vitest";
-import { dueForPurge, purgeAtFor, restoreStatus } from "../src/sessions/trash.js";
+import { dueForPurge, purgeAtFor } from "../src/sessions/trash.js";
 
 const DAY = 24 * 60 * 60_000;
 const RETENTION = 30 * DAY;
@@ -58,23 +58,5 @@ describe("dueForPurge", () => {
   it("takes the oldest first, so an interrupted sweep still makes progress on the most overdue", () => {
     const list = [trashed("newer", NOW - RETENTION - DAY), trashed("oldest", NOW - RETENTION - 9 * DAY)];
     expect(dueForPurge(list, NOW, RETENTION)).toEqual(["oldest", "newer"]);
-  });
-});
-
-describe("restoreStatus", () => {
-  it("brings a session back as what it was", () => {
-    expect(restoreStatus("archived")).toBe("archived");
-    expect(restoreStatus("error")).toBe("error");
-    expect(restoreStatus("idle")).toBe("idle");
-  });
-
-  /** The live process was closed on the way into the trash, so a restored "busy" session would refuse prompts forever. */
-  it("never restores a session as busy", () => {
-    expect(restoreStatus("busy")).toBe("idle");
-  });
-
-  it("falls back to idle for a missing or unrecognised previous status", () => {
-    expect(restoreStatus(null)).toBe("idle");
-    expect(restoreStatus("nonsense")).toBe("idle");
   });
 });

@@ -433,19 +433,27 @@ features. The throughline for everything below: shrink "found the repo" →
       instant and total: it wiped the transcript, removed the worktree and
       force-deleted the session's branch (`git branch -D`), with only a stats
       tombstone left behind. Now `DELETE /sessions/:id` moves the session to a
-      **Trash** section instead and destroys nothing — transcript, worktree and
-      branch all stay, so Restore brings the session back at the status it held
-      before (an archived one comes back archived, never idle with a worktree
-      that no longer exists). The daemon purges on its deadline, swept hourly
-      and at boot; `CRC_TRASH_RETENTION_DAYS` sets the window and `0` switches
-      the bin off. Keeping DELETE as the *safe* verb was deliberate: the phone
-      and VS Code clients gained the safety net without shipping a change, and
-      permanent removal moved behind `?purge=true`, `Empty` on the Trash
-      header, or `Delete permanently` on a row. The purge deadline reaches
-      clients as an absolute `purgeAt` on the session (not a retention setting
-      they'd have to do arithmetic with), which is also why subscribing now
-      pushes a session snapshot alongside the event replay — the deadline isn't
-      in the event log at all.
+      **Trash** section, which is **archive plus a timer**: the worktree and
+      branch are torn down at delete time exactly as archiving does, and the
+      **transcript** is what the bin keeps — Restore brings it back as an
+      archived session. Toivo chose that shape over holding everything: a month
+      of open worktrees is real disk and a month of dead `crc/*` branches is
+      real clutter, while the conversation is the part worth recovering. (The
+      trade-off to remember: uncommitted work and session-branch commits still
+      die at delete time; `crc merge` first if they matter. Nothing was ever at
+      risk on GitHub — session branches have no upstream and are never pushed.)
+      The daemon purges on the deadline, swept hourly and at boot;
+      `CRC_TRASH_RETENTION_DAYS` sets the window and `0` switches the bin off.
+      Keeping DELETE as the *safe* verb was deliberate: the phone and VS Code
+      clients gained the safety net without shipping a change, and permanent
+      removal moved behind `?purge=true`, `Empty` on the Trash header, or
+      `Delete permanently` on a row. The deadline reaches clients as an
+      absolute `purgeAt` on the session (not a retention setting they'd have to
+      do arithmetic with), which is also why subscribing now pushes a session
+      snapshot alongside the event replay — the deadline isn't in the event log
+      at all. Restoring into `archived` also made that state reachable enough
+      to fix: an archived session no longer offers a Take control button that
+      would 409, and its composer says it's read-only.
 
 ## 4. Known fragilities
 

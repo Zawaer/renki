@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import type { EventPayload } from "@crc/protocol";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -84,6 +85,13 @@ function setup(): { manager: SessionManager; config: Config; db: DB; repoId: str
 
 async function newSession(manager: SessionManager, repoId: string) {
   return manager.createSession({ repoId, baseBranch: "main" });
+}
+
+/** The repo's local branches — proof that a session's branch really did (or didn't) go. */
+async function branches(config: Config, repoId: string): Promise<string[]> {
+  const { simpleGit } = await import("simple-git");
+  const repo = resolve(config.reposRoot, repoId);
+  return (await simpleGit(repo).branchLocal()).all;
 }
 
 /** The event kinds recorded for a session, in order. */
@@ -416,19 +424,27 @@ describe("archive", () => {
 });
 
 describe("trash", () => {
-  it("keeps the transcript, the worktree and the branch — a delete you can take back", async () => {
-    const { manager, repoId } = setup();
+  /**
+   * The bin holds the transcript, not the code. Keeping worktrees open for a
+   * month would cost real disk and leave a month of dead branches lying
+   * around, and the conversation is the part worth recovering.
+   */
+  it("keeps the transcript but tears down the worktree and branch, exactly like archiving", async () => {
+    const { manager, config, repoId } = setup();
     const s = await newSession(manager, repoId);
     manager.takeControl(s.id, "d1");
 
+    expect(await branches(config, repoId)).toContain(s.branch);
     const trashed = await manager.trashSession(s.id);
 
     expect(trashed?.status).toBe("trashed");
     expect(trashed?.controller).toBeNull();
     expect(trashed?.trashedAt).toBeTypeOf("number");
     expect(trashed?.purgeAt).toBe(trashed!.trashedAt! + 30 * 24 * 60 * 60_000);
-    // Nothing destroyed: this is the whole difference from a purge.
-    expect(existsSync(s.worktreePath)).toBe(true);
+    // Disk and git are reclaimed immediately...
+    expect(existsSync(s.worktreePath)).toBe(false);
+    expect(await branches(config, repoId)).not.toContain(s.branch);
+    // ...while the transcript, the thing you actually want back, survives.
     expect(kinds(manager, s.id)).toContain("session_created");
     expect(manager.listSessions().map((x) => x.id)).toContain(s.id);
   });
@@ -451,29 +467,34 @@ describe("trash", () => {
     ).rejects.toMatchObject({ code: "session_trashed" });
   });
 
-  it("restores a session to the status it had before, ready to prompt again", async () => {
+  /**
+   * Restoring to "idle" would offer a prompt box over a working directory that
+   * no longer exists. Archived is the honest description of what came back.
+   */
+  it("restores as an archived session — the transcript back, not a runnable session", async () => {
     const { manager, repoId } = setup();
     const s = await newSession(manager, repoId);
     await manager.trashSession(s.id);
 
     const restored = manager.restoreSession(s.id);
 
-    expect(restored.status).toBe("idle");
+    expect(restored.status).toBe("archived");
     expect(restored.trashedAt).toBeNull();
     expect(restored.purgeAt).toBeNull();
-    expect(() => manager.takeControl(s.id, "d1")).not.toThrow();
+    expect(manager.events.read(s.id).some((e) => e.kind === "session_created")).toBe(true);
   });
 
-  it("restores an archived session as archived, not as idle with a worktree that's gone", async () => {
+  it("leaves an already-archived session's teardown alone on the way into the trash", async () => {
     const { manager, repoId } = setup();
     const s = await newSession(manager, repoId);
     await manager.archiveSession(s.id);
+
     await manager.trashSession(s.id);
 
     expect(manager.restoreSession(s.id).status).toBe("archived");
   });
 
-  it("purges only what has passed its deadline, leaving the rest recoverable", async () => {
+  it("purges only what has passed its deadline, leaving the rest restorable", async () => {
     const { manager, repoId, db } = setup();
     const stale = await newSession(manager, repoId);
     const recent = await newSession(manager, repoId);
@@ -489,8 +510,9 @@ describe("trash", () => {
 
     expect(() => manager.getSession(stale.id)).toThrow(SessionError);
     expect(manager.getSession(recent.id).status).toBe("trashed");
-    expect(existsSync(stale.worktreePath)).toBe(false);
-    expect(existsSync(recent.worktreePath)).toBe(true);
+    // The purged one loses its transcript too; the other still has one to restore.
+    expect(manager.events.read(stale.id).some((e) => e.kind === "session_created")).toBe(false);
+    expect(manager.events.read(recent.id).some((e) => e.kind === "session_created")).toBe(true);
   });
 
   it("empties the whole bin on demand, ahead of every deadline", async () => {

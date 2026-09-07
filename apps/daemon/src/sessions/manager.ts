@@ -16,7 +16,7 @@ import { LiveClaudeSession } from "../claude/liveSession.js";
 import type { PermissionResolver } from "../claude/runner.js";
 import { derivePlaceholderTitle, generateSessionTitle } from "../claude/titler.js";
 import { SessionError } from "./errors.js";
-import { dueForPurge, purgeAtFor, restoreStatus } from "./trash.js";
+import { dueForPurge, purgeAtFor } from "./trash.js";
 
 /**
  * SessionManager is the daemon's brain. Everything that mutates a session goes
@@ -332,15 +332,20 @@ export class SessionManager {
   /**
    * Move a session to the trash — the ordinary "delete".
    *
-   * Nothing is destroyed here. The transcript stays in the event log, the
-   * worktree stays on disk and the branch keeps its commits, so `restore` can
-   * put the session back exactly as it was. That matters more than it sounds:
-   * a purge force-deletes the branch (`git branch -D`, see removeWorktree), so
-   * a bin that kept only the transcript would still lose unmerged work — which
-   * is precisely the mistake people want undone.
+   * Think of it as **archive plus a timer**: the worktree and branch are torn
+   * down immediately, exactly as archiving does, and what the bin holds onto is
+   * the transcript. That's the deliberate trade — the conversation is what
+   * people regret losing, while a month of held-open worktrees is real disk
+   * (a checked-out tree with its node_modules) and a month of held-open
+   * branches is real clutter in `git branch`. Neither is on GitHub either way:
+   * session branches have no upstream and are never pushed.
    *
-   * The live `claude` process does close, and control is released. The session
-   * is not resumable while it sits here; restore first.
+   * The consequence to be honest about: uncommitted work in the worktree, and
+   * commits on the session branch, are gone the moment you delete — same as
+   * today. Restore brings back the history, not the code.
+   *
+   * The live `claude` process closes and control is released. The session is
+   * not resumable while it sits here.
    *
    * With `CRC_TRASH_RETENTION_DAYS=0` the bin is switched off and this purges
    * straight away, matching the old behaviour for anyone who wants it.
@@ -354,6 +359,12 @@ export class SessionManager {
     if (session.status === "trashed") return session;
 
     this.closeLive(id, "trashed");
+    // Already archived means the workdir went at archive time.
+    if (session.status !== "archived") {
+      await this.cleanUpWorkdir(session).catch((err) =>
+        logger.warn("workdir cleanup failed during trash", { id, err: String(err) }),
+      );
+    }
     this.patch(id, {
       status: "trashed",
       trashedAt: Date.now(),
@@ -370,15 +381,22 @@ export class SessionManager {
     return trashed;
   }
 
-  /** Take a session back out of the trash, at whatever status it held on the way in. */
+  /**
+   * Take a session back out of the trash — as an ARCHIVED session, always.
+   *
+   * Its worktree and branch went at delete time, so "idle" would be a lie: the
+   * session would offer a prompt box and then fail on a working directory that
+   * no longer exists. Archived is the state that honestly describes what came
+   * back — a readable transcript — and it's the same state a session reaches by
+   * being archived normally.
+   */
   restoreSession(id: string): Session {
     const session = this.getSession(id);
     if (session.status !== "trashed") return session;
 
-    const status = restoreStatus(this.trashedFromOf(id));
-    this.patch(id, { status, trashedAt: null, trashedFrom: null });
-    this.events.append(id, { kind: "status_changed", status });
-    logger.info("session restored from trash", { id, status });
+    this.patch(id, { status: "archived", trashedAt: null, trashedFrom: null });
+    this.events.append(id, { kind: "status_changed", status: "archived" });
+    logger.info("session restored from trash", { id, trashedFrom: this.trashedFromOf(id) });
     return this.getSession(id);
   }
 
@@ -398,9 +416,8 @@ export class SessionManager {
   async purgeSession(id: string): Promise<void> {
     const session = this.getSession(id);
     this.closeLive(id, "deleted");
-    // An archived session already had its worktree torn down; a trashed one
-    // still has everything, so it needs the full cleanup.
-    if (session.status !== "archived") {
+    // Archived and trashed sessions already had their worktree torn down.
+    if (session.status !== "archived" && session.status !== "trashed") {
       await this.cleanUpWorkdir(session).catch((err) =>
         logger.warn("workdir cleanup failed during delete", { id, err: String(err) }),
       );

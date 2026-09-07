@@ -153,7 +153,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
                 : `${conv.controllerName ?? conv.controller} is in control — you're watching`
               : "Nobody is in control"}
           </span>
-          {!isController && status !== "trashed" && (
+          {!isController && status !== "trashed" && status !== "archived" && (
             <Button
               variant="primary"
               onClick={() => realtime.takeControl(sessionId)}
@@ -172,9 +172,11 @@ export function SessionView({ sessionId }: { sessionId: string }) {
           <span className="codicon codicon-trash text-[13px]" />
           <span className="font-medium text-(--crc-fg)">This session is in the trash</span>
           {formatPurgeCountdown(purgeAt) && <span>· {formatPurgeCountdown(purgeAt)}</span>}
+          <span>· its worktree and branch are already gone</span>
           <Button
             size="sm"
             className="ml-auto"
+            title="Keeps this transcript, as an archived session"
             onClick={() => {
               rest
                 .restoreSession(sessionId)
@@ -217,9 +219,11 @@ export function SessionView({ sessionId }: { sessionId: string }) {
                 <div className="mt-1 text-xs text-(--crc-fg-muted)">
                   {status === "trashed"
                     ? "This session was deleted before it ran anything."
-                    : isController
-                      ? "Send a prompt below to get Claude going."
-                      : "Take control and send a prompt to get Claude going."}
+                    : status === "archived"
+                      ? "This session was archived before it ran anything."
+                      : isController
+                        ? "Send a prompt below to get Claude going."
+                        : "Take control and send a prompt to get Claude going."}
                 </div>
               </div>
             </div>
@@ -299,9 +303,15 @@ export function SessionView({ sessionId }: { sessionId: string }) {
 
       <Composer
         sessionId={sessionId}
-        disabled={!isController || status === "trashed"}
+        disabled={!isController || status === "trashed" || status === "archived"}
         reason={
-          status === "trashed" ? "Restore this session to send prompts" : !isController ? "Take control to send prompts" : ""
+          status === "trashed"
+            ? "In the trash — restore it to keep the transcript"
+            : status === "archived"
+              ? "Archived sessions are read-only"
+              : !isController
+                ? "Take control to send prompts"
+                : ""
         }
         onSend={(text, opts) => realtime.submitPrompt(sessionId, text, opts)}
         busy={isController && status === "busy"}

@@ -208,7 +208,7 @@ function Row({
 
   function confirmDelete() {
     setActionsOpen(false);
-    Alert.alert("Move to trash?", "You can restore it for the next 30 days.", [
+    Alert.alert("Move to trash?", "The transcript stays restorable for 30 days. The worktree and branch are cleaned up now.", [
       { text: "Cancel", style: "cancel" },
       { text: "Move to trash", style: "destructive", onPress: onDelete },
     ]);
@@ -216,7 +216,7 @@ function Row({
 
   function confirmPurge() {
     setActionsOpen(false);
-    Alert.alert("Delete permanently?", "The transcript, worktree and branch all go, with no undo.", [
+    Alert.alert("Delete permanently?", "The transcript goes too, with no undo.", [
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: onPurge },
     ]);

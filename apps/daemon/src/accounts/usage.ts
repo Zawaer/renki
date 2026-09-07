@@ -67,6 +67,39 @@ export function parseLimits(body: any): AccountUsageLimit[] {
   });
 }
 
+/**
+ * Pay-as-you-go overage ("Extra usage"), and null unless the plan actually has
+ * it — most accounts don't, and a meter reading "0 / 0" would be noise. `spend`
+ * is the newer, explicit shape; older responses only carry `extra_usage`.
+ * Both are reverse-engineered, so either can vanish; absence of both means
+ * there's no overage to show.
+ */
+export function parseExtra(body: any): AccountUsageExtra | null {
+  const toDollars = (minor: unknown, exponent: unknown) => Number(minor ?? 0) / 10 ** Number(exponent ?? 2);
+  const spend = body?.spend;
+  if (spend?.enabled && typeof spend.percent === "number") {
+    return {
+      pct: Number(spend.percent),
+      usedDollars: toDollars(spend.used?.amount_minor, spend.used?.exponent),
+      limitDollars: spend.limit ? toDollars(spend.limit.amount_minor, spend.limit.exponent) : 0,
+      currency: spend.used?.currency ?? spend.limit?.currency ?? "USD",
+      severity: typeof spend.severity === "string" ? spend.severity : "normal",
+    };
+  }
+  const extraUsage = body?.extra_usage;
+  if (extraUsage?.is_enabled && typeof extraUsage.utilization === "number") {
+    const scale = 10 ** Number(extraUsage.decimal_places ?? 2);
+    return {
+      pct: Number(extraUsage.utilization),
+      usedDollars: Number(extraUsage.used_credits ?? 0) / scale,
+      limitDollars: Number(extraUsage.monthly_limit ?? 0) / scale,
+      currency: extraUsage.currency ?? "USD",
+      severity: "normal",
+    };
+  }
+  return null;
+}
+
 export class UsageReader {
   private entries: UsageEntry[] = [];
   private readonly cache = new Map<string, { usage: AccountUsage | null; at: number }>();
@@ -296,40 +329,10 @@ export class UsageReader {
       fiveHour: fiveHour ?? { pct: 0, resetsAt: null },
       sevenDay: sevenDay ?? { pct: 0, resetsAt: null },
       limits: parseLimits(body),
-      extra: this.parseExtra(body),
+      extra: parseExtra(body),
     };
   }
 
-  /**
-   * Pay-as-you-go overage, once a plan has it enabled. `spend` is the newer,
-   * more explicit shape (amount_minor/exponent + an `enabled` flag); older
-   * responses only carry `extra_usage` (used_credits/monthly_limit scaled by
-   * decimal_places). Both are undocumented/reverse-engineered, so either can
-   * disappear — absence of both just means "no overage to show".
-   */
-  private parseExtra(body: any): AccountUsageExtra | null {
-    const toDollars = (minor: unknown, exponent: unknown) => Number(minor ?? 0) / 10 ** Number(exponent ?? 2);
-    const spend = body?.spend;
-    if (spend?.enabled && typeof spend.percent === "number") {
-      return {
-        pct: Number(spend.percent),
-        usedDollars: toDollars(spend.used?.amount_minor, spend.used?.exponent),
-        limitDollars: spend.limit ? toDollars(spend.limit.amount_minor, spend.limit.exponent) : 0,
-        currency: spend.used?.currency ?? spend.limit?.currency ?? "USD",
-      };
-    }
-    const extraUsage = body?.extra_usage;
-    if (extraUsage?.is_enabled && typeof extraUsage.utilization === "number") {
-      const scale = 10 ** Number(extraUsage.decimal_places ?? 2);
-      return {
-        pct: Number(extraUsage.utilization),
-        usedDollars: Number(extraUsage.used_credits ?? 0) / scale,
-        limitDollars: Number(extraUsage.monthly_limit ?? 0) / scale,
-        currency: extraUsage.currency ?? "USD",
-      };
-    }
-    return null;
-  }
 
   /** Best-effort account email. Never throws — a null just means "unknown". */
   private async fetchEmail(sessionKey: string): Promise<string | null> {

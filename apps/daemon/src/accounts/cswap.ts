@@ -110,6 +110,7 @@ function normalizeAccount(a: any): Account {
                   usedDollars: Number(a.usage.extra.usedDollars ?? 0),
                   limitDollars: Number(a.usage.extra.limitDollars ?? 0),
                   currency: String(a.usage.extra.currency ?? "USD"),
+                  severity: String(a.usage.extra.severity ?? "normal"),
                 }
               : null,
         }

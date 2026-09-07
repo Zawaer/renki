@@ -97,7 +97,7 @@ describe("AccountsBar", () => {
             ],
             fiveHour: { pct: 42, resetsAt },
             sevenDay: { pct: 18, resetsAt: null },
-            extra: { pct: 79, usedDollars: 39.53, limitDollars: 50, currency: "USD" },
+            extra: { pct: 79, usedDollars: 39.53, limitDollars: 50, currency: "USD", severity: "warning" },
           },
         },
       ],
@@ -145,5 +145,13 @@ describe("why usage is missing", () => {
     });
     fireEvent.click(await screen.findByRole("button", { name: /Accounts & usage/ }));
     expect(screen.getByText("Usage not tracked for this account.")).toBeInTheDocument();
+  });
+});
+
+describe("extra usage", () => {
+  it("is absent entirely for an org with no credits enabled", async () => {
+    renderAccountsBar(SAMPLE); // SAMPLE's account has extra: null
+    fireEvent.click(await screen.findByRole("button", { name: /Accounts & usage/ }));
+    expect(screen.queryByText("Extra usage")).not.toBeInTheDocument();
   });
 });

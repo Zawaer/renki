@@ -61,7 +61,10 @@ function formatUsd(n: number): string {
 
 function ExtraCard({ extra }: { extra: AccountUsageExtra }) {
   const pct = Math.max(0, Math.min(100, extra.pct));
-  const tone = TONE[usageSeverity(undefined, pct)];
+  // Only rendered when the plan actually has credits enabled — the daemon
+  // returns null otherwise (see parseExtra), so an org without them shows
+  // nothing rather than an empty "0.00 / 0.00" meter.
+  const tone = TONE[usageSeverity(extra.severity, pct)];
   return (
     <div className="rounded-xl bg-(--crc-bg-inset)/60 px-3.5 py-3">
       <div className="flex items-baseline justify-between gap-2">

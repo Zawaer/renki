@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { parseLimits, UsageReader } from "../src/accounts/usage.js";
+import { parseExtra, parseLimits, UsageReader } from "../src/accounts/usage.js";
 
 /**
  * UsageReader talks to claude.ai over `Impit` (a browser-fingerprint HTTP
@@ -133,5 +133,50 @@ describe("parseLimits", () => {
   it("is empty for an older response with no limits array, and skips junk entries", () => {
     expect(parseLimits({ five_hour: { utilization: 12 } })).toEqual([]);
     expect(parseLimits({ limits: [null, { percent: "nope" }, undefined] })).toEqual([]);
+  });
+});
+
+describe("parseExtra", () => {
+  // Both of the user's orgs report exactly this: credits exist as a concept,
+  // but are off. A meter reading "0.00 / 0.00" there would be pure noise.
+  it("is null when the plan has no credits enabled", () => {
+    expect(
+      parseExtra({
+        spend: { used: { amount_minor: 0, currency: "USD", exponent: 2 }, limit: null, percent: 0, enabled: false, disabled_reason: "out_of_credits" },
+        extra_usage: { is_enabled: false, monthly_limit: null, used_credits: null, utilization: null, credits_ever_enabled: true },
+      }),
+    ).toBeNull();
+    expect(parseExtra({})).toBeNull();
+    expect(parseExtra(null)).toBeNull();
+  });
+
+  it("reads the newer spend shape once enabled, in whole currency units", () => {
+    expect(
+      parseExtra({
+        spend: {
+          used: { amount_minor: 4250, currency: "USD", exponent: 2 },
+          limit: { amount_minor: 30_000, currency: "USD", exponent: 2 },
+          percent: 14.2,
+          severity: "warning",
+          enabled: true,
+        },
+      }),
+    ).toEqual({ pct: 14.2, usedDollars: 42.5, limitDollars: 300, currency: "USD", severity: "warning" });
+  });
+
+  it("falls back to the older extra_usage shape, scaled by its decimal places", () => {
+    expect(
+      parseExtra({
+        extra_usage: { is_enabled: true, utilization: 79, used_credits: 3953, monthly_limit: 5000, currency: "EUR", decimal_places: 2 },
+      }),
+    ).toEqual({ pct: 79, usedDollars: 39.53, limitDollars: 50, currency: "EUR", severity: "normal" });
+  });
+
+  it("prefers spend over extra_usage when both are present", () => {
+    const both = parseExtra({
+      spend: { used: { amount_minor: 100, exponent: 2 }, limit: { amount_minor: 1000, exponent: 2 }, percent: 10, enabled: true },
+      extra_usage: { is_enabled: true, utilization: 99, used_credits: 9900, monthly_limit: 10_000, decimal_places: 2 },
+    });
+    expect(both).toMatchObject({ pct: 10, limitDollars: 10 });
   });
 });

@@ -29,6 +29,8 @@ export const AccountUsageExtra = z.object({
   usedDollars: z.number(),
   limitDollars: z.number(),
   currency: z.string(),
+  /** claude.ai's own severity for the spend, same vocabulary as a limit window. */
+  severity: z.string().default("normal"),
 });
 export type AccountUsageExtra = z.infer<typeof AccountUsageExtra>;
 

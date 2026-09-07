@@ -2,7 +2,7 @@ import type { Account, AccountsResponse, RotationStatus } from "@crc/protocol";
 import { useCallback, useEffect, useState } from "react";
 import { saveConfig } from "../lib/config.js";
 import { useClient, useStoreValue } from "../lib/client.js";
-import { ExtraUsageMeter, Meter } from "./AccountsBar.js";
+import { UsageLimits } from "./UsageLimits.js";
 import { PairDevice } from "./PairDevice.js";
 import { UsageConnect } from "./UsageConnect.js";
 import { Button, Skeleton } from "./ui.js";
@@ -391,13 +391,7 @@ function AccountRow({
         </div>
       </div>
       {account.usage ? (
-        <div className="mt-3 space-y-2 pl-4">
-          <div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
-            <Meter label="5-hour" pct={account.usage.fiveHour.pct} resetsAt={account.usage.fiveHour.resetsAt} />
-            <Meter label="7-day" pct={account.usage.sevenDay.pct} resetsAt={account.usage.sevenDay.resetsAt} />
-          </div>
-          {account.usage.extra && <ExtraUsageMeter extra={account.usage.extra} />}
-        </div>
+        <UsageLimits usage={account.usage} className="mt-3 pl-4" />
       ) : (
         <div className="mt-1.5 pl-4 text-xs text-(--crc-fg-muted)">
           {usageConnected ? "Usage not available right now." : "Usage not tracked — connect it below to see limits."}

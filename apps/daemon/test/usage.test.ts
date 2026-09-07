@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { UsageReader } from "../src/accounts/usage.js";
+import { parseLimits, UsageReader } from "../src/accounts/usage.js";
 
 /**
  * UsageReader talks to claude.ai over `Impit` (a browser-fingerprint HTTP
@@ -80,5 +80,58 @@ describe("orgId auto-resolve", () => {
     // The org-list endpoint was never hit — no auto-resolve attempt needed.
     expect(http.fetch).not.toHaveBeenCalledWith("https://claude.ai/api/organizations", expect.anything());
     expect(http.fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The real payload from claude.ai (September 2026): three concurrent windows —
+ * the 5-hour session, a weekly cap across all models, and a separate weekly
+ * cap for one premium model. CRC modelled only the first two, so a Fable or
+ * Opus allowance running out was invisible.
+ */
+const REAL_LIMITS = {
+  limits: [
+    { kind: "session", group: "session", percent: 99, severity: "critical", resets_at: "2026-09-07T12:30:00.043407+00:00", scope: null, is_active: true },
+    { kind: "weekly_all", group: "weekly", percent: 21, severity: "normal", resets_at: "2026-09-08T15:00:00.043431+00:00", scope: null, is_active: false },
+    {
+      kind: "weekly_scoped",
+      group: "weekly",
+      percent: 32,
+      severity: "normal",
+      resets_at: "2026-09-08T15:00:00.043669+00:00",
+      scope: { model: { id: null, display_name: "Fable" }, surface: null },
+      is_active: false,
+    },
+  ],
+};
+
+describe("parseLimits", () => {
+  it("keeps all three windows, labelling the scoped one by its model", () => {
+    const limits = parseLimits(REAL_LIMITS);
+    expect(limits.map((l) => [l.kind, l.label, l.pct])).toEqual([
+      ["session", "Session usage", 99],
+      ["weekly_all", "All models", 21],
+      ["weekly_scoped", "Fable", 32],
+    ]);
+    expect(limits[2]!.model).toBe("Fable");
+    expect(limits[0]!.model).toBeNull();
+  });
+
+  it("carries severity and which window is currently being consumed", () => {
+    const limits = parseLimits(REAL_LIMITS);
+    expect(limits[0]).toMatchObject({ severity: "critical", isActive: true });
+    expect(limits[1]).toMatchObject({ severity: "normal", isActive: false });
+  });
+
+  it("keeps a window kind it has never seen rather than dropping it", () => {
+    const limits = parseLimits({ limits: [{ kind: "monthly_experiment", percent: 7 }] });
+    expect(limits).toEqual([
+      { kind: "monthly_experiment", label: "monthly_experiment", model: null, pct: 7, resetsAt: null, severity: "normal", isActive: false },
+    ]);
+  });
+
+  it("is empty for an older response with no limits array, and skips junk entries", () => {
+    expect(parseLimits({ five_hour: { utilization: 12 } })).toEqual([]);
+    expect(parseLimits({ limits: [null, { percent: "nope" }, undefined] })).toEqual([]);
   });
 });

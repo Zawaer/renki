@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { Impit } from "impit";
-import type { AccountUsage, AccountUsageExtra, UsageOrg } from "@crc/protocol";
+import type { AccountUsage, AccountUsageExtra, AccountUsageLimit, UsageOrg } from "@crc/protocol";
 import { logger } from "../logger.js";
 
 /**
@@ -36,6 +36,35 @@ class HttpError extends Error {
   constructor(public readonly status: number, message: string) {
     super(message);
   }
+}
+
+/**
+ * Every limit window in claude.ai's `limits` array, labelled for display.
+ * A plan has three at once — the 5-hour session window, a weekly cap across
+ * all models, and a separate weekly cap for a premium model (`weekly_scoped`,
+ * carrying `scope.model.display_name`) — and any of them can be what blocks
+ * the next prompt. Unknown kinds are kept rather than dropped, so a new window
+ * type shows up as soon as the API reports it.
+ */
+export function parseLimits(body: any): AccountUsageLimit[] {
+  if (!Array.isArray(body?.limits)) return [];
+  return body.limits.flatMap((l: any) => {
+    if (!l || typeof l.percent !== "number") return [];
+    const model = typeof l?.scope?.model?.display_name === "string" ? l.scope.model.display_name : null;
+    const kind = typeof l.kind === "string" ? l.kind : String(l.group ?? "unknown");
+    const label = model ?? (kind === "session" ? "Session usage" : kind === "weekly_all" ? "All models" : kind);
+    return [
+      {
+        kind,
+        label,
+        model,
+        pct: Number(l.percent),
+        resetsAt: typeof l.resets_at === "string" ? l.resets_at : null,
+        severity: typeof l.severity === "string" ? l.severity : "normal",
+        isActive: l.is_active === true,
+      },
+    ];
+  });
 }
 
 export class UsageReader {
@@ -244,6 +273,7 @@ export class UsageReader {
     return {
       fiveHour: fiveHour ?? { pct: 0, resetsAt: null },
       sevenDay: sevenDay ?? { pct: 0, resetsAt: null },
+      limits: parseLimits(body),
       extra: this.parseExtra(body),
     };
   }

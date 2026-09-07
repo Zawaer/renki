@@ -27,6 +27,11 @@ const SAMPLE: AccountsResponse = {
       usage: {
         fiveHour: { pct: 42, resetsAt: null },
         sevenDay: { pct: 18, resetsAt: null },
+        limits: [
+          { kind: "session", label: "Session usage", model: null, pct: 42, resetsAt: null, severity: "normal", isActive: true },
+          { kind: "weekly_all", label: "All models", model: null, pct: 18, resetsAt: null, severity: "normal", isActive: false },
+          { kind: "weekly_scoped", label: "Fable", model: "Fable", pct: 32, resetsAt: null, severity: "normal", isActive: false },
+        ],
         extra: null,
       },
     },
@@ -67,17 +72,28 @@ describe("AccountsBar", () => {
     // 42% is the worst window, so it shows twice once open: on the trigger and on its meter.
     expect(screen.getAllByText("42%")).toHaveLength(2);
     expect(screen.getByText("18%")).toBeInTheDocument();
+    // The per-model weekly cap — invisible before this existed.
+    expect(screen.getByText("Fable")).toBeInTheDocument();
+    expect(screen.getByText("32%")).toBeInTheDocument();
+    expect(screen.getAllByText("Weekly")).toHaveLength(2);
     expect(screen.getByText(/auto @ 90%/)).toBeInTheDocument();
   });
 
-  it("shows reset countdowns and extra (overage) usage when present", async () => {
-    const resetsAt = new Date(Date.now() + 3 * 60 * 60_000 + 12 * 60_000).toISOString();
+  it("shows every window (including a per-model weekly cap), its reset and any overage", async () => {
+    // Reset later today, so the wording is stable regardless of when this runs.
+    const today = new Date();
+    today.setHours(23, 30, 0, 0);
+    const resetsAt = today.toISOString();
     renderAccountsBar({
       ...SAMPLE,
       accounts: [
         {
           ...SAMPLE.accounts[0],
           usage: {
+            limits: [
+              { kind: "session", label: "Session usage", model: null, pct: 42, resetsAt, severity: "critical", isActive: true },
+              { kind: "weekly_all", label: "All models", model: null, pct: 18, resetsAt: null, severity: "normal", isActive: false },
+            ],
             fiveHour: { pct: 42, resetsAt },
             sevenDay: { pct: 18, resetsAt: null },
             extra: { pct: 79, usedDollars: 39.53, limitDollars: 50, currency: "USD" },
@@ -88,8 +104,9 @@ describe("AccountsBar", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /Accounts & usage/ }));
 
-    expect(screen.getByText("resets in 3h 12m")).toBeInTheDocument();
-    expect(screen.getByText("$39.53 / $50.00")).toBeInTheDocument();
+    expect(screen.getByText("Resets today 23:30")).toBeInTheDocument();
+    expect(screen.getByText("5-hour rolling window")).toBeInTheDocument();
+    expect(screen.getByText("39.53 / 50.00 USD")).toBeInTheDocument();
   });
 
   it("renders nothing when there are no configured accounts (by design)", async () => {

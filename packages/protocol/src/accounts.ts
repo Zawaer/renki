@@ -32,9 +32,41 @@ export const AccountUsageExtra = z.object({
 });
 export type AccountUsageExtra = z.infer<typeof AccountUsageExtra>;
 
+/**
+ * One limit window claude.ai reports, straight from its `limits` array. A plan
+ * has more than the two CRC used to model: the 5-hour session window, a weekly
+ * cap across all models, AND a separate weekly cap per premium model (Opus,
+ * Fable), each with its own reset. Any of them can be the one that blocks you,
+ * so all of them are shown.
+ */
+export const AccountUsageLimit = z.object({
+  /**
+   * "session" (5-hour rolling), "weekly_all" (every model), "weekly_scoped"
+   * (one model's own weekly allowance), or whatever else the API adds later.
+   */
+  kind: z.string(),
+  /** What to call it: "Session usage", "All models", or the model's name. */
+  label: z.string(),
+  /** Only set for a scoped limit — the model it applies to, e.g. "Fable". */
+  model: z.string().nullable(),
+  pct: z.number(),
+  resetsAt: z.string().nullable(),
+  /** claude.ai's own severity: "normal" | "warning" | "critical" (unknown values render as normal). */
+  severity: z.string(),
+  /** True for the window currently being consumed — the 5-hour one while you work. */
+  isActive: z.boolean(),
+});
+export type AccountUsageLimit = z.infer<typeof AccountUsageLimit>;
+
 export const AccountUsage = z.object({
   fiveHour: AccountUsageWindow,
   sevenDay: AccountUsageWindow,
+  /**
+   * Every window the API reported, in its own order. Empty on older responses
+   * that only carried five_hour/seven_day, in which case clients fall back to
+   * the two fields above.
+   */
+  limits: z.array(AccountUsageLimit).default([]),
   extra: AccountUsageExtra.nullable(),
 });
 export type AccountUsage = z.infer<typeof AccountUsage>;

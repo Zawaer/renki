@@ -1,7 +1,7 @@
-import type { Account, AccountsResponse, AccountUsageExtra } from "@crc/protocol";
-import { formatResetIn, formatUsd } from "@crc/client-core";
+import type { Account, AccountsResponse } from "@crc/protocol";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { UsageLimits, worstUsagePct } from "./UsageLimits.js";
 import { useClient } from "../lib/client.js";
 
 /**
@@ -47,8 +47,18 @@ export function AccountsBar() {
   }
 
   const active = data.accounts.find((a) => a.active);
-  const worstPct = active?.usage ? Math.max(active.usage.fiveHour.pct, active.usage.sevenDay.pct) : null;
-  const dotColor = worstPct == null ? "bg-(--crc-fg-muted)" : worstPct >= 90 ? "bg-(--crc-danger)" : worstPct >= 70 ? "bg-(--crc-warning)" : "bg-(--crc-success)";
+  // The most constraining window, whichever it is — a per-model weekly cap can
+  // be the one about to block you while the headline two look healthy.
+  const worst = worstUsagePct(active?.usage ?? null);
+  const worstPct = worst?.pct ?? null;
+  const dotColor =
+    worst == null
+      ? "bg-(--crc-fg-muted)"
+      : worst.severity === "critical"
+        ? "bg-(--crc-danger)"
+        : worst.severity === "warning"
+          ? "bg-(--crc-warning)"
+          : "bg-(--crc-success)";
 
   return (
     <div className="relative">
@@ -135,11 +145,7 @@ function AccountRow({
         </button>
       </div>
       {account.usage ? (
-        <div className="mt-1.5 space-y-1.5 pl-3">
-          <Meter label="5h" pct={account.usage.fiveHour.pct} resetsAt={account.usage.fiveHour.resetsAt} />
-          <Meter label="7d" pct={account.usage.sevenDay.pct} resetsAt={account.usage.sevenDay.resetsAt} />
-          {account.usage.extra && <ExtraUsageMeter extra={account.usage.extra} />}
-        </div>
+        <UsageLimits usage={account.usage} className="mt-2 pl-3" />
       ) : (
         <div className="pl-3 text-[11px] text-(--crc-fg-muted)">usage not tracked</div>
       )}
@@ -147,36 +153,3 @@ function AccountRow({
   );
 }
 
-export function Meter({ label, pct, resetsAt }: { label: string; pct: number; resetsAt: string | null }) {
-  const clamped = Math.max(0, Math.min(100, pct));
-  const color = clamped >= 90 ? "bg-(--crc-danger)" : clamped >= 70 ? "bg-(--crc-warning)" : "bg-(--crc-success)";
-  const resetIn = formatResetIn(resetsAt, Date.now());
-  return (
-    <div className="min-w-0 flex-1">
-      <div className="flex items-center gap-2">
-        <span className="w-11 shrink-0 font-mono text-[11px] text-(--crc-fg-muted)">{label}</span>
-        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-(--crc-bg-inset)">
-          <div className={`h-full rounded-full ${color}`} style={{ width: `${clamped}%` }} />
-        </div>
-        <span className="w-9 shrink-0 text-right font-mono text-[11px] text-(--crc-fg-muted)">{Math.round(clamped)}%</span>
-      </div>
-      {resetIn && <div className="mt-0.5 pl-[52px] text-[10px] whitespace-nowrap text-(--crc-fg-muted)">resets in {resetIn}</div>}
-    </div>
-  );
-}
-
-export function ExtraUsageMeter({ extra }: { extra: AccountUsageExtra }) {
-  const clamped = Math.max(0, Math.min(100, extra.pct));
-  const color = clamped >= 90 ? "bg-(--crc-danger)" : clamped >= 70 ? "bg-(--crc-warning)" : "bg-(--crc-success)";
-  return (
-    <div className="flex items-center gap-2">
-      <span className="w-11 shrink-0 font-mono text-[11px] text-(--crc-fg-muted)">extra</span>
-      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-(--crc-bg-inset)">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${clamped}%` }} />
-      </div>
-      <span className="shrink-0 text-right font-mono text-[11px] text-(--crc-fg-muted)">
-        {formatUsd(extra.usedDollars)} / {formatUsd(extra.limitDollars)}
-      </span>
-    </div>
-  );
-}

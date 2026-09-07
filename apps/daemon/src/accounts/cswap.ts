@@ -100,6 +100,9 @@ function normalizeAccount(a: any): Account {
       ? {
           fiveHour: { pct: Number(a.usage.fiveHour.pct ?? 0), resetsAt: a.usage.fiveHour.resetsAt ?? null },
           sevenDay: { pct: Number(a.usage.sevenDay.pct ?? 0), resetsAt: a.usage.sevenDay.resetsAt ?? null },
+          // cswap reports only the two headline windows; the per-model weekly
+          // caps come from the usage reader, which overwrites this whole object.
+          limits: Array.isArray(a.usage.limits) ? a.usage.limits : [],
           extra:
             a.usage.extra && typeof a.usage.extra.pct === "number"
               ? {

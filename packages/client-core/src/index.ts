@@ -15,3 +15,4 @@ export * from "./toolViews.js";
 export * from "./branches.js";
 export * from "./activity.js";
 export * from "./syntax.js";
+export * from "./resetTime.js";

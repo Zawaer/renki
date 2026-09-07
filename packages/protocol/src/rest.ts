@@ -101,11 +101,33 @@ export const ListSessionsResponse = z.object({
 });
 export type ListSessionsResponse = z.infer<typeof ListSessionsResponse>;
 
-/** Permanently removes the session's row and event log (unlike archive, which keeps history). */
+/**
+ * Response to DELETE /sessions/:id, which soft-deletes by default: the session
+ * moves to the trash and comes back in `session` with status "trashed" and a
+ * `purgeAt` deadline. With `?purge=true` it really is gone and `session` is
+ * null.
+ *
+ * `ok` is kept so older clients that only checked it still work — they now get
+ * a recycle bin without knowing it exists.
+ */
 export const DeleteSessionResponse = z.object({
   ok: z.boolean(),
+  /** The trashed session, or null when the delete was permanent. */
+  session: Session.nullable().optional(),
 });
 export type DeleteSessionResponse = z.infer<typeof DeleteSessionResponse>;
+
+/** Puts a trashed session back, at whatever status it held before it was trashed. */
+export const RestoreSessionResponse = z.object({
+  session: Session,
+});
+export type RestoreSessionResponse = z.infer<typeof RestoreSessionResponse>;
+
+/** Purges every trashed session at once, ahead of its deadline. */
+export const EmptyTrashResponse = z.object({
+  purged: z.number().int(),
+});
+export type EmptyTrashResponse = z.infer<typeof EmptyTrashResponse>;
 
 /** A manual rename takes title ownership away from the auto-titler for good (see SessionManager.renameSession). */
 export const RenameSessionRequest = z.object({

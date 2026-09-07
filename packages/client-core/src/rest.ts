@@ -9,12 +9,14 @@ import type {
   CreateSessionResponse,
   DeleteSessionResponse,
   DisconnectUsageKeyResponse,
+  EmptyTrashResponse,
   GetTranscriptResponse,
   GithubReposResponse,
   ListReposResponse,
   ListSessionsResponse,
   PullBranchResponse,
   RenameSessionResponse,
+  RestoreSessionResponse,
   RtkGainResponse,
   Session,
   StatsResponse,
@@ -99,9 +101,34 @@ export class RestClient {
     return res.session;
   }
 
-  /** Permanently removes the session and its transcript — unlike archive, there's no history left behind. */
-  async deleteSession(sessionId: string): Promise<void> {
-    await this.request<DeleteSessionResponse>("DELETE", `/sessions/${encodeURIComponent(sessionId)}`);
+  /**
+   * Moves the session to the trash: recoverable until its `purgeAt` deadline,
+   * with transcript, worktree and branch all still intact until then.
+   *
+   * Returns the trashed session, or null if the daemon has its recycle bin
+   * switched off (CRC_TRASH_RETENTION_DAYS=0), in which case this really did
+   * delete it.
+   */
+  async trashSession(sessionId: string): Promise<Session | null> {
+    const res = await this.request<DeleteSessionResponse>("DELETE", `/sessions/${encodeURIComponent(sessionId)}`);
+    return res.session ?? null;
+  }
+
+  /** Takes a session back out of the trash, at whatever status it held before. */
+  async restoreSession(sessionId: string): Promise<Session> {
+    const res = await this.post<RestoreSessionResponse>(`/sessions/${encodeURIComponent(sessionId)}/restore`, {});
+    return res.session;
+  }
+
+  /** Destroys the session, its transcript, its worktree and its branch immediately. No undo. */
+  async purgeSession(sessionId: string): Promise<void> {
+    await this.request<DeleteSessionResponse>("DELETE", `/sessions/${encodeURIComponent(sessionId)}?purge=true`);
+  }
+
+  /** Purges everything in the trash now, without waiting for the deadlines. */
+  async emptyTrash(): Promise<number> {
+    const res = await this.request<EmptyTrashResponse>("DELETE", "/sessions/trash");
+    return res.purged;
   }
 
   async listAccounts(): Promise<AccountsResponse> {

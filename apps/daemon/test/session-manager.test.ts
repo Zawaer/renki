@@ -415,7 +415,115 @@ describe("archive", () => {
   });
 });
 
-describe("delete", () => {
+describe("trash", () => {
+  it("keeps the transcript, the worktree and the branch — a delete you can take back", async () => {
+    const { manager, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+
+    const trashed = await manager.trashSession(s.id);
+
+    expect(trashed?.status).toBe("trashed");
+    expect(trashed?.controller).toBeNull();
+    expect(trashed?.trashedAt).toBeTypeOf("number");
+    expect(trashed?.purgeAt).toBe(trashed!.trashedAt! + 30 * 24 * 60 * 60_000);
+    // Nothing destroyed: this is the whole difference from a purge.
+    expect(existsSync(s.worktreePath)).toBe(true);
+    expect(kinds(manager, s.id)).toContain("session_created");
+    expect(manager.listSessions().map((x) => x.id)).toContain(s.id);
+  });
+
+  it("refuses prompts and control while a session sits in the trash", async () => {
+    const { manager, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+    await manager.trashSession(s.id);
+
+    expect(() => manager.takeControl(s.id, "d1")).toThrow(SessionError);
+    await expect(
+      manager.submitPrompt({
+        sessionId: s.id,
+        deviceId: "d1",
+        promptId: "p1",
+        text: "hi",
+        resolvePermission: noopResolve,
+      }),
+    ).rejects.toMatchObject({ code: "session_trashed" });
+  });
+
+  it("restores a session to the status it had before, ready to prompt again", async () => {
+    const { manager, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    await manager.trashSession(s.id);
+
+    const restored = manager.restoreSession(s.id);
+
+    expect(restored.status).toBe("idle");
+    expect(restored.trashedAt).toBeNull();
+    expect(restored.purgeAt).toBeNull();
+    expect(() => manager.takeControl(s.id, "d1")).not.toThrow();
+  });
+
+  it("restores an archived session as archived, not as idle with a worktree that's gone", async () => {
+    const { manager, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    await manager.archiveSession(s.id);
+    await manager.trashSession(s.id);
+
+    expect(manager.restoreSession(s.id).status).toBe("archived");
+  });
+
+  it("purges only what has passed its deadline, leaving the rest recoverable", async () => {
+    const { manager, repoId, db } = setup();
+    const stale = await newSession(manager, repoId);
+    const recent = await newSession(manager, repoId);
+    await manager.trashSession(stale.id);
+    await manager.trashSession(recent.id);
+    // Backdate one past the retention window.
+    db.update(sessions)
+      .set({ trashedAt: Date.now() - 31 * 24 * 60 * 60_000 })
+      .where(eq(sessions.id, stale.id))
+      .run();
+
+    expect(await manager.sweepTrash()).toBe(1);
+
+    expect(() => manager.getSession(stale.id)).toThrow(SessionError);
+    expect(manager.getSession(recent.id).status).toBe("trashed");
+    expect(existsSync(stale.worktreePath)).toBe(false);
+    expect(existsSync(recent.worktreePath)).toBe(true);
+  });
+
+  it("empties the whole bin on demand, ahead of every deadline", async () => {
+    const { manager, repoId } = setup();
+    const a = await newSession(manager, repoId);
+    const b = await newSession(manager, repoId);
+    const kept = await newSession(manager, repoId);
+    await manager.trashSession(a.id);
+    await manager.trashSession(b.id);
+
+    expect(await manager.emptyTrash()).toBe(2);
+
+    expect(() => manager.getSession(a.id)).toThrow(SessionError);
+    expect(() => manager.getSession(b.id)).toThrow(SessionError);
+    expect(manager.getSession(kept.id).status).toBe("idle");
+  });
+
+  /** CRC_TRASH_RETENTION_DAYS=0 opts out of the bin entirely: delete means delete. */
+  it("deletes straight away when the bin is switched off", async () => {
+    const config = makeTestConfig({ trashRetentionMs: 0 });
+    created.push(config);
+    const { repoId } = makeTestRepo(config.reposRoot);
+    const manager = new SessionManager(config, makeTestDb());
+    const s = await manager.createSession({ repoId, baseBranch: "main" });
+
+    expect(await manager.trashSession(s.id)).toBeNull();
+
+    expect(() => manager.getSession(s.id)).toThrow(SessionError);
+    expect(existsSync(s.worktreePath)).toBe(false);
+  });
+});
+
+describe("purge", () => {
   it("hides the session everywhere but keeps its turn_result stats attributed to the repo", async () => {
     const { manager, repoId } = setup();
     const s = await newSession(manager, repoId);
@@ -431,7 +539,7 @@ describe("delete", () => {
       outputTokens: 20,
     });
 
-    await manager.deleteSession(s.id);
+    await manager.purgeSession(s.id);
 
     expect(() => manager.getSession(s.id)).toThrow(SessionError);
     expect(manager.listSessions().map((x) => x.id)).not.toContain(s.id);
@@ -450,7 +558,7 @@ describe("delete", () => {
   it("refuses any further operation on a deleted session", async () => {
     const { manager, repoId } = setup();
     const s = await newSession(manager, repoId);
-    await manager.deleteSession(s.id);
+    await manager.purgeSession(s.id);
     expect(() => manager.takeControl(s.id, "d1")).toThrow(SessionError);
   });
 });

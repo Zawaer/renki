@@ -33,6 +33,15 @@ const Env = z.object({
    */
   CRC_LIVE_IDLE_MINUTES: z.coerce.number().min(0).default(60),
   /**
+   * Days a deleted session sits in the trash before the daemon purges it for
+   * real. Until then nothing is destroyed — transcript, worktree and branch are
+   * all still there and `restore` puts the session back.
+   *
+   * 0 turns the recycle bin off: a delete purges immediately, as it did before
+   * the bin existed.
+   */
+  CRC_TRASH_RETENTION_DAYS: z.coerce.number().min(0).default(30),
+  /**
    * Seconds a shutdown (SIGTERM/SIGINT — a deploy, `docker compose up`, pm2
    * restart) waits for in-flight turns to finish before closing their
    * processes. 0 = close immediately. Your process manager's kill timeout
@@ -105,6 +114,8 @@ export type Config = {
   authToken: string;
   controlIdleMs: number;
   liveIdleMs: number;
+  /** How long a trashed session is recoverable. 0 = no trash; delete is immediate. */
+  trashRetentionMs: number;
   shutdownGraceMs: number;
   permissionTimeoutMs: number;
   port: number;
@@ -193,6 +204,7 @@ export function loadConfig(): Config {
     authToken: resolveAuthToken(env.CRC_AUTH_TOKEN, dataDir),
     controlIdleMs: env.CRC_CONTROL_IDLE_MINUTES * 60_000,
     liveIdleMs: env.CRC_LIVE_IDLE_MINUTES * 60_000,
+    trashRetentionMs: env.CRC_TRASH_RETENTION_DAYS * 24 * 60 * 60_000,
     shutdownGraceMs: env.CRC_SHUTDOWN_GRACE_SECONDS * 1000,
     permissionTimeoutMs: env.CRC_PERMISSION_TIMEOUT_SECONDS * 1000,
     port: env.CRC_PORT,

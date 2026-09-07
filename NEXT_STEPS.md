@@ -429,6 +429,24 @@ features. The throughline for everything below: shrink "found the repo" →
       the top bar with a context-window meter (we have no per-session
       context-usage data yet — the SDK's getContextUsage() could feed one).
 
+- [x] **Trash with a 30-day grace period (2026-09-07).** Delete used to be
+      instant and total: it wiped the transcript, removed the worktree and
+      force-deleted the session's branch (`git branch -D`), with only a stats
+      tombstone left behind. Now `DELETE /sessions/:id` moves the session to a
+      **Trash** section instead and destroys nothing — transcript, worktree and
+      branch all stay, so Restore brings the session back at the status it held
+      before (an archived one comes back archived, never idle with a worktree
+      that no longer exists). The daemon purges on its deadline, swept hourly
+      and at boot; `CRC_TRASH_RETENTION_DAYS` sets the window and `0` switches
+      the bin off. Keeping DELETE as the *safe* verb was deliberate: the phone
+      and VS Code clients gained the safety net without shipping a change, and
+      permanent removal moved behind `?purge=true`, `Empty` on the Trash
+      header, or `Delete permanently` on a row. The purge deadline reaches
+      clients as an absolute `purgeAt` on the session (not a retention setting
+      they'd have to do arithmetic with), which is also why subscribing now
+      pushes a session snapshot alongside the event replay — the deadline isn't
+      in the event log at all.
+
 ## 4. Known fragilities
 
 - **Per-session git worktrees + the `crc merge` conflict flow may not scale to

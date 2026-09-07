@@ -34,11 +34,16 @@ export type Repo = z.infer<typeof Repo>;
  *   busy     — a Claude turn is streaming right now; new prompts are rejected
  *   error    — last turn failed; still resumable
  *   archived — worktree cleaned up; kept for transcript history only
- *   deleted  — hard-deleted by the user: transcript wiped, worktree gone, not
- *              shown or resumable, but the row survives as a tombstone (repoId/
- *              repoName only) so its turn_result stats keep counting forever
+ *   trashed  — in the recycle bin: hidden from the session list and not
+ *              resumable, but NOTHING has been destroyed yet. Transcript,
+ *              worktree and branch are all still there, so `restore` puts it
+ *              back exactly as it was. Purged automatically once `purgeAt`
+ *              passes (CRC_TRASH_RETENTION_DAYS, 30 by default).
+ *   deleted  — purged: transcript wiped, worktree gone, branch force-deleted,
+ *              not shown or resumable, but the row survives as a tombstone
+ *              (repoId/repoName only) so its turn_result stats keep counting
  */
-export const SessionStatus = z.enum(["idle", "busy", "error", "archived", "deleted"]);
+export const SessionStatus = z.enum(["idle", "busy", "error", "archived", "trashed", "deleted"]);
 export type SessionStatus = z.infer<typeof SessionStatus>;
 
 /** Distinguishes an ordinary session from one the daemon spawned itself to resolve a merge conflict. */
@@ -87,6 +92,17 @@ export const Session = z.object({
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
   lastActivityAt: z.number().int(),
+  /**
+   * When the session was moved to the trash, and when the daemon will purge it
+   * for good. Both null unless `status` is "trashed".
+   *
+   * `purgeAt` is sent as an absolute timestamp rather than making clients do
+   * the arithmetic from a retention setting: the deadline is the daemon's to
+   * decide, and a client that never hears about CRC_TRASH_RETENTION_DAYS can
+   * still count down to it correctly.
+   */
+  trashedAt: z.number().int().nullable().optional(),
+  purgeAt: z.number().int().nullable().optional(),
   /** Optional/absent means "normal" — kept optional so older events/fixtures without it still parse. */
   purpose: SessionPurpose.optional(),
   mergeMeta: MergeConflictMeta.nullable().optional(),

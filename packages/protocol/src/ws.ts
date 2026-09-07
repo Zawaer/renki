@@ -169,6 +169,8 @@ export type ServerMessage = z.infer<typeof ServerMessage>;
 export const WsErrorCode = {
   NotController: "not_controller",
   SessionBusy: "session_busy",
+  /** Prompting or taking control of a session that is sitting in the trash. */
+  SessionTrashed: "session_trashed",
   SessionNotFound: "session_not_found",
   BadMessage: "bad_message",
   Unauthorized: "unauthorized",

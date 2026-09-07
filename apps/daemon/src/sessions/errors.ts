@@ -6,6 +6,7 @@ export type SessionErrorCode =
   | "not_controller"
   | "session_busy"
   | "session_archived"
+  | "session_trashed"
   | "queue_full"
   | "not_busy";
 

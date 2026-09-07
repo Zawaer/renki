@@ -32,6 +32,7 @@ const STATUS_COLOR: Record<SessionStatus, string> = {
   busy: "bg-(--crc-warning) crc-glow-warning animate-pulse",
   error: "bg-(--crc-danger)",
   archived: "bg-(--crc-fg-muted)/60",
+  trashed: "bg-(--crc-fg-muted)/60",
   // Never actually rendered — deleted sessions are excluded from listSessions()/getSession().
   deleted: "bg-(--crc-fg-muted)/60",
 };
@@ -41,6 +42,7 @@ const STATUS_LABEL: Record<SessionStatus, string> = {
   busy: "Working",
   error: "Error",
   archived: "Archived",
+  trashed: "In trash",
   deleted: "Deleted",
 };
 
@@ -72,6 +74,10 @@ export function SessionGlyph({ status, pendingPermission }: { status: SessionSta
     icon = "codicon-error";
     tone = "text-(--crc-danger)";
     label = "Error";
+  } else if (status === "trashed") {
+    icon = "codicon-trash";
+    tone = "text-(--crc-fg-muted)";
+    label = "In trash";
   } else if (status === "archived" || status === "deleted") {
     // Archived rows are already dimmed; a hollow dot is enough of a marker.
     return (

@@ -16,6 +16,7 @@ import { LiveClaudeSession } from "../claude/liveSession.js";
 import type { PermissionResolver } from "../claude/runner.js";
 import { derivePlaceholderTitle, generateSessionTitle } from "../claude/titler.js";
 import { SessionError } from "./errors.js";
+import { dueForPurge, purgeAtFor, restoreStatus } from "./trash.js";
 
 /**
  * SessionManager is the daemon's brain. Everything that mutates a session goes
@@ -260,6 +261,8 @@ export class SessionManager {
       createdAt: now,
       updatedAt: now,
       lastActivityAt: now,
+      trashedAt: null,
+      trashedFrom: null,
     };
     this.db.insert(sessions).values(row).run();
 
@@ -271,7 +274,7 @@ export class SessionManager {
     this.events.append(id, { kind: "status_changed", status: "idle" });
 
     logger.info("session created", { id, repo: created.repoName, branch: created.branch, purpose: created.purpose });
-    const session = rowToSession(row);
+    const session = rowToSession(row, this.config.trashRetentionMs);
     this.broadcast?.onSessionChanged(session);
     return session;
   }
@@ -290,13 +293,13 @@ export class SessionManager {
       .where(ne(sessions.status, "deleted"))
       .orderBy(desc(sessions.lastActivityAt))
       .all()
-      .map(rowToSession);
+      .map((row) => rowToSession(row, this.config.trashRetentionMs));
   }
 
   getSession(id: string): Session {
     const row = this.db.select().from(sessions).where(eq(sessions.id, id)).get();
     if (!row || row.status === "deleted") throw new SessionError("session_not_found", `Unknown session: ${id}`);
-    return rowToSession(row);
+    return rowToSession(row, this.config.trashRetentionMs);
   }
 
   async archiveSession(id: string): Promise<Session> {
@@ -327,17 +330,76 @@ export class SessionManager {
   }
 
   /**
-   * Permanently remove a session: wipes its transcript and worktree — no
-   * content or history kept, not shown or resumable. Unlike an old-style full
-   * delete, the DB row itself survives as a tombstone (repoId/repoName plus
-   * status "deleted"), stripped of everything else, so its turn_result events
-   * (which we also keep, see EventLog.deleteTranscript) keep attributing to
-   * the right repo in stats forever. listSessions()/getSession() both exclude
-   * "deleted" rows, so tombstones are invisible everywhere except stats.
+   * Move a session to the trash — the ordinary "delete".
+   *
+   * Nothing is destroyed here. The transcript stays in the event log, the
+   * worktree stays on disk and the branch keeps its commits, so `restore` can
+   * put the session back exactly as it was. That matters more than it sounds:
+   * a purge force-deletes the branch (`git branch -D`, see removeWorktree), so
+   * a bin that kept only the transcript would still lose unmerged work — which
+   * is precisely the mistake people want undone.
+   *
+   * The live `claude` process does close, and control is released. The session
+   * is not resumable while it sits here; restore first.
+   *
+   * With `CRC_TRASH_RETENTION_DAYS=0` the bin is switched off and this purges
+   * straight away, matching the old behaviour for anyone who wants it.
    */
-  async deleteSession(id: string): Promise<void> {
+  async trashSession(id: string): Promise<Session | null> {
+    const session = this.getSession(id);
+    if (this.config.trashRetentionMs <= 0) {
+      await this.purgeSession(id);
+      return null;
+    }
+    if (session.status === "trashed") return session;
+
+    this.closeLive(id, "trashed");
+    this.patch(id, {
+      status: "trashed",
+      trashedAt: Date.now(),
+      trashedFrom: session.status,
+      controller: null,
+      hasPendingPermission: false,
+    });
+    this.events.append(id, { kind: "status_changed", status: "trashed" });
+    if (session.controller) this.events.append(id, { kind: "control_changed", controller: null, controllerName: null });
+    this.pendingPermissions.delete(id);
+    this.queues.delete(id);
+    const trashed = this.getSession(id);
+    logger.info("session trashed", { id, purgeAt: trashed.purgeAt });
+    return trashed;
+  }
+
+  /** Take a session back out of the trash, at whatever status it held on the way in. */
+  restoreSession(id: string): Session {
+    const session = this.getSession(id);
+    if (session.status !== "trashed") return session;
+
+    const status = restoreStatus(this.trashedFromOf(id));
+    this.patch(id, { status, trashedAt: null, trashedFrom: null });
+    this.events.append(id, { kind: "status_changed", status });
+    logger.info("session restored from trash", { id, status });
+    return this.getSession(id);
+  }
+
+  /**
+   * Permanently remove a session: wipes its transcript, worktree and branch —
+   * no content or history kept, not shown or resumable. Unlike an old-style
+   * full delete, the DB row itself survives as a tombstone (repoId/repoName
+   * plus status "deleted"), stripped of everything else, so its turn_result
+   * events (which we also keep, see EventLog.deleteTranscript) keep attributing
+   * to the right repo in stats forever. listSessions()/getSession() both
+   * exclude "deleted" rows, so tombstones are invisible everywhere except
+   * stats.
+   *
+   * This is what the trash sweep eventually calls, and what a client asks for
+   * explicitly with `?purge=true`. There is no undo past this point.
+   */
+  async purgeSession(id: string): Promise<void> {
     const session = this.getSession(id);
     this.closeLive(id, "deleted");
+    // An archived session already had its worktree torn down; a trashed one
+    // still has everything, so it needs the full cleanup.
     if (session.status !== "archived") {
       await this.cleanUpWorkdir(session).catch((err) =>
         logger.warn("workdir cleanup failed during delete", { id, err: String(err) }),
@@ -354,6 +416,8 @@ export class SessionManager {
         titleSource: null,
         hasPendingPermission: false,
         worktreePath: "",
+        trashedAt: null,
+        trashedFrom: null,
         updatedAt: Date.now(),
       })
       .where(eq(sessions.id, id))
@@ -361,6 +425,36 @@ export class SessionManager {
     this.pendingPermissions.delete(id);
     this.broadcast?.onSessionRemoved(id);
     logger.info("session deleted", { id });
+  }
+
+  /** Purge everything in the trash now, without waiting out the retention. */
+  async emptyTrash(): Promise<number> {
+    const ids = this.listSessions()
+      .filter((s) => s.status === "trashed")
+      .map((s) => s.id);
+    for (const id of ids) await this.purgeSession(id);
+    if (ids.length > 0) logger.info("trash emptied", { count: ids.length });
+    return ids.length;
+  }
+
+  /**
+   * Purge the trashed sessions whose retention has run out. Called on boot and
+   * on a timer (see startTrashSweep) — on boot too, because a daemon that was
+   * off for a month would otherwise keep everything until its next tick.
+   */
+  async sweepTrash(now = Date.now()): Promise<number> {
+    const ids = dueForPurge(this.listSessions(), now, this.config.trashRetentionMs);
+    for (const id of ids) {
+      logger.info("purging session whose trash retention expired", { id });
+      await this.purgeSession(id).catch((err) => logger.warn("trash purge failed", { id, err: String(err) }));
+    }
+    return ids.length;
+  }
+
+  /** `trashedFrom` isn't on the public Session type — it's only ever needed here. */
+  private trashedFromOf(id: string): string | null {
+    const row = this.db.select({ trashedFrom: sessions.trashedFrom }).from(sessions).where(eq(sessions.id, id)).get();
+    return row?.trashedFrom ?? null;
   }
 
   /** Tear down a session's on-disk working directory: a git worktree for a repo session, or just the plain scratch dir. */
@@ -378,6 +472,7 @@ export class SessionManager {
   takeControl(id: string, deviceId: string, deviceName?: string): Session {
     const session = this.getSession(id);
     if (session.status === "archived") throw new SessionError("session_archived", "Session is archived.");
+    if (session.status === "trashed") throw new SessionError("session_trashed", "Session is in the trash.");
     if (session.controller === deviceId) return session; // already in control; no-op
 
     // Taking control IS activity. Without this stamp, opening an older session
@@ -421,6 +516,7 @@ export class SessionManager {
   async submitPrompt(input: SubmitPromptInput): Promise<void> {
     const session = this.getSession(input.sessionId);
     if (session.status === "archived") throw new SessionError("session_archived", "Session is archived.");
+    if (session.status === "trashed") throw new SessionError("session_trashed", "Session is in the trash — restore it first.");
     if (session.controller !== input.deviceId)
       throw new SessionError("not_controller", "Only the controlling device can send prompts.");
     if (!input.text.trim() && !input.attachments?.length)
@@ -778,10 +874,10 @@ export class SessionManager {
     }
   }
 
-  /** True once a session is archived or deleted — nothing should flip its status back. */
+  /** True once a session is archived, trashed or deleted — nothing should flip its status back. */
   private isRetired(id: string): boolean {
     const row = this.db.select({ status: sessions.status }).from(sessions).where(eq(sessions.id, id)).get();
-    return !row || row.status === "archived" || row.status === "deleted";
+    return !row || row.status === "archived" || row.status === "trashed" || row.status === "deleted";
   }
 
   // ── internals ────────────────────────────────────────────────────────────────
@@ -821,7 +917,7 @@ function clientTypeFromDeviceId(deviceId: string): string {
   return i > 0 ? deviceId.slice(0, i) : "unknown";
 }
 
-function rowToSession(row: typeof sessions.$inferSelect): Session {
+function rowToSession(row: typeof sessions.$inferSelect, retentionMs: number): Session {
   return {
     id: row.id,
     repoId: row.repoId,
@@ -837,6 +933,8 @@ function rowToSession(row: typeof sessions.$inferSelect): Session {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     lastActivityAt: row.lastActivityAt,
+    trashedAt: row.trashedAt,
+    purgeAt: purgeAtFor(row.trashedAt, retentionMs),
     purpose: row.purpose as SessionPurpose,
     mergeMeta: row.mergeMeta ? (JSON.parse(row.mergeMeta) as MergeConflictMeta) : null,
   };

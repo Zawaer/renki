@@ -39,6 +39,14 @@ export const sessions = sqliteTable("sessions", {
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
   lastActivityAt: integer("last_activity_at").notNull(),
+  /** When the session was moved to the trash; null unless status = "trashed". */
+  trashedAt: integer("trashed_at"),
+  /**
+   * The status it held before being trashed, so restore is faithful rather
+   * than a guess — an archived session that gets trashed and restored must
+   * come back archived, not idle with a worktree that no longer exists.
+   */
+  trashedFrom: text("trashed_from"),
   /** "normal" or "merge_conflict" — see MergeConflictMeta in @crc/protocol. */
   purpose: text("purpose").notNull().default("normal"),
   /** JSON-encoded MergeConflictMeta, only set when purpose = "merge_conflict". */
@@ -87,7 +95,9 @@ export const DDL = `
     updated_at INTEGER NOT NULL,
     last_activity_at INTEGER NOT NULL,
     purpose TEXT NOT NULL DEFAULT 'normal',
-    merge_meta TEXT
+    merge_meta TEXT,
+    trashed_at INTEGER,
+    trashed_from TEXT
   );
 
   CREATE TABLE IF NOT EXISTS events (

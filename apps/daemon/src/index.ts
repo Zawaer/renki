@@ -52,6 +52,7 @@ async function main() {
   }
 
   const sweep = startIdleSweep(manager, devices, config.controlIdleMs);
+  const trashSweep = startTrashSweep(manager);
 
   let shuttingDown = false;
   const shutdown = async (signal: string) => {
@@ -59,6 +60,7 @@ async function main() {
     shuttingDown = true;
     logger.info("shutting down", { signal, busySessions: manager.busySessionCount() });
     clearInterval(sweep);
+    clearInterval(trashSweep);
     accounts.stop();
     // Let running turns finish first — a killed turn costs the user their
     // prompt. The process manager's own kill timeout must exceed this grace
@@ -94,6 +96,22 @@ function startIdleSweep(manager: SessionManager, devices: DeviceRegistry, idleMs
       logger.info("auto-released control from a device that went away", { sessionId: session.id });
     }
   }, 30_000);
+  interval.unref();
+  return interval;
+}
+
+/**
+ * Purge trashed sessions once their retention has run out (default 30 days).
+ *
+ * Runs immediately at boot as well as hourly: a daemon that was off for a
+ * month would otherwise sit on expired sessions until its first tick, and the
+ * hour-long period is plenty of resolution for a deadline measured in days.
+ */
+function startTrashSweep(manager: SessionManager): NodeJS.Timeout {
+  const run = () =>
+    void manager.sweepTrash().catch((err) => logger.warn("trash sweep failed", { err: String(err) }));
+  run();
+  const interval = setInterval(run, 60 * 60_000);
   interval.unref();
   return interval;
 }

@@ -1,4 +1,4 @@
-import { displayBranch } from "@crc/client-core";
+import { activeSessions, displayBranch, formatPurgeCountdown, trashedSessions } from "@crc/client-core";
 import type { Session } from "@crc/protocol";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useClient } from "../lib/client.js";
@@ -33,6 +33,7 @@ export function SessionList({
   const [creating, setCreating] = useState<{ repoId?: string } | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
   const [showArchived, setShowArchived] = useState(false);
+  const [showTrash, setShowTrash] = useState(false);
 
   const refresh = useCallback(() => {
     rest
@@ -69,11 +70,13 @@ export function SessionList({
     };
   }, [realtime]);
 
-  const active = useMemo(() => sessions.filter((s) => s.status !== "archived"), [sessions]);
+  const active = useMemo(() => activeSessions(sessions), [sessions]);
   const archived = useMemo(
     () => sessions.filter((s) => s.status === "archived").sort((a, b) => b.lastActivityAt - a.lastActivityAt),
     [sessions],
   );
+  // Soonest deadline first: the bin is a queue of things about to be lost.
+  const trashed = useMemo(() => trashedSessions(sessions), [sessions]);
   const groups = useMemo(() => groupByRepo(active), [active]);
 
   function toggleGroup(key: string) {
@@ -96,10 +99,36 @@ export function SessionList({
     refresh();
   }
 
+  /**
+   * The ordinary delete, which now only moves the session to the trash. The
+   * confirm stays, downgraded to say where it went: it is still a disruptive
+   * action (the live process closes, control is dropped), just no longer a
+   * destructive one.
+   */
   async function del(id: string) {
-    if (!confirm("Delete this session? Its transcript will be gone for good.")) return;
-    await rest.deleteSession(id);
+    if (!confirm("Move this session to the trash? You can restore it for the next 30 days.")) return;
+    await rest.trashSession(id);
     onDeleted(id);
+    refresh();
+  }
+
+  async function restore(id: string) {
+    await rest.restoreSession(id);
+    refresh();
+  }
+
+  async function purge(id: string) {
+    if (!confirm("Delete permanently? The transcript, worktree and branch all go, with no undo.")) return;
+    await rest.purgeSession(id);
+    onDeleted(id);
+    refresh();
+  }
+
+  async function emptyTrash() {
+    if (!confirm(`Permanently delete ${trashed.length} session${trashed.length === 1 ? "" : "s"}? There's no undo.`))
+      return;
+    await rest.emptyTrash();
+    for (const s of trashed) onDeleted(s.id);
     refresh();
   }
 
@@ -200,6 +229,46 @@ export function SessionList({
           );
         })}
 
+        {trashed.length > 0 && (
+          <div className="mt-4">
+            <div className="flex items-center">
+              <button
+                onClick={() => setShowTrash((v) => !v)}
+                className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left hover:bg-(--crc-hover)"
+              >
+                <span
+                  className={`codicon codicon-chevron-right text-[11px] text-(--crc-fg-muted) transition-transform duration-150 ${
+                    showTrash ? "rotate-90" : ""
+                  }`}
+                />
+                <Eyebrow>Trash</Eyebrow>
+                <span className="ml-auto text-[11px] text-(--crc-fg-muted)">{trashed.length}</span>
+              </button>
+              {showTrash && (
+                <button
+                  onClick={emptyTrash}
+                  title="Delete everything in the trash permanently"
+                  className="mr-1 shrink-0 rounded-md px-1.5 py-0.5 text-[11px] text-(--crc-fg-muted) hover:bg-(--crc-danger)/12 hover:text-(--crc-danger)"
+                >
+                  Empty
+                </button>
+              )}
+            </div>
+            {showTrash && (
+              <div className="space-y-px">
+                {trashed.map((s) => (
+                  <Row
+                    key={s.id}
+                    {...rowProps(s)}
+                    onRestore={() => restore(s.id)}
+                    onPurge={() => purge(s.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {archived.length > 0 && (
           <div className="mt-4">
             <button
@@ -296,6 +365,8 @@ function Row({
   onArchive,
   onRename,
   onDelete,
+  onRestore,
+  onPurge,
 }: {
   session: Session;
   selected: boolean;
@@ -303,11 +374,16 @@ function Row({
   onArchive?: () => void;
   onRename: (title: string) => void;
   onDelete: () => void;
+  /** Both passed only for a row in the trash, which offers those two instead of archive/delete. */
+  onRestore?: () => void;
+  onPurge?: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState("");
   const branch = displayBranch(session.branch);
+  const inTrash = session.status === "trashed";
+  const countdown = formatPurgeCountdown(session.purgeAt);
 
   function startRename() {
     setDraft(session.title ?? session.repoName);
@@ -324,7 +400,7 @@ function Row({
     <div
       className={`group flex w-full items-center gap-1 rounded-lg py-1 pr-1 pl-2 transition-colors ${
         selected ? "bg-(--crc-selected) text-(--crc-selected-fg)" : "hover:bg-(--crc-hover)"
-      } ${session.status === "archived" ? "opacity-70" : ""}`}
+      } ${session.status === "archived" || inTrash ? "opacity-70" : ""}`}
     >
       {renaming ? (
         <div className="min-w-0 flex-1 py-px">
@@ -349,8 +425,15 @@ function Row({
         >
           <SessionGlyph status={session.status} pendingPermission={session.hasPendingPermission} />
           <span className="truncate text-[13px] text-(--crc-fg)">{session.title || session.repoName}</span>
-          {branch && (
-            <span className="ml-auto max-w-24 shrink-0 truncate font-mono text-[10px] text-(--crc-fg-muted)">{branch}</span>
+          {/* In the bin, the deadline is the only thing worth the row's spare
+              space — the branch is still there, which is the point, but it
+              isn't what you came to check. */}
+          {inTrash && countdown ? (
+            <span className="ml-auto shrink-0 text-[10px] text-(--crc-fg-muted)">{countdown}</span>
+          ) : (
+            branch && (
+              <span className="ml-auto max-w-24 shrink-0 truncate font-mono text-[10px] text-(--crc-fg-muted)">{branch}</span>
+            )
           )}
           {session.controller && (
             <span className="codicon codicon-lock-small shrink-0 text-(--crc-fg-muted)" title="A device holds control" />
@@ -376,6 +459,17 @@ function Row({
               className="crc-enter absolute top-full right-0 z-50 mt-1 w-44 overflow-hidden rounded-xl border border-(--crc-border) bg-(--crc-surface) p-1 text-sm shadow-(--crc-shadow-lg)"
               onClick={(e) => e.stopPropagation()}
             >
+              {onRestore && (
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onRestore();
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--crc-fg) hover:bg-(--crc-hover)"
+                >
+                  <span className="codicon codicon-history" /> Restore
+                </button>
+              )}
               {onArchive && (
                 <button
                   onClick={() => {
@@ -387,24 +481,38 @@ function Row({
                   <span className="codicon codicon-archive" /> Archive
                 </button>
               )}
-              <button
-                onClick={() => {
-                  setMenuOpen(false);
-                  startRename();
-                }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--crc-fg) hover:bg-(--crc-hover)"
-              >
-                <span className="codicon codicon-edit" /> Edit title
-              </button>
-              <button
-                onClick={() => {
-                  setMenuOpen(false);
-                  onDelete();
-                }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--crc-danger) hover:bg-(--crc-danger)/12"
-              >
-                <span className="codicon codicon-trash" /> Delete
-              </button>
+              {!inTrash && (
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    startRename();
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--crc-fg) hover:bg-(--crc-hover)"
+                >
+                  <span className="codicon codicon-edit" /> Edit title
+                </button>
+              )}
+              {onPurge ? (
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onPurge();
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--crc-danger) hover:bg-(--crc-danger)/12"
+                >
+                  <span className="codicon codicon-trash" /> Delete permanently
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onDelete();
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--crc-danger) hover:bg-(--crc-danger)/12"
+                >
+                  <span className="codicon codicon-trash" /> Delete
+                </button>
+              )}
             </div>
           </>
         )}

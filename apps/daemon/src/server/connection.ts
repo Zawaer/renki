@@ -161,8 +161,14 @@ export class Connection {
    * between "caught up" and "streaming live".
    */
   private subscribe(sessionId: string, lastSeq: number): void {
-    this.manager.getSession(sessionId); // throws SessionError if unknown
+    const session = this.manager.getSession(sessionId); // throws SessionError if unknown
     this.unsubscribe(sessionId); // idempotent re-subscribe
+
+    // Snapshot the session itself, not just its events. Some of what a viewer
+    // needs isn't in the event log at all — the trash's purge deadline, for
+    // one — and this reuses the same `session` push the fleet-wide listener
+    // already handles, so opening a session cold looks like any other update.
+    this.send({ type: "session", session });
 
     let buffer: SessionEvent[] | null = [];
     const off = this.manager.events.subscribe(sessionId, (evt) => {

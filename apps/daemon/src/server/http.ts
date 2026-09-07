@@ -228,10 +228,33 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
     }
   });
 
-  app.delete<{ Params: { id: string } }>("/sessions/:id", async (req, reply) => {
+  app.post<{ Params: { id: string } }>("/sessions/:id/restore", async (req, reply) => {
     try {
-      await manager.deleteSession(req.params.id);
-      return { ok: true };
+      return { session: manager.restoreSession(req.params.id) };
+    } catch (err) {
+      return sendSessionError(reply, err);
+    }
+  });
+
+  /** Purge everything in the trash now. Registered before /sessions/:id so the literal path wins. */
+  app.delete("/sessions/trash", async () => ({ purged: await manager.emptyTrash() }));
+
+  /**
+   * Soft-deletes by default: the session goes to the trash and is recoverable
+   * until its purge deadline. `?purge=true` destroys it immediately.
+   *
+   * Keeping DELETE as the safe verb means every existing client — phone, VS
+   * Code, an old web bundle — gains the recycle bin without shipping a change,
+   * which is the whole point of a bin: it has to catch the delete you didn't
+   * mean, on whatever device you made it.
+   */
+  app.delete<{ Params: { id: string }; Querystring: { purge?: string } }>("/sessions/:id", async (req, reply) => {
+    try {
+      if (req.query.purge === "true") {
+        await manager.purgeSession(req.params.id);
+        return { ok: true, session: null };
+      }
+      return { ok: true, session: await manager.trashSession(req.params.id) };
     } catch (err) {
       return sendSessionError(reply, err);
     }

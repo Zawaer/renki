@@ -13,6 +13,7 @@ import {
   PERMISSION_MODES,
   THINKING_VERBS,
   displayBranch,
+  formatPurgeCountdown,
   turnTriggerLabel,
   type AskUserQuestionView,
   type Attachment,
@@ -47,7 +48,7 @@ import { Markdown } from "./Markdown.js";
 import { Button, CopyButton, InfoHint, Skeleton, StatusBadge } from "./ui.js";
 
 export function SessionView({ sessionId }: { sessionId: string }) {
-  const { realtime, config } = useClient();
+  const { realtime, rest, config } = useClient();
   const store = realtime.conversation(sessionId);
   const conv = useStoreValue(store);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -57,6 +58,18 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     realtime.watch(sessionId);
     return () => realtime.unwatch(sessionId);
+  }, [realtime, sessionId]);
+
+  /**
+   * The trash's purge deadline, which isn't in the event log — it comes from
+   * the session snapshot the daemon pushes on subscribe and on every change.
+   */
+  const [purgeAt, setPurgeAt] = useState<number | null>(null);
+  useEffect(() => {
+    setPurgeAt(null);
+    return realtime.onSessionChanged((s) => {
+      if (s.id === sessionId) setPurgeAt(s.purgeAt ?? null);
+    });
   }, [realtime, sessionId]);
 
   /**
@@ -140,7 +153,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
                 : `${conv.controllerName ?? conv.controller} is in control — you're watching`
               : "Nobody is in control"}
           </span>
-          {!isController && (
+          {!isController && status !== "trashed" && (
             <Button
               variant="primary"
               onClick={() => realtime.takeControl(sessionId)}
@@ -150,6 +163,29 @@ export function SessionView({ sessionId }: { sessionId: string }) {
           )}
         </div>
       </div>
+
+      {/* In the trash: say so, say when it goes, and offer the way back. The
+          transcript below is still whole — that's what the bin is for — so it
+          stays readable rather than being blocked behind the notice. */}
+      {status === "trashed" && (
+        <div className="mx-6 mb-2 flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-(--crc-border) bg-(--crc-bg-inset)/60 px-3.5 py-2.5 text-xs text-(--crc-fg-muted)">
+          <span className="codicon codicon-trash text-[13px]" />
+          <span className="font-medium text-(--crc-fg)">This session is in the trash</span>
+          {formatPurgeCountdown(purgeAt) && <span>· {formatPurgeCountdown(purgeAt)}</span>}
+          <Button
+            size="sm"
+            className="ml-auto"
+            onClick={() => {
+              rest
+                .restoreSession(sessionId)
+                .then(() => realtime.watch(sessionId))
+                .catch(() => {});
+            }}
+          >
+            <span className="codicon codicon-history" /> Restore
+          </Button>
+        </div>
+      )}
 
       {/* Timeline */}
       <div ref={scrollRef} onScroll={onTranscriptScroll} className="flex-1 overflow-y-auto">
@@ -179,9 +215,11 @@ export function SessionView({ sessionId }: { sessionId: string }) {
                   Nothing here yet
                 </div>
                 <div className="mt-1 text-xs text-(--crc-fg-muted)">
-                  {isController
-                    ? "Send a prompt below to get Claude going."
-                    : "Take control and send a prompt to get Claude going."}
+                  {status === "trashed"
+                    ? "This session was deleted before it ran anything."
+                    : isController
+                      ? "Send a prompt below to get Claude going."
+                      : "Take control and send a prompt to get Claude going."}
                 </div>
               </div>
             </div>
@@ -261,8 +299,10 @@ export function SessionView({ sessionId }: { sessionId: string }) {
 
       <Composer
         sessionId={sessionId}
-        disabled={!isController}
-        reason={!isController ? "Take control to send prompts" : ""}
+        disabled={!isController || status === "trashed"}
+        reason={
+          status === "trashed" ? "Restore this session to send prompts" : !isController ? "Take control to send prompts" : ""
+        }
         onSend={(text, opts) => realtime.submitPrompt(sessionId, text, opts)}
         busy={isController && status === "busy"}
         onStop={() => realtime.interrupt(sessionId)}

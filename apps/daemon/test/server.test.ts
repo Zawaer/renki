@@ -115,6 +115,72 @@ describe("REST: sessions CRUD", () => {
     expect((await archiveRes.json()).session.status).toBe("archived");
   });
 
+  /**
+   * DELETE staying the SAFE verb is the point of the whole feature: a phone or
+   * VS Code client that never ships an update still gets the recycle bin, and
+   * only a caller that explicitly asks with ?purge=true destroys anything.
+   */
+  it("soft-deletes by default and only purges when explicitly asked", async () => {
+    const { base, config, repoId } = await startServer();
+    const authed = authedFetch(base, config.authToken);
+    const create = async () =>
+      (
+        await (
+          await authed("/sessions", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ repoId, baseBranch: "main" }),
+          })
+        ).json()
+      ).session;
+
+    const soft = await create();
+    const trashRes = await authed(`/sessions/${soft.id}`, { method: "DELETE" });
+    expect(trashRes.status).toBe(200);
+    const trashed = (await trashRes.json()).session;
+    expect(trashed.status).toBe("trashed");
+    expect(trashed.purgeAt).toBeGreaterThan(Date.now());
+    // Still listed (the bin is a view, not an absence) and still readable.
+    const list = await (await authed("/sessions")).json();
+    expect(list.sessions.map((x: { id: string }) => x.id)).toContain(soft.id);
+    const transcript = await authed(`/sessions/${soft.id}/transcript`);
+    expect(transcript.status).toBe(200);
+
+    const restoreRes = await authed(`/sessions/${soft.id}/restore`, { method: "POST" });
+    expect(restoreRes.status).toBe(200);
+    expect((await restoreRes.json()).session.status).toBe("idle");
+
+    const hard = await create();
+    const purgeRes = await authed(`/sessions/${hard.id}?purge=true`, { method: "DELETE" });
+    expect(purgeRes.status).toBe(200);
+    expect((await authed(`/sessions/${hard.id}/transcript`)).status).toBe(404);
+  });
+
+  it("empties the trash without touching live sessions", async () => {
+    const { base, config, repoId } = await startServer();
+    const authed = authedFetch(base, config.authToken);
+    const create = async () =>
+      (
+        await (
+          await authed("/sessions", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ repoId, baseBranch: "main" }),
+          })
+        ).json()
+      ).session;
+
+    const doomed = await create();
+    const kept = await create();
+    await authed(`/sessions/${doomed.id}`, { method: "DELETE" });
+
+    const res = await authed("/sessions/trash", { method: "DELETE" });
+    expect(res.status).toBe(200);
+    expect((await res.json()).purged).toBe(1);
+    expect((await authed(`/sessions/${doomed.id}/transcript`)).status).toBe(404);
+    expect((await authed(`/sessions/${kept.id}/transcript`)).status).toBe(200);
+  });
+
   it("400s an invalid rename body", async () => {
     const { base, config, repoId } = await startServer();
     const authed = authedFetch(base, config.authToken);

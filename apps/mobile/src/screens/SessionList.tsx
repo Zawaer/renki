@@ -1,3 +1,4 @@
+import { activeSessions, formatPurgeCountdown, trashedSessions } from "@crc/client-core";
 import type { Repo, Session } from "@crc/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
@@ -67,12 +68,23 @@ export function SessionList({
   }
 
   async function del(id: string) {
-    await rest.deleteSession(id);
+    await rest.trashSession(id);
     refresh();
   }
 
-  const active = sessions.filter((s) => s.status !== "archived");
+  async function restore(id: string) {
+    await rest.restoreSession(id);
+    refresh();
+  }
+
+  async function purge(id: string) {
+    await rest.purgeSession(id);
+    refresh();
+  }
+
+  const active = activeSessions(sessions);
   const archived = sessions.filter((s) => s.status === "archived");
+  const trashed = trashedSessions(sessions);
 
   return (
     <View style={[styles.fill, { paddingTop: insets.top + 14 }]}>
@@ -121,6 +133,22 @@ export function SessionList({
             onDelete={() => del(s.id)}
           />
         ))}
+
+        {trashed.length > 0 && <Text style={styles.archivedHeader}>Trash</Text>}
+        {trashed.map((s) => (
+          <Row
+            key={s.id}
+            session={s}
+            colors={colors}
+            styles={styles}
+            statusColor={statusColor}
+            onSelect={() => onSelect(s.id)}
+            onRename={(title) => rename(s.id, title)}
+            onDelete={() => del(s.id)}
+            onRestore={() => restore(s.id)}
+            onPurge={() => purge(s.id)}
+          />
+        ))}
       </ScrollView>
 
       <AccountsBar />
@@ -156,6 +184,8 @@ function Row({
   onArchive,
   onRename,
   onDelete,
+  onRestore,
+  onPurge,
 }: {
   session: Session;
   colors: ThemeColors;
@@ -165,16 +195,30 @@ function Row({
   onArchive?: () => void;
   onRename: (title: string) => void;
   onDelete: () => void;
+  /** Both passed only for a row in the trash. */
+  onRestore?: () => void;
+  onPurge?: () => void;
 }) {
   const [actionsOpen, setActionsOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(session.title ?? session.repoName);
 
+  const inTrash = session.status === "trashed";
+  const countdown = formatPurgeCountdown(session.purgeAt);
+
   function confirmDelete() {
     setActionsOpen(false);
-    Alert.alert("Delete this session?", "Its transcript will be gone for good.", [
+    Alert.alert("Move to trash?", "You can restore it for the next 30 days.", [
       { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: onDelete },
+      { text: "Move to trash", style: "destructive", onPress: onDelete },
+    ]);
+  }
+
+  function confirmPurge() {
+    setActionsOpen(false);
+    Alert.alert("Delete permanently?", "The transcript, worktree and branch all go, with no undo.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: onPurge },
     ]);
   }
 
@@ -199,7 +243,7 @@ function Row({
           </Text>
           <Text style={styles.rowSub} numberOfLines={1}>
             {session.branch ? `${session.repoName}:${session.branch}` : session.repoName} ·{" "}
-            {session.hasPendingPermission ? "awaiting permission" : session.status}
+            {inTrash && countdown ? countdown : session.hasPendingPermission ? "awaiting permission" : session.status}
           </Text>
         </View>
         {session.controller && <Ionicons name="lock-closed" size={12} color={colors.accent} />}
@@ -239,10 +283,29 @@ function Row({
             <Ionicons name="create-outline" size={18} color={colors.text} />
             <Text style={styles.sheetRowText}>Edit title</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.sheetRow} onPress={confirmDelete}>
-            <Ionicons name="trash-outline" size={18} color={colors.danger} />
-            <Text style={[styles.sheetRowText, { color: colors.danger }]}>Delete</Text>
-          </TouchableOpacity>
+          {onRestore && (
+            <TouchableOpacity
+              style={styles.sheetRow}
+              onPress={() => {
+                setActionsOpen(false);
+                onRestore();
+              }}
+            >
+              <Ionicons name="arrow-undo-outline" size={18} color={colors.text} />
+              <Text style={styles.sheetRowText}>Restore</Text>
+            </TouchableOpacity>
+          )}
+          {onPurge ? (
+            <TouchableOpacity style={styles.sheetRow} onPress={confirmPurge}>
+              <Ionicons name="trash-outline" size={18} color={colors.danger} />
+              <Text style={[styles.sheetRowText, { color: colors.danger }]}>Delete permanently</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.sheetRow} onPress={confirmDelete}>
+              <Ionicons name="trash-outline" size={18} color={colors.danger} />
+              <Text style={[styles.sheetRowText, { color: colors.danger }]}>Move to trash</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </Sheet>
 

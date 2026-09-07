@@ -10,9 +10,28 @@ import { useClient } from "../lib/client.js";
  * display). The daemon then returns the account's orgs; you pick which org's
  * usage to track, and we persist that choice. No auto-selection.
  */
-export function UsageConnect({ configured, onConnected }: { configured: boolean; onConnected: () => void }) {
+export function UsageConnect({
+  configured,
+  onConnected,
+  defaultOpen,
+  onClose,
+  forEmail,
+}: {
+  configured: boolean;
+  onConnected: () => void;
+  /** Start expanded — used when a row already provided the trigger. */
+  defaultOpen?: boolean;
+  /** Told when the panel is dismissed, so the caller can unmount it. */
+  onClose?: () => void;
+  /**
+   * Set when opened from a specific account's row, so the panel can say whose
+   * key to fetch. The account is still decided by the key you paste — the
+   * daemon reads the email out of it — so this is a prompt, not a filter.
+   */
+  forEmail?: string;
+}) {
   const { rest } = useClient();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen ?? false);
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState<null | "login" | "paste" | "pick">(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -84,9 +103,17 @@ export function UsageConnect({ configured, onConnected }: { configured: boolean;
   }
 
   if (!open) {
+    // "…for another account" read as "an account not in this list", which is
+    // exactly the wrong idea when the account you want is right above it.
     return (
       <button onClick={() => setOpen(true)} className="inline-flex items-center gap-1 text-(--crc-link) hover:underline">
-        <span className="codicon codicon-add text-[12px]" /> {configured ? "Add usage tracking for another account" : "Connect usage tracking"}
+        {forEmail ? (
+          "Connect tracking"
+        ) : (
+          <>
+            <span className="codicon codicon-add text-[12px]" /> {configured ? "Connect usage tracking for an account" : "Connect usage tracking"}
+          </>
+        )}
       </button>
     );
   }
@@ -96,6 +123,12 @@ export function UsageConnect({ configured, onConnected }: { configured: boolean;
 
   return (
     <div className="w-full space-y-2 rounded-xl bg-(--crc-bg-inset)/70 p-3.5">
+      {forEmail && (
+        <div className="text-[11px] text-(--crc-fg-muted)">
+          Sign in to claude.ai as <span className="text-(--crc-fg)">{forEmail}</span>, then paste that browser's session key —
+          the key itself is what tells the daemon which account this is.
+        </div>
+      )}
       {orgs ? (
         <>
           <p className="text-[11px] text-(--crc-fg-muted)">Pick which organization's usage to track:</p>
@@ -158,7 +191,10 @@ export function UsageConnect({ configured, onConnected }: { configured: boolean;
             className="w-full rounded-xl border border-(--crc-border) bg-(--crc-surface) px-2 py-1 text-[12px] text-(--crc-fg) outline-none focus:border-(--crc-focus)"
           />
           <div className="flex items-center justify-between">
-            <button onClick={() => setOpen(false)} className="text-[11px] text-(--crc-fg-muted) hover:underline">
+            <button onClick={() => {
+                setOpen(false);
+                onClose?.();
+              }} className="text-[11px] text-(--crc-fg-muted) hover:underline">
               Close
             </button>
             <button

@@ -343,6 +343,7 @@ function AccountRow({
 }) {
   const { rest } = useClient();
   const [busy, setBusy] = useState<null | "switch" | "disconnect">(null);
+  const [connecting, setConnecting] = useState(false);
 
   async function makeActive() {
     setBusy("switch");
@@ -373,6 +374,11 @@ function AccountRow({
         <span className="truncate text-[13px] text-(--crc-fg)">{account.email}</span>
         {account.active && <span className="text-xs font-medium text-(--crc-success)">Active</span>}
         <div className="ml-auto flex shrink-0 items-center gap-3 text-xs">
+          {!usageConnected && !connecting && (
+            <button onClick={() => setConnecting(true)} className="text-[12.5px] text-(--crc-link) hover:underline">
+              Connect tracking
+            </button>
+          )}
           {usageConnected && (
             <button
               onClick={disconnectUsage}
@@ -390,7 +396,20 @@ function AccountRow({
           )}
         </div>
       </div>
-      {account.usage ? (
+      {connecting ? (
+        <div className="mt-3">
+          <UsageConnect
+            configured
+            defaultOpen
+            forEmail={account.email}
+            onClose={() => setConnecting(false)}
+            onConnected={() => {
+              setConnecting(false);
+              onChanged();
+            }}
+          />
+        </div>
+      ) : account.usage ? (
         <UsageLimits usage={account.usage} className="mt-3 pl-4" />
       ) : (
         <div className="mt-1.5 pl-4 text-xs text-(--crc-fg-muted)">

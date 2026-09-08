@@ -108,7 +108,7 @@ export function AccountsBar() {
               ))}
             </div>
             {data.rotation.enabled && data.rotation.lastHoldReason && (
-              <div className="text-[11px] text-(--crc-fg-muted)">holding: {data.rotation.lastHoldReason}</div>
+              <div className="text-[11px] text-(--crc-fg-muted)">Not switching — {data.rotation.lastHoldReason}</div>
             )}
             <button
               onClick={() => {

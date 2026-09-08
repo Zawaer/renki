@@ -31,7 +31,13 @@ function Bar({ pct, tone }: { pct: number; tone: string }) {
 function LimitCard({ limit }: { limit: AccountUsageLimit }) {
   const pct = Math.max(0, Math.min(100, limit.pct));
   const tone = TONE[usageSeverity(limit.severity, pct)];
-  const reset = formatResetTime(limit.resetsAt);
+  // claude.ai reports no reset time for a window that hasn't started — an
+  // untouched 5-hour window, or anything on an account with no activity this
+  // period. Saying why beats leaving a gap where every other card has a line,
+  // which reads as data that failed to load.
+  const reset =
+    formatResetTime(limit.resetsAt) ??
+    (limit.kind === "session" ? "Starts on your next prompt" : "Nothing used yet");
   // "Weekly" for the two weekly windows; the 5-hour one explains itself below.
   const badge = limit.kind.startsWith("weekly") ? "Weekly" : null;
 
@@ -50,7 +56,7 @@ function LimitCard({ limit }: { limit: AccountUsageLimit }) {
       <div className="mt-2">
         <Bar pct={pct} tone={tone.bar} />
       </div>
-      {reset && <div className="mt-1.5 text-[11px] text-(--crc-fg-muted)">{reset}</div>}
+      <div className="mt-1.5 text-[11px] text-(--crc-fg-muted)">{reset}</div>
     </div>
   );
 }

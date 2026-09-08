@@ -178,3 +178,72 @@ export function parsePlan(toolName: string, toolInput: unknown): string | null {
   const plan = (toolInput as Record<string, unknown>).plan;
   return typeof plan === "string" ? plan : null;
 }
+
+/** What a tool call is, in words: a row label plus the mono detail beside it. */
+export type ToolDescription = { label: string; meta: string | null };
+
+function truncateMeta(s: string, n: number): string {
+  return s.length > n ? `${s.slice(0, n)}…` : s;
+}
+
+function hostOf(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * Turn a tool call into a sentence a person can skim: "Edited manager.ts",
+ * "Searched the web", or the model's own one-line Bash description.
+ *
+ * Shared by web and mobile because it's the transcript's vocabulary, not a
+ * layout detail — the phone used to print the tool's raw name over a dump of
+ * its JSON input, which is the same call described in a different language.
+ */
+export function describeTool(name: string, input: unknown): ToolDescription {
+  const inp = (input ?? {}) as Record<string, unknown>;
+  const str = (k: string) => (typeof inp[k] === "string" ? (inp[k] as string) : null);
+  /** Last two path segments — enough to recognise a file without the whole tree. */
+  const base = (path: string | null) => (path ? path.split("/").filter(Boolean).slice(-2).join("/") : null);
+  switch (name) {
+    case "Bash": {
+      // The model's own one-line description IS the sentence worth showing;
+      // only fall back to the command when it didn't write one.
+      const described = str("description");
+      return described ? { label: described, meta: null } : { label: "Ran a command", meta: truncateMeta(str("command") ?? "", 72) };
+    }
+    case "BashOutput":
+      return { label: "Checked command output", meta: null };
+    case "Read":
+      return { label: "Read", meta: base(str("file_path")) };
+    case "Write":
+      return { label: "Wrote", meta: base(str("file_path")) };
+    case "Edit":
+    case "MultiEdit":
+    case "NotebookEdit":
+      return { label: "Edited", meta: base(str("file_path") ?? str("notebook_path")) };
+    case "Grep":
+    case "Glob":
+      return { label: "Searched", meta: str("pattern") };
+    case "WebFetch":
+      return { label: "Fetched", meta: hostOf(str("url")) };
+    case "WebSearch":
+      return { label: "Searched the web", meta: str("query") };
+    case "Agent":
+    case "Task": {
+      const described = str("description");
+      return described ? { label: described, meta: null } : { label: "Agent", meta: str("subagent_type") };
+    }
+    case "TodoWrite":
+      return { label: "Updated tasks", meta: null };
+    case "AskUserQuestion":
+      return { label: "Asked a question", meta: null };
+    case "ExitPlanMode":
+      return { label: "Proposed a plan", meta: null };
+    default:
+      return { label: name, meta: null };
+  }
+}

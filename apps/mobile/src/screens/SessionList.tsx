@@ -1,4 +1,4 @@
-import { activeSessions, formatPurgeCountdown, trashedSessions } from "@crc/client-core";
+import { activeSessions, displayBranch, formatPurgeCountdown, groupByRepo, trashedSessions } from "@crc/client-core";
 import type { Repo, Session } from "@crc/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
@@ -83,6 +83,9 @@ export function SessionList({
   }
 
   const active = activeSessions(sessions);
+  // Grouped by repo, same as the web sidebar: the repo IS the folder, and a
+  // flat list stopped being readable once several repos had sessions running.
+  const groups = groupByRepo(active);
   const archived = sessions.filter((s) => s.status === "archived");
   const trashed = trashedSessions(sessions);
 
@@ -106,21 +109,41 @@ export function SessionList({
 
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
         {active.length === 0 && <Text style={styles.empty}>No sessions yet.</Text>}
-        {active.map((s) => (
-          <Row
-            key={s.id}
-            session={s}
-            colors={colors}
-            styles={styles}
-            statusColor={statusColor}
-            onSelect={() => onSelect(s.id)}
-            onArchive={() => archive(s.id)}
-            onRename={(title) => rename(s.id, title)}
-            onDelete={() => del(s.id)}
-          />
+        {groups.map((g) => (
+          <View key={g.key}>
+            <View style={styles.groupHeader}>
+              <Text style={styles.groupName} numberOfLines={1}>
+                {g.name}
+              </Text>
+              {/* Rolled up from the group's sessions, so a repo with something
+                  waiting on you reads as such without opening anything. */}
+              {g.pending > 0 ? (
+                <View style={[styles.groupBadge, { backgroundColor: withAlpha(colors.danger, 0.16) }]}>
+                  <Text style={[styles.groupBadgeText, { color: colors.danger }]}>{g.pending} waiting</Text>
+                </View>
+              ) : g.busy > 0 ? (
+                <View style={[styles.groupBadge, { backgroundColor: withAlpha(colors.busy, 0.16) }]}>
+                  <Text style={[styles.groupBadgeText, { color: colors.busy }]}>{g.busy} working</Text>
+                </View>
+              ) : null}
+            </View>
+            {g.sessions.map((s) => (
+              <Row
+                key={s.id}
+                session={s}
+                colors={colors}
+                styles={styles}
+                statusColor={statusColor}
+                onSelect={() => onSelect(s.id)}
+                onArchive={() => archive(s.id)}
+                onRename={(title) => rename(s.id, title)}
+                onDelete={() => del(s.id)}
+              />
+            ))}
+          </View>
         ))}
 
-        {archived.length > 0 && <Text style={styles.archivedHeader}>Archived</Text>}
+        {archived.length > 0 && <Text style={styles.sectionHeader}>Archived</Text>}
         {archived.map((s) => (
           <Row
             key={s.id}
@@ -134,7 +157,7 @@ export function SessionList({
           />
         ))}
 
-        {trashed.length > 0 && <Text style={styles.archivedHeader}>Trash</Text>}
+        {trashed.length > 0 && <Text style={styles.sectionHeader}>Trash</Text>}
         {trashed.map((s) => (
           <Row
             key={s.id}
@@ -175,6 +198,15 @@ export function SessionList({
   );
 }
 
+/** Same words the web's StatusBadge uses, so a session reads the same on both. */
+const STATUS_LABEL: Record<string, string> = {
+  idle: "Idle",
+  busy: "Working",
+  error: "Error",
+  archived: "Archived",
+  trashed: "In trash",
+};
+
 function Row({
   session,
   colors,
@@ -205,6 +237,8 @@ function Row({
 
   const inTrash = session.status === "trashed";
   const countdown = formatPurgeCountdown(session.purgeAt);
+  // An auto-generated crc/xxxxxx branch tells the reader nothing, so it's hidden.
+  const branch = displayBranch(session.branch);
 
   function confirmDelete() {
     setActionsOpen(false);
@@ -242,8 +276,12 @@ function Row({
             {session.title || session.repoName}
           </Text>
           <Text style={styles.rowSub} numberOfLines={1}>
-            {session.branch ? `${session.repoName}:${session.branch}` : session.repoName} ·{" "}
-            {inTrash && countdown ? countdown : session.hasPendingPermission ? "awaiting permission" : session.status}
+            {inTrash && countdown
+              ? countdown
+              : session.hasPendingPermission
+                ? "Needs your approval"
+                : STATUS_LABEL[session.status] ?? session.status}
+            {branch ? ` · ${branch}` : ""}
           </Text>
         </View>
         {session.controller && <Ionicons name="lock-closed" size={12} color={colors.accent} />}
@@ -507,31 +545,41 @@ const makeStyles = (colors: ThemeColors) =>
       flexDirection: "row",
       alignItems: "center",
       gap: 10,
-      backgroundColor: colors.panel,
       borderRadius: radius.md,
-      paddingHorizontal: 16,
-      paddingVertical: 14,
+      paddingHorizontal: 12,
+      paddingVertical: 11,
     },
     dot: { width: 9, height: 9, borderRadius: 5 },
     rowText: { flex: 1 },
     rowTitle: { color: colors.text, fontSize: 15, fontWeight: "600" },
     rowSub: { color: colors.faint, fontSize: 12, marginTop: 2 },
     kebab: { padding: 6, marginRight: -6 },
-    archivedHeader: {
+    sectionHeader: {
       color: colors.faint,
       fontSize: 11,
       textTransform: "uppercase",
       letterSpacing: 0.5,
       paddingHorizontal: 4,
-      paddingTop: 10,
-      paddingBottom: 2,
+      paddingTop: 16,
+      paddingBottom: 4,
     },
+    groupHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      paddingHorizontal: 4,
+      paddingTop: 14,
+      paddingBottom: 4,
+    },
+    groupName: { color: colors.dim, fontSize: 13, fontWeight: "600", flexShrink: 1 },
+    groupBadge: { borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 2 },
+    groupBadgeText: { fontSize: 10, fontWeight: "700" },
     sheetBody: { paddingHorizontal: 14, gap: 4, paddingTop: 6 },
     sheetRow: {
       flexDirection: "row",
       alignItems: "center",
       gap: 14,
-      backgroundColor: colors.panel2,
+      backgroundColor: colors.inset,
       borderRadius: radius.md,
       paddingHorizontal: 16,
       paddingVertical: 14,
@@ -539,12 +587,12 @@ const makeStyles = (colors: ThemeColors) =>
     sheetRowText: { color: colors.text, fontSize: 15, fontWeight: "600" },
     formBody: { paddingHorizontal: 18, paddingBottom: 8, gap: 6 },
     repoList: { maxHeight: 200 },
-    repoRow: { padding: 12, borderRadius: radius.sm, backgroundColor: colors.panel2, marginVertical: 3 },
+    repoRow: { padding: 12, borderRadius: radius.sm, backgroundColor: colors.inset, marginVertical: 3 },
     repoRowSelected: { backgroundColor: withAlpha(colors.accent, 0.16) },
     repoName: { color: colors.text, fontSize: 14, fontWeight: "600" },
     label: { color: colors.dim, fontSize: 12, marginTop: 10, marginBottom: 2 },
     input: {
-      backgroundColor: colors.panel2,
+      backgroundColor: colors.inset,
       borderRadius: radius.sm,
       paddingHorizontal: 14,
       paddingVertical: 11,

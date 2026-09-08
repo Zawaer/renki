@@ -3,9 +3,12 @@ import {
   DEFAULT_PERMISSION_MODE,
   EFFORT_LEVELS,
   estimateTokens,
+  formatCost,
   formatTokenCount,
+  formatTurnDuration,
   MAX_ATTACHMENTS_PER_PROMPT,
   parseAskUserQuestion,
+  describeTool,
   parseEditView,
   parsePlan,
   parseTodos,
@@ -558,13 +561,7 @@ function AssistantTurn({ turn, colors, styles }: { turn: TurnView; colors: Theme
         </Fragment>
       ))}
       {turn.status === "running" && <Text style={styles.running}>▍</Text>}
-      {turn.status === "done" && turn.costUsd != null && (
-        <Text style={styles.meta}>
-          ${turn.costUsd.toFixed(4)} · {turn.durationMs}ms
-          {(turn.inputTokens != null || turn.outputTokens != null) &&
-            ` · ${formatTokenCount((turn.inputTokens ?? 0) + (turn.outputTokens ?? 0))} tokens`}
-        </Text>
-      )}
+      {turn.status === "done" && <TurnFooter turn={turn} colors={colors} styles={styles} />}
       {turn.status === "error" &&
         (turn.interrupted ? (
           <Text style={styles.meta}>Stopped</Text>
@@ -616,56 +613,121 @@ function Block({
   turnRunning: boolean;
 }) {
   if (block.kind === "tool_use") {
-    const editView = parseEditView(block.toolName, block.toolInput);
-    const todos = block.toolName === "TodoWrite" ? parseTodos(block.toolInput) : null;
-    const plan = parsePlan(block.toolName, block.toolInput);
-    return (
-      <View style={styles.toolCard}>
-        <View style={styles.toolHeader}>
-          <Ionicons name={toolIcon(block.toolName)} size={13} color={colors.busy} />
-          <Text style={styles.toolName}>{block.toolName}</Text>
-        </View>
-        {editView ? (
-          <DiffView view={editView} colors={colors} styles={styles} />
-        ) : todos ? (
-          <TodoChecklist todos={todos} colors={colors} styles={styles} />
-        ) : plan ? (
-          <Markdown content={plan} />
-        ) : (
-          <Text style={styles.toolBody}>{truncate(JSON.stringify(block.toolInput), 300)}</Text>
-        )}
-        {block.result && (
-          <Text style={[styles.toolBody, !block.result.ok && styles.errText]}>
-            {block.result.ok ? "" : "error: "}
-            {truncate(block.result.summary, 300)}
-          </Text>
-        )}
-        {block.subagent && <SubagentActivity subagent={block.subagent} colors={colors} styles={styles} />}
-        {block.backgroundTask && (
-          <View style={styles.subagentWrap}>
-            <View style={styles.subagentHeader}>
-              <Ionicons
-                name={
-                  block.backgroundTask.status === "completed"
-                    ? "checkmark-circle"
-                    : block.backgroundTask.status === "stopped"
-                      ? "stop-circle"
-                      : "alert-circle"
-                }
-                size={14}
-                color={block.backgroundTask.status === "completed" ? colors.ok : colors.danger}
-              />
-              <Text style={[styles.toolBody, { flex: 1 }]}>{truncate(block.backgroundTask.summary, 300)}</Text>
-            </View>
-          </View>
-        )}
-      </View>
-    );
+    return <ToolStep block={block} colors={colors} styles={styles} turnRunning={turnRunning} />;
   }
   if (block.kind === "thinking") {
     return <ThinkingBlock block={block} live={turnRunning && block.endedAtMs == null} colors={colors} styles={styles} />;
   }
   return <Markdown content={block.text} />;
+}
+
+/**
+ * A tool call as a quiet disclosure row — "Edited manager.ts ›" with its
+ * outcome at the right — rather than a card with the raw JSON input dumped
+ * inside it, which is what the phone used to show.
+ *
+ * Opens itself while the call is running or when the payload is worth seeing
+ * unprompted (a diff, a plan, a task list, a live agent) and folds shut once a
+ * routine call settles — unless the reader opened it themselves.
+ */
+function ToolStep({
+  block,
+  colors,
+  styles,
+  turnRunning,
+}: {
+  block: Extract<BlockView, { kind: "tool_use" }>;
+  colors: ThemeColors;
+  styles: Styles;
+  turnRunning: boolean;
+}) {
+  const editView = parseEditView(block.toolName, block.toolInput);
+  const todos = block.toolName === "TodoWrite" ? parseTodos(block.toolInput) : null;
+  const plan = parsePlan(block.toolName, block.toolInput);
+  const { label, meta } = describeTool(block.toolName, block.toolInput);
+  // A background agent's nested feed never gets a closing tool_result (its
+  // Task call returned immediately), so its completion notice is the real
+  // "done" signal.
+  const agentRunning = block.subagent?.status === "running" && !block.backgroundTask;
+  const running = !block.result && !block.backgroundTask && turnRunning;
+  const richPayload = editView != null || todos != null || plan != null || block.subagent != null;
+  const restingOpen = richPayload && (agentRunning || block.subagent == null);
+  const [open, setOpen] = useState(running || restingOpen);
+  const userToggled = useRef(false);
+  const wasRunning = useRef(running || agentRunning);
+  useEffect(() => {
+    const nowRunning = running || agentRunning;
+    if (wasRunning.current && !nowRunning && !userToggled.current) setOpen(restingOpen);
+    wasRunning.current = nowRunning;
+  }, [running, agentRunning, restingOpen]);
+
+  // One glyph language for every step: check = finished, cross = failed,
+  // spinner-ish dot = still going, square = stopped.
+  const outcome: { icon: keyof typeof Ionicons.glyphMap; color: string } | null = block.backgroundTask
+    ? block.backgroundTask.status === "completed"
+      ? { icon: "checkmark", color: colors.ok }
+      : block.backgroundTask.status === "stopped"
+        ? { icon: "square", color: colors.faint }
+        : { icon: "close", color: colors.danger }
+    : block.subagent
+      ? agentRunning
+        ? { icon: "ellipsis-horizontal", color: colors.faint }
+        : { icon: "checkmark", color: colors.ok }
+      : block.result
+        ? block.result.ok
+          ? { icon: "checkmark", color: colors.ok }
+          : { icon: "close", color: colors.danger }
+        : running
+          ? { icon: "ellipsis-horizontal", color: colors.faint }
+          : null;
+
+  return (
+    <View style={styles.toolStep}>
+      <TouchableOpacity
+        style={styles.toolStepHeader}
+        activeOpacity={0.7}
+        onPress={() => {
+          userToggled.current = true;
+          setOpen((o) => !o);
+        }}
+      >
+        <Ionicons name={toolIcon(block.toolName)} size={13} color={colors.faint} />
+        <Text style={styles.toolStepLabel} numberOfLines={1}>
+          {label}
+        </Text>
+        {meta && (
+          <Text style={styles.toolStepMeta} numberOfLines={1}>
+            {meta}
+          </Text>
+        )}
+        {outcome && <Ionicons name={outcome.icon} size={13} color={outcome.color} />}
+        <Ionicons name={open ? "chevron-up" : "chevron-down"} size={12} color={colors.faint} />
+      </TouchableOpacity>
+      {open && (
+        <View style={styles.toolStepBody}>
+          {editView ? (
+            <DiffView view={editView} colors={colors} styles={styles} />
+          ) : todos ? (
+            <TodoChecklist todos={todos} colors={colors} styles={styles} />
+          ) : plan ? (
+            <Markdown content={plan} />
+          ) : (
+            <Text style={styles.toolBody}>{truncate(JSON.stringify(block.toolInput), 300)}</Text>
+          )}
+          {block.result && (
+            <Text style={[styles.toolBody, !block.result.ok && styles.errText]}>
+              {block.result.ok ? "" : "error: "}
+              {truncate(block.result.summary, 300)}
+            </Text>
+          )}
+          {block.subagent && <SubagentActivity subagent={block.subagent} colors={colors} styles={styles} />}
+          {block.backgroundTask && (
+            <Text style={styles.toolBody}>{truncate(block.backgroundTask.summary, 300)}</Text>
+          )}
+        </View>
+      )}
+    </View>
+  );
 }
 
 /** A Task call's own nested activity, live-streamed via the Agent SDK's forwardSubagentText — collapsible, open by default while running, auto-collapses once done. Mirrors web's <details>-based SubagentActivity. */
@@ -728,7 +790,7 @@ function ThinkingBlock({
               estimatedTokens > 0 ? ` · ~${formatTokenCount(estimatedTokens)} tokens` : ""
             }`
           : block.startedAtMs != null && block.endedAtMs != null
-            ? `Thought for ${formatDuration(block.endedAtMs - block.startedAtMs)}`
+            ? `Thought for ${formatTurnDuration(block.endedAtMs - block.startedAtMs)}`
             : "Thinking"}
       </Text>
       <Markdown content={block.text} muted />
@@ -759,10 +821,56 @@ function useThinkingVerb(live: boolean): string {
   return THINKING_VERBS[i] ?? "Thinking";
 }
 
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.max(0, Math.round(ms / 1000));
-  if (totalSeconds < 60) return `${totalSeconds}s`;
-  return `${Math.floor(totalSeconds / 60)}m ${totalSeconds % 60}s`;
+/**
+ * How long the turn took, with tokens and cost a tap away.
+ *
+ * Same call as the web made: they're stats, not something to act on — the cost
+ * is a notional API-equivalent figure rather than anything billed — and on a
+ * phone a four-item footer under every turn is most of the line. Tap, rather
+ * than the web's hover, because a phone has no hover; the detail opens inline
+ * underneath instead of as a floating card, which is easier to read and to
+ * dismiss with a thumb.
+ */
+function TurnFooter({ turn, colors, styles }: { turn: TurnView; colors: ThemeColors; styles: Styles }) {
+  const [open, setOpen] = useState(false);
+  const rows: Array<[string, string]> = [];
+  if (turn.inputTokens != null) rows.push(["Input", `${formatTokenCount(turn.inputTokens)} tokens`]);
+  if (turn.cachedInputTokens) rows.push(["Cached", `${formatTokenCount(turn.cachedInputTokens)} tokens`]);
+  if (turn.outputTokens != null) rows.push(["Output", `${formatTokenCount(turn.outputTokens)} tokens`]);
+  if (turn.costUsd != null) rows.push(["API cost", formatCost(turn.costUsd)]);
+
+  return (
+    <View>
+      <View style={styles.turnFooter}>
+        <Text style={styles.meta}>{formatTurnDuration(turn.durationMs ?? 0)}</Text>
+        {rows.length > 0 && (
+          <TouchableOpacity
+            onPress={() => setOpen((v) => !v)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityLabel="Tokens and cost"
+          >
+            <Ionicons name={open ? "information-circle" : "information-circle-outline"} size={14} color={colors.faint} />
+          </TouchableOpacity>
+        )}
+        {/* One turn can answer several prompts — anything steered into it
+            mid-flight — so this stays visible: it changes what the transcript
+            above means, which a token count does not. */}
+        {turn.steeredPrompts.length > 0 && (
+          <Text style={styles.meta}>· covers {turn.steeredPrompts.length + 1} messages</Text>
+        )}
+      </View>
+      {open && (
+        <View style={styles.turnDetails}>
+          {rows.map(([label, value]) => (
+            <View key={label} style={styles.turnDetailRow}>
+              <Text style={styles.turnDetailLabel}>{label}</Text>
+              <Text style={styles.turnDetailValue}>{value}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
 }
 
 function PermissionCard({
@@ -1069,7 +1177,7 @@ const makeStyles = (colors: ThemeColors) =>
     empty: { color: colors.faint, fontSize: 14 },
     noticeWrap: { alignItems: "center" },
     notice: {
-      backgroundColor: colors.panel2,
+      backgroundColor: colors.inset,
       color: colors.dim,
       fontSize: 11,
       paddingHorizontal: 12,
@@ -1081,7 +1189,7 @@ const makeStyles = (colors: ThemeColors) =>
     promptWrap: {
       alignSelf: "flex-end",
       maxWidth: "88%",
-      backgroundColor: colors.panel2,
+      backgroundColor: colors.inset,
       borderRadius: radius.lg,
       borderBottomRightRadius: radius.xs,
       paddingHorizontal: 14,
@@ -1096,7 +1204,7 @@ const makeStyles = (colors: ThemeColors) =>
       flexDirection: "row",
       alignItems: "center",
       gap: 6,
-      backgroundColor: colors.panel2,
+      backgroundColor: colors.inset,
       borderRadius: radius.pill,
       paddingVertical: 5,
       paddingHorizontal: 10,
@@ -1111,7 +1219,7 @@ const makeStyles = (colors: ThemeColors) =>
       alignItems: "center",
       gap: 10,
       borderRadius: radius.md,
-      backgroundColor: colors.panel2,
+      backgroundColor: colors.inset,
       paddingHorizontal: 16,
       paddingVertical: 14,
     },
@@ -1123,7 +1231,7 @@ const makeStyles = (colors: ThemeColors) =>
       width: 60,
       height: 60,
       borderRadius: 30,
-      backgroundColor: colors.panel2,
+      backgroundColor: colors.inset,
       alignItems: "center",
       justifyContent: "center",
     },
@@ -1133,8 +1241,26 @@ const makeStyles = (colors: ThemeColors) =>
     thinkingHeader: { color: colors.faint, fontSize: 11 },
     running: { color: colors.dim, fontSize: 16 },
     meta: { color: colors.faint, fontSize: 11 },
+    turnFooter: { flexDirection: "row", alignItems: "center", gap: 6 },
+    turnDetails: {
+      marginTop: 6,
+      alignSelf: "flex-start",
+      backgroundColor: colors.inset,
+      borderRadius: radius.sm,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      gap: 3,
+    },
+    turnDetailRow: { flexDirection: "row", gap: 14, justifyContent: "space-between" },
+    turnDetailLabel: { color: colors.dim, fontSize: 11 },
+    turnDetailValue: { color: colors.text, fontSize: 11, fontVariant: ["tabular-nums"] },
     errText: { color: colors.danger },
     toolCard: { backgroundColor: colors.panel, borderRadius: radius.md, padding: 12, gap: 6 },
+    toolStep: { marginVertical: 2 },
+    toolStepHeader: { flexDirection: "row", alignItems: "center", gap: 7, paddingVertical: 6 },
+    toolStepLabel: { color: colors.dim, fontSize: 12.5, flexShrink: 1 },
+    toolStepMeta: { color: colors.faint, fontSize: 11.5, fontFamily: undefined, flex: 1 },
+    toolStepBody: { gap: 6, paddingBottom: 6, paddingLeft: 20 },
     toolHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
     toolName: { color: colors.busy, fontSize: 13, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
     toolBody: { color: colors.dim, fontSize: 12, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
@@ -1143,7 +1269,7 @@ const makeStyles = (colors: ThemeColors) =>
     subagentType: { color: colors.text, fontSize: 12, fontWeight: "700" },
     subagentDesc: { flex: 1, color: colors.faint, fontSize: 12 },
     subagentBody: { gap: 8, paddingLeft: 10, borderLeftWidth: 2, borderLeftColor: colors.border },
-    permCard: { backgroundColor: colors.panel2, borderRadius: radius.lg, padding: 14, gap: 8 },
+    permCard: { backgroundColor: colors.inset, borderRadius: radius.lg, padding: 14, gap: 8 },
     permHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
     permTitle: { color: colors.busy, fontSize: 14, fontWeight: "600" },
     permBody: { color: colors.dim, fontSize: 12 },
@@ -1180,7 +1306,7 @@ const makeStyles = (colors: ThemeColors) =>
     todoDone: { color: colors.faint, textDecorationLine: "line-through" },
     todoActive: { fontWeight: "600" },
     queueWrap: {
-      backgroundColor: colors.panel2,
+      backgroundColor: colors.inset,
       borderRadius: radius.md,
       marginHorizontal: 14,
       marginBottom: 8,
@@ -1196,7 +1322,7 @@ const makeStyles = (colors: ThemeColors) =>
     denyText: { color: colors.danger, fontWeight: "700" },
     optionsRow: { flexGrow: 0, paddingTop: 8 },
     optionsRowContent: { flexDirection: "row", gap: 8, paddingHorizontal: 14, paddingBottom: 2 },
-    optionPill: { backgroundColor: colors.panel2, borderRadius: radius.pill, paddingHorizontal: 13, paddingVertical: 7 },
+    optionPill: { backgroundColor: colors.inset, borderRadius: radius.pill, paddingHorizontal: 13, paddingVertical: 7 },
     optionPillText: { color: colors.dim, fontSize: 12, fontWeight: "600" },
     suggestBox: {
       marginHorizontal: 14,

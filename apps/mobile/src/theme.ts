@@ -8,40 +8,67 @@ import { useColorScheme } from "react-native";
  * app. Web/VS Code keep their own --crc-* mirror; this palette is
  * mobile-only.
  */
+/**
+ * The web app's "golden-hour" palette, converted from its oklch tokens (see
+ * apps/web/src/index.css) to hex because React Native can't parse oklch.
+ *
+ * Kept in step with the web deliberately: CRC is one product seen from a
+ * phone, a browser and an editor, and until now the phone was warm-grey with a
+ * BLUE accent while the web had gone amber — the same session looked like two
+ * different apps. Surfaces run darkest to lightest: inset < bg ≈ bgElevated <
+ * panel, with hierarchy from tone and spacing rather than borders.
+ */
 const darkColors = {
-  bg: "#191918",
-  panel: "#222220",
-  panel2: "#2a2a28",
-  border: "#34342f",
-  text: "#eeeeec",
-  dim: "#a9a9a3",
-  faint: "#78786f",
-  accent: "#5b9dfa",
-  accentFg: "#ffffff",
-  ok: "#7fd88f",
-  busy: "#e0a940",
-  error: "#f1685f",
-  danger: "#f1685f",
-  chartInput: "#5b9dfa",
-  chartOutput: "#e0894a",
+  bg: "#16100b",
+  /** Almost the page colour — for bars and headers that shouldn't read as panels. */
+  bgElevated: "#19120d",
+  /** Cards, sheets, the composer. */
+  panel: "#231b14",
+  /** Pressed/hover tone; also the old `panel2`. */
+  hover: "#282019",
+  /** Wells: meter tracks, code blocks, inputs. */
+  inset: "#0f0a06",
+  border: "#29231c",
+  text: "#f5ede1",
+  dim: "#a89c8f",
+  faint: "#797065",
+  accent: "#ec9d53",
+  accentHover: "#f9aa60",
+  /** Dark text on the amber accent — the accent is light, so white would smear. */
+  accentFg: "#2f1000",
+  selectedFg: "#fbf4ea",
+  link: "#86b9d8",
+  inputBg: "#110c08",
+  ok: "#5ad791",
+  busy: "#f4c855",
+  error: "#ea6b62",
+  danger: "#ea6b62",
+  chartInput: "#62aedb",
+  chartOutput: "#ec9d53",
 };
 
-const lightColors = {
-  bg: "#faf9f6",
+const lightColors: typeof darkColors = {
+  bg: "#fbf8f2",
+  bgElevated: "#f9f6f1",
   panel: "#ffffff",
-  panel2: "#f1efe9",
-  border: "#e8e5dd",
-  text: "#2b2a26",
-  dim: "#6f6d64",
-  faint: "#9c998e",
-  accent: "#2f6fed",
-  accentFg: "#ffffff",
-  ok: "#3a8a4a",
-  busy: "#a4720a",
-  error: "#d1453a",
-  danger: "#d1453a",
-  chartInput: "#2f6fed",
-  chartOutput: "#c1631f",
+  hover: "#efebe2",
+  inset: "#f4f0e7",
+  border: "#e8e4dd",
+  text: "#2d2118",
+  dim: "#71675d",
+  faint: "#9e978f",
+  accent: "#d27830",
+  accentHover: "#c56c21",
+  accentFg: "#fffbf4",
+  selectedFg: "#2d2118",
+  link: "#266ea4",
+  inputBg: "#ffffff",
+  ok: "#0e9254",
+  busy: "#c78b09",
+  error: "#c83a37",
+  danger: "#c83a37",
+  chartInput: "#3077ad",
+  chartOutput: "#d27830",
 };
 
 export type ThemeColors = typeof darkColors;
@@ -57,6 +84,7 @@ export function statusColorFor(colors: ThemeColors): Record<string, string> {
     busy: colors.busy,
     error: colors.error,
     archived: colors.faint,
+    trashed: colors.faint,
   };
 }
 

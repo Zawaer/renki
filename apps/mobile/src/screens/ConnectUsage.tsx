@@ -212,7 +212,7 @@ const makeStyles = (colors: ThemeColors) =>
     paddingHorizontal: 12,
     paddingVertical: 10,
     color: colors.text,
-    backgroundColor: colors.panel2,
+    backgroundColor: colors.inset,
   },
   btn: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: 16, paddingVertical: 11 },
   btnDisabled: { opacity: 0.4 },

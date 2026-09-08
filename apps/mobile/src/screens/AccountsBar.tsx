@@ -1,9 +1,9 @@
-import type { Account, AccountsResponse, AccountUsageExtra } from "@crc/protocol";
-import { formatResetIn, formatUsd } from "@crc/client-core";
+import type { Account, AccountsResponse } from "@crc/protocol";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useClient } from "../lib/client";
 import { radius, type ThemeColors, useTheme } from "../theme";
+import { UsageLimits } from "../components/UsageLimits";
 import { ConnectUsage } from "./ConnectUsage";
 
 /** Compact multi-account usage strip (mirror of the web AccountsBar). */
@@ -50,10 +50,14 @@ export function AccountsBar() {
   return (
     <View style={styles.bar}>
       <View style={styles.headerRow}>
-        <Text style={styles.header}>
-          Accounts {data.rotation.enabled ? `· auto @ ${data.rotation.threshold}%` : "· auto off"}
+        <Text style={styles.header}>Accounts</Text>
+        <Text style={styles.switch}>
+          {switching
+            ? "switching…"
+            : data.rotation.enabled
+              ? `Auto-switch at ${data.rotation.threshold}%`
+              : "Auto-switch off"}
         </Text>
-        {switching && <Text style={styles.switch}>switching…</Text>}
       </View>
       {data.accounts.map((a) => (
         <AccountRow
@@ -67,6 +71,9 @@ export function AccountsBar() {
           styles={styles}
         />
       ))}
+      {data.rotation.enabled && data.rotation.lastHoldReason && (
+        <Text style={styles.holdReason}>Not switching — {data.rotation.lastHoldReason}</Text>
+      )}
       <TouchableOpacity onPress={() => setConnecting(true)} style={styles.connectBtn}>
         <Text style={styles.connect}>{data.usageConfigured ? "+ Add usage account" : "Connect usage %"}</Text>
       </TouchableOpacity>
@@ -135,9 +142,7 @@ function AccountRow({
       </View>
       {account.usage ? (
         <View style={styles.meters}>
-          <Meter label="5h" pct={account.usage.fiveHour.pct} resetsAt={account.usage.fiveHour.resetsAt} colors={colors} />
-          <Meter label="7d" pct={account.usage.sevenDay.pct} resetsAt={account.usage.sevenDay.resetsAt} colors={colors} />
-          {account.usage.extra && <ExtraUsageMeter extra={account.usage.extra} colors={colors} />}
+          <UsageLimits usage={account.usage} colors={colors} />
         </View>
       ) : (
         <Text style={styles.na}>usage n/a</Text>
@@ -146,60 +151,6 @@ function AccountRow({
   );
 }
 
-/** Self-contained (own inline styles, no shared StyleSheet) so it can be reused from Settings.tsx too. */
-export function Meter({
-  label,
-  pct,
-  resetsAt,
-  colors,
-}: {
-  label: string;
-  pct: number;
-  resetsAt: string | null;
-  colors: ThemeColors;
-}) {
-  const clamped = Math.max(0, Math.min(100, pct));
-  const color = clamped >= 90 ? colors.error : clamped >= 70 ? colors.busy : colors.ok;
-  const resetIn = formatResetIn(resetsAt, Date.now());
-  return (
-    <View>
-      <View style={meterStyles.row}>
-        <Text style={[meterStyles.label, { color: colors.faint }]}>{label}</Text>
-        <View style={[meterStyles.track, { backgroundColor: colors.panel2 }]}>
-          <View style={[meterStyles.fillBar, { width: `${clamped}%`, backgroundColor: color }]} />
-        </View>
-        <Text style={[meterStyles.pct, { color: colors.faint }]}>{Math.round(clamped)}%</Text>
-      </View>
-      {resetIn && <Text style={[meterStyles.resetIn, { color: colors.faint }]}>resets in {resetIn}</Text>}
-    </View>
-  );
-}
-
-export function ExtraUsageMeter({ extra, colors }: { extra: AccountUsageExtra; colors: ThemeColors }) {
-  const clamped = Math.max(0, Math.min(100, extra.pct));
-  const color = clamped >= 90 ? colors.error : clamped >= 70 ? colors.busy : colors.ok;
-  return (
-    <View style={meterStyles.row}>
-      <Text style={[meterStyles.label, { color: colors.faint }]}>extra</Text>
-      <View style={[meterStyles.track, { backgroundColor: colors.panel2 }]}>
-        <View style={[meterStyles.fillBar, { width: `${clamped}%`, backgroundColor: color }]} />
-      </View>
-      <Text style={[meterStyles.extraAmount, { color: colors.faint }]}>
-        {formatUsd(extra.usedDollars)} / {formatUsd(extra.limitDollars)}
-      </Text>
-    </View>
-  );
-}
-
-const meterStyles = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "center", gap: 6 },
-  label: { fontSize: 10, width: 16 },
-  track: { flex: 1, height: 6, borderRadius: 3, overflow: "hidden" },
-  fillBar: { height: "100%" },
-  pct: { fontSize: 10, width: 32, textAlign: "right" },
-  resetIn: { fontSize: 9, marginLeft: 22 },
-  extraAmount: { fontSize: 10, width: 90, textAlign: "right" },
-});
 
 type Styles = ReturnType<typeof makeStyles>;
 
@@ -207,17 +158,18 @@ const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
   bar: { backgroundColor: colors.panel, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, padding: 14, paddingBottom: 18 },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
-  header: { color: colors.dim, fontSize: 12, fontWeight: "600" },
-  switch: { color: colors.accent, fontSize: 12 },
-  connectBtn: { marginTop: 8 },
-  connect: { color: colors.accent, fontSize: 11 },
-  acct: { marginBottom: 8 },
-  acctHead: { flexDirection: "row", alignItems: "center", gap: 6 },
+  header: { color: colors.text, fontSize: 14, fontWeight: "700" },
+  switch: { color: colors.dim, fontSize: 11 },
+  holdReason: { color: colors.dim, fontSize: 11, marginTop: 2 },
+  connectBtn: { marginTop: 10 },
+  connect: { color: colors.link, fontSize: 12 },
+  acct: { marginBottom: 12 },
+  acctHead: { flexDirection: "row", alignItems: "center", gap: 7 },
   dot: { width: 7, height: 7, borderRadius: 4 },
   emailBtn: { flex: 1 },
-  email: { color: colors.text, fontSize: 12 },
+  email: { color: colors.text, fontSize: 13, fontWeight: "600" },
   emailSwitchable: { color: colors.accent },
   removeUsage: { color: colors.faint, fontSize: 13, paddingHorizontal: 4 },
-  na: { color: colors.faint, fontSize: 11, marginLeft: 13 },
-  meters: { marginLeft: 13, marginTop: 4, gap: 3 },
+  na: { color: colors.faint, fontSize: 11, marginLeft: 14 },
+  meters: { marginLeft: 14, marginTop: 6 },
 });

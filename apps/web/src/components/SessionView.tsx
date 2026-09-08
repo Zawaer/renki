@@ -4,6 +4,7 @@ import {
   estimateTokens,
   formatCost,
   formatTokenCount,
+  formatTurnDuration,
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS_PER_PROMPT,
   parseAskUserQuestion,
@@ -12,6 +13,7 @@ import {
   parseTodos,
   PERMISSION_MODES,
   THINKING_VERBS,
+  describeTool,
   displayBranch,
   formatPurgeCountdown,
   turnTriggerLabel,
@@ -468,7 +470,7 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
         <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11.5px] text-(--crc-fg-muted)">
           {turn.status === "done" && (
             <>
-              <span>{formatDuration(turn.durationMs ?? 0)}</span>
+              <span>{formatTurnDuration(turn.durationMs ?? 0)}</span>
               {/* Tokens and cost live behind the icon. They are stats, not
                   something to act on: the cost is a notional API-equivalent
                   figure rather than anything billed, and the Stats page carries
@@ -573,70 +575,6 @@ function Block({
     );
   }
   return <Markdown content={block.text} streaming={turnRunning && block.endedAtMs == null} />;
-}
-
-/** What a tool call is, in words: the row label and the mono detail beside it. */
-function describeTool(
-  name: string,
-  input: unknown,
-): { label: string; meta: string | null } {
-  const inp = (input ?? {}) as Record<string, unknown>;
-  const str = (k: string) =>
-    typeof inp[k] === "string" ? (inp[k] as string) : null;
-  const base = (path: string | null) =>
-    path ? path.split("/").filter(Boolean).slice(-2).join("/") : null;
-  switch (name) {
-    case "Bash": {
-      // The model's own one-line description IS the sentence worth showing;
-      // only fall back to the command when it didn't write one.
-      const described = str("description");
-      return described
-        ? { label: described, meta: null }
-        : { label: "Ran a command", meta: truncate(str("command") ?? "", 72) };
-    }
-    case "BashOutput":
-      return { label: "Checked command output", meta: null };
-    case "Read":
-      return { label: "Read", meta: base(str("file_path")) };
-    case "Write":
-      return { label: "Wrote", meta: base(str("file_path")) };
-    case "Edit":
-    case "MultiEdit":
-    case "NotebookEdit":
-      return {
-        label: "Edited",
-        meta: base(str("file_path") ?? str("notebook_path")),
-      };
-    case "Grep":
-    case "Glob":
-      return { label: "Searched", meta: str("pattern") };
-    case "WebFetch":
-      return { label: "Fetched", meta: hostOf(str("url")) };
-    case "WebSearch":
-      return { label: "Searched the web", meta: str("query") };
-    case "Agent":
-    case "Task": {
-      const described = str("description");
-      return described ? { label: described, meta: null } : { label: "Agent", meta: str("subagent_type") };
-    }
-    case "TodoWrite":
-      return { label: "Updated tasks", meta: null };
-    case "AskUserQuestion":
-      return { label: "Asked a question", meta: null };
-    case "ExitPlanMode":
-      return { label: "Proposed a plan", meta: null };
-    default:
-      return { label: name, meta: null };
-  }
-}
-
-function hostOf(url: string | null): string | null {
-  if (!url) return null;
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
 }
 
 /** The outcome glyph at the right of a step row. */
@@ -931,7 +869,7 @@ function ThinkingBlock({
             <span>
               {block.endedAtMs - block.startedAtMs < 1000
                 ? "Thought for a moment"
-                : `Thought for ${formatDuration(block.endedAtMs - block.startedAtMs)}`}
+                : `Thought for ${formatTurnDuration(block.endedAtMs - block.startedAtMs)}`}
             </span>
           </>
         ) : (
@@ -1000,12 +938,6 @@ function permissionTitle(toolName: string): string {
 function permissionCommand(toolName: string, input: unknown): string | null {
   const command = (input as { command?: unknown } | null)?.command;
   return toolName === "Bash" && typeof command === "string" ? command : null;
-}
-
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.max(0, Math.round(ms / 1000));
-  if (totalSeconds < 60) return `${totalSeconds}s`;
-  return `${Math.floor(totalSeconds / 60)}m ${totalSeconds % 60}s`;
 }
 
 function PermissionCard({

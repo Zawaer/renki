@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { diffLines, parseAskUserQuestion, parseEditView, parsePlan, parseTodos } from "../src/toolViews.js";
+import { describeTool, diffLines, parseAskUserQuestion, parseEditView, parsePlan, parseTodos } from "../src/toolViews.js";
 
 describe("diffLines", () => {
   it("marks identical text as pure context", () => {
@@ -246,5 +246,46 @@ describe("parseAskUserQuestion", () => {
         questions: [{ question: "Q?", header: "H", options: [{ label: "A" }] }],
       }),
     ).toBeNull();
+  });
+});
+
+describe("describeTool", () => {
+  it("prefers the model's own one-line Bash description over the command", () => {
+    expect(describeTool("Bash", { description: "Run the test suite", command: "pnpm -s test" })).toEqual({
+      label: "Run the test suite",
+      meta: null,
+    });
+  });
+
+  it("falls back to the command when Bash carries no description", () => {
+    expect(describeTool("Bash", { command: "pnpm -s test" })).toEqual({ label: "Ran a command", meta: "pnpm -s test" });
+  });
+
+  /** A full path is unreadable in a phone-width row; the last two segments still identify the file. */
+  it("shortens a file path to its last two segments", () => {
+    expect(describeTool("Edit", { file_path: "/repos/crc/apps/daemon/src/sessions/manager.ts" })).toEqual({
+      label: "Edited",
+      meta: "sessions/manager.ts",
+    });
+  });
+
+  it("reduces a fetched URL to its host", () => {
+    expect(describeTool("WebFetch", { url: "https://docs.anthropic.com/en/api/messages" })).toEqual({
+      label: "Fetched",
+      meta: "docs.anthropic.com",
+    });
+  });
+
+  it("keeps an unparseable URL rather than dropping the detail", () => {
+    expect(describeTool("WebFetch", { url: "not a url" }).meta).toBe("not a url");
+  });
+
+  it("names an unknown tool after itself", () => {
+    expect(describeTool("SomeMcpTool", { anything: 1 })).toEqual({ label: "SomeMcpTool", meta: null });
+  });
+
+  it("survives a null or shapeless input", () => {
+    expect(describeTool("Read", null)).toEqual({ label: "Read", meta: null });
+    expect(describeTool("Grep", { pattern: 42 })).toEqual({ label: "Searched", meta: null });
   });
 });

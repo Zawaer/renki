@@ -32,3 +32,42 @@ export function trashedSessions(sessions: Session[]): Session[] {
 export function activeSessions(sessions: Session[]): Session[] {
   return sessions.filter((s) => s.status !== "archived" && s.status !== "trashed");
 }
+
+/** One repo's sessions in a session list. The repo IS the folder — see groupByRepo. */
+export type SessionGroup = {
+  /** Stable key for collapse state: the repoId, or "__none" for repo-less chats. */
+  key: string;
+  repoId: string | null;
+  name: string;
+  sessions: Session[];
+  lastActivityAt: number;
+  /** Counts rolled up so a COLLAPSED group can still show that something inside needs attention. */
+  busy: number;
+  pending: number;
+};
+
+/**
+ * Group sessions by repo, most recently active first, with each group's
+ * sessions in the same order.
+ *
+ * Shared by web and mobile: the grouping is part of how CRC reads, not a
+ * per-client layout choice, and the two had drifted (mobile showed one flat
+ * list) which made the same fleet look like a different product on a phone.
+ */
+export function groupByRepo(sessions: Session[]): SessionGroup[] {
+  const map = new Map<string, SessionGroup>();
+  for (const s of sessions) {
+    const key = s.repoId ?? "__none";
+    let g = map.get(key);
+    if (!g) {
+      g = { key, repoId: s.repoId, name: s.repoId ? s.repoName : "No repo", sessions: [], lastActivityAt: 0, busy: 0, pending: 0 };
+      map.set(key, g);
+    }
+    g.sessions.push(s);
+    g.lastActivityAt = Math.max(g.lastActivityAt, s.lastActivityAt);
+    if (s.status === "busy") g.busy++;
+    if (s.hasPendingPermission) g.pending++;
+  }
+  for (const g of map.values()) g.sessions.sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+  return [...map.values()].sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+}

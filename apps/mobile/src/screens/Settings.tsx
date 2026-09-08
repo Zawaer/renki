@@ -15,7 +15,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient, useStoreValue } from "../lib/client";
 import { radius, type ThemeColors, useTheme, withAlpha } from "../theme";
-import { ExtraUsageMeter, Meter } from "./AccountsBar";
+import { UsageLimits } from "../components/UsageLimits";
 import { ConnectUsage } from "./ConnectUsage";
 import { PairDevice } from "./PairDevice";
 
@@ -383,9 +383,7 @@ function AccountRow({
       </View>
       {account.usage ? (
         <View style={styles.acctMeters}>
-          <Meter label="5h" pct={account.usage.fiveHour.pct} resetsAt={account.usage.fiveHour.resetsAt} colors={colors} />
-          <Meter label="7d" pct={account.usage.sevenDay.pct} resetsAt={account.usage.sevenDay.resetsAt} colors={colors} />
-          {account.usage.extra && <ExtraUsageMeter extra={account.usage.extra} colors={colors} />}
+          <UsageLimits usage={account.usage} colors={colors} />
         </View>
       ) : (
         <Text style={styles.acctNa}>usage n/a</Text>
@@ -486,7 +484,7 @@ const makeStyles = (colors: ThemeColors) =>
     row: { flexDirection: "row", alignItems: "center", gap: 8 },
     flex1: { flex: 1 },
     input: {
-      backgroundColor: colors.panel2,
+      backgroundColor: colors.inset,
       borderRadius: radius.sm,
       paddingHorizontal: 12,
       paddingVertical: 9,
@@ -506,14 +504,14 @@ const makeStyles = (colors: ThemeColors) =>
     faintLink: { color: colors.faint, fontSize: 12 },
     muted: { color: colors.faint, fontSize: 12 },
     faintNote: { color: colors.faint, fontSize: 11, marginTop: 4 },
-    acctRow: { backgroundColor: colors.panel2, borderRadius: radius.md, padding: 12 },
+    acctRow: { backgroundColor: colors.inset, borderRadius: radius.md, padding: 12 },
     acctHead: { flexDirection: "row", alignItems: "center", gap: 8 },
     acctEmail: { color: colors.text, fontSize: 13, fontWeight: "600", flex: 1 },
     acctMeters: { marginTop: 8, marginLeft: 15, gap: 4 },
     acctNa: { color: colors.faint, fontSize: 11, marginLeft: 15, marginTop: 4 },
     rotation: { marginTop: 14, gap: 10 },
     thresholdInput: {
-      backgroundColor: colors.panel2,
+      backgroundColor: colors.inset,
       borderRadius: radius.sm,
       paddingHorizontal: 10,
       paddingVertical: 5,
@@ -523,7 +521,7 @@ const makeStyles = (colors: ThemeColors) =>
       textAlign: "center",
     },
     divider: { marginTop: 14 },
-    addAccount: { marginTop: 10, borderRadius: radius.md, backgroundColor: colors.panel2, padding: 12, gap: 8 },
+    addAccount: { marginTop: 10, borderRadius: radius.md, backgroundColor: colors.inset, padding: 12, gap: 8 },
     tokenInput: {
       backgroundColor: colors.bg,
       borderRadius: radius.sm,

@@ -1,4 +1,4 @@
-import { activeSessions, displayBranch, formatPurgeCountdown, trashedSessions } from "@crc/client-core";
+import { activeSessions, displayBranch, formatPurgeCountdown, groupByRepo, trashedSessions } from "@crc/client-core";
 import type { Session } from "@crc/protocol";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useClient } from "../lib/client.js";
@@ -308,35 +308,6 @@ export function SessionList({
       )}
     </div>
   );
-}
-
-type Group = {
-  key: string;
-  repoId: string | null;
-  name: string;
-  sessions: Session[];
-  lastActivityAt: number;
-  busy: number;
-  pending: number;
-};
-
-/** One group per repo (plus "No repo"), most recently active first; sessions within a group likewise. */
-function groupByRepo(sessions: Session[]): Group[] {
-  const map = new Map<string, Group>();
-  for (const s of sessions) {
-    const key = s.repoId ?? "__none";
-    let g = map.get(key);
-    if (!g) {
-      g = { key, repoId: s.repoId, name: s.repoId ? s.repoName : "No repo", sessions: [], lastActivityAt: 0, busy: 0, pending: 0 };
-      map.set(key, g);
-    }
-    g.sessions.push(s);
-    g.lastActivityAt = Math.max(g.lastActivityAt, s.lastActivityAt);
-    if (s.status === "busy") g.busy++;
-    if (s.hasPendingPermission) g.pending++;
-  }
-  for (const g of map.values()) g.sessions.sort((a, b) => b.lastActivityAt - a.lastActivityAt);
-  return [...map.values()].sort((a, b) => b.lastActivityAt - a.lastActivityAt);
 }
 
 const COLLAPSED_KEY = "crc.sidebar.collapsed";

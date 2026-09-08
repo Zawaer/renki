@@ -645,7 +645,7 @@ function SimpleTable({ headers, rows, colors, styles }: { headers: string[]; row
           ))}
         </View>
         {rows.map((row, ri) => (
-          <View key={ri} style={[styles.tableRow, ri % 2 === 1 && { backgroundColor: colors.panel2 }]}>
+          <View key={ri} style={[styles.tableRow, ri % 2 === 1 && { backgroundColor: colors.inset }]}>
             {row.map((cell, ci) => (
               <Text key={ci} style={[styles.tableCell, { width: colWidth(ci) }, ci === 0 && styles.tableCellFirst]} numberOfLines={1}>
                 {cell}
@@ -726,7 +726,7 @@ const makeStyles = (colors: ThemeColors) =>
     repoTrack: { flex: 1, height: 14, flexDirection: "row", borderRadius: radius.xs, overflow: "hidden", backgroundColor: colors.bg },
     repoValue: { width: 64, textAlign: "right", color: colors.faint, fontSize: 11 },
     tableWrap: { backgroundColor: colors.panel, borderRadius: radius.md, overflow: "hidden" },
-    tableHeadRow: { flexDirection: "row", backgroundColor: colors.panel2 },
+    tableHeadRow: { flexDirection: "row", backgroundColor: colors.inset },
     tableHeadCell: { color: colors.faint, fontSize: 10, fontWeight: "600", paddingHorizontal: 10, paddingVertical: 8 },
     tableRow: { flexDirection: "row" },
     tableCell: { color: colors.faint, fontSize: 11, paddingHorizontal: 10, paddingVertical: 7, textAlign: "right" },

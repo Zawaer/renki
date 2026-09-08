@@ -48,7 +48,7 @@ function makeShared(colors: ThemeColors): Record<string, TextStyle | ViewStyle> 
     ordered_list: { marginVertical: 2 },
     list_item: { marginVertical: 1 },
     code_inline: {
-      backgroundColor: colors.panel2,
+      backgroundColor: colors.inset,
       color: colors.text,
       fontFamily: mono,
       fontSize: 13,
@@ -56,11 +56,11 @@ function makeShared(colors: ThemeColors): Record<string, TextStyle | ViewStyle> 
       paddingHorizontal: 5,
       paddingVertical: 1,
     },
-    code_block: { backgroundColor: colors.panel2, color: colors.text, fontFamily: mono, fontSize: 12, borderRadius: radius.md, padding: 12 },
-    fence: { backgroundColor: colors.panel2, color: colors.text, fontFamily: mono, fontSize: 12, borderRadius: radius.md, padding: 12 },
+    code_block: { backgroundColor: colors.inset, color: colors.text, fontFamily: mono, fontSize: 12, borderRadius: radius.md, padding: 12 },
+    fence: { backgroundColor: colors.inset, color: colors.text, fontFamily: mono, fontSize: 12, borderRadius: radius.md, padding: 12 },
     hr: { backgroundColor: colors.border, height: StyleSheet.hairlineWidth, marginVertical: 8 },
     table: { backgroundColor: colors.panel, borderRadius: radius.md, marginVertical: 6, overflow: "hidden" },
-    th: { color: colors.text, fontWeight: "700", padding: 8, backgroundColor: colors.panel2 },
+    th: { color: colors.text, fontWeight: "700", padding: 8, backgroundColor: colors.inset },
     td: { color: colors.text, padding: 8 },
   };
 }

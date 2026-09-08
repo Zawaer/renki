@@ -18,6 +18,20 @@ export function formatCost(usd: number): string {
   return "$" + usd.toFixed(2);
 }
 
+/**
+ * How long ONE turn took, as the transcript footer says it: "4s", "1m 17s".
+ *
+ * Deliberately not `formatDuration` below, which rolls up into hours and days
+ * for lifetime stats — a turn measured in "0h 1m" reads as a machine talking.
+ * Web and mobile each had their own identical copy of this until they didn't
+ * (mobile was still printing raw "4200ms").
+ */
+export function formatTurnDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  return `${Math.floor(totalSeconds / 60)}m ${totalSeconds % 60}s`;
+}
+
 export function formatDuration(ms: number): string {
   const totalSec = Math.round(ms / 1000);
   if (totalSec <= 0) return "0s";

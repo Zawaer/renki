@@ -1,6 +1,6 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { Attachment, CapabilitiesResponse, EventPayload, PermissionDecision } from "@crc/protocol";
+import type { Attachment, CapabilitiesResponse, EventPayload, PermissionDecision } from "@renki/protocol";
 import { logger } from "../logger.js";
 
 /**
@@ -19,7 +19,7 @@ import { logger } from "../logger.js";
  * permission-gated tool call from a still-running background subagent is
  * denied with "Stream closed", permanently. Keeping the input stream open for
  * the life of the session sidesteps that entirely; the memory cost is bounded
- * by SessionManager's idle reaper (CRC_LIVE_IDLE_MINUTES) instead.
+ * by SessionManager's idle reaper (RENKI_LIVE_IDLE_MINUTES) instead.
  */
 
 export type PermissionRequest = {

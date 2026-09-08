@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import type { Account } from "@crc/protocol";
+import type { Account } from "@renki/protocol";
 import { logger } from "../logger.js";
 
 /**

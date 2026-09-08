@@ -8,7 +8,7 @@ const webDist = resolve(here, "../../web/dist");
 const dest = resolve(here, "../media/web");
 
 if (!existsSync(webDist)) {
-  console.error(`web bundle not found at ${webDist} — run \`pnpm --filter @crc/web build\` first`);
+  console.error(`web bundle not found at ${webDist} — run \`pnpm --filter @renki/web build\` first`);
   process.exit(1);
 }
 

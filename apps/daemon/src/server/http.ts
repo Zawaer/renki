@@ -8,7 +8,7 @@ import {
   RenameSessionRequest,
   SwitchAccountRequest,
   UpdateRotationRequest,
-} from "@crc/protocol";
+} from "@renki/protocol";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
 import { loginAndExtractSessionKey, PlaywrightUnavailableError } from "../accounts/login.js";
@@ -85,7 +85,7 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
   });
 
   // Token auth (skipped only for the unauthenticated health check). Token
-  // accepted via Authorization: Bearer, the x-crc-token header, or a ?token=
+  // accepted via Authorization: Bearer, the x-renki-token header, or a ?token=
   // query param (WebSocket-friendly).
   app.addHook("onRequest", async (req, reply) => {
     if (req.url.startsWith("/health")) return;
@@ -182,7 +182,7 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
   // from a live SDK Query object (see claude/capabilities.ts).
   app.get("/capabilities", async () => getCapabilities());
 
-  // RTK (rtk-ai/rtk) token-savings stats, if CRC_ENABLE_RTK is on. Self-describing
+  // RTK (rtk-ai/rtk) token-savings stats, if RENKI_ENABLE_RTK is on. Self-describing
   // response (enabled/available) rather than a separate feature-flag endpoint —
   // same idiom as /accounts.
   app.get("/rtk/gain", async () => {
@@ -385,7 +385,7 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
 function tokenFrom(req: FastifyRequest): string | undefined {
   const auth = req.headers.authorization;
   if (auth?.startsWith("Bearer ")) return auth.slice(7).trim();
-  const header = req.headers["x-crc-token"];
+  const header = req.headers["x-renki-token"];
   if (typeof header === "string") return header;
   const q = (req.query as { token?: string } | undefined)?.token;
   return typeof q === "string" ? q : undefined;

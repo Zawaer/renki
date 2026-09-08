@@ -30,7 +30,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Build first so packages that consume @crc/protocol and @crc/client-core
+      # Build first so packages that consume @renki/protocol and @renki/client-core
       # (which resolve to ./dist) have their types/output available downstream.
       - run: pnpm build
       - run: pnpm typecheck

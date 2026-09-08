@@ -10,7 +10,7 @@ export type RenderInput = {
   assetsBase: string; // webview URI base that ./assets resolves against
   cspSource: string; // webview.cspSource
   baseUrl: string; // daemon URL, for connect-src
-  config: unknown; // window.__CRC_CONFIG__ payload
+  config: unknown; // window.__RENKI_CONFIG__ payload
 };
 
 export function renderWebviewHtml(input: RenderInput): string {
@@ -27,7 +27,7 @@ export function renderWebviewHtml(input: RenderInput): string {
 
   const inject =
     `<meta http-equiv="Content-Security-Policy" content="${csp}">` +
-    `<script nonce="${nonce}">window.__CRC_CONFIG__=${JSON.stringify(input.config)};</script>`;
+    `<script nonce="${nonce}">window.__RENKI_CONFIG__=${JSON.stringify(input.config)};</script>`;
 
   return input.rawHtml
     .replace(/(src|href)="\//g, `$1="${input.assetsBase}/`)

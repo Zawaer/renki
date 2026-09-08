@@ -25,7 +25,7 @@ import type {
   UpdateRotationRequest,
   UpdateRotationResponse,
   UsageLoginResponse,
-} from "@crc/protocol";
+} from "@renki/protocol";
 
 /**
  * Typed wrapper over the daemon's REST control plane. Framework-agnostic (uses
@@ -106,7 +106,7 @@ export class RestClient {
    * with transcript, worktree and branch all still intact until then.
    *
    * Returns the trashed session, or null if the daemon has its recycle bin
-   * switched off (CRC_TRASH_RETENTION_DAYS=0), in which case this really did
+   * switched off (RENKI_TRASH_RETENTION_DAYS=0), in which case this really did
    * delete it.
    */
   async trashSession(sessionId: string): Promise<Session | null> {
@@ -198,7 +198,7 @@ export class RestClient {
     return this.get<CapabilitiesResponse>("/capabilities");
   }
 
-  /** RTK (rtk-ai/rtk) token-savings stats — `enabled:false` when CRC_ENABLE_RTK is off for this daemon. */
+  /** RTK (rtk-ai/rtk) token-savings stats — `enabled:false` when RENKI_ENABLE_RTK is off for this daemon. */
   async getRtkGain(): Promise<RtkGainResponse> {
     return this.get<RtkGainResponse>("/rtk/gain");
   }

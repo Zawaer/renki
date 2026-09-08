@@ -1,5 +1,5 @@
 import CookieManager from "@react-native-cookies/cookies";
-import type { UsageOrg } from "@crc/protocol";
+import type { UsageOrg } from "@renki/protocol";
 import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,

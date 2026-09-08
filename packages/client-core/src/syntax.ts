@@ -1,5 +1,5 @@
 /**
- * Tiny syntax tokenizers for the two things CRC actually shows as code: shell
+ * Tiny syntax tokenizers for the two things Renki actually shows as code: shell
  * commands a tool wants to run, and JSON tool payloads. Deliberately not a
  * general highlighter — no dependency, no language detection, no bundle cost.
  * Pure functions returning tokens so every client can colour them its own way

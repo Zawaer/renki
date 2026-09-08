@@ -1,4 +1,4 @@
-import { describeConnectionError, encodePairing, isLikelyLoopbackUrl } from "@crc/client-core";
+import { describeConnectionError, encodePairing, isLikelyLoopbackUrl } from "@renki/client-core";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Modal, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import QRCode from "react-native-qrcode-svg";
@@ -83,7 +83,7 @@ export function PairDevice({
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.backdrop}>
         <View style={styles.card}>
-          <Text style={styles.title}>Scan with another CRC device</Text>
+          <Text style={styles.title}>Scan with another Renki device</Text>
           {loopback && (
             <View style={styles.warningBox}>
               <Text style={styles.warning}>

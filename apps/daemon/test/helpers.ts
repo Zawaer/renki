@@ -24,11 +24,11 @@ export function makeTestDb(): DB {
 
 /** A fully-populated Config pointing at throwaway temp dirs. */
 export function makeTestConfig(overrides: Partial<Config> = {}): Config {
-  const dataDir = mkdtempSync(join(tmpdir(), "crc-data-"));
+  const dataDir = mkdtempSync(join(tmpdir(), "renki-data-"));
   return {
-    reposRoot: mkdtempSync(join(tmpdir(), "crc-repos-")),
+    reposRoot: mkdtempSync(join(tmpdir(), "renki-repos-")),
     dataDir,
-    dbPath: resolve(dataDir, "crc.sqlite"),
+    dbPath: resolve(dataDir, "renki.sqlite"),
     worktreesDir: resolve(dataDir, "worktrees"),
     authToken: "test-token",
     controlIdleMs: 15 * 60_000,
@@ -54,7 +54,7 @@ export function makeTestConfig(overrides: Partial<Config> = {}): Config {
     rotationConfigPath: resolve(dataDir, "rotation-settings.json"),
     usageConfigPath: resolve(dataDir, "usage-accounts.json"),
     usageBaseUrl: "https://example.invalid",
-    usageLoginChannel: "crc-usage-login-test",
+    usageLoginChannel: "renki-usage-login-test",
     usageLoginTimeoutMs: 120_000,
     ...overrides,
   };

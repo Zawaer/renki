@@ -1,4 +1,4 @@
-import type { UsageOrg } from "@crc/protocol";
+import type { UsageOrg } from "@renki/protocol";
 import { useState } from "react";
 import { useClient } from "../lib/client.js";
 
@@ -106,7 +106,7 @@ export function UsageConnect({
     // "…for another account" read as "an account not in this list", which is
     // exactly the wrong idea when the account you want is right above it.
     return (
-      <button onClick={() => setOpen(true)} className="inline-flex items-center gap-1 text-(--crc-link) hover:underline">
+      <button onClick={() => setOpen(true)} className="inline-flex items-center gap-1 text-(--renki-link) hover:underline">
         {forEmail ? (
           "Connect tracking"
         ) : (
@@ -122,25 +122,25 @@ export function UsageConnect({
     o.usage ? `5h ${Math.round(o.usage.fiveHour.pct)}% · 7d ${Math.round(o.usage.sevenDay.pct)}%` : "no usage data";
 
   return (
-    <div className="w-full space-y-2 rounded-xl bg-(--crc-bg-inset)/70 p-3.5">
+    <div className="w-full space-y-2 rounded-xl bg-(--renki-bg-inset)/70 p-3.5">
       {forEmail && (
-        <div className="text-[11px] text-(--crc-fg-muted)">
-          Sign in to claude.ai as <span className="text-(--crc-fg)">{forEmail}</span>, then paste that browser's session key —
+        <div className="text-[11px] text-(--renki-fg-muted)">
+          Sign in to claude.ai as <span className="text-(--renki-fg)">{forEmail}</span>, then paste that browser's session key —
           the key itself is what tells the daemon which account this is.
         </div>
       )}
       {orgs ? (
         <>
-          <p className="text-[11px] text-(--crc-fg-muted)">Pick which organization's usage to track:</p>
+          <p className="text-[11px] text-(--renki-fg-muted)">Pick which organization's usage to track:</p>
           {orgs.map((o) => (
             <button
               key={o.orgId}
               onClick={() => pickOrg(o.orgId)}
               disabled={busy !== null}
-              className="flex w-full items-center justify-between rounded-xl border border-(--crc-border) bg-(--crc-surface) px-2.5 py-1.5 text-left hover:border-(--crc-focus) disabled:opacity-40"
+              className="flex w-full items-center justify-between rounded-xl border border-(--renki-border) bg-(--renki-surface) px-2.5 py-1.5 text-left hover:border-(--renki-focus) disabled:opacity-40"
             >
-              <span className="truncate text-[12px] text-(--crc-fg)">{o.name}</span>
-              <span className="ml-2 shrink-0 text-[10px] text-(--crc-fg-muted)">{fmt(o)}</span>
+              <span className="truncate text-[12px] text-(--renki-fg)">{o.name}</span>
+              <span className="ml-2 shrink-0 text-[10px] text-(--renki-fg-muted)">{fmt(o)}</span>
             </button>
           ))}
           <div className="flex items-center justify-between">
@@ -149,36 +149,36 @@ export function UsageConnect({
                 setOrgs(null);
                 setPendingKey(null);
               }}
-              className="text-[11px] text-(--crc-fg-muted) hover:underline"
+              className="text-[11px] text-(--renki-fg-muted) hover:underline"
             >
               Back
             </button>
-            {busy === "pick" && <span className="text-[11px] text-(--crc-fg-muted)">Connecting…</span>}
+            {busy === "pick" && <span className="text-[11px] text-(--renki-fg-muted)">Connecting…</span>}
           </div>
         </>
       ) : (
         <>
           <div className="flex items-center justify-between">
-            <span className="text-[10px] text-(--crc-fg-muted)">Paste a session key</span>
+            <span className="text-[10px] text-(--renki-fg-muted)">Paste a session key</span>
             <button
               type="button"
               onClick={() => setShowHelp((v) => !v)}
-              className="text-[10px] text-(--crc-link) hover:underline"
+              className="text-[10px] text-(--renki-link) hover:underline"
             >
               How to find the key
             </button>
           </div>
           {showHelp && (
-            <ol className="list-decimal space-y-0.5 pl-4 text-[10px] leading-snug text-(--crc-fg-muted)">
+            <ol className="list-decimal space-y-0.5 pl-4 text-[10px] leading-snug text-(--renki-fg-muted)">
               <li>Open claude.ai in any browser and make sure you're signed in.</li>
               <li>Open DevTools (Cmd+Option+I on Mac, F12 on Windows/Linux).</li>
               <li>
-                Go to <span className="text-(--crc-fg)">Application</span> → Cookies →{" "}
-                <span className="text-(--crc-fg)">https://claude.ai</span> (Firefox: Storage → Cookies).
+                Go to <span className="text-(--renki-fg)">Application</span> → Cookies →{" "}
+                <span className="text-(--renki-fg)">https://claude.ai</span> (Firefox: Storage → Cookies).
               </li>
               <li>
-                Copy the value of the <span className="text-(--crc-fg)">sessionKey</span> row — it starts with{" "}
-                <span className="text-(--crc-fg)">sk-ant-sid…</span> — and paste it below.
+                Copy the value of the <span className="text-(--renki-fg)">sessionKey</span> row — it starts with{" "}
+                <span className="text-(--renki-fg)">sk-ant-sid…</span> — and paste it below.
               </li>
             </ol>
           )}
@@ -188,37 +188,37 @@ export function UsageConnect({
             placeholder="sk-ant-sid…"
             spellCheck={false}
             autoComplete="off"
-            className="w-full rounded-xl border border-(--crc-border) bg-(--crc-surface) px-2 py-1 text-[12px] text-(--crc-fg) outline-none focus:border-(--crc-focus)"
+            className="w-full rounded-xl border border-(--renki-border) bg-(--renki-surface) px-2 py-1 text-[12px] text-(--renki-fg) outline-none focus:border-(--renki-focus)"
           />
           <div className="flex items-center justify-between">
             <button onClick={() => {
                 setOpen(false);
                 onClose?.();
-              }} className="text-[11px] text-(--crc-fg-muted) hover:underline">
+              }} className="text-[11px] text-(--renki-fg-muted) hover:underline">
               Close
             </button>
             <button
               onClick={resolvePasted}
               disabled={busy !== null || key.trim().length === 0}
-              className="rounded-sm border border-(--crc-border) px-2.5 py-1 text-[11px] text-(--crc-fg) hover:bg-(--crc-hover) disabled:opacity-40"
+              className="rounded-sm border border-(--renki-border) px-2.5 py-1 text-[11px] text-(--renki-fg) hover:bg-(--renki-hover) disabled:opacity-40"
             >
               {busy === "paste" ? "Checking…" : "Next"}
             </button>
           </div>
-          <div className="flex items-center gap-2 text-[10px] text-(--crc-fg-muted)">
-            <div className="h-px flex-1 bg-(--crc-border)" /> or <div className="h-px flex-1 bg-(--crc-border)" />
+          <div className="flex items-center gap-2 text-[10px] text-(--renki-fg-muted)">
+            <div className="h-px flex-1 bg-(--renki-border)" /> or <div className="h-px flex-1 bg-(--renki-border)" />
           </div>
           <button
             onClick={startBrowserLogin}
             disabled={busy !== null}
-            className="w-full rounded-sm border border-(--crc-border) py-1.5 text-[12px] font-medium text-(--crc-fg) hover:bg-(--crc-hover) disabled:opacity-40"
+            className="w-full rounded-sm border border-(--renki-border) py-1.5 text-[12px] font-medium text-(--renki-fg) hover:bg-(--renki-hover) disabled:opacity-40"
           >
             {busy === "login" ? "Waiting for sign-in…" : "Sign in via browser (on daemon host)"}
           </button>
         </>
       )}
-      {msg && <div className={`text-[11px] ${msg.ok ? "text-(--crc-success)" : "text-(--crc-danger)"}`}>{msg.text}</div>}
-      <p className="text-[10px] leading-snug text-(--crc-fg-muted)">
+      {msg && <div className={`text-[11px] ${msg.ok ? "text-(--renki-success)" : "text-(--renki-danger)"}`}>{msg.text}</div>}
+      <p className="text-[10px] leading-snug text-(--renki-fg-muted)">
         Read-only claude.ai session key (same one the Claude Usage app uses). Never touches your coding tokens.
       </p>
     </div>

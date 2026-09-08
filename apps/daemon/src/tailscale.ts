@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import type { TailscaleStatusResponse } from "@crc/protocol";
+import type { TailscaleStatusResponse } from "@renki/protocol";
 import { logger } from "./logger.js";
 
 /**
@@ -59,7 +59,7 @@ export type TailscaleServeConflict =
 
 /**
  * Checks `tailscale serve`'s OWN config for a root ("/") handler already
- * pointing somewhere other than this daemon's port, before `crc init` runs
+ * pointing somewhere other than this daemon's port, before `renki init` runs
  * `tailscale serve --bg <port>` — which would silently overwrite it. Caught
  * live: a homelab's reverse proxy (Caddy) bound to the same tailnet IP on
  * port 443 collided with `tailscale serve` claiming that address directly,

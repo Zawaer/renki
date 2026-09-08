@@ -36,7 +36,7 @@ export type AccountUsageExtra = z.infer<typeof AccountUsageExtra>;
 
 /**
  * One limit window claude.ai reports, straight from its `limits` array. A plan
- * has more than the two CRC used to model: the 5-hour session window, a weekly
+ * has more than the two Renki used to model: the 5-hour session window, a weekly
  * cap across all models, AND a separate weekly cap per premium model (Opus,
  * Fable), each with its own reset. Any of them can be the one that blocks you,
  * so all of them are shown.

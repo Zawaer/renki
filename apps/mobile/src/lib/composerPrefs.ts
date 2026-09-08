@@ -1,4 +1,4 @@
-import { resolveEffortKey, resolvePermissionMode, type PermissionModeKey } from "@crc/client-core";
+import { resolveEffortKey, resolvePermissionMode, type PermissionModeKey } from "@renki/client-core";
 import * as SecureStore from "expo-secure-store";
 
 /**
@@ -13,9 +13,9 @@ import * as SecureStore from "expo-secure-store";
  * silently re-armed the composer with the other session's choice. A session
  * with no pick of its own inherits the last pick made anywhere.
  */
-const MODE_KEY = "crc.permissionMode";
-const EFFORT_KEY = "crc.effortKey";
-const MODEL_KEY = "crc.model";
+const MODE_KEY = "renki.permissionMode";
+const EFFORT_KEY = "renki.effortKey";
+const MODEL_KEY = "renki.model";
 
 /** The session's own value, else the global "last used", else null. */
 async function readScoped(key: string, sessionId: string | null): Promise<string | null> {

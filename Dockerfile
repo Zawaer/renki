@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
-# Builds just @crc/daemon (+ its workspace deps, @crc/protocol and
-# @crc/client-core) for an always-on host. Web/VS Code/mobile clients aren't
+# Builds just @renki/daemon (+ its workspace deps, @renki/protocol and
+# @renki/client-core) for an always-on host. Web/VS Code/mobile clients aren't
 # part of this image.
 
 FROM node:20-bookworm-slim AS base
@@ -18,7 +18,7 @@ WORKDIR /app
 # stays cached across ordinary source edits, and only re-runs when a
 # package.json/lockfile changes. pnpm needs every workspace member's
 # package.json present to resolve the graph, even though --filter below only
-# installs @crc/daemon's slice of it.
+# installs @renki/daemon's slice of it.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY scripts ./scripts
 COPY packages/protocol/package.json packages/protocol/package.json
@@ -32,13 +32,13 @@ COPY apps/vscode/package.json apps/vscode/package.json
 # login" — it's a Mac-only convenience feature, not needed for a headless image.
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
-# Scoped to @crc/daemon + its workspace deps, so web/mobile/vscode's
+# Scoped to @renki/daemon + its workspace deps, so web/mobile/vscode's
 # dependency trees (and their install-time scripts) never run here. The cache
 # mount persists pnpm's package store across builds on the same Docker host,
 # so even a genuine dependency change doesn't re-hit the registry for
 # packages you already have.
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile --filter "@crc/daemon..."
+    pnpm install --frozen-lockfile --filter "@renki/daemon..."
 
 # Dev target: branches off here, before any source is copied in or built —
 # docker-compose.dev.yml bind-mounts live source over /app instead, and tsx
@@ -54,7 +54,7 @@ RUN git config --system --add safe.directory '*'
 # host's docker-compose.override.yml (RTK's bind-mounted binary) expects it
 # here too, same as in runtime.
 ENV PATH="/root/.local/bin:${PATH}"
-CMD ["pnpm", "--filter", "@crc/daemon", "dev"]
+CMD ["pnpm", "--filter", "@renki/daemon", "dev"]
 
 FROM base AS builder
 
@@ -62,11 +62,11 @@ FROM base AS builder
 # compiles) re-run on an ordinary code change, not the install above.
 COPY . .
 
-RUN pnpm --filter @crc/protocol build && pnpm --filter @crc/client-core build && pnpm --filter @crc/daemon build
+RUN pnpm --filter @renki/protocol build && pnpm --filter @renki/client-core build && pnpm --filter @renki/daemon build
 
-# Self-contained prod-only output: resolves the @crc/protocol workspace
+# Self-contained prod-only output: resolves the @renki/protocol workspace
 # dependency to its built dist rather than a symlink.
-RUN pnpm --filter @crc/daemon deploy --prod /app/deploy
+RUN pnpm --filter @renki/daemon deploy --prod /app/deploy
 
 FROM node:20-bookworm-slim AS runtime
 

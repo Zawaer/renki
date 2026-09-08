@@ -1,4 +1,4 @@
-import { decodePairing, describeConnectionError } from "@crc/client-core";
+import { decodePairing, describeConnectionError } from "@renki/client-core";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useRef, useState } from "react";
 import {
@@ -53,7 +53,7 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
     setScanning(false);
     const pairing = decodePairing(raw);
     if (!pairing) {
-      setError("That QR code isn't a CRC pairing code.");
+      setError("That QR code isn't a Renki pairing code.");
       return;
     }
     setBaseUrl(pairing.baseUrl);
@@ -65,7 +65,7 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
     <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.body}>
         <Text style={styles.title}>Connect to your daemon</Text>
-        <Text style={styles.sub}>Scan a pairing QR from another CRC device, or enter the details manually.</Text>
+        <Text style={styles.sub}>Scan a pairing QR from another Renki device, or enter the details manually.</Text>
 
         <TouchableOpacity style={styles.scanButton} onPress={() => setScanning(true)}>
           <Text style={styles.scanButtonText}>Scan QR code</Text>
@@ -104,7 +104,7 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
             autoCapitalize="none"
             autoCorrect={false}
             secureTextEntry={!showToken}
-            placeholder="CRC_AUTH_TOKEN"
+            placeholder="RENKI_AUTH_TOKEN"
             placeholderTextColor={colors.faint}
           />
           <TouchableOpacity onPress={() => setShowToken((v) => !v)}>
@@ -120,7 +120,7 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
         {found && (
           <Text style={styles.success}>
             Connected — found {found.repos} repo{found.repos === 1 ? "" : "s"} under {found.root}.
-            {found.repos === 0 && " Add a git repo there (or point CRC_REPOS_ROOT elsewhere) before creating a session."}
+            {found.repos === 0 && " Add a git repo there (or point RENKI_REPOS_ROOT elsewhere) before creating a session."}
           </Text>
         )}
 

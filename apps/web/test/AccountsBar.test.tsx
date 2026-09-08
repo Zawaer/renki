@@ -1,5 +1,5 @@
-import type { AccountsResponse } from "@crc/protocol";
-import { RealtimeClient, RestClient } from "@crc/client-core";
+import type { AccountsResponse } from "@renki/protocol";
+import { RealtimeClient, RestClient } from "@renki/client-core";
 import { fireEvent, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";

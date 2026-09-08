@@ -1,4 +1,4 @@
-import { DEFAULT_EFFORT_KEY, DEFAULT_PERMISSION_MODE } from "@crc/client-core";
+import { DEFAULT_EFFORT_KEY, DEFAULT_PERMISSION_MODE } from "@renki/client-core";
 import { describe, expect, it } from "vitest";
 import {
   loadEffortKey,

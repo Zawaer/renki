@@ -1,5 +1,5 @@
-import { activeSessions, displayBranch, formatPurgeCountdown, groupByRepo, trashedSessions } from "@crc/client-core";
-import type { Repo, Session } from "@crc/protocol";
+import { activeSessions, displayBranch, formatPurgeCountdown, groupByRepo, trashedSessions } from "@renki/client-core";
+import type { Repo, Session } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, FlatList, Keyboard, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
@@ -237,7 +237,7 @@ function Row({
 
   const inTrash = session.status === "trashed";
   const countdown = formatPurgeCountdown(session.purgeAt);
-  // An auto-generated crc/xxxxxx branch tells the reader nothing, so it's hidden.
+  // An auto-generated renki/xxxxxx branch tells the reader nothing, so it's hidden.
   const branch = displayBranch(session.branch);
 
   function confirmDelete() {

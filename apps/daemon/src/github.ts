@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { promisify } from "node:util";
-import type { GithubRepo } from "@crc/protocol";
+import type { GithubRepo } from "@renki/protocol";
 import type { Config } from "./config.js";
 import { logger } from "./logger.js";
 
@@ -11,7 +11,7 @@ const run = promisify(execFile);
 /**
  * Cloning a repo from GitHub straight into the repos root, so a session can be
  * started on a project the host has never checked out — the thing that
- * otherwise needs an SSH session before CRC can see it at all.
+ * otherwise needs an SSH session before Renki can see it at all.
  *
  * Authentication is whatever `gh` has (see SETUP.md § Pushing to GitHub); this
  * module never handles a token itself. Every command runs through execFile

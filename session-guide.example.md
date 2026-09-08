@@ -2,7 +2,7 @@
 
 Copy this into the `.claude` directory you mount into the daemon, as
 `CLAUDE.md`, and edit the bracketed bits. Every Claude session running inside
-CRC then reads it automatically, so sessions know the things about *your* setup
+Renki then reads it automatically, so sessions know the things about *your* setup
 they cannot work out from inside a container.
 
 ```bash
@@ -19,9 +19,9 @@ Everything below is worded for the session to read, not for you.
 
 ---
 
-## What CRC is
+## What Renki is
 
-Claude Remote Control is a self-hosted tool for driving Claude Code sessions
+Renki is a self-hosted tool for driving Claude Code sessions
 that live on a server instead of a laptop. A daemon on this machine owns the
 `claude` processes; web, phone and VS Code clients attach to it over the
 network. Because the work happens here, a session keeps running when the user
@@ -89,12 +89,12 @@ heredoc piped into the program.
 
 ## Git, branches and merging
 
-Your worktree is on its own branch (`crc/<id>` unless the user named one), cut
+Your worktree is on its own branch (`renki/<id>` unless the user named one), cut
 from a base branch. That branch has **no upstream**, which is deliberate.
 
 - Commit freely in your worktree — that is the point of it.
 - **Don't push unprompted.** The user merges a session's work back with
-  `crc merge`, which auto-merges when clean and spawns a conflict-resolution
+  `renki merge`, which auto-merges when clean and spawns a conflict-resolution
   session when not.
 - **If they ask you to push, actually push it.** They mean "get this onto the
   remote", which for a personal repo usually means its default branch — so

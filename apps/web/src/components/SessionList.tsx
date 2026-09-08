@@ -1,5 +1,5 @@
-import { activeSessions, displayBranch, formatPurgeCountdown, groupByRepo, trashedSessions } from "@crc/client-core";
-import type { Session } from "@crc/protocol";
+import { activeSessions, displayBranch, formatPurgeCountdown, groupByRepo, trashedSessions } from "@renki/client-core";
+import type { Session } from "@renki/protocol";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { clearComposerPrefs, clearDraft } from "../lib/composerPrefs.js";
 import { useClient } from "../lib/client.js";
@@ -15,7 +15,7 @@ import { Button, Eyebrow, SessionGlyph, Skeleton } from "./ui.js";
  *
  * Grouping is automatic — the repo IS the folder. Rows are a single line
  * (glyph + title); the repo lives in the group header and an auto-generated
- * `crc/xxxxxx` branch is deliberately not shown (see client-core's
+ * `renki/xxxxxx` branch is deliberately not shown (see client-core's
  * isAutoBranch). Collapsed groups roll their children's state up into the
  * header so a folded repo that needs an approval still reads as such.
  */
@@ -159,7 +159,7 @@ export function SessionList({
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between px-4 pt-3 pb-2">
-        <span className="text-sm font-semibold tracking-tight text-(--crc-fg)">Sessions</span>
+        <span className="text-sm font-semibold tracking-tight text-(--renki-fg)">Sessions</span>
         <Button variant="primary" size="sm" onClick={() => setCreating({})}>
           <span className="codicon codicon-add" /> New
         </Button>
@@ -185,9 +185,9 @@ export function SessionList({
           </div>
         )}
         {loaded && active.length === 0 && (
-          <div className="mx-1 mt-2 rounded-xl border border-dashed border-(--crc-border) px-3 py-6 text-center">
-            <div className="text-sm text-(--crc-fg)">No active sessions</div>
-            <div className="mt-1 text-xs text-(--crc-fg-muted)">Start one with the New button.</div>
+          <div className="mx-1 mt-2 rounded-xl border border-dashed border-(--renki-border) px-3 py-6 text-center">
+            <div className="text-sm text-(--renki-fg)">No active sessions</div>
+            <div className="mt-1 text-xs text-(--renki-fg-muted)">Start one with the New button.</div>
           </div>
         )}
 
@@ -198,25 +198,25 @@ export function SessionList({
               <div className="group/hdr flex items-center gap-0.5 pr-1">
                 <button
                   onClick={() => toggleGroup(g.key)}
-                  className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left hover:bg-(--crc-hover)"
+                  className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left hover:bg-(--renki-hover)"
                   title={isCollapsed ? "Expand" : "Collapse"}
                 >
                   <span
-                    className={`codicon codicon-chevron-right shrink-0 text-[11px] text-(--crc-fg-muted) transition-transform duration-150 ${
+                    className={`codicon codicon-chevron-right shrink-0 text-[11px] text-(--renki-fg-muted) transition-transform duration-150 ${
                       isCollapsed ? "" : "rotate-90"
                     }`}
                   />
-                  <span className="truncate text-xs font-semibold text-(--crc-fg-muted)">{g.name}</span>
+                  <span className="truncate text-xs font-semibold text-(--renki-fg-muted)">{g.name}</span>
                   {isCollapsed && (
-                    <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] text-(--crc-fg-muted)">
+                    <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] text-(--renki-fg-muted)">
                       {g.pending > 0 ? (
-                        <span className="flex items-center gap-1 text-(--crc-danger)">
-                          <span className="h-1.5 w-1.5 rounded-full bg-(--crc-danger) crc-glow-danger animate-pulse" />
+                        <span className="flex items-center gap-1 text-(--renki-danger)">
+                          <span className="h-1.5 w-1.5 rounded-full bg-(--renki-danger) renki-glow-danger animate-pulse" />
                           {g.pending}
                         </span>
                       ) : g.busy > 0 ? (
-                        <span className="flex items-center gap-1 text-(--crc-warning)">
-                          <span className="h-1.5 w-1.5 rounded-full bg-(--crc-warning) animate-pulse" />
+                        <span className="flex items-center gap-1 text-(--renki-warning)">
+                          <span className="h-1.5 w-1.5 rounded-full bg-(--renki-warning) animate-pulse" />
                           {g.busy}
                         </span>
                       ) : null}
@@ -228,7 +228,7 @@ export function SessionList({
                   <button
                     onClick={() => setCreating({ repoId: g.repoId ?? undefined })}
                     title={`New session in ${g.name}`}
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-(--crc-fg-muted) opacity-0 transition-opacity group-hover/hdr:opacity-100 hover:bg-(--crc-hover) hover:text-(--crc-fg) focus-visible:opacity-100"
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-(--renki-fg-muted) opacity-0 transition-opacity group-hover/hdr:opacity-100 hover:bg-(--renki-hover) hover:text-(--renki-fg) focus-visible:opacity-100"
                   >
                     <span className="codicon codicon-add text-[12px]" />
                   </button>
@@ -250,21 +250,21 @@ export function SessionList({
             <div className="flex items-center">
               <button
                 onClick={() => setShowTrash((v) => !v)}
-                className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left hover:bg-(--crc-hover)"
+                className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-left hover:bg-(--renki-hover)"
               >
                 <span
-                  className={`codicon codicon-chevron-right text-[11px] text-(--crc-fg-muted) transition-transform duration-150 ${
+                  className={`codicon codicon-chevron-right text-[11px] text-(--renki-fg-muted) transition-transform duration-150 ${
                     showTrash ? "rotate-90" : ""
                   }`}
                 />
                 <Eyebrow>Trash</Eyebrow>
-                <span className="ml-auto text-[11px] text-(--crc-fg-muted)">{trashed.length}</span>
+                <span className="ml-auto text-[11px] text-(--renki-fg-muted)">{trashed.length}</span>
               </button>
               {showTrash && (
                 <button
                   onClick={emptyTrash}
                   title="Delete everything in the trash permanently"
-                  className="mr-1 shrink-0 rounded-md px-1.5 py-0.5 text-[11px] text-(--crc-fg-muted) hover:bg-(--crc-danger)/12 hover:text-(--crc-danger)"
+                  className="mr-1 shrink-0 rounded-md px-1.5 py-0.5 text-[11px] text-(--renki-fg-muted) hover:bg-(--renki-danger)/12 hover:text-(--renki-danger)"
                 >
                   Empty
                 </button>
@@ -289,15 +289,15 @@ export function SessionList({
           <div className="mt-4">
             <button
               onClick={() => setShowArchived((v) => !v)}
-              className="flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-left hover:bg-(--crc-hover)"
+              className="flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-left hover:bg-(--renki-hover)"
             >
               <span
-                className={`codicon codicon-chevron-right text-[11px] text-(--crc-fg-muted) transition-transform duration-150 ${
+                className={`codicon codicon-chevron-right text-[11px] text-(--renki-fg-muted) transition-transform duration-150 ${
                   showArchived ? "rotate-90" : ""
                 }`}
               />
               <Eyebrow>Archived</Eyebrow>
-              <span className="ml-auto text-[11px] text-(--crc-fg-muted)">{archived.length}</span>
+              <span className="ml-auto text-[11px] text-(--renki-fg-muted)">{archived.length}</span>
             </button>
             {showArchived && (
               <div className="space-y-px">
@@ -326,7 +326,7 @@ export function SessionList({
   );
 }
 
-const COLLAPSED_KEY = "crc.sidebar.collapsed";
+const COLLAPSED_KEY = "renki.sidebar.collapsed";
 
 function loadCollapsed(): Set<string> {
   try {
@@ -386,7 +386,7 @@ function Row({
   return (
     <div
       className={`group flex w-full items-center gap-1 rounded-lg py-1 pr-1 pl-2 transition-colors ${
-        selected ? "bg-(--crc-selected) text-(--crc-selected-fg)" : "hover:bg-(--crc-hover)"
+        selected ? "bg-(--renki-selected) text-(--renki-selected-fg)" : "hover:bg-(--renki-hover)"
       } ${session.status === "archived" || inTrash ? "opacity-70" : ""}`}
     >
       {renaming ? (
@@ -401,7 +401,7 @@ function Row({
               if (e.key === "Enter") e.currentTarget.blur();
               else if (e.key === "Escape") setRenaming(false);
             }}
-            className="crc-input px-2 py-1 text-sm"
+            className="renki-input px-2 py-1 text-sm"
           />
         </div>
       ) : (
@@ -411,19 +411,19 @@ function Row({
           title={branch ? `${session.repoName} · ${branch}` : session.repoName}
         >
           <SessionGlyph status={session.status} pendingPermission={session.hasPendingPermission} />
-          <span className="truncate text-[13px] text-(--crc-fg)">{session.title || session.repoName}</span>
+          <span className="truncate text-[13px] text-(--renki-fg)">{session.title || session.repoName}</span>
           {/* In the bin, the deadline is the only thing worth the row's spare
               space — the branch is still there, which is the point, but it
               isn't what you came to check. */}
           {inTrash && countdown ? (
-            <span className="ml-auto shrink-0 text-[10px] text-(--crc-fg-muted)">{countdown}</span>
+            <span className="ml-auto shrink-0 text-[10px] text-(--renki-fg-muted)">{countdown}</span>
           ) : (
             branch && (
-              <span className="ml-auto max-w-24 shrink-0 truncate font-mono text-[10px] text-(--crc-fg-muted)">{branch}</span>
+              <span className="ml-auto max-w-24 shrink-0 truncate font-mono text-[10px] text-(--renki-fg-muted)">{branch}</span>
             )
           )}
           {session.controller && (
-            <span className="codicon codicon-lock-small shrink-0 text-(--crc-fg-muted)" title="A device holds control" />
+            <span className="codicon codicon-lock-small shrink-0 text-(--renki-fg-muted)" title="A device holds control" />
           )}
         </button>
       )}
@@ -432,8 +432,8 @@ function Row({
         <button
           onClick={() => setMenuOpen((v) => !v)}
           title="Session actions"
-          className={`flex h-6 w-6 items-center justify-center rounded-md text-(--crc-fg-muted) hover:bg-(--crc-bg-inset) hover:text-(--crc-fg) ${
-            menuOpen ? "bg-(--crc-bg-inset) text-(--crc-fg)" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+          className={`flex h-6 w-6 items-center justify-center rounded-md text-(--renki-fg-muted) hover:bg-(--renki-bg-inset) hover:text-(--renki-fg) ${
+            menuOpen ? "bg-(--renki-bg-inset) text-(--renki-fg)" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
           }`}
         >
           <span className="codicon codicon-kebab-vertical" />
@@ -443,7 +443,7 @@ function Row({
           <>
             <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
             <div
-              className="crc-enter absolute top-full right-0 z-50 mt-1 w-44 overflow-hidden rounded-xl border border-(--crc-border) bg-(--crc-surface) p-1 text-sm shadow-(--crc-shadow-lg)"
+              className="renki-enter absolute top-full right-0 z-50 mt-1 w-44 overflow-hidden rounded-xl border border-(--renki-border) bg-(--renki-surface) p-1 text-sm shadow-(--renki-shadow-lg)"
               onClick={(e) => e.stopPropagation()}
             >
               {onRestore && (
@@ -452,7 +452,7 @@ function Row({
                     setMenuOpen(false);
                     onRestore();
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--crc-fg) hover:bg-(--crc-hover)"
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-fg) hover:bg-(--renki-hover)"
                 >
                   <span className="codicon codicon-history" /> Restore
                 </button>
@@ -463,7 +463,7 @@ function Row({
                     setMenuOpen(false);
                     onArchive();
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--crc-fg) hover:bg-(--crc-hover)"
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-fg) hover:bg-(--renki-hover)"
                 >
                   <span className="codicon codicon-archive" /> Archive
                 </button>
@@ -474,7 +474,7 @@ function Row({
                     setMenuOpen(false);
                     startRename();
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--crc-fg) hover:bg-(--crc-hover)"
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-fg) hover:bg-(--renki-hover)"
                 >
                   <span className="codicon codicon-edit" /> Edit title
                 </button>
@@ -485,7 +485,7 @@ function Row({
                     setMenuOpen(false);
                     onPurge();
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--crc-danger) hover:bg-(--crc-danger)/12"
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-danger) hover:bg-(--renki-danger)/12"
                 >
                   <span className="codicon codicon-trash" /> Delete permanently
                 </button>
@@ -495,7 +495,7 @@ function Row({
                     setMenuOpen(false);
                     onDelete();
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--crc-danger) hover:bg-(--crc-danger)/12"
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-danger) hover:bg-(--renki-danger)/12"
                 >
                   <span className="codicon codicon-trash" /> Delete
                 </button>

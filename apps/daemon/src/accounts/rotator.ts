@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { Account, AccountsResponse, RotationStatus, SwitchAccountResponse } from "@crc/protocol";
+import type { Account, AccountsResponse, RotationStatus, SwitchAccountResponse } from "@renki/protocol";
 import type { Config } from "../config.js";
 import { logger } from "../logger.js";
 import type { SessionManager } from "../sessions/manager.js";

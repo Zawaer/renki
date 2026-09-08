@@ -73,10 +73,10 @@ describe("REST: auth", () => {
     expect((await fetch(`${base}/repos`, { headers: { authorization: "Bearer wrong" } })).status).toBe(401);
   });
 
-  it("accepts the configured token via Bearer, x-crc-token, or ?token=", async () => {
+  it("accepts the configured token via Bearer, x-renki-token, or ?token=", async () => {
     const { base, config } = await startServer();
     expect((await fetch(`${base}/repos`, { headers: { authorization: `Bearer ${config.authToken}` } })).status).toBe(200);
-    expect((await fetch(`${base}/repos`, { headers: { "x-crc-token": config.authToken } })).status).toBe(200);
+    expect((await fetch(`${base}/repos`, { headers: { "x-renki-token": config.authToken } })).status).toBe(200);
     expect((await fetch(`${base}/repos?token=${config.authToken}`)).status).toBe(200);
   });
 });

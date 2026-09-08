@@ -7,12 +7,12 @@
 # files.
 #
 # The block below is for a reverse proxy running in its own container that
-# needs to reach crc-daemon / crc-web by name.
+# needs to reach renki-daemon / renki-web by name.
 #
 # Set the network name below to whatever your reverse proxy container is
 # already attached to (`docker inspect <proxy-container> --format
 # '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'` will show it),
-# then point its site config at `crc-daemon:4517` / `crc-web:80` instead of
+# then point its site config at `renki-daemon:4517` / `renki-web:80` instead of
 # `127.0.0.1:...`. See SETUP.md § Advanced networking for the full writeup.
 #
 # daemon and web never talk to each other over Docker networking (the
@@ -32,7 +32,7 @@ services:
     #   # directory (not the host-style ~/.local/bin) is the one the Dockerfile
     #   # already adds to PATH, so the *rewritten* Bash commands RTK's hook
     #   # produces (which just say bare `rtk ...`) can actually find it, not
-    #   # only the daemon's own hook invocation (which uses CRC_RTK_BIN's
+    #   # only the daemon's own hook invocation (which uses RENKI_RTK_BIN's
     #   # absolute path directly and would work regardless of PATH).
     #   # Let sessions push to GitHub (and use `gh` for PRs/issues). The
     #   # container has no GitHub login of its own, so a session can commit but

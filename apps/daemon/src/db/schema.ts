@@ -53,7 +53,7 @@ export const sessions = sqliteTable("sessions", {
    * come back archived, not idle with a worktree that no longer exists.
    */
   trashedFrom: text("trashed_from"),
-  /** "normal" or "merge_conflict" — see MergeConflictMeta in @crc/protocol. */
+  /** "normal" or "merge_conflict" — see MergeConflictMeta in @renki/protocol. */
   purpose: text("purpose").notNull().default("normal"),
   /** JSON-encoded MergeConflictMeta, only set when purpose = "merge_conflict". */
   mergeMeta: text("merge_meta"),

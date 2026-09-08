@@ -29,8 +29,8 @@ import {
   type TimelineItem,
   type TodoItemView,
   type TurnView,
-} from "@crc/client-core";
-import type { CapabilitiesResponse } from "@crc/protocol";
+} from "@renki/client-core";
+import type { CapabilitiesResponse } from "@renki/protocol";
 import { useEffect, useRef, useState, Fragment } from "react";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { hostOpenFile, isHosted } from "../lib/host.js";
@@ -120,7 +120,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
       <div className="flex shrink-0 items-center justify-between gap-3 px-6 py-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2.5">
-            <span className="truncate text-[15px] font-medium tracking-tight text-(--crc-fg)">
+            <span className="truncate text-[15px] font-medium tracking-tight text-(--renki-fg)">
               {conv.repoName ?? "…"}
             </span>
             <StatusBadge
@@ -129,7 +129,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
             />
           </div>
           {displayBranch(conv.branch) && (
-            <div className="mt-0.5 flex items-center gap-1.5 text-xs text-(--crc-fg-muted)">
+            <div className="mt-0.5 flex items-center gap-1.5 text-xs text-(--renki-fg-muted)">
               <span className="codicon codicon-git-branch text-[11px]" />
               <span className="truncate font-mono">
                 {displayBranch(conv.branch)}
@@ -142,8 +142,8 @@ export function SessionView({ sessionId }: { sessionId: string }) {
           <span
             className={`inline-flex items-center gap-1.5 text-xs font-medium ${
               conv.controller && isController
-                ? "text-(--crc-success)"
-                : "text-(--crc-fg-muted)"
+                ? "text-(--renki-success)"
+                : "text-(--renki-fg-muted)"
             }`}
           >
             <span
@@ -170,9 +170,9 @@ export function SessionView({ sessionId }: { sessionId: string }) {
           transcript below is still whole — that's what the bin is for — so it
           stays readable rather than being blocked behind the notice. */}
       {status === "trashed" && (
-        <div className="mx-6 mb-2 flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-(--crc-border) bg-(--crc-bg-inset)/60 px-3.5 py-2.5 text-xs text-(--crc-fg-muted)">
+        <div className="mx-6 mb-2 flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-(--renki-border) bg-(--renki-bg-inset)/60 px-3.5 py-2.5 text-xs text-(--renki-fg-muted)">
           <span className="codicon codicon-trash text-[13px]" />
-          <span className="font-medium text-(--crc-fg)">This session is in the trash</span>
+          <span className="font-medium text-(--renki-fg)">This session is in the trash</span>
           {formatPurgeCountdown(purgeAt) && <span>· {formatPurgeCountdown(purgeAt)}</span>}
           <span>· its worktree and branch are already gone</span>
           <Button
@@ -211,14 +211,14 @@ export function SessionView({ sessionId }: { sessionId: string }) {
           )}
           {conv.status !== null && conv.timeline.length === 0 && (
             <div className="flex flex-col items-center gap-3 py-24 text-center">
-              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-(--crc-surface) text-(--crc-fg-muted) shadow-(--crc-shadow-sm)">
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-(--renki-surface) text-(--renki-fg-muted) shadow-(--renki-shadow-sm)">
                 <span className="codicon codicon-sparkle text-xl" />
               </span>
               <div>
-                <div className="text-sm font-medium text-(--crc-fg)">
+                <div className="text-sm font-medium text-(--renki-fg)">
                   Nothing here yet
                 </div>
-                <div className="mt-1 text-xs text-(--crc-fg-muted)">
+                <div className="mt-1 text-xs text-(--renki-fg-muted)">
                   {status === "trashed"
                     ? "This session was deleted before it ran anything."
                     : status === "archived"
@@ -238,11 +238,11 @@ export function SessionView({ sessionId }: { sessionId: string }) {
           <div className="pointer-events-none sticky bottom-4 flex h-0 items-end justify-center">
             <button
               onClick={jumpToLatest}
-              className="crc-enter pointer-events-auto inline-flex items-center gap-1.5 rounded-full bg-(--crc-surface) px-3 py-1.5 text-xs font-medium text-(--crc-fg) shadow-(--crc-shadow-md) transition-colors hover:bg-(--crc-hover)"
+              className="renki-enter pointer-events-auto inline-flex items-center gap-1.5 rounded-full bg-(--renki-surface) px-3 py-1.5 text-xs font-medium text-(--renki-fg) shadow-(--renki-shadow-md) transition-colors hover:bg-(--renki-hover)"
             >
               {status === "busy" ? (
                 <>
-                  <span className="h-1.5 w-1.5 rounded-full bg-(--crc-warning) animate-pulse" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-(--renki-warning) animate-pulse" />
                   Claude is writing
                 </>
               ) : (
@@ -284,7 +284,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
       {conv.queuedPrompts.length > 0 && (
         <div className="px-6 pb-2">
           <div className="mx-auto w-full max-w-3xl space-y-1">
-            <div className="text-[11px] text-(--crc-fg-muted)">
+            <div className="text-[11px] text-(--renki-fg-muted)">
               {conv.queuedPrompts.length === 1
                 ? "1 message queued"
                 : `${conv.queuedPrompts.length} messages queued`}{" "}
@@ -293,7 +293,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
             {conv.queuedPrompts.map((q) => (
               <div
                 key={q.promptId}
-                className="flex items-center gap-1.5 truncate text-xs text-(--crc-fg-muted)"
+                className="flex items-center gap-1.5 truncate text-xs text-(--renki-fg-muted)"
               >
                 <span className="codicon codicon-history shrink-0" />
                 <span className="truncate">{q.text}</span>
@@ -326,16 +326,16 @@ export function SessionView({ sessionId }: { sessionId: string }) {
 function TimelineRow({ item }: { item: TimelineItem }) {
   if (item.type === "prompt") {
     return (
-      <div className="crc-enter group flex items-center justify-end gap-1">
+      <div className="renki-enter group flex items-center justify-end gap-1">
         {item.text && <CopyButton text={item.text} label="Copy message" />}
-        <div className="max-w-[85%] rounded-2xl bg-(--crc-surface) px-4 py-3">
+        <div className="max-w-[85%] rounded-2xl bg-(--renki-surface) px-4 py-3">
           {/* A pasted brief can be longer than the reply it asks for; clipping
               it keeps the answer on screen, and it's your own text — you know
               what it says. The copy button the wrapper adds is redundant with
               the one beside the bubble, so it's suppressed here. */}
           {item.text && (
             <Collapsible text={item.text} collapseLines={14} moreLabel="Show full message" hideCopy>
-              <div className="whitespace-pre-wrap text-[14px] leading-relaxed text-(--crc-fg)">
+              <div className="whitespace-pre-wrap text-[14px] leading-relaxed text-(--renki-fg)">
                 {item.text}
               </div>
             </Collapsible>
@@ -359,8 +359,8 @@ function TimelineRow({ item }: { item: TimelineItem }) {
         <span
           className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${
             item.level === "warn"
-              ? "border-(--crc-warning)/30 bg-(--crc-warning)/10 text-(--crc-warning)"
-              : "border-(--crc-border) bg-(--crc-surface) text-(--crc-fg-muted)"
+              ? "border-(--renki-warning)/30 bg-(--renki-warning)/10 text-(--renki-warning)"
+              : "border-(--renki-border) bg-(--renki-surface) text-(--renki-fg-muted)"
           }`}
         >
           <span
@@ -387,10 +387,10 @@ function TimelineRow({ item }: { item: TimelineItem }) {
  */
 function ModelChangeMarker({ model }: { model: string | null }) {
   return (
-    <div className="flex items-center gap-3 py-1 text-[11.5px] text-(--crc-fg-muted)">
-      <span className="h-px flex-1 bg-(--crc-border)" />
+    <div className="flex items-center gap-3 py-1 text-[11.5px] text-(--renki-fg-muted)">
+      <span className="h-px flex-1 bg-(--renki-border)" />
       <span className="shrink-0">Switched to {model ?? "the default model"}</span>
-      <span className="h-px flex-1 bg-(--crc-border)" />
+      <span className="h-px flex-1 bg-(--renki-border)" />
     </div>
   );
 }
@@ -401,7 +401,7 @@ function ModelChangeMarker({ model }: { model: string | null }) {
  */
 function ContextMeter({ context }: { context: ContextUsageView }) {
   const pct = Math.max(0, Math.min(100, Math.round(context.percentage)));
-  const tone = pct >= 90 ? "bg-(--crc-danger)" : pct >= 70 ? "bg-(--crc-warning)" : "bg-(--crc-accent)";
+  const tone = pct >= 90 ? "bg-(--renki-danger)" : pct >= 70 ? "bg-(--renki-warning)" : "bg-(--renki-accent)";
   return (
     <span
       className="hidden items-center gap-2 md:inline-flex"
@@ -409,10 +409,10 @@ function ContextMeter({ context }: { context: ContextUsageView }) {
         context.autoCompact ? " · Claude compacts the conversation automatically as this fills" : ""
       }`}
     >
-      <span className="block h-1.5 w-16 overflow-hidden rounded-full bg-(--crc-bg-inset)">
+      <span className="block h-1.5 w-16 overflow-hidden rounded-full bg-(--renki-bg-inset)">
         <span className={`block h-full rounded-full transition-[width] duration-500 ${tone}`} style={{ width: `${pct}%` }} />
       </span>
-      <span className="text-[11px] tabular-nums text-(--crc-fg-muted)">{pct}%</span>
+      <span className="text-[11px] tabular-nums text-(--renki-fg-muted)">{pct}%</span>
     </span>
   );
 }
@@ -438,8 +438,8 @@ function TurnDetails({ turn }: { turn: TurnView }) {
       <span className="grid grid-cols-[auto_auto] gap-x-3 gap-y-0.5">
         {rows.map(([label, value]) => (
           <Fragment key={label}>
-            <span className="text-(--crc-fg-muted)">{label}</span>
-            <span className="text-right tabular-nums text-(--crc-fg)">{value}</span>
+            <span className="text-(--renki-fg-muted)">{label}</span>
+            <span className="text-right tabular-nums text-(--renki-fg)">{value}</span>
           </Fragment>
         ))}
       </span>
@@ -459,10 +459,10 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
   const steeredAfter = (index: number) =>
     turn.steeredPrompts.filter((p) => p.afterBlockIndex === index);
   return (
-    <div className="crc-enter group space-y-3">
+    <div className="renki-enter group space-y-3">
       {label && (
-        <div className="flex items-center gap-1.5 text-[11px] font-medium text-(--crc-fg-muted)">
-          <span className="flex h-5 w-5 items-center justify-center rounded-md bg-(--crc-surface) ring-1 ring-(--crc-border) ring-inset">
+        <div className="flex items-center gap-1.5 text-[11px] font-medium text-(--renki-fg-muted)">
+          <span className="flex h-5 w-5 items-center justify-center rounded-md bg-(--renki-surface) ring-1 ring-(--renki-border) ring-inset">
             <span className="codicon codicon-rocket text-[11px]" />
           </span>
           {label}
@@ -479,7 +479,7 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
           {/* Prose fades word by word inside Markdown, so only non-text blocks
               (tool rows, diffs) get the block-level fade — otherwise the two
               animations would stack on the same text. */}
-          <div className={turn.status === "running" && blk.kind === "tool_use" ? "crc-stream-in" : undefined}>
+          <div className={turn.status === "running" && blk.kind === "tool_use" ? "renki-stream-in" : undefined}>
             <Block block={blk} turnRunning={turn.status === "running"} />
           </div>
           {steeredAfter(i).map((p) => (
@@ -488,13 +488,13 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
         </Fragment>
       ))}
       {turn.status === "running" && (
-        <div className="flex items-center gap-2 text-xs text-(--crc-fg-muted)">
+        <div className="flex items-center gap-2 text-xs text-(--renki-fg-muted)">
           <span className="codicon codicon-loading codicon-modifier-spin" />
           Working…
         </div>
       )}
       {(turn.status !== "running" || replyText) && (
-        <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11.5px] text-(--crc-fg-muted)">
+        <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11.5px] text-(--renki-fg-muted)">
           {turn.status === "done" && (
             <>
               <span>{formatTurnDuration(turn.durationMs ?? 0)}</span>
@@ -521,12 +521,12 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
         </div>
       )}
       {turn.status === "error" && turn.interrupted && (
-        <div className="flex items-center gap-1.5 text-xs text-(--crc-fg-muted)">
+        <div className="flex items-center gap-1.5 text-xs text-(--renki-fg-muted)">
           <span className="codicon codicon-debug-stop" /> Stopped
         </div>
       )}
       {turn.status === "error" && !turn.interrupted && (
-        <div className="flex items-center gap-1.5 rounded-lg border border-(--crc-danger)/30 bg-(--crc-danger)/10 px-3 py-2 text-xs text-(--crc-danger)">
+        <div className="flex items-center gap-1.5 rounded-lg border border-(--renki-danger)/30 bg-(--renki-danger)/10 px-3 py-2 text-xs text-(--renki-danger)">
           <span className="codicon codicon-error" /> Turn failed:{" "}
           {turn.errorMessage}
         </div>
@@ -538,11 +538,11 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
 /** A prompt the controller sent while this turn was already running — shown inside the turn, where Claude picked it up. */
 function SteeredPrompt({ prompt }: { prompt: SteeredPromptView }) {
   return (
-    <div className="crc-enter group flex items-center justify-end gap-1" data-testid="steered-prompt">
+    <div className="renki-enter group flex items-center justify-end gap-1" data-testid="steered-prompt">
       {prompt.text && <CopyButton text={prompt.text} label="Copy message" />}
-      <div className="max-w-[85%] rounded-2xl bg-(--crc-surface) px-4 py-3">
+      <div className="max-w-[85%] rounded-2xl bg-(--renki-surface) px-4 py-3">
         {prompt.text && (
-          <div className="whitespace-pre-wrap text-[14px] leading-relaxed text-(--crc-fg)">
+          <div className="whitespace-pre-wrap text-[14px] leading-relaxed text-(--renki-fg)">
             {prompt.text}
           </div>
         )}
@@ -555,7 +555,7 @@ function SteeredPrompt({ prompt }: { prompt: SteeredPromptView }) {
             ))}
           </div>
         )}
-        <div className="mt-1.5 flex items-center gap-1 text-[11px] text-(--crc-fg-muted)">
+        <div className="mt-1.5 flex items-center gap-1 text-[11px] text-(--renki-fg-muted)">
           <span className="codicon codicon-debug-step-into text-[11px]" /> Sent
           while Claude was working — picked up mid-turn
         </div>
@@ -607,10 +607,10 @@ function Block({
 /** The outcome glyph at the right of a step row. */
 function Outcome({ kind, label }: { kind: "done" | "failed" | "running" | "stopped"; label?: string }) {
   const map = {
-    done: { icon: "codicon-check", tone: "text-(--crc-success)", title: "Finished" },
-    failed: { icon: "codicon-close", tone: "text-(--crc-danger)", title: "Failed" },
-    running: { icon: "codicon-loading codicon-modifier-spin", tone: "text-(--crc-fg-muted)", title: "Running" },
-    stopped: { icon: "codicon-primitive-square", tone: "text-(--crc-fg-muted)", title: "Stopped" },
+    done: { icon: "codicon-check", tone: "text-(--renki-success)", title: "Finished" },
+    failed: { icon: "codicon-close", tone: "text-(--renki-danger)", title: "Failed" },
+    running: { icon: "codicon-loading codicon-modifier-spin", tone: "text-(--renki-fg-muted)", title: "Running" },
+    stopped: { icon: "codicon-primitive-square", tone: "text-(--renki-fg-muted)", title: "Stopped" },
   } as const;
   const m = map[kind];
   return (
@@ -693,9 +693,9 @@ function ToolStep({
           userToggled.current = true;
           setOpen((o) => !o);
         }}
-        className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 py-1 text-left text-[13px] text-(--crc-fg-muted) transition-colors hover:bg-(--crc-surface)/60 hover:text-(--crc-fg)"
+        className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 py-1 text-left text-[13px] text-(--renki-fg-muted) transition-colors hover:bg-(--renki-surface)/60 hover:text-(--renki-fg)"
       >
-        <span className="text-(--crc-fg)">{label}</span>
+        <span className="text-(--renki-fg)">{label}</span>
         {meta && <span className="truncate font-mono text-xs">{meta}</span>}
         <span
           className={`codicon ${open ? "codicon-chevron-down" : "codicon-chevron-right"} shrink-0 text-[12px]`}
@@ -707,7 +707,7 @@ function ToolStep({
               e.stopPropagation();
               hostOpenFile(filePath);
             }}
-            className="truncate text-xs text-(--crc-link) hover:underline"
+            className="truncate text-xs text-(--renki-link) hover:underline"
             title={`Open ${filePath} in editor`}
           >
             open
@@ -720,18 +720,18 @@ function ToolStep({
         )}
       </button>
       {open && (
-        <div className="mt-2 space-y-2 rounded-xl border border-(--crc-border)/70 p-3 text-xs">
-          <div className="text-[13px] text-(--crc-fg)">{block.toolName}</div>
+        <div className="mt-2 space-y-2 rounded-xl border border-(--renki-border)/70 p-3 text-xs">
+          <div className="text-[13px] text-(--renki-fg)">{block.toolName}</div>
           {editView ? (
-            <div className="overflow-hidden rounded-lg bg-(--crc-bg-inset)/70">
+            <div className="overflow-hidden rounded-lg bg-(--renki-bg-inset)/70">
               <DiffView view={editView} />
             </div>
           ) : todos ? (
-            <div className="rounded-lg bg-(--crc-bg-inset)/70">
+            <div className="rounded-lg bg-(--renki-bg-inset)/70">
               <TodoChecklist todos={todos} />
             </div>
           ) : plan ? (
-            <div className="rounded-lg bg-(--crc-bg-inset)/70 px-3 py-2">
+            <div className="rounded-lg bg-(--renki-bg-inset)/70 px-3 py-2">
               <Markdown content={plan} />
             </div>
           ) : command ? (
@@ -742,7 +742,7 @@ function ToolStep({
           {block.result && block.result.summary && !isAgent && (
             <pre
               className={`max-h-72 overflow-auto font-mono leading-relaxed break-words whitespace-pre-wrap ${
-                block.result.ok ? "text-(--crc-fg-muted)" : "text-(--crc-danger)"
+                block.result.ok ? "text-(--renki-fg-muted)" : "text-(--renki-danger)"
               }`}
             >
               {block.result.ok ? "" : "error: "}
@@ -752,14 +752,14 @@ function ToolStep({
           {block.subagent && <SubagentActivity subagent={block.subagent} />}
           {block.backgroundTask &&
             !block.subagent?.blocks.some((b) => b.kind === "text") && (
-              <div className="flex items-start gap-1.5 text-(--crc-fg-muted)">
+              <div className="flex items-start gap-1.5 text-(--renki-fg-muted)">
                 <span
                   className={`codicon mt-0.5 ${
                     block.backgroundTask.status === "completed"
-                      ? "codicon-pass-filled text-(--crc-success)"
+                      ? "codicon-pass-filled text-(--renki-success)"
                       : block.backgroundTask.status === "stopped"
                         ? "codicon-debug-stop"
-                        : "codicon-error text-(--crc-danger)"
+                        : "codicon-error text-(--renki-danger)"
                   }`}
                 />
                 <span>{truncate(block.backgroundTask.summary, 800)}</span>
@@ -774,9 +774,9 @@ function ToolStep({
 /** A Task call's own nested activity, live-streamed via the Agent SDK's forwardSubagentText — the agent's own steps, indented under its row. */
 function SubagentActivity({ subagent }: { subagent: SubagentView }) {
   return (
-    <div className="ml-1 space-y-1 border-l border-(--crc-border)/60 pl-3">
+    <div className="ml-1 space-y-1 border-l border-(--renki-border)/60 pl-3">
       {subagent.taskDescription && (
-        <div className="text-[12px] text-(--crc-fg-muted)">
+        <div className="text-[12px] text-(--renki-fg-muted)">
           {subagent.subagentType ?? "Subagent"} — {subagent.taskDescription}
         </div>
       )}
@@ -804,7 +804,7 @@ function DiffView({ view }: { view: EditToolView }) {
           <div
             key={hi}
             className={
-              hi > 0 ? "border-t border-dashed border-(--crc-border)/60" : ""
+              hi > 0 ? "border-t border-dashed border-(--renki-border)/60" : ""
             }
           >
             {lines.map((line, li) => (
@@ -812,10 +812,10 @@ function DiffView({ view }: { view: EditToolView }) {
                 key={li}
                 className={`whitespace-pre px-3 py-px leading-5 ${
                   line.type === "add"
-                    ? "bg-(--crc-success)/12 text-(--crc-success)"
+                    ? "bg-(--renki-success)/12 text-(--renki-success)"
                     : line.type === "del"
-                      ? "bg-(--crc-danger)/12 text-(--crc-danger)"
-                      : "text-(--crc-fg-muted)"
+                      ? "bg-(--renki-danger)/12 text-(--renki-danger)"
+                      : "text-(--renki-fg-muted)"
                 }`}
               >
                 {line.type === "add" ? "+ " : line.type === "del" ? "- " : "  "}
@@ -826,7 +826,7 @@ function DiffView({ view }: { view: EditToolView }) {
         );
       })}
       {totalLines > MAX_DIFF_LINES_SHOWN && (
-        <div className="px-3 py-1 text-(--crc-fg-muted)">
+        <div className="px-3 py-1 text-(--renki-fg-muted)">
           … {totalLines - MAX_DIFF_LINES_SHOWN} more lines
         </div>
       )}
@@ -842,19 +842,19 @@ function TodoChecklist({ todos }: { todos: TodoItemView[] }) {
           <span
             className={`codicon mt-0.5 shrink-0 ${
               t.status === "completed"
-                ? "codicon-pass-filled text-(--crc-success)"
+                ? "codicon-pass-filled text-(--renki-success)"
                 : t.status === "in_progress"
-                  ? "codicon-sync codicon-modifier-spin text-(--crc-warning)"
-                  : "codicon-circle-large-outline text-(--crc-fg-muted)"
+                  ? "codicon-sync codicon-modifier-spin text-(--renki-warning)"
+                  : "codicon-circle-large-outline text-(--renki-fg-muted)"
             }`}
           />
           <span
             className={
               t.status === "completed"
-                ? "text-(--crc-fg-muted) line-through"
+                ? "text-(--renki-fg-muted) line-through"
                 : t.status === "in_progress"
-                  ? "font-medium text-(--crc-fg)"
-                  : "text-(--crc-fg)"
+                  ? "font-medium text-(--renki-fg)"
+                  : "text-(--renki-fg)"
             }
           >
             {t.status === "in_progress" && t.activeForm
@@ -879,11 +879,11 @@ function ThinkingBlock({
   const estimatedTokens = estimateTokens(block.text);
 
   return (
-    <div className="border-l-2 border-(--crc-border) pl-3.5">
-      <div className="mb-1 flex items-center gap-1.5 text-xs text-(--crc-fg-muted)">
+    <div className="border-l-2 border-(--renki-border) pl-3.5">
+      <div className="mb-1 flex items-center gap-1.5 text-xs text-(--renki-fg-muted)">
         {live ? (
           <>
-            <span className="codicon codicon-loading codicon-modifier-spin text-(--crc-accent)" />
+            <span className="codicon codicon-loading codicon-modifier-spin text-(--renki-accent)" />
             <span>
               {verb}… {elapsedSeconds != null && `· ${elapsedSeconds}s `}
               {estimatedTokens > 0 &&
@@ -1008,10 +1008,10 @@ function PermissionCard({
   }
 
   return (
-    <div className="crc-enter crc-alarm rounded-2xl bg-(--crc-surface) px-4 py-3 shadow-(--crc-shadow-alarm)">
-      <div className="flex items-center gap-3 text-sm text-(--crc-fg)">
+    <div className="renki-enter renki-alarm rounded-2xl bg-(--renki-surface) px-4 py-3 shadow-(--renki-shadow-alarm)">
+      <div className="flex items-center gap-3 text-sm text-(--renki-fg)">
         <span
-          className={`codicon ${plan != null ? "codicon-checklist text-(--crc-warning)" : "codicon-shield text-(--crc-danger)"} shrink-0 text-[15px]`}
+          className={`codicon ${plan != null ? "codicon-checklist text-(--renki-warning)" : "codicon-shield text-(--renki-danger)"} shrink-0 text-[15px]`}
         />
         {plan != null ? (
           <span className="font-medium">Plan ready for review</span>
@@ -1020,23 +1020,23 @@ function PermissionCard({
             <span className="font-medium">
               {permissionTitle(perm.toolName)}
             </span>
-            <span className="text-(--crc-fg-muted)">·</span>
-            <span className="font-mono text-xs text-(--crc-fg-muted)">
+            <span className="text-(--renki-fg-muted)">·</span>
+            <span className="font-mono text-xs text-(--renki-fg-muted)">
               {perm.toolName}
             </span>
           </span>
         )}
       </div>
       {plan != null ? (
-        <div className="mt-2 max-h-64 overflow-auto rounded-lg bg-(--crc-surface) p-2 text-xs">
+        <div className="mt-2 max-h-64 overflow-auto rounded-lg bg-(--renki-surface) p-2 text-xs">
           <Markdown content={plan} />
         </div>
       ) : editView ? (
-        <div className="mt-1 max-h-64 overflow-auto rounded-lg bg-(--crc-surface) text-xs">
+        <div className="mt-1 max-h-64 overflow-auto rounded-lg bg-(--renki-surface) text-xs">
           <DiffView view={editView} />
         </div>
       ) : todos ? (
-        <div className="mt-1 max-h-48 overflow-auto rounded-lg bg-(--crc-surface) text-xs">
+        <div className="mt-1 max-h-48 overflow-auto rounded-lg bg-(--renki-surface) text-xs">
           <TodoChecklist todos={todos} />
         </div>
       ) : (
@@ -1060,7 +1060,7 @@ function PermissionCard({
           </Button>
         </div>
       ) : (
-        <div className="mt-2 text-xs text-(--crc-fg-muted)">
+        <div className="mt-2 text-xs text-(--renki-fg-muted)">
           Only the controller can respond.
         </div>
       )}
@@ -1142,17 +1142,17 @@ function AskUserQuestionCard({
   }
 
   return (
-    <div className="rounded-sm border-l-2 border-(--crc-warning) bg-(--crc-warning)/10 p-3">
+    <div className="rounded-sm border-l-2 border-(--renki-warning) bg-(--renki-warning)/10 p-3">
       {view.questions.length > 1 && (
-        <div className="mb-2 flex items-center gap-3 border-b border-(--crc-border) text-xs">
+        <div className="mb-2 flex items-center gap-3 border-b border-(--renki-border) text-xs">
           {view.questions.map((q, i) => (
             <button
               key={q.header + i}
               onClick={() => setActiveIndex(i)}
               className={`-mb-px border-b-2 pb-1.5 ${
                 i === activeIndex
-                  ? "border-(--crc-warning) text-(--crc-fg)"
-                  : "border-transparent text-(--crc-fg-muted) hover:text-(--crc-fg)"
+                  ? "border-(--renki-warning) text-(--renki-fg)"
+                  : "border-transparent text-(--renki-fg-muted) hover:text-(--renki-fg)"
               }`}
             >
               {q.header}
@@ -1160,7 +1160,7 @@ function AskUserQuestionCard({
           ))}
         </div>
       )}
-      <p className="text-sm text-(--crc-fg)">{question.question}</p>
+      <p className="text-sm text-(--renki-fg)">{question.question}</p>
       <div className="mt-2 space-y-1.5 text-xs">
         {question.options.map((opt) => {
           const isSelected = activeSelected.includes(opt.label);
@@ -1171,12 +1171,12 @@ function AskUserQuestionCard({
               onClick={() => toggleOption(opt.label)}
               className={`w-full rounded-sm border px-3 py-2 text-left transition disabled:cursor-not-allowed ${
                 isSelected
-                  ? "border-(--crc-warning) bg-(--crc-bg-elevated)"
-                  : "border-(--crc-border) bg-(--crc-bg-elevated)/40 hover:bg-(--crc-bg-elevated)"
+                  ? "border-(--renki-warning) bg-(--renki-bg-elevated)"
+                  : "border-(--renki-border) bg-(--renki-bg-elevated)/40 hover:bg-(--renki-bg-elevated)"
               }`}
             >
-              <div className="font-medium text-(--crc-fg)">{opt.label}</div>
-              <div className="text-(--crc-fg-muted)">{opt.description}</div>
+              <div className="font-medium text-(--renki-fg)">{opt.label}</div>
+              <div className="text-(--renki-fg-muted)">{opt.description}</div>
             </button>
           );
         })}
@@ -1185,11 +1185,11 @@ function AskUserQuestionCard({
           onClick={() => toggleOption(OTHER_OPTION)}
           className={`w-full rounded-sm border px-3 py-2 text-left transition disabled:cursor-not-allowed ${
             activeSelected.includes(OTHER_OPTION)
-              ? "border-(--crc-warning) bg-(--crc-bg-elevated)"
-              : "border-(--crc-border) bg-(--crc-bg-elevated)/40 hover:bg-(--crc-bg-elevated)"
+              ? "border-(--renki-warning) bg-(--renki-bg-elevated)"
+              : "border-(--renki-border) bg-(--renki-bg-elevated)/40 hover:bg-(--renki-bg-elevated)"
           }`}
         >
-          <div className="font-medium text-(--crc-fg)">Other</div>
+          <div className="font-medium text-(--renki-fg)">Other</div>
         </button>
         {activeSelected.includes(OTHER_OPTION) && (
           <input
@@ -1204,7 +1204,7 @@ function AskUserQuestionCard({
               })
             }
             placeholder="Type your answer…"
-            className="w-full rounded-sm border border-(--crc-border) bg-(--crc-bg) px-2 py-1.5 text-(--crc-fg)"
+            className="w-full rounded-sm border border-(--renki-border) bg-(--renki-bg) px-2 py-1.5 text-(--renki-fg)"
           />
         )}
       </div>
@@ -1217,10 +1217,10 @@ function AskUserQuestionCard({
           >
             <span className="codicon codicon-check" /> Submit answers
           </Button>
-          <span className="text-xs text-(--crc-fg-muted)">Esc to cancel</span>
+          <span className="text-xs text-(--renki-fg-muted)">Esc to cancel</span>
         </div>
       ) : (
-        <div className="mt-2 text-xs text-(--crc-fg-muted)">
+        <div className="mt-2 text-xs text-(--renki-fg-muted)">
           Only the controller can respond.
         </div>
       )}
@@ -1272,7 +1272,7 @@ function AttachmentChip({
   return (
     <>
       <div
-        className={`flex items-center gap-1.5 rounded-xl border border-(--crc-border) bg-(--crc-surface) py-1 pl-1 pr-2 text-xs ${isImage ? "cursor-pointer" : ""}`}
+        className={`flex items-center gap-1.5 rounded-xl border border-(--renki-border) bg-(--renki-surface) py-1 pl-1 pr-2 text-xs ${isImage ? "cursor-pointer" : ""}`}
         onClick={isImage ? () => setPreviewing(true) : undefined}
       >
         {isImage ? (
@@ -1282,10 +1282,10 @@ function AttachmentChip({
             className="h-6 w-6 rounded-sm object-cover"
           />
         ) : (
-          <span className="codicon codicon-file text-(--crc-fg-muted)" />
+          <span className="codicon codicon-file text-(--renki-fg-muted)" />
         )}
         <span
-          className="max-w-40 truncate text-(--crc-fg)"
+          className="max-w-40 truncate text-(--renki-fg)"
           title={attachment.name}
         >
           {attachment.name}
@@ -1296,7 +1296,7 @@ function AttachmentChip({
               e.stopPropagation();
               onRemove();
             }}
-            className="text-(--crc-fg-muted) hover:text-(--crc-danger)"
+            className="text-(--renki-fg-muted) hover:text-(--renki-danger)"
             title="Remove"
           >
             <span className="codicon codicon-close" />
@@ -1564,12 +1564,12 @@ function Composer({
   const menuPanel = (align: "start" | "end") =>
     openMenu ? (
       <div
-        className={`crc-enter absolute bottom-full z-50 mb-2 max-h-80 w-80 overflow-y-auto rounded-xl bg-(--crc-surface) p-1 text-xs shadow-(--crc-shadow-lg) ${
+        className={`renki-enter absolute bottom-full z-50 mb-2 max-h-80 w-80 overflow-y-auto rounded-xl bg-(--renki-surface) p-1 text-xs shadow-(--renki-shadow-lg) ${
           align === "end" ? "right-0" : "left-0"
         }`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-3 pt-2 pb-1.5 text-[11px] font-medium text-(--crc-fg-muted)">
+        <div className="px-3 pt-2 pb-1.5 text-[11px] font-medium text-(--renki-fg-muted)">
           {openMenu === "model"
             ? "Select a model"
             : openMenu === "effort"
@@ -1585,28 +1585,28 @@ function Composer({
                     setModel(m.value);
                     setOpenMenu(null);
                   }}
-                  className="flex w-full items-start justify-between gap-2 rounded-lg px-3 py-2 text-left hover:bg-(--crc-hover)"
+                  className="flex w-full items-start justify-between gap-2 rounded-lg px-3 py-2 text-left hover:bg-(--renki-hover)"
                 >
                   <div className="min-w-0">
-                    <div className="truncate font-medium text-(--crc-fg)">
+                    <div className="truncate font-medium text-(--renki-fg)">
                       {m.displayName}
                     </div>
                     {m.description && (
-                      <div className="truncate text-(--crc-fg-muted)">
+                      <div className="truncate text-(--renki-fg-muted)">
                         {m.description}
                       </div>
                     )}
                   </div>
                   {m.value === model && (
-                    <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />
+                    <span className="codicon codicon-check shrink-0 text-(--renki-fg)" />
                   )}
                 </button>
               )),
               <div
                 key="custom"
-                className="mt-1 border-t border-(--crc-border)/60 p-2"
+                className="mt-1 border-t border-(--renki-border)/60 p-2"
               >
-                <div className="mb-1 text-(--crc-fg-muted)">
+                <div className="mb-1 text-(--renki-fg-muted)">
                   Not listed? Enter a model ID directly:
                 </div>
                 <div className="flex gap-1.5">
@@ -1619,7 +1619,7 @@ function Composer({
                     placeholder="claude-fable-5-1"
                     spellCheck={false}
                     autoComplete="off"
-                    className="crc-input min-w-0 flex-1 px-2 py-1 text-xs"
+                    className="renki-input min-w-0 flex-1 px-2 py-1 text-xs"
                   />
                   <Button
                     variant="default"
@@ -1640,11 +1640,11 @@ function Composer({
                     setEffortKey(e.key);
                     setOpenMenu(null);
                   }}
-                  className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left hover:bg-(--crc-hover)"
+                  className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left hover:bg-(--renki-hover)"
                 >
-                  <span className="font-medium text-(--crc-fg)">{e.label}</span>
+                  <span className="font-medium text-(--renki-fg)">{e.label}</span>
                   {e.key === effortKey && (
-                    <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />
+                    <span className="codicon codicon-check shrink-0 text-(--renki-fg)" />
                   )}
                 </button>
               ))
@@ -1655,16 +1655,16 @@ function Composer({
                     setPermissionMode(m.key);
                     setOpenMenu(null);
                   }}
-                  className="flex w-full items-start justify-between gap-2 rounded-lg px-3 py-2 text-left hover:bg-(--crc-hover)"
+                  className="flex w-full items-start justify-between gap-2 rounded-lg px-3 py-2 text-left hover:bg-(--renki-hover)"
                 >
                   <div className="min-w-0">
-                    <div className="font-medium text-(--crc-fg)">{m.label}</div>
-                    <div className="truncate text-(--crc-fg-muted)">
+                    <div className="font-medium text-(--renki-fg)">{m.label}</div>
+                    <div className="truncate text-(--renki-fg-muted)">
                       {m.description}
                     </div>
                   </div>
                   {m.key === permissionMode && (
-                    <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />
+                    <span className="codicon codicon-check shrink-0 text-(--renki-fg)" />
                   )}
                 </button>
               ))}
@@ -1688,23 +1688,23 @@ function Composer({
     >
       <div className="relative mx-auto w-full max-w-3xl">
         {suggestions.length > 0 && (
-          <div className="crc-enter absolute bottom-full left-4 right-4 z-10 mb-2 max-h-48 overflow-y-auto rounded-xl border border-(--crc-border) bg-(--crc-surface) p-1 shadow-(--crc-shadow-lg)">
+          <div className="renki-enter absolute bottom-full left-4 right-4 z-10 mb-2 max-h-48 overflow-y-auto rounded-xl border border-(--renki-border) bg-(--renki-surface) p-1 shadow-(--renki-shadow-lg)">
             {suggestions.map((c, i) => (
               <button
                 key={c.name}
                 onClick={() => pickSuggestion(c.name)}
                 className={`flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-xs ${
                   i === suggestionIndex
-                    ? "bg-(--crc-selected) text-(--crc-selected-fg)"
-                    : "text-(--crc-fg)"
+                    ? "bg-(--renki-selected) text-(--renki-selected-fg)"
+                    : "text-(--renki-fg)"
                 }`}
               >
-                <span className="font-mono text-(--crc-link)">/{c.name}</span>
-                <span className="truncate text-(--crc-fg-muted)">
+                <span className="font-mono text-(--renki-link)">/{c.name}</span>
+                <span className="truncate text-(--renki-fg-muted)">
                   {c.description}
                 </span>
                 {c.argumentHint && (
-                  <span className="ml-auto shrink-0 text-(--crc-fg-muted)">
+                  <span className="ml-auto shrink-0 text-(--renki-fg-muted)">
                     {c.argumentHint}
                   </span>
                 )}
@@ -1721,8 +1721,8 @@ function Composer({
         )}
 
         <div
-          className={`rounded-2xl bg-(--crc-surface) px-1 pt-1 pb-1 shadow-(--crc-shadow-sm) transition-[box-shadow,opacity] duration-150 focus-within:ring-2 focus-within:ring-(--crc-accent)/25 ${
-            dragOver ? "ring-2 ring-(--crc-accent)/40" : ""
+          className={`rounded-2xl bg-(--renki-surface) px-1 pt-1 pb-1 shadow-(--renki-shadow-sm) transition-[box-shadow,opacity] duration-150 focus-within:ring-2 focus-within:ring-(--renki-accent)/25 ${
+            dragOver ? "ring-2 ring-(--renki-accent)/40" : ""
           }`}
         >
           {attachments.length > 0 && (
@@ -1738,12 +1738,12 @@ function Composer({
           )}
 
           {attachError && (
-            <div className="px-3 pt-2 text-xs text-(--crc-danger)">
+            <div className="px-3 pt-2 text-xs text-(--renki-danger)">
               {attachError}
             </div>
           )}
           {draftNote && !attachError && (
-            <div className="flex items-center gap-1.5 px-3 pt-2 text-xs text-(--crc-fg-muted)">
+            <div className="flex items-center gap-1.5 px-3 pt-2 text-xs text-(--renki-fg-muted)">
               <span className="codicon codicon-info text-[12px]" /> Your text was kept, but the attachments were too large to save — add them again.
             </div>
           )}
@@ -1794,7 +1794,7 @@ function Composer({
                   ? "Add to what Claude is doing…"
                   : "Reply to Claude…"
             }
-            className="block max-h-48 w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[14px] leading-relaxed text-(--crc-fg) outline-none [field-sizing:content] placeholder:text-(--crc-fg-muted)"
+            className="block max-h-48 w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[14px] leading-relaxed text-(--renki-fg) outline-none [field-sizing:content] placeholder:text-(--renki-fg-muted)"
           />
 
           <div className="flex items-center gap-1 px-1 pb-1">
@@ -1856,7 +1856,7 @@ function Composer({
                   onClick={onStop}
                   aria-label="Stop"
                   title="Stop the current turn"
-                  className="grid h-8 w-8 place-items-center rounded-full bg-(--crc-bg-inset) text-(--crc-fg) transition-colors hover:bg-(--crc-hover)"
+                  className="grid h-8 w-8 place-items-center rounded-full bg-(--renki-bg-inset) text-(--renki-fg) transition-colors hover:bg-(--renki-hover)"
                 >
                   <span className="codicon codicon-primitive-square text-[11px]" />
                 </button>
@@ -1867,7 +1867,7 @@ function Composer({
                   aria-label="Send"
                   title="Send (Enter)"
                   disabled={disabled || (!text.trim() && attachments.length === 0)}
-                  className="grid h-8 w-8 place-items-center rounded-full bg-(--crc-accent) text-(--crc-accent-fg) transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="grid h-8 w-8 place-items-center rounded-full bg-(--renki-accent) text-(--renki-accent-fg) transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <span className="codicon codicon-arrow-up text-base" />
                 </button>
@@ -1875,7 +1875,7 @@ function Composer({
             </div>
           </div>
         </div>
-        <div className="mt-2 text-center text-[11px] text-(--crc-fg-muted)">
+        <div className="mt-2 text-center text-[11px] text-(--renki-fg-muted)">
           Enter to send · Shift+Enter newline · / for commands
         </div>
       </div>
@@ -1895,8 +1895,8 @@ function PickerButton({
   return (
     <button
       onClick={onToggle}
-      className={`flex h-7 max-w-44 items-center gap-1 rounded-lg px-1.5 text-xs transition-colors hover:bg-(--crc-bg-inset) hover:text-(--crc-fg) ${
-        open ? "bg-(--crc-bg-inset) text-(--crc-fg)" : "text-(--crc-fg-muted)"
+      className={`flex h-7 max-w-44 items-center gap-1 rounded-lg px-1.5 text-xs transition-colors hover:bg-(--renki-bg-inset) hover:text-(--renki-fg) ${
+        open ? "bg-(--renki-bg-inset) text-(--renki-fg)" : "text-(--renki-fg-muted)"
       }`}
     >
       <span className="truncate">{label}</span>

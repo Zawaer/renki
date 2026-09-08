@@ -10,7 +10,7 @@ export type AppConfig = {
   deviceName: string;
 };
 
-const KEY = "crc.config";
+const KEY = "renki.config";
 
 export function loadConfig(): AppConfig | null {
   const raw = localStorage.getItem(KEY);
@@ -34,9 +34,9 @@ export function clearConfig(): void {
 
 /** A stable per-browser device id, minted on first use. */
 export function getOrCreateDeviceId(): string {
-  const existing = localStorage.getItem("crc.deviceId");
+  const existing = localStorage.getItem("renki.deviceId");
   if (existing) return existing;
   const id = `web_${crypto.randomUUID()}`;
-  localStorage.setItem("crc.deviceId", id);
+  localStorage.setItem("renki.deviceId", id);
   return id;
 }

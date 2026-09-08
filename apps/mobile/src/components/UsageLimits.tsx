@@ -1,5 +1,5 @@
-import { formatResetTime, usageSeverity } from "@crc/client-core";
-import type { AccountUsage, AccountUsageExtra, AccountUsageLimit } from "@crc/protocol";
+import { formatResetTime, usageSeverity } from "@renki/client-core";
+import type { AccountUsage, AccountUsageExtra, AccountUsageLimit } from "@renki/protocol";
 import { StyleSheet, Text, View } from "react-native";
 import { radius, type ThemeColors } from "../theme";
 

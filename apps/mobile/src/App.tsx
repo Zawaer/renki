@@ -4,6 +4,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as Notifications from "expo-notifications";
 import { type AppConfig, clearConfig, loadConfig, saveConfig } from "./lib/config";
+import { migrateLegacyStorage } from "./lib/storageMigration";
 import { ClientProvider } from "./lib/client";
 import { registerForPush } from "./lib/push";
 import { Setup } from "./screens/Setup";
@@ -40,10 +41,14 @@ function AppBody() {
   const [config, setConfig] = useState<AppConfig | null>(null);
 
   useEffect(() => {
-    loadConfig().then((c) => {
-      setConfig(c);
-      setLoading(false);
-    });
+    // Bring `crc.*` keys over before the first read, so the rename doesn't
+    // un-pair this phone or lose its composer picks.
+    migrateLegacyStorage()
+      .then(loadConfig)
+      .then((c) => {
+        setConfig(c);
+        setLoading(false);
+      });
   }, []);
 
   if (loading) {

@@ -6,7 +6,7 @@
 type Level = "debug" | "info" | "warn" | "error";
 
 const order: Record<Level, number> = { debug: 0, info: 1, warn: 2, error: 3 };
-const threshold: Level = (process.env.CRC_LOG_LEVEL as Level) ?? "info";
+const threshold: Level = (process.env.RENKI_LOG_LEVEL as Level) ?? "info";
 
 function log(level: Level, msg: string, extra?: unknown) {
   if (order[level] < order[threshold]) return;

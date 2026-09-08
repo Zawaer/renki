@@ -5,6 +5,6 @@ export default defineConfig({
     environment: "node",
     include: ["test/**/*.test.ts"],
     // Keep the daemon's stderr logger quiet during tests.
-    env: { CRC_LOG_LEVEL: "error" },
+    env: { RENKI_LOG_LEVEL: "error" },
   },
 });

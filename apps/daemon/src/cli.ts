@@ -2,8 +2,8 @@ import { execFile } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { promisify } from "node:util";
 import { parseArgs } from "node:util";
-import { encodePairing } from "@crc/client-core";
-import type { SessionEvent } from "@crc/protocol";
+import { encodePairing } from "@renki/client-core";
+import type { SessionEvent } from "@renki/protocol";
 import QRCode from "qrcode";
 import { loadConfig } from "./config.js";
 import { openDb } from "./db/index.js";
@@ -25,15 +25,15 @@ const execFileAsync = promisify(execFile);
  * entry point's role with a WebSocket/REST server calling the same manager.
  *
  * Usage:
- *   crc init
- *   crc repos
- *   crc new <repoId> [--base <branch>] [--branch <name>] [--title <t>]
- *   crc new --plain [--title <t>]   (repo-less session, just a plain directory to chat in)
- *   crc sessions
- *   crc prompt <sessionId> <text...> [--model <m>]
- *   crc transcript <sessionId>
- *   crc archive <sessionId>
- *   crc merge <sourceSessionId> --into <targetBranch>
+ *   renki init
+ *   renki repos
+ *   renki new <repoId> [--base <branch>] [--branch <name>] [--title <t>]
+ *   renki new --plain [--title <t>]   (repo-less session, just a plain directory to chat in)
+ *   renki sessions
+ *   renki prompt <sessionId> <text...> [--model <m>]
+ *   renki transcript <sessionId>
+ *   renki archive <sessionId>
+ *   renki merge <sourceSessionId> --into <targetBranch>
  *     Attempts a plain git merge of that session's branch into <targetBranch>
  *     in a scratch worktree. Clean -> fast-forwards <targetBranch>, no Claude
  *     involved. Conflict -> spawns a new session pre-loaded with the
@@ -62,7 +62,7 @@ async function main() {
   const config = loadConfig();
 
   if (command === "token") {
-    // Resolved the same way the running daemon resolves it: CRC_AUTH_TOKEN if
+    // Resolved the same way the running daemon resolves it: RENKI_AUTH_TOKEN if
     // set, else the persisted (or just-minted) <dataDir>/auth-token.
     process.stdout.write(`${config.authToken}\n`);
     return;
@@ -76,7 +76,7 @@ async function main() {
   if (command === "repos") {
     const repos = await scanRepos(config);
     if (repos.length === 0) {
-      console.log(`No git repos found under ${config.reposRoot} (set CRC_REPOS_ROOT).`);
+      console.log(`No git repos found under ${config.reposRoot} (set RENKI_REPOS_ROOT).`);
       return;
     }
     for (const r of repos) console.log(`${r.id}\t(${r.defaultBranch})\t${r.path}`);
@@ -85,10 +85,10 @@ async function main() {
 
   // Connect a claude.ai usage session key without a running daemon. Two-step so
   // YOU pick the org (an account often has an empty personal org + the real one):
-  //   crc usage login                    open a browser, sign in; prints key + orgs
-  //   crc usage orgs <key>               list the orgs a key can see (pick one)
-  //   crc usage connect <key> <orgId>    track that org's usage
-  //   crc usage disconnect <email>       stop tracking that account (e.g. wrong org picked)
+  //   renki usage login                    open a browser, sign in; prints key + orgs
+  //   renki usage orgs <key>               list the orgs a key can see (pick one)
+  //   renki usage connect <key> <orgId>    track that org's usage
+  //   renki usage disconnect <email>       stop tracking that account (e.g. wrong org picked)
   if (command === "usage") {
     const { UsageReader } = await import("./accounts/usage.js");
     const reader = new UsageReader(config.usageConfigPath, config.usageBaseUrl);
@@ -99,7 +99,7 @@ async function main() {
         const u = o.usage ? `5h ${o.usage.fiveHour.pct}% · 7d ${o.usage.sevenDay.pct}%` : "no usage data";
         console.log(`${o.orgId}\t${u}\t${o.name}`);
       }
-      console.log("\nConnect one with: crc usage connect <key> <orgId>");
+      console.log("\nConnect one with: renki usage connect <key> <orgId>");
     };
 
     if (rest[0] === "login") {
@@ -121,27 +121,27 @@ async function main() {
     }
     if (rest[0] === "orgs") {
       const key = rest[1];
-      if (!key) return fail("usage: crc usage orgs <sessionKey>");
+      if (!key) return fail("usage: renki usage orgs <sessionKey>");
       printOrgs((await reader.listOrgs(key)).orgs);
       return;
     }
     if (rest[0] === "connect") {
       const key = rest[1];
       const orgId = rest[2];
-      if (!key || !orgId) return fail("usage: crc usage connect <sessionKey> <orgId>  (list orgs: crc usage orgs <key>)");
+      if (!key || !orgId) return fail("usage: renki usage connect <sessionKey> <orgId>  (list orgs: renki usage orgs <key>)");
       const id = await reader.addKey(key, orgId);
       console.log(`connected ${id.email ?? "(email unknown)"} — 5h ${id.usage.fiveHour.pct}% · 7d ${id.usage.sevenDay.pct}%`);
       return;
     }
     if (rest[0] === "disconnect") {
       const email = rest[1];
-      if (!email) return fail("usage: crc usage disconnect <email>");
+      if (!email) return fail("usage: renki usage disconnect <email>");
       const removed = reader.removeKey(email);
       console.log(removed ? `disconnected ${email}` : `no connected usage key found for ${email}`);
       return;
     }
     return fail(
-      "usage: crc usage login | crc usage orgs <key> | crc usage connect <key> <orgId> | crc usage disconnect <email>",
+      "usage: renki usage login | renki usage orgs <key> | renki usage connect <key> <orgId> | renki usage disconnect <email>",
     );
   }
 
@@ -160,7 +160,7 @@ async function main() {
         break;
       }
       const repoId = rest[0];
-      if (!repoId) return fail("usage: crc new <repoId> [--base <branch>]  |  crc new --plain [--title <t>]");
+      if (!repoId) return fail("usage: renki new <repoId> [--base <branch>]  |  renki new --plain [--title <t>]");
       const base = values.base ?? (await defaultBranchFor(config, repoId));
       const session = await manager.createSession({
         repoId,
@@ -187,7 +187,7 @@ async function main() {
 
     case "transcript": {
       const id = rest[0];
-      if (!id) return fail("usage: crc transcript <sessionId>");
+      if (!id) return fail("usage: renki transcript <sessionId>");
       for (const e of manager.events.read(id)) console.log(`#${e.seq}\t${e.kind}\t${compact(e)}`);
       break;
     }
@@ -195,7 +195,7 @@ async function main() {
     case "prompt": {
       const id = rest[0];
       const text = rest.slice(1).join(" ");
-      if (!id || !text) return fail('usage: crc prompt <sessionId> "your prompt"');
+      if (!id || !text) return fail('usage: renki prompt <sessionId> "your prompt"');
 
       // Single-device CLI: acquire the lock, then send. Exercises the real
       // control path (submitPrompt refuses if we're not the controller).
@@ -220,7 +220,7 @@ async function main() {
 
     case "archive": {
       const id = rest[0];
-      if (!id) return fail("usage: crc archive <sessionId>");
+      if (!id) return fail("usage: renki archive <sessionId>");
       await manager.archiveSession(id);
       console.log(`archived ${id}`);
       break;
@@ -229,7 +229,7 @@ async function main() {
     case "merge": {
       const sourceSessionId = rest[0];
       const targetBranch = values.into;
-      if (!sourceSessionId || !targetBranch) return fail("usage: crc merge <sourceSessionId> --into <targetBranch>");
+      if (!sourceSessionId || !targetBranch) return fail("usage: renki merge <sourceSessionId> --into <targetBranch>");
 
       const source = manager.getSession(sourceSessionId);
       if (!source.repoId || !source.branch) return fail("session has no repo/branch to merge");
@@ -253,10 +253,10 @@ async function main() {
 /**
  * CLI permission policy. Default AUTO-ALLOW so the harness runs unattended, but
  * every request is printed so we can see the permission events flowing through
- * the log. Override with CRC_CLI_PERMISSION=deny to watch denials instead.
+ * the log. Override with RENKI_CLI_PERMISSION=deny to watch denials instead.
  */
 const cliPermissionResolver: PermissionResolver = async (req) => {
-  const decision = process.env.CRC_CLI_PERMISSION === "deny" ? "deny" : "allow";
+  const decision = process.env.RENKI_CLI_PERMISSION === "deny" ? "deny" : "allow";
   process.stdout.write(`\n  ⟶ [permission] ${req.toolName} → ${decision}\n`);
   return { decision, byDeviceId: DEVICE_ID };
 };
@@ -306,7 +306,7 @@ async function runInit(config: ReturnType<typeof loadConfig>): Promise<void> {
 
   const repos = await scanRepos(config);
   if (repos.length === 0) {
-    console.log(`No git repos found under ${config.reposRoot} (set CRC_REPOS_ROOT in .env if yours live elsewhere).\n`);
+    console.log(`No git repos found under ${config.reposRoot} (set RENKI_REPOS_ROOT in .env if yours live elsewhere).\n`);
   } else {
     console.log(`Found ${repos.length} repo(s) under ${config.reposRoot}: ${repos.map((r) => r.id).join(", ")}\n`);
   }
@@ -346,18 +346,18 @@ async function runInit(config: ReturnType<typeof loadConfig>): Promise<void> {
       } else {
         console.log(
           `\nCouldn't run it automatically — this usually means the tailnet operator isn't set to your\n` +
-            `user yet. Run this once, then "crc init" again to pick up the real address:\n` +
+            `user yet. Run this once, then "renki init" again to pick up the real address:\n` +
             `  sudo tailscale set --operator=$USER\n` +
             `  tailscale serve --bg ${config.port}\n`,
         );
       }
     } else {
-      console.log('Skipped. Run it yourself later, then "crc init" again to pick up the real address.\n');
+      console.log('Skipped. Run it yourself later, then "renki init" again to pick up the real address.\n');
     }
   } else {
     console.log(
       "Not detected (tailscale not installed, or not logged into a tailnet). Install it and run\n" +
-        '"tailscale up", then "crc init" again — see SETUP.md for other ways to reach the daemon.\n',
+        '"tailscale up", then "renki init" again — see SETUP.md for other ways to reach the daemon.\n',
     );
   }
 
@@ -369,7 +369,7 @@ async function runInit(config: ReturnType<typeof loadConfig>): Promise<void> {
   }
 
   const payload = encodePairing({ baseUrl, token: config.authToken });
-  console.log(`Scan with the CRC app's "Scan QR code" (Setup screen) to connect:\n`);
+  console.log(`Scan with the Renki app's "Scan QR code" (Setup screen) to connect:\n`);
   console.log(await QRCode.toString(payload, { type: "terminal", small: true }));
   console.log(`Or enter manually — Daemon URL: ${baseUrl}   Token: ${config.authToken}`);
 }

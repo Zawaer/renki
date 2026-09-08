@@ -1,5 +1,5 @@
 {
-  "name": "@crc/web",
+  "name": "@renki/web",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,8 +12,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@crc/client-core": "workspace:*",
-    "@crc/protocol": "workspace:*",
+    "@renki/client-core": "workspace:*",
+    "@renki/protocol": "workspace:*",
     "@vscode/codicons": "^0.0.45",
     "qrcode": "^1.5.4",
     "react": "^19.0.0",

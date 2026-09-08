@@ -11,7 +11,7 @@ import { parseExtra, parseLimits, UsageReader } from "../src/accounts/usage.js";
  * shape, keyed by path so each test can script exactly what claude.ai "returns".
  */
 function withConfig(entries: unknown[]): string {
-  const dir = mkdtempSync(join(tmpdir(), "crc-usage-test-"));
+  const dir = mkdtempSync(join(tmpdir(), "renki-usage-test-"));
   const path = join(dir, "usage-accounts.json");
   writeFileSync(path, JSON.stringify(entries));
   return path;
@@ -86,7 +86,7 @@ describe("orgId auto-resolve", () => {
 /**
  * The real payload from claude.ai (September 2026): three concurrent windows —
  * the 5-hour session, a weekly cap across all models, and a separate weekly
- * cap for one premium model. CRC modelled only the first two, so a Fable or
+ * cap for one premium model. Renki modelled only the first two, so a Fable or
  * Opus allowance running out was invisible.
  */
 const REAL_LIMITS = {

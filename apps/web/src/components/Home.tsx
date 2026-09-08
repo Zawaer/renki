@@ -1,4 +1,4 @@
-import type { Session, StatsBucket, StatsResponse } from "@crc/protocol";
+import type { Session, StatsBucket, StatsResponse } from "@renki/protocol";
 import {
   activityGrid,
   formatCost,
@@ -11,7 +11,7 @@ import {
   streaks,
   sumRecent,
   tokensInPerspective,
-} from "@crc/client-core";
+} from "@renki/client-core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useClient } from "../lib/client.js";
 import { Skeleton } from "./ui.js";
@@ -69,19 +69,19 @@ export function Home() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-2xl px-6 pt-16 pb-12">
-        <h1 className="flex items-center gap-3 text-2xl font-semibold tracking-tight text-(--crc-fg)">
-          <span className="codicon codicon-sparkle-filled text-[22px] text-(--crc-accent)" />
+        <h1 className="flex items-center gap-3 text-2xl font-semibold tracking-tight text-(--renki-fg)">
+          <span className="codicon codicon-sparkle-filled text-[22px] text-(--renki-accent)" />
           {greeting()}
         </h1>
 
         {failed && (
-          <div className="mt-8 rounded-xl bg-(--crc-surface) p-5 text-sm text-(--crc-fg-muted) shadow-(--crc-shadow-xs)">
+          <div className="mt-8 rounded-xl bg-(--renki-surface) p-5 text-sm text-(--renki-fg-muted) shadow-(--renki-shadow-xs)">
             Couldn't load your activity — check the daemon connection.
           </div>
         )}
 
         {!stats && !failed && (
-          <div className="mt-8 rounded-2xl bg-(--crc-surface) p-4 shadow-(--crc-shadow-sm)" aria-busy="true" aria-label="Loading activity">
+          <div className="mt-8 rounded-2xl bg-(--renki-surface) p-4 shadow-(--renki-shadow-sm)" aria-busy="true" aria-label="Loading activity">
             <div className="flex items-center justify-between">
               <div className="flex gap-2">
                 <Skeleton className="h-7 w-20" />
@@ -91,7 +91,7 @@ export function Home() {
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
               {Array.from({ length: 8 }, (_, i) => (
-                <div key={i} className="rounded-xl bg-(--crc-bg) px-3 py-2.5">
+                <div key={i} className="rounded-xl bg-(--renki-bg) px-3 py-2.5">
                   <Skeleton className="h-2.5 w-16" />
                   <Skeleton className="mt-2 h-4 w-12" />
                 </div>
@@ -111,16 +111,16 @@ export function Home() {
         )}
 
         {stats && stats.lifetime.turnCount === 0 && (
-          <div className="mt-8 rounded-xl bg-(--crc-surface) p-6 shadow-(--crc-shadow-xs)">
-            <div className="text-sm font-medium text-(--crc-fg)">Nothing to show yet</div>
-            <div className="mt-1 text-xs text-(--crc-fg-muted)">
+          <div className="mt-8 rounded-xl bg-(--renki-surface) p-6 shadow-(--renki-shadow-xs)">
+            <div className="text-sm font-medium text-(--renki-fg)">Nothing to show yet</div>
+            <div className="mt-1 text-xs text-(--renki-fg-muted)">
               Start a session from the sidebar and send a prompt — your activity, streaks and spend will show up here.
             </div>
           </div>
         )}
 
         {stats && bucket && stats.lifetime.turnCount > 0 && (
-          <div className="crc-enter mt-8 rounded-2xl bg-(--crc-surface) p-4 shadow-(--crc-shadow-sm)">
+          <div className="renki-enter mt-8 rounded-2xl bg-(--renki-surface) p-4 shadow-(--renki-shadow-sm)">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-1 text-sm">
                 <TabButton active={tab === "overview"} onClick={() => setTab("overview")}>
@@ -138,8 +138,8 @@ export function Home() {
                       onClick={() => setRange(r)}
                       className={`h-7 rounded-md px-2 transition-colors ${
                         range === r
-                          ? "bg-(--crc-accent)/12 font-medium text-(--crc-fg) ring-1 ring-(--crc-accent)/40 ring-inset"
-                          : "text-(--crc-fg-muted) hover:bg-(--crc-hover) hover:text-(--crc-fg)"
+                          ? "bg-(--renki-accent)/12 font-medium text-(--renki-fg) ring-1 ring-(--renki-accent)/40 ring-inset"
+                          : "text-(--renki-fg-muted) hover:bg-(--renki-hover) hover:text-(--renki-fg)"
                       }`}
                     >
                       {r === "all" ? "All" : r}
@@ -182,7 +182,7 @@ export function Home() {
                   </div>
                 </div>
 
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs text-(--crc-fg-muted)">
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs text-(--renki-fg-muted)">
                   <span>{tokensInPerspective(stats.lifetime.inputTokens + stats.lifetime.outputTokens)}</span>
                   <span className="whitespace-nowrap">{formatDuration(stats.lifetime.durationMs)} spent waiting on Claude</span>
                 </div>
@@ -199,20 +199,20 @@ export function Home() {
 
 function ModelsTab({ models }: { models: StatsBucket[] }) {
   const maxCost = models.reduce((m, b) => Math.max(m, b.costUsd), 0);
-  if (models.length === 0) return <div className="mt-4 text-sm text-(--crc-fg-muted)">No model breakdown yet.</div>;
+  if (models.length === 0) return <div className="mt-4 text-sm text-(--renki-fg-muted)">No model breakdown yet.</div>;
   return (
     <div className="mt-4 space-y-2">
       {models.map((m) => (
-        <div key={m.key} className="rounded-xl bg-(--crc-bg) px-3 py-2.5">
+        <div key={m.key} className="rounded-xl bg-(--renki-bg) px-3 py-2.5">
           <div className="flex items-center justify-between gap-3 text-sm">
-            <span className="truncate font-medium text-(--crc-fg)">{formatModelLabel(m.key)}</span>
-            <span className="shrink-0 text-xs text-(--crc-fg-muted)">
+            <span className="truncate font-medium text-(--renki-fg)">{formatModelLabel(m.key)}</span>
+            <span className="shrink-0 text-xs text-(--renki-fg-muted)">
               {m.turnCount} repl{m.turnCount === 1 ? "y" : "ies"} · {formatTokenCount(m.inputTokens + m.outputTokens)} tokens ·{" "}
-              <span className="text-(--crc-fg)">{formatCost(m.costUsd)}</span>
+              <span className="text-(--renki-fg)">{formatCost(m.costUsd)}</span>
             </span>
           </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-(--crc-bg-inset)">
-            <div className="h-full rounded-full bg-(--crc-accent)" style={{ width: `${maxCost > 0 ? Math.max(2, (m.costUsd / maxCost) * 100) : 0}%` }} />
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-(--renki-bg-inset)">
+            <div className="h-full rounded-full bg-(--renki-accent)" style={{ width: `${maxCost > 0 ? Math.max(2, (m.costUsd / maxCost) * 100) : 0}%` }} />
           </div>
         </div>
       ))}
@@ -222,9 +222,9 @@ function ModelsTab({ models }: { models: StatsBucket[] }) {
 
 function Tile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl bg-(--crc-bg) px-3 py-2.5">
-      <div className="text-[11px] font-medium text-(--crc-fg-muted)">{label}</div>
-      <div className="mt-0.5 text-base font-semibold tracking-tight text-(--crc-fg)">{value}</div>
+    <div className="rounded-xl bg-(--renki-bg) px-3 py-2.5">
+      <div className="text-[11px] font-medium text-(--renki-fg-muted)">{label}</div>
+      <div className="mt-0.5 text-base font-semibold tracking-tight text-(--renki-fg)">{value}</div>
     </div>
   );
 }
@@ -234,7 +234,7 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
     <button
       onClick={onClick}
       className={`h-7 rounded-md px-2.5 transition-colors ${
-        active ? "bg-(--crc-hover) font-medium text-(--crc-fg)" : "text-(--crc-fg-muted) hover:text-(--crc-fg)"
+        active ? "bg-(--renki-hover) font-medium text-(--renki-fg)" : "text-(--renki-fg-muted) hover:text-(--renki-fg)"
       }`}
     >
       {children}
@@ -245,15 +245,15 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
 function heatClass(level: 0 | 1 | 2 | 3 | 4): string {
   switch (level) {
     case 0:
-      return "bg-(--crc-bg-inset)";
+      return "bg-(--renki-bg-inset)";
     case 1:
-      return "bg-(--crc-accent)/30";
+      return "bg-(--renki-accent)/30";
     case 2:
-      return "bg-(--crc-accent)/50";
+      return "bg-(--renki-accent)/50";
     case 3:
-      return "bg-(--crc-accent)/75";
+      return "bg-(--renki-accent)/75";
     default:
-      return "bg-(--crc-accent)";
+      return "bg-(--renki-accent)";
   }
 }
 

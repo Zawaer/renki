@@ -1,33 +1,33 @@
 services:
   daemon:
     # Give the daemon time to let running turns finish before a restart kills
-    # them (CRC_SHUTDOWN_GRACE_SECONDS, default 600) — a little longer than the grace itself.
+    # them (RENKI_SHUTDOWN_GRACE_SECONDS, default 600) — a little longer than the grace itself.
     stop_grace_period: 11m
     build: .
-    container_name: crc-daemon
+    container_name: renki-daemon
     restart: unless-stopped
-    # CRC_AUTH_TOKEN is optional here — if it's not in .env, the daemon mints
+    # RENKI_AUTH_TOKEN is optional here — if it's not in .env, the daemon mints
     # one on first boot and persists it at ./data/auth-token (on the host,
     # since that's bind-mounted below). Retrieve it any time with:
     #   docker compose exec daemon node dist/cli.js token
     env_file:
       - .env
     environment:
-      # Fixed to match the volumes below — point CRC_REPOS_ROOT in .env at the
+      # Fixed to match the volumes below — point RENKI_REPOS_ROOT in .env at the
       # HOST path instead of changing these two.
-      CRC_REPOS_ROOT: /repos
-      CRC_DATA_DIR: /data
+      RENKI_REPOS_ROOT: /repos
+      RENKI_DATA_DIR: /data
       # Container-internal only: Docker's port publishing can't reach a
       # process bound to the container's own loopback. The published port
       # below is still restricted to the HOST's loopback, so this doesn't
       # widen exposure — see the `ports:` comment.
-      CRC_HOST: 0.0.0.0
+      RENKI_HOST: 0.0.0.0
     ports:
       # Bound to the host's loopback only, same as the bare-metal setup in
       # SETUP.md — front this with `tailscale serve --bg 4517` on the host.
       - "127.0.0.1:4517:4517"
     volumes:
-      - ${CRC_REPOS_ROOT}:/repos
+      - ${RENKI_REPOS_ROOT}:/repos
       - ./data:/data
       # Reuses the host's existing `claude login` session instead of logging
       # in again inside the container. Not read-only: the SDK also writes
@@ -45,8 +45,8 @@ services:
     # (gitignored, stays local to this host); see SETUP.md.
 
   # Optional: the actual web UI, statically built and served by nginx — the
-  # Docker equivalent of the crc-web pm2 process. Not required; the daemon on
-  # its own is enough if you'd rather just run `pnpm --filter @crc/web dev`
+  # Docker equivalent of the renki-web pm2 process. Not required; the daemon on
+  # its own is enough if you'd rather just run `pnpm --filter @renki/web dev`
   # locally on whichever device you're using at the moment. Reuses whatever
   # Daemon URL + token you enter in its own Setup screen, so it doesn't need
   # to know about the daemon container at build or run time.
@@ -54,10 +54,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.web
-    container_name: crc-web
+    container_name: renki-web
     restart: unless-stopped
     ports:
-      # Same port and loopback-only binding as the bare-metal crc-web pm2
+      # Same port and loopback-only binding as the bare-metal renki-web pm2
       # process — front it the same way (tailscale serve, or your own
       # reverse-proxy container on the same network as above).
       - "127.0.0.1:4173:80"

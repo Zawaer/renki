@@ -1,4 +1,4 @@
-import type { Session } from "@crc/protocol";
+import type { Session } from "@renki/protocol";
 import { describe, expect, it } from "vitest";
 import { dueForPurge, purgeAtFor } from "../src/sessions/trash.js";
 

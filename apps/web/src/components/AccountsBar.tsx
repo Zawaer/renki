@@ -1,4 +1,4 @@
-import type { Account, AccountsResponse } from "@crc/protocol";
+import type { Account, AccountsResponse } from "@renki/protocol";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { UsageLimits, worstUsagePct } from "./UsageLimits.js";
@@ -53,12 +53,12 @@ export function AccountsBar() {
   const worstPct = worst?.pct ?? null;
   const dotColor =
     worst == null
-      ? "bg-(--crc-fg-muted)"
+      ? "bg-(--renki-fg-muted)"
       : worst.severity === "critical"
-        ? "bg-(--crc-danger)"
+        ? "bg-(--renki-danger)"
         : worst.severity === "warning"
-          ? "bg-(--crc-warning)"
-          : "bg-(--crc-success)";
+          ? "bg-(--renki-warning)"
+          : "bg-(--renki-success)";
 
   return (
     <div className="relative">
@@ -73,7 +73,7 @@ export function AccountsBar() {
         title={`Accounts & usage${active ? ` · ${active.email}` : ""}`}
         // The visible "45%" would otherwise become the accessible name.
         aria-label={`Accounts & usage${active ? ` · ${active.email}` : ""}`}
-        className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-(--crc-fg-muted) transition-colors hover:bg-(--crc-hover) hover:text-(--crc-fg)"
+        className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-(--renki-fg-muted) transition-colors hover:bg-(--renki-hover) hover:text-(--renki-fg)"
       >
         {worstPct == null ? (
           <span className="codicon codicon-account" />
@@ -89,12 +89,12 @@ export function AccountsBar() {
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div
-            className="crc-enter absolute bottom-full left-0 z-50 mb-2 w-80 space-y-3 rounded-xl border border-(--crc-border) bg-(--crc-surface) p-3.5 text-xs shadow-(--crc-shadow-lg)"
+            className="renki-enter absolute bottom-full left-0 z-50 mb-2 w-80 space-y-3 rounded-xl border border-(--renki-border) bg-(--renki-surface) p-3.5 text-xs shadow-(--renki-shadow-lg)"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-baseline justify-between gap-2">
-              <span className="text-[13px] font-semibold text-(--crc-fg)">Accounts</span>
-              <span className="text-[11px] text-(--crc-fg-muted)">
+              <span className="text-[13px] font-semibold text-(--renki-fg)">Accounts</span>
+              <span className="text-[11px] text-(--renki-fg-muted)">
                 {switching
                   ? "switching…"
                   : data.rotation.enabled
@@ -108,14 +108,14 @@ export function AccountsBar() {
               ))}
             </div>
             {data.rotation.enabled && data.rotation.lastHoldReason && (
-              <div className="text-[11px] text-(--crc-fg-muted)">Not switching — {data.rotation.lastHoldReason}</div>
+              <div className="text-[11px] text-(--renki-fg-muted)">Not switching — {data.rotation.lastHoldReason}</div>
             )}
             <button
               onClick={() => {
                 setOpen(false);
                 navigate("/settings");
               }}
-              className="text-[11px] text-(--crc-link) hover:underline"
+              className="text-[11px] text-(--renki-link) hover:underline"
             >
               Manage accounts →
             </button>
@@ -138,12 +138,12 @@ function AccountRow({
   return (
     <div>
       <div className="flex items-center gap-1.5">
-        <span className={`h-1.5 w-1.5 rounded-full ${account.active ? "bg-(--crc-success)" : "bg-(--crc-fg-muted)"}`} />
+        <span className={`h-1.5 w-1.5 rounded-full ${account.active ? "bg-(--renki-success)" : "bg-(--renki-fg-muted)"}`} />
         <button
           onClick={() => onSwitch(account)}
           disabled={account.active || switching}
           title={account.active ? "Active account" : `Switch to ${account.email}`}
-          className="truncate text-left text-(--crc-fg) disabled:cursor-default enabled:hover:underline enabled:hover:text-(--crc-link)"
+          className="truncate text-left text-(--renki-fg) disabled:cursor-default enabled:hover:underline enabled:hover:text-(--renki-link)"
         >
           {account.email}
         </button>
@@ -151,7 +151,7 @@ function AccountRow({
       {account.usage ? (
         <UsageLimits usage={account.usage} className="mt-2 pl-3" />
       ) : (
-        <div className="pl-3 text-[11px] text-(--crc-fg-muted)">
+        <div className="pl-3 text-[11px] text-(--renki-fg-muted)">
           {account.usageError ?? "Usage not tracked for this account."}
         </div>
       )}

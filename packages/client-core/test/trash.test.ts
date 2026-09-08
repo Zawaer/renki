@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Session } from "@crc/protocol";
+import type { Session } from "@renki/protocol";
 import { activeSessions, formatPurgeCountdown, trashedSessions } from "../src/trash.js";
 
 const DAY = 24 * 60 * 60_000;

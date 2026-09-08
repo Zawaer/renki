@@ -12,7 +12,7 @@ export type InjectedConfig = {
 /**
  * Load the built web bundle (apps/web -> media/web) as webview-safe HTML:
  * rewrite relative asset URLs to webview URIs, enforce a strict CSP scoped to
- * the daemon's origins, and inject window.__CRC_CONFIG__ so the SPA skips its
+ * the daemon's origins, and inject window.__RENKI_CONFIG__ so the SPA skips its
  * Setup screen. The string transforms live in ./html (pure + tested); this
  * function just resolves the VS Code-specific inputs.
  */

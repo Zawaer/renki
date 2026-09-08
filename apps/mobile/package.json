@@ -1,5 +1,5 @@
 {
-  "name": "@crc/mobile",
+  "name": "@renki/mobile",
   "version": "0.0.1",
   "private": true,
   "main": "index.js",
@@ -8,11 +8,11 @@
     "android": "expo run:android",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "ios": "expo run:ios",
-    "eas-build-post-install": "cd ../.. && pnpm turbo run build --filter=@crc/client-core"
+    "eas-build-post-install": "cd ../.. && pnpm turbo run build --filter=@renki/client-core"
   },
   "dependencies": {
-    "@crc/client-core": "workspace:*",
-    "@crc/protocol": "workspace:*",
+    "@renki/client-core": "workspace:*",
+    "@renki/protocol": "workspace:*",
     "@expo/vector-icons": "^14.0.4",
     "@react-native-cookies/cookies": "^6.2.1",
     "entities": "^2.0.3",

@@ -1,5 +1,5 @@
-import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, mkdirSync, renameSync } from "node:fs";
+import { dirname, join } from "node:path";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import type { Config } from "../config.js";
@@ -7,6 +7,28 @@ import { logger } from "../logger.js";
 import * as schema from "./schema.js";
 
 export type DB = ReturnType<typeof openDb>;
+
+/**
+ * Take over the database this daemon wrote under the project's old name.
+ *
+ * The file was `crc.sqlite` before the rename to Renki. Left alone, an
+ * existing install would silently start from an empty `renki.sqlite` — every
+ * session, transcript and stat still on disk but invisible — which is the
+ * worst kind of data loss because it looks like deletion.
+ *
+ * The WAL and shared-memory sidecars come too: leaving them behind would strand
+ * a committed-but-not-checkpointed tail of the log.
+ */
+function adoptLegacyDatabase(dbPath: string): void {
+  if (existsSync(dbPath)) return;
+  const legacy = join(dirname(dbPath), "crc.sqlite");
+  if (!existsSync(legacy)) return;
+  for (const suffix of ["", "-wal", "-shm"]) {
+    const from = `${legacy}${suffix}`;
+    if (existsSync(from)) renameSync(from, `${dbPath}${suffix}`);
+  }
+  logger.info("adopted the pre-rename database", { from: legacy, to: dbPath });
+}
 
 /**
  * Open (creating if needed) the SQLite database and ensure the schema exists.
@@ -19,6 +41,7 @@ export type DB = ReturnType<typeof openDb>;
  */
 export function openDb(config: Config) {
   mkdirSync(dirname(config.dbPath), { recursive: true });
+  adoptLegacyDatabase(config.dbPath);
   const sqlite = new Database(config.dbPath);
   sqlite.pragma("journal_mode = WAL");
   sqlite.pragma("foreign_keys = ON");

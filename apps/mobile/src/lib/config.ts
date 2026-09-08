@@ -13,8 +13,8 @@ export type AppConfig = {
   deviceName: string;
 };
 
-const CONFIG_KEY = "crc.config";
-const DEVICE_KEY = "crc.deviceId";
+const CONFIG_KEY = "renki.config";
+const DEVICE_KEY = "renki.deviceId";
 
 export async function loadConfig(): Promise<AppConfig | null> {
   const raw = await SecureStore.getItemAsync(CONFIG_KEY);

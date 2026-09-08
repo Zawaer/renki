@@ -15,7 +15,7 @@ const path = require("node:path");
 // entirely (even the debug-variant manifest's own tools:replace override for
 // it), and the attribute's own default is false on API 28+. Without this,
 // plain http:// breaks completely — both the Metro dev server during
-// development AND CRC's own supported http:// daemon URLs (e.g.
+// development AND Renki's own supported http:// daemon URLs (e.g.
 // http://127.0.0.1:4517 for a same-machine daemon) in production.
 const NETWORK_SECURITY_CONFIG = `<?xml version="1.0" encoding="utf-8"?>
 <network-security-config>

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { stripUntrustedHooks } from "../src/claude/settingsHygiene.js";
 
 function makeWorktree(): string {
-  const dir = mkdtempSync(join(tmpdir(), "crc-settings-hygiene-"));
+  const dir = mkdtempSync(join(tmpdir(), "renki-settings-hygiene-"));
   mkdirSync(join(dir, ".claude"));
   return dir;
 }
@@ -65,6 +65,6 @@ describe("stripUntrustedHooks", () => {
     stripUntrustedHooks(dir);
 
     expect(existsSync(path)).toBe(false);
-    expect(existsSync(`${path}.crc-quarantined`)).toBe(true);
+    expect(existsSync(`${path}.renki-quarantined`)).toBe(true);
   });
 });

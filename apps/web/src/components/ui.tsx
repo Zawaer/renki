@@ -1,4 +1,4 @@
-import type { SessionStatus } from "@crc/protocol";
+import type { SessionStatus } from "@renki/protocol";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -9,10 +9,10 @@ type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
 
 export function Button({ variant = "default", size = "md", className = "", ...props }: ButtonProps) {
   const variants: Record<NonNullable<ButtonProps["variant"]>, string> = {
-    default: "border border-(--crc-border) bg-(--crc-surface) text-(--crc-fg) shadow-(--crc-shadow-xs) hover:bg-(--crc-hover)",
-    primary: "bg-(--crc-accent) text-(--crc-accent-fg) shadow-(--crc-shadow-sm) hover:bg-(--crc-accent-hover)",
-    ghost: "bg-transparent text-(--crc-fg-muted) hover:bg-(--crc-hover) hover:text-(--crc-fg)",
-    danger: "bg-(--crc-danger)/12 text-(--crc-danger) hover:bg-(--crc-danger)/20",
+    default: "border border-(--renki-border) bg-(--renki-surface) text-(--renki-fg) shadow-(--renki-shadow-xs) hover:bg-(--renki-hover)",
+    primary: "bg-(--renki-accent) text-(--renki-accent-fg) shadow-(--renki-shadow-sm) hover:bg-(--renki-accent-hover)",
+    ghost: "bg-transparent text-(--renki-fg-muted) hover:bg-(--renki-hover) hover:text-(--renki-fg)",
+    danger: "bg-(--renki-danger)/12 text-(--renki-danger) hover:bg-(--renki-danger)/20",
   };
   const sizes: Record<NonNullable<ButtonProps["size"]>, string> = {
     sm: "h-7 rounded-md px-2.5 text-xs",
@@ -28,13 +28,13 @@ export function Button({ variant = "default", size = "md", className = "", ...pr
 }
 
 const STATUS_COLOR: Record<SessionStatus, string> = {
-  idle: "bg-(--crc-success)",
-  busy: "bg-(--crc-warning) crc-glow-warning animate-pulse",
-  error: "bg-(--crc-danger)",
-  archived: "bg-(--crc-fg-muted)/60",
-  trashed: "bg-(--crc-fg-muted)/60",
+  idle: "bg-(--renki-success)",
+  busy: "bg-(--renki-warning) renki-glow-warning animate-pulse",
+  error: "bg-(--renki-danger)",
+  archived: "bg-(--renki-fg-muted)/60",
+  trashed: "bg-(--renki-fg-muted)/60",
   // Never actually rendered — deleted sessions are excluded from listSessions()/getSession().
-  deleted: "bg-(--crc-fg-muted)/60",
+  deleted: "bg-(--renki-fg-muted)/60",
 };
 
 const STATUS_LABEL: Record<SessionStatus, string> = {
@@ -48,7 +48,7 @@ const STATUS_LABEL: Record<SessionStatus, string> = {
 
 export function StatusDot({ status, pendingPermission }: { status: SessionStatus; pendingPermission?: boolean }) {
   if (pendingPermission && status === "busy") {
-    return <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-(--crc-danger) crc-glow-danger animate-pulse" />;
+    return <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-(--renki-danger) renki-glow-danger animate-pulse" />;
   }
   return <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${STATUS_COLOR[status]}`} />;
 }
@@ -64,25 +64,25 @@ export function SessionGlyph({ status, pendingPermission }: { status: SessionSta
   let label: string;
   if (pendingPermission && status === "busy") {
     icon = "codicon-shield animate-pulse";
-    tone = "text-(--crc-danger)";
+    tone = "text-(--renki-danger)";
     label = "Needs your approval";
   } else if (status === "busy") {
     icon = "codicon-loading codicon-modifier-spin";
-    tone = "text-(--crc-warning)";
+    tone = "text-(--renki-warning)";
     label = "Working";
   } else if (status === "error") {
     icon = "codicon-error";
-    tone = "text-(--crc-danger)";
+    tone = "text-(--renki-danger)";
     label = "Error";
   } else if (status === "trashed") {
     icon = "codicon-trash";
-    tone = "text-(--crc-fg-muted)";
+    tone = "text-(--renki-fg-muted)";
     label = "In trash";
   } else if (status === "archived" || status === "deleted") {
     // Archived rows are already dimmed; a hollow dot is enough of a marker.
     return (
       <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center" title="Archived" aria-label="Archived">
-        <span className="h-1.5 w-1.5 rounded-full ring-1 ring-(--crc-fg-muted)/45 ring-inset" />
+        <span className="h-1.5 w-1.5 rounded-full ring-1 ring-(--renki-fg-muted)/45 ring-inset" />
       </span>
     );
   } else {
@@ -90,7 +90,7 @@ export function SessionGlyph({ status, pendingPermission }: { status: SessionSta
     // a big hollow ring beside a label reads as an unchecked checkbox.
     return (
       <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center" title="Idle" aria-label="Idle">
-        <span className="h-1.5 w-1.5 rounded-full bg-(--crc-fg-muted)/60" />
+        <span className="h-1.5 w-1.5 rounded-full bg-(--renki-fg-muted)/60" />
       </span>
     );
   }
@@ -108,12 +108,12 @@ export function SessionGlyph({ status, pendingPermission }: { status: SessionSta
 export function StatusBadge({ status, pendingPermission }: { status: SessionStatus; pendingPermission?: boolean }) {
   const needsYou = pendingPermission && status === "busy";
   const tone = needsYou
-    ? "text-(--crc-danger)"
+    ? "text-(--renki-danger)"
     : status === "busy"
-      ? "text-(--crc-warning)"
+      ? "text-(--renki-warning)"
       : status === "error"
-        ? "text-(--crc-danger)"
-        : "text-(--crc-fg-muted)";
+        ? "text-(--renki-danger)"
+        : "text-(--renki-fg-muted)";
   return (
     <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${tone}`}>
       <StatusDot status={status} pendingPermission={pendingPermission} />
@@ -124,7 +124,7 @@ export function StatusBadge({ status, pendingPermission }: { status: SessionStat
 
 /** Uppercase section eyebrow — "Archived", "By repo", etc. */
 export function Eyebrow({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <div className={`text-[11px] font-semibold tracking-[0.08em] text-(--crc-fg-muted) uppercase ${className}`}>{children}</div>;
+  return <div className={`text-[11px] font-semibold tracking-[0.08em] text-(--renki-fg-muted) uppercase ${className}`}>{children}</div>;
 }
 
 /**
@@ -132,7 +132,7 @@ export function Eyebrow({ children, className = "" }: { children: React.ReactNod
  * Tailwind classes (`h-3 w-24`); it shimmers until the real thing renders.
  */
 export function Skeleton({ className = "" }: { className?: string }) {
-  return <span aria-hidden className={`crc-skeleton block ${className}`} />;
+  return <span aria-hidden className={`renki-skeleton block ${className}`} />;
 }
 
 export type SelectOption = { value: string; label: string; description?: string };
@@ -196,10 +196,10 @@ export function Select({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`crc-input flex items-center justify-between gap-2 text-left disabled:opacity-50 ${open ? "border-(--crc-accent)" : ""}`}
+        className={`renki-input flex items-center justify-between gap-2 text-left disabled:opacity-50 ${open ? "border-(--renki-accent)" : ""}`}
       >
-        <span className={`truncate ${current ? "text-(--crc-fg)" : "text-(--crc-fg-muted)"}`}>{current?.label ?? placeholder}</span>
-        <span className="codicon codicon-chevron-down shrink-0 text-[12px] text-(--crc-fg-muted)" />
+        <span className={`truncate ${current ? "text-(--renki-fg)" : "text-(--renki-fg-muted)"}`}>{current?.label ?? placeholder}</span>
+        <span className="codicon codicon-chevron-down shrink-0 text-[12px] text-(--renki-fg-muted)" />
       </button>
       {open && (
         <>
@@ -207,7 +207,7 @@ export function Select({
           <div
             ref={listRef}
             role="listbox"
-            className="crc-enter absolute top-full left-0 z-50 mt-1.5 max-h-64 w-full overflow-y-auto rounded-xl bg-(--crc-surface) p-1 text-sm shadow-(--crc-shadow-lg)"
+            className="renki-enter absolute top-full left-0 z-50 mt-1.5 max-h-64 w-full overflow-y-auto rounded-xl bg-(--renki-surface) p-1 text-sm shadow-(--renki-shadow-lg)"
           >
             {options.map((o, i) => (
               <button
@@ -221,14 +221,14 @@ export function Select({
                   setOpen(false);
                 }}
                 className={`flex w-full items-start justify-between gap-2 rounded-lg px-3 py-2 text-left ${
-                  i === cursor ? "bg-(--crc-hover)" : ""
+                  i === cursor ? "bg-(--renki-hover)" : ""
                 }`}
               >
                 <span className="min-w-0">
-                  <span className="block truncate text-(--crc-fg)">{o.label}</span>
-                  {o.description && <span className="block truncate text-xs text-(--crc-fg-muted)">{o.description}</span>}
+                  <span className="block truncate text-(--renki-fg)">{o.label}</span>
+                  {o.description && <span className="block truncate text-xs text-(--renki-fg-muted)">{o.description}</span>}
                 </span>
-                {o.value === value && <span className="codicon codicon-check shrink-0 text-(--crc-fg)" />}
+                {o.value === value && <span className="codicon codicon-check shrink-0 text-(--renki-fg)" />}
               </button>
             ))}
           </div>
@@ -267,8 +267,8 @@ export function CopyButton({ text, label = "Copy", className = "" }: { text: str
       onClick={copy}
       title={copied ? "Copied" : label}
       aria-label={copied ? "Copied" : label}
-      className={`inline-flex h-6 w-6 items-center justify-center rounded-md text-(--crc-fg-muted) opacity-0 transition-[opacity,color,background-color] group-hover:opacity-100 hover:bg-(--crc-hover) hover:text-(--crc-fg) focus-visible:opacity-100 ${
-        copied ? "text-(--crc-success) opacity-100" : ""
+      className={`inline-flex h-6 w-6 items-center justify-center rounded-md text-(--renki-fg-muted) opacity-0 transition-[opacity,color,background-color] group-hover:opacity-100 hover:bg-(--renki-hover) hover:text-(--renki-fg) focus-visible:opacity-100 ${
+        copied ? "text-(--renki-success) opacity-100" : ""
       } ${className}`}
     >
       <span className={`codicon ${copied ? "codicon-check" : "codicon-copy"} text-[13px]`} />
@@ -308,14 +308,14 @@ export function InfoHint({
         onBlur={() => setOpen(false)}
         onPointerEnter={hover(true)}
         onPointerLeave={hover(false)}
-        className="inline-flex h-4 w-4 items-center justify-center rounded-full text-(--crc-fg-muted)/70 transition-colors hover:text-(--crc-fg) focus-visible:text-(--crc-fg)"
+        className="inline-flex h-4 w-4 items-center justify-center rounded-full text-(--renki-fg-muted)/70 transition-colors hover:text-(--renki-fg) focus-visible:text-(--renki-fg)"
       >
         <span className="codicon codicon-info text-[12px]" />
       </button>
       {open && (
         <span
           role="tooltip"
-          className="absolute bottom-full left-1/2 z-20 mb-1.5 w-max -translate-x-1/2 rounded-lg border border-(--crc-border) bg-(--crc-surface) px-2.5 py-2 text-left text-[11.5px] shadow-(--crc-shadow-md)"
+          className="absolute bottom-full left-1/2 z-20 mb-1.5 w-max -translate-x-1/2 rounded-lg border border-(--renki-border) bg-(--renki-surface) px-2.5 py-2 text-left text-[11.5px] shadow-(--renki-shadow-md)"
         >
           {children}
         </span>
@@ -393,19 +393,19 @@ export function Collapsible({
         {/* Anchored inside the clipped box, not the wrapper — anchored outside
             it, the fade spilled past the block and washed over the toggle. */}
         {clipped && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-linear-to-t from-(--crc-bg-inset) to-transparent" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-linear-to-t from-(--renki-bg-inset) to-transparent" />
         )}
       </div>
       {!hideCopy && (
         <div className="absolute top-1.5 right-1.5">
-          <CopyButton text={text} label={copyLabel} className="bg-(--crc-surface)/85 opacity-0 backdrop-blur-sm" />
+          <CopyButton text={text} label={copyLabel} className="bg-(--renki-surface)/85 opacity-0 backdrop-blur-sm" />
         </div>
       )}
       {long && (
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="relative mt-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11.5px] text-(--crc-fg-muted) transition-colors hover:bg-(--crc-hover) hover:text-(--crc-fg)"
+          className="relative mt-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11.5px] text-(--renki-fg-muted) transition-colors hover:bg-(--renki-hover) hover:text-(--renki-fg)"
         >
           <span className={`codicon ${open ? "codicon-chevron-up" : "codicon-chevron-down"} text-[11px]`} />
           {open ? "Show less" : (moreLabel ?? `Show all ${lines} lines`)}

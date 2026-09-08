@@ -14,7 +14,7 @@ export function newSessionId(): string {
   return `s_${randomBase62(10)}`;
 }
 
-/** Short, human-scannable suffix for derived branch names (e.g. crc/3f9a2b). */
+/** Short, human-scannable suffix for derived branch names (e.g. renki/3f9a2b). */
 export function shortId(): string {
   return randomUUID().replace(/-/g, "").slice(0, 6);
 }

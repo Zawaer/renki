@@ -95,11 +95,11 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
-      document.body.classList.remove("crc-resizing");
+      document.body.classList.remove("renki-resizing");
     };
     // Held on <body> so the resize cursor survives crossing other elements and
     // a drag can't select text on the way past.
-    document.body.classList.add("crc-resizing");
+    document.body.classList.add("renki-resizing");
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   }
@@ -147,15 +147,15 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
     // Collapsed: a slim rail keeps the essentials one click away.
     return (
       <div className="grid h-full overflow-hidden" style={{ gridTemplateColumns: `${SIDEBAR_RAIL}px 1fr` }}>
-        <aside className="relative flex min-h-0 flex-col items-center border-r border-(--crc-border) bg-(--crc-bg-elevated) py-2">
+        <aside className="relative flex min-h-0 flex-col items-center border-r border-(--renki-border) bg-(--renki-bg-elevated) py-2">
           {/* Draggable from the rail too, so the gesture that collapsed it brings it back. */}
           {resizeHandle}
           <button
             onClick={() => navigate("/")}
-            className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-(--crc-hover)"
+            className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-(--renki-hover)"
             title="Home"
           >
-            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-(--crc-accent) text-(--crc-accent-fg) shadow-(--crc-shadow-xs)">
+            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-(--renki-accent) text-(--renki-accent-fg) shadow-(--renki-shadow-xs)">
               <span className="codicon codicon-terminal text-[13px]" />
             </span>
           </button>
@@ -163,7 +163,7 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
           <div className="flex-1" />
           {status !== "open" && (
             <span className="mb-1 flex h-8 w-8 items-center justify-center" title={status === "connecting" ? "Connecting…" : "Offline — retrying"}>
-              <span className={`h-2 w-2 rounded-full ${status === "connecting" ? "bg-(--crc-warning) animate-pulse" : "bg-(--crc-danger)"}`} />
+              <span className={`h-2 w-2 rounded-full ${status === "connecting" ? "bg-(--renki-warning) animate-pulse" : "bg-(--renki-danger)"}`} />
             </span>
           )}
           <HeaderButton active={onStats} title="Stats" icon="graph-line" onClick={() => navigate(onStats ? "/" : "/stats")} />
@@ -176,14 +176,14 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
 
   return (
     <div className="grid h-full overflow-hidden" style={{ gridTemplateColumns: `${sidebarWidth}px 1fr` }}>
-      <aside className="relative flex min-h-0 flex-col border-r border-(--crc-border) bg-(--crc-bg-elevated)">
+      <aside className="relative flex min-h-0 flex-col border-r border-(--renki-border) bg-(--renki-bg-elevated)">
         {resizeHandle}
         <div className="flex h-12 shrink-0 items-center gap-1 pr-2 pl-4">
           <button onClick={() => navigate("/")} className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg py-1 text-left" title="Home">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-(--crc-accent) text-(--crc-accent-fg) shadow-(--crc-shadow-xs)">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-(--renki-accent) text-(--renki-accent-fg) shadow-(--renki-shadow-xs)">
               <span className="codicon codicon-terminal text-[13px]" />
             </span>
-            <span className="truncate text-[13px] font-semibold tracking-tight text-(--crc-fg)">Claude Remote Control</span>
+            <span className="truncate text-[13px] font-semibold tracking-tight text-(--renki-fg)">Renki</span>
           </button>
           <HeaderButton active={false} title="Hide sidebar (⌘B)" icon="layout-sidebar-left-off" onClick={() => setSidebarOpen(false)} />
         </div>
@@ -205,7 +205,7 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
           * "connected" dot told you nothing, so they're gone — the connection
           * only speaks up when it's actually broken.
           */}
-        <div className="flex shrink-0 items-center gap-0.5 border-t border-(--crc-border) p-2">
+        <div className="flex shrink-0 items-center gap-0.5 border-t border-(--renki-border) p-2">
           {status === "open" ? <AccountsBar /> : <ConnectionAlert status={status} />}
           <div className="ml-auto flex items-center gap-0.5">
             <HeaderButton active={onStats} title="Stats" icon="graph-line" onClick={() => navigate(onStats ? "/" : "/stats")} />
@@ -219,8 +219,8 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
   );
 }
 
-const SIDEBAR_KEY = "crc.sidebar.open";
-const SIDEBAR_WIDTH_KEY = "crc.sidebar.width";
+const SIDEBAR_KEY = "renki.sidebar.open";
+const SIDEBAR_WIDTH_KEY = "renki.sidebar.width";
 /** The collapsed rail: wide enough for one 32px button with breathing room. */
 const SIDEBAR_RAIL = 48;
 const SIDEBAR_DEFAULT = 288;
@@ -288,7 +288,7 @@ function ResizeHandle({
       title="Drag to resize · drag left to collapse · double-click to reset"
       className="group absolute top-0 -right-1 z-30 h-full w-2 cursor-col-resize focus-visible:outline-none"
     >
-      <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-(--crc-accent) opacity-0 transition-opacity duration-150 group-hover:opacity-70 group-focus-visible:opacity-100 group-active:opacity-100" />
+      <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-(--renki-accent) opacity-0 transition-opacity duration-150 group-hover:opacity-70 group-focus-visible:opacity-100 group-active:opacity-100" />
     </div>
   );
 }
@@ -305,9 +305,9 @@ function MainColumn({
   managed: boolean;
 }) {
   return (
-    <main className="flex min-h-0 flex-col overflow-hidden bg-(--crc-bg)">
+    <main className="flex min-h-0 flex-col overflow-hidden bg-(--renki-bg)">
       {lastError && (
-        <div className="flex items-center gap-1.5 border-b border-(--crc-danger)/30 bg-(--crc-danger)/10 px-4 py-1.5 text-xs text-(--crc-danger)">
+        <div className="flex items-center gap-1.5 border-b border-(--renki-danger)/30 bg-(--renki-danger)/10 px-4 py-1.5 text-xs text-(--renki-danger)">
           <span className="codicon codicon-error" />
           {lastError.code}: {lastError.message}
         </div>
@@ -329,8 +329,8 @@ function HeaderButton({ active, title, icon, onClick }: { active: boolean; title
     <button
       onClick={onClick}
       title={title}
-      className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-(--crc-hover) hover:text-(--crc-fg) ${
-        active ? "bg-(--crc-hover) text-(--crc-fg)" : "text-(--crc-fg-muted)"
+      className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-(--renki-hover) hover:text-(--renki-fg) ${
+        active ? "bg-(--renki-hover) text-(--renki-fg)" : "text-(--renki-fg-muted)"
       }`}
     >
       <span className={`codicon codicon-${icon}`} />
@@ -342,8 +342,8 @@ function HeaderButton({ active, title, icon, onClick }: { active: boolean; title
 function ConnectionAlert({ status }: { status: "connecting" | "closed" }) {
   const s =
     status === "connecting"
-      ? { dot: "bg-(--crc-warning) animate-pulse", tone: "text-(--crc-warning)", label: "Connecting…" }
-      : { dot: "bg-(--crc-danger)", tone: "text-(--crc-danger)", label: "Offline — retrying" };
+      ? { dot: "bg-(--renki-warning) animate-pulse", tone: "text-(--renki-warning)", label: "Connecting…" }
+      : { dot: "bg-(--renki-danger)", tone: "text-(--renki-danger)", label: "Offline — retrying" };
   return (
     <span className={`inline-flex h-8 items-center gap-1.5 px-2 text-xs font-medium ${s.tone}`}>
       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${s.dot}`} />

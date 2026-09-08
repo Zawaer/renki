@@ -16,7 +16,7 @@ import { Collapsible } from "./ui.js";
 
 /**
  * Wrap every word in a span so a streaming reply can fade in word by word
- * (see `.crc-word` in index.css). Whitespace stays as plain text between the
+ * (see `.renki-word` in index.css). Whitespace stays as plain text between the
  * spans, so wrapping and selection behave exactly as before, and anything
  * inside `code`/`pre` is left alone — splitting code would fight its own
  * whitespace handling. Only applied while a reply streams: once it settles the
@@ -33,7 +33,7 @@ function rehypeWrapWords() {
         for (const part of child.value.split(/(\s+)/)) {
           if (!part) continue;
           if (/^\s+$/.test(part)) next.push({ type: "text", value: part });
-          else next.push({ type: "element", tagName: "span", properties: { className: ["crc-word"] }, children: [{ type: "text", value: part }] });
+          else next.push({ type: "element", tagName: "span", properties: { className: ["renki-word"] }, children: [{ type: "text", value: part }] });
         }
         continue;
       }
@@ -60,24 +60,24 @@ function hastText(node: unknown): string {
 }
 
 const components: Components = {
-  h1: ({ node, ...p }) => <h1 className="text-base font-semibold text-(--crc-fg)" {...p} />,
-  h2: ({ node, ...p }) => <h2 className="text-sm font-semibold text-(--crc-fg)" {...p} />,
-  h3: ({ node, ...p }) => <h3 className="text-sm font-semibold text-(--crc-fg)" {...p} />,
-  h4: ({ node, ...p }) => <h4 className="text-sm font-semibold text-(--crc-fg)" {...p} />,
+  h1: ({ node, ...p }) => <h1 className="text-base font-semibold text-(--renki-fg)" {...p} />,
+  h2: ({ node, ...p }) => <h2 className="text-sm font-semibold text-(--renki-fg)" {...p} />,
+  h3: ({ node, ...p }) => <h3 className="text-sm font-semibold text-(--renki-fg)" {...p} />,
+  h4: ({ node, ...p }) => <h4 className="text-sm font-semibold text-(--renki-fg)" {...p} />,
   p: ({ node, ...p }) => <p className="leading-relaxed" {...p} />,
-  ul: ({ node, ...p }) => <ul className="list-disc space-y-1 pl-5 marker:text-(--crc-fg-muted)" {...p} />,
-  ol: ({ node, ...p }) => <ol className="list-decimal space-y-1 pl-5 marker:text-(--crc-fg-muted)" {...p} />,
+  ul: ({ node, ...p }) => <ul className="list-disc space-y-1 pl-5 marker:text-(--renki-fg-muted)" {...p} />,
+  ol: ({ node, ...p }) => <ol className="list-decimal space-y-1 pl-5 marker:text-(--renki-fg-muted)" {...p} />,
   li: ({ node, ...p }) => <li className="leading-relaxed [&>ul]:mt-1 [&>ol]:mt-1" {...p} />,
   a: ({ node, ...p }) => (
-    <a className="text-(--crc-link) underline underline-offset-2 hover:opacity-80" target="_blank" rel="noreferrer" {...p} />
+    <a className="text-(--renki-link) underline underline-offset-2 hover:opacity-80" target="_blank" rel="noreferrer" {...p} />
   ),
-  strong: ({ node, ...p }) => <strong className="font-semibold text-(--crc-fg)" {...p} />,
+  strong: ({ node, ...p }) => <strong className="font-semibold text-(--renki-fg)" {...p} />,
   em: ({ node, ...p }) => <em className="italic" {...p} />,
-  del: ({ node, ...p }) => <del className="text-(--crc-fg-muted) line-through" {...p} />,
-  blockquote: ({ node, ...p }) => <blockquote className="border-l-2 border-(--crc-border) pl-3 text-(--crc-fg-muted)" {...p} />,
-  hr: ({ node, ...p }) => <hr className="border-(--crc-border)" {...p} />,
+  del: ({ node, ...p }) => <del className="text-(--renki-fg-muted) line-through" {...p} />,
+  blockquote: ({ node, ...p }) => <blockquote className="border-l-2 border-(--renki-border) pl-3 text-(--renki-fg-muted)" {...p} />,
+  hr: ({ node, ...p }) => <hr className="border-(--renki-border)" {...p} />,
   code: ({ node, ...p }) => (
-    <code className="rounded-md bg-(--crc-bg-inset) px-1.5 py-0.5 font-(family-name:--crc-font-mono) text-[0.85em] text-(--crc-fg)" {...p} />
+    <code className="rounded-md bg-(--renki-bg-inset) px-1.5 py-0.5 font-(family-name:--renki-font-mono) text-[0.85em] text-(--renki-fg)" {...p} />
   ),
   // Fenced blocks: copyable, and clipped when long enough to bury the rest of
   // the reply. The descendant selectors neutralize the inline-code pill so the
@@ -85,7 +85,7 @@ const components: Components = {
   pre: ({ node, ...p }) => (
     <Collapsible text={hastText(node)} copyLabel="Copy code">
       <pre
-        className="overflow-x-auto rounded-xl border border-(--crc-border) bg-(--crc-bg-inset) p-3.5 font-(family-name:--crc-font-mono) text-xs leading-relaxed text-(--crc-fg) [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit"
+        className="overflow-x-auto rounded-xl border border-(--renki-border) bg-(--renki-bg-inset) p-3.5 font-(family-name:--renki-font-mono) text-xs leading-relaxed text-(--renki-fg) [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit"
         {...p}
       />
     </Collapsible>
@@ -95,8 +95,8 @@ const components: Components = {
       <table className="w-full border-collapse text-xs" {...p} />
     </div>
   ),
-  th: ({ node, ...p }) => <th className="border border-(--crc-border) px-2 py-1 text-left font-semibold text-(--crc-fg)" {...p} />,
-  td: ({ node, ...p }) => <td className="border border-(--crc-border) px-2 py-1 align-top" {...p} />,
+  th: ({ node, ...p }) => <th className="border border-(--renki-border) px-2 py-1 text-left font-semibold text-(--renki-fg)" {...p} />,
+  td: ({ node, ...p }) => <td className="border border-(--renki-border) px-2 py-1 align-top" {...p} />,
 };
 
 export const Markdown = memo(function Markdown({
@@ -111,8 +111,8 @@ export const Markdown = memo(function Markdown({
 }) {
   return (
     <div
-      className={`space-y-2.5 wrap-break-word text-[14px] leading-relaxed ${muted ? "text-(--crc-fg-muted)" : "text-(--crc-fg)"} ${
-        streaming ? "crc-stream-md" : ""
+      className={`space-y-2.5 wrap-break-word text-[14px] leading-relaxed ${muted ? "text-(--renki-fg-muted)" : "text-(--renki-fg)"} ${
+        streaming ? "renki-stream-md" : ""
       }`}
     >
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={streaming ? [rehypeWrapWords] : []} components={components}>

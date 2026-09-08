@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { EventPayload, RepoStatsBucket, SessionEvent, StatsBucket, StatsResponse } from "@crc/protocol";
+import type { EventPayload, RepoStatsBucket, SessionEvent, StatsBucket, StatsResponse } from "@renki/protocol";
 import { and, asc, eq, gt, inArray, max, ne } from "drizzle-orm";
 import type { DB } from "../db/index.js";
 import { events, sessions } from "../db/schema.js";

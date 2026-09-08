@@ -1,4 +1,4 @@
-import type { RepoStatsBucket, RtkGainDay, RtkGainResponse, StatsBucket, StatsResponse } from "@crc/protocol";
+import type { RepoStatsBucket, RtkGainDay, RtkGainResponse, StatsBucket, StatsResponse } from "@renki/protocol";
 import {
   formatClientTypeLabel,
   formatCost,
@@ -10,7 +10,7 @@ import {
   formatTokenCount,
   lastNDays,
   tickIndices,
-} from "@crc/client-core";
+} from "@renki/client-core";
 import { useCallback, useEffect, useState } from "react";
 import { useClient } from "../lib/client.js";
 import { Button, Skeleton } from "./ui.js";
@@ -52,10 +52,10 @@ export function StatsView() {
   if (!data) {
     return (
       <div className="h-full overflow-y-auto px-8 py-8" aria-busy="true" aria-label="Loading stats">
-        <h1 className="mb-5 text-lg font-semibold tracking-tight text-(--crc-fg)">Stats</h1>
+        <h1 className="mb-5 text-lg font-semibold tracking-tight text-(--renki-fg)">Stats</h1>
         <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {Array.from({ length: 6 }, (_, i) => (
-            <div key={i} className="rounded-xl bg-(--crc-surface) p-4 shadow-(--crc-shadow-xs)">
+            <div key={i} className="rounded-xl bg-(--renki-surface) p-4 shadow-(--renki-shadow-xs)">
               <Skeleton className="h-2.5 w-16" />
               <Skeleton className="mt-2.5 h-5 w-14" />
             </div>
@@ -66,7 +66,7 @@ export function StatsView() {
             <Skeleton className="mb-3 h-3 w-20" />
             <div className="grid gap-4 lg:grid-cols-2">
               {[0, 1].map((j) => (
-                <div key={j} className="rounded-xl bg-(--crc-surface) p-4 shadow-(--crc-shadow-xs)">
+                <div key={j} className="rounded-xl bg-(--renki-surface) p-4 shadow-(--renki-shadow-xs)">
                   <Skeleton className="h-3 w-14" />
                   <div className="mt-4 space-y-3">
                     {[0, 1, 2, 3].map((k) => (
@@ -88,7 +88,7 @@ export function StatsView() {
   if (data.lifetime.turnCount === 0) {
     return (
       <div className="h-full overflow-y-auto px-8 py-8">
-        <h1 className="mb-5 text-lg font-semibold tracking-tight text-(--crc-fg)">Stats</h1>
+        <h1 className="mb-5 text-lg font-semibold tracking-tight text-(--renki-fg)">Stats</h1>
         <CenteredNote
           fill={false}
           icon="codicon-graph-line"
@@ -104,7 +104,7 @@ export function StatsView() {
 
   return (
     <div className="h-full overflow-y-auto px-8 py-8">
-      <h1 className="mb-5 text-lg font-semibold tracking-tight text-(--crc-fg)">Stats</h1>
+      <h1 className="mb-5 text-lg font-semibold tracking-tight text-(--renki-fg)">Stats</h1>
 
       <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <StatTile label="Total cost" value={formatCost(data.lifetime.costUsd)} />
@@ -119,7 +119,7 @@ export function StatsView() {
         <Section title="By repo" table={<RepoTable rows={data.byRepo} />}>
           <div className="grid gap-6 sm:grid-cols-2">
             <ChartCard title="Tokens">
-              <Legend items={[{ label: "Input", color: "var(--crc-chart-input)" }, { label: "Output", color: "var(--crc-chart-output)" }]} />
+              <Legend items={[{ label: "Input", color: "var(--renki-chart-input)" }, { label: "Output", color: "var(--renki-chart-output)" }]} />
               <RepoBars repos={data.byRepo} metric="tokens" />
             </ChartCard>
             <ChartCard title="Cost">
@@ -136,7 +136,7 @@ export function StatsView() {
         >
           <div className="grid gap-6 sm:grid-cols-2">
             <ChartCard title="Tokens">
-              <Legend items={[{ label: "Input", color: "var(--crc-chart-input)" }, { label: "Output", color: "var(--crc-chart-output)" }]} />
+              <Legend items={[{ label: "Input", color: "var(--renki-chart-input)" }, { label: "Output", color: "var(--renki-chart-output)" }]} />
               <CategoryBars buckets={data.byModel} metric="tokens" labelFor={formatModelLabel} />
             </ChartCard>
             <ChartCard title="Cost">
@@ -153,7 +153,7 @@ export function StatsView() {
         >
           <div className="grid gap-6 sm:grid-cols-2">
             <ChartCard title="Tokens">
-              <Legend items={[{ label: "Input", color: "var(--crc-chart-input)" }, { label: "Output", color: "var(--crc-chart-output)" }]} />
+              <Legend items={[{ label: "Input", color: "var(--renki-chart-input)" }, { label: "Output", color: "var(--renki-chart-output)" }]} />
               <CategoryBars buckets={data.byClientType} metric="tokens" labelFor={formatClientTypeLabel} />
             </ChartCard>
             <ChartCard title="Cost">
@@ -174,7 +174,7 @@ export function StatsView() {
       >
         <div className="grid gap-6 sm:grid-cols-2">
           <ChartCard title="Tokens">
-            <Legend items={[{ label: "Input", color: "var(--crc-chart-input)" }, { label: "Output", color: "var(--crc-chart-output)" }]} />
+            <Legend items={[{ label: "Input", color: "var(--renki-chart-input)" }, { label: "Output", color: "var(--renki-chart-output)" }]} />
             <Bars
               items={days.map((b) => ({
                 key: b.key,
@@ -183,8 +183,8 @@ export function StatsView() {
                 b: b.outputTokens,
                 tooltip: `${formatDayLabel(b.key)}\nInput ${formatTokenCount(b.inputTokens)} · Output ${formatTokenCount(b.outputTokens)}`,
               }))}
-              colorA="var(--crc-chart-input)"
-              colorB="var(--crc-chart-output)"
+              colorA="var(--renki-chart-input)"
+              colorB="var(--renki-chart-output)"
             />
           </ChartCard>
           <ChartCard title="Cost">
@@ -195,7 +195,7 @@ export function StatsView() {
                 a: b.costUsd,
                 tooltip: `${formatDayLabel(b.key)}\n${formatCost(b.costUsd)}`,
               }))}
-              colorA="var(--crc-accent)"
+              colorA="var(--renki-accent)"
             />
           </ChartCard>
           <ChartCard title="Time waited">
@@ -206,7 +206,7 @@ export function StatsView() {
                 a: b.durationMs,
                 tooltip: `${formatDayLabel(b.key)}\n${formatDuration(b.durationMs)}`,
               }))}
-              colorA="var(--crc-accent)"
+              colorA="var(--renki-accent)"
             />
           </ChartCard>
         </div>
@@ -221,7 +221,7 @@ export function StatsView() {
         ) : (
           <div className="grid gap-6 sm:grid-cols-2">
             <ChartCard title="Tokens">
-              <Legend items={[{ label: "Input", color: "var(--crc-chart-input)" }, { label: "Output", color: "var(--crc-chart-output)" }]} />
+              <Legend items={[{ label: "Input", color: "var(--renki-chart-input)" }, { label: "Output", color: "var(--renki-chart-output)" }]} />
               <Bars
                 items={data.monthly.map((b) => ({
                   key: b.key,
@@ -230,8 +230,8 @@ export function StatsView() {
                   b: b.outputTokens,
                   tooltip: `${formatMonthLabel(b.key)}\nInput ${formatTokenCount(b.inputTokens)} · Output ${formatTokenCount(b.outputTokens)}`,
                 }))}
-                colorA="var(--crc-chart-input)"
-                colorB="var(--crc-chart-output)"
+                colorA="var(--renki-chart-input)"
+                colorB="var(--renki-chart-output)"
               />
             </ChartCard>
             <ChartCard title="Cost">
@@ -242,7 +242,7 @@ export function StatsView() {
                   a: b.costUsd,
                   tooltip: `${formatMonthLabel(b.key)}\n${formatCost(b.costUsd)}`,
                 }))}
-                colorA="var(--crc-accent)"
+                colorA="var(--renki-accent)"
               />
             </ChartCard>
           </div>
@@ -258,8 +258,8 @@ function RtkSection({ rtk }: { rtk: RtkGainResponse }) {
   if (!rtk.available || !rtk.summary) {
     return (
       <section className="mb-8">
-        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-(--crc-fg-muted)">RTK savings</h2>
-        <div className="rounded-xl bg-(--crc-surface) p-4 text-xs text-(--crc-fg-muted)">
+        <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-(--renki-fg-muted)">RTK savings</h2>
+        <div className="rounded-xl bg-(--renki-surface) p-4 text-xs text-(--renki-fg-muted)">
           RTK is enabled but not reachable on the daemon host{rtk.error ? ` — ${rtk.error}` : ""}.
         </div>
       </section>
@@ -287,7 +287,7 @@ function RtkSection({ rtk }: { rtk: RtkGainResponse }) {
                 a: d.savedTokens,
                 tooltip: `${formatDayLabel(d.date)}\n${formatTokenCount(d.savedTokens)} saved · ${Math.round(d.savingsPct)}%`,
               }))}
-              colorA="var(--crc-accent)"
+              colorA="var(--renki-accent)"
             />
           </ChartCard>
           <ChartCard title="Savings %">
@@ -298,14 +298,14 @@ function RtkSection({ rtk }: { rtk: RtkGainResponse }) {
                 a: d.savingsPct,
                 tooltip: `${formatDayLabel(d.date)}\n${Math.round(d.savingsPct)}% savings · ${d.commands} cmd${d.commands === 1 ? "" : "s"}`,
               }))}
-              colorA="var(--crc-accent)"
+              colorA="var(--renki-accent)"
             />
           </ChartCard>
         </div>
       )}
 
-      <p className="mt-3 text-[10px] leading-snug text-(--crc-fg-muted)">
-        From <code>rtk gain</code> on the daemon host — not computed by CRC.
+      <p className="mt-3 text-[10px] leading-snug text-(--renki-fg-muted)">
+        From <code>rtk gain</code> on the daemon host — not computed by Renki.
       </p>
     </Section>
   );
@@ -313,9 +313,9 @@ function RtkSection({ rtk }: { rtk: RtkGainResponse }) {
 
 function RtkTable({ rows }: { rows: RtkGainDay[] }) {
   return (
-    <div className="overflow-x-auto rounded-sm border border-(--crc-border)">
+    <div className="overflow-x-auto rounded-sm border border-(--renki-border)">
       <table className="w-full text-left text-[11px]">
-        <thead className="bg-(--crc-bg-elevated) text-(--crc-fg-muted)">
+        <thead className="bg-(--renki-bg-elevated) text-(--renki-fg-muted)">
           <tr>
             {["", "Commands", "Input", "Output", "Saved", "Savings %", "Exec time"].map((h) => (
               <th key={h} className="px-2.5 py-1.5 font-medium">
@@ -324,16 +324,16 @@ function RtkTable({ rows }: { rows: RtkGainDay[] }) {
             ))}
           </tr>
         </thead>
-        <tbody className="[&>tr:nth-child(even)]:bg-(--crc-bg-elevated)/40">
+        <tbody className="[&>tr:nth-child(even)]:bg-(--renki-bg-elevated)/40">
           {[...rows].reverse().map((d) => (
             <tr key={d.date}>
-              <td className="px-2.5 py-1 text-(--crc-fg)">{formatDayLabel(d.date)}</td>
-              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{d.commands}</td>
-              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatTokenCount(d.inputTokens)}</td>
-              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatTokenCount(d.outputTokens)}</td>
-              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatTokenCount(d.savedTokens)}</td>
-              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{Math.round(d.savingsPct)}%</td>
-              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatDuration(d.totalTimeMs)}</td>
+              <td className="px-2.5 py-1 text-(--renki-fg)">{formatDayLabel(d.date)}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--renki-fg-muted)">{d.commands}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--renki-fg-muted)">{formatTokenCount(d.inputTokens)}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--renki-fg-muted)">{formatTokenCount(d.outputTokens)}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--renki-fg-muted)">{formatTokenCount(d.savedTokens)}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--renki-fg-muted)">{Math.round(d.savingsPct)}%</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--renki-fg-muted)">{formatDuration(d.totalTimeMs)}</td>
             </tr>
           ))}
         </tbody>
@@ -345,10 +345,10 @@ function RtkTable({ rows }: { rows: RtkGainDay[] }) {
 function EarlyMonthNote({ monthly }: { monthly: StatsBucket[] }) {
   const current = monthly[0];
   return (
-    <div className="rounded-xl bg-(--crc-surface) p-4 text-xs text-(--crc-fg-muted)">
+    <div className="rounded-xl bg-(--renki-surface) p-4 text-xs text-(--renki-fg-muted)">
       <p>Not enough history yet for a month-over-month trend — check back after a full month or two.</p>
       {current && (
-        <p className="mt-2 text-(--crc-fg)">
+        <p className="mt-2 text-(--renki-fg)">
           {formatMonthLabel(current.key)} so far: {formatCost(current.costUsd)} ·{" "}
           {formatTokenCount(current.inputTokens + current.outputTokens)} tokens · {formatDuration(current.durationMs)} waited
         </p>
@@ -362,7 +362,7 @@ function Section({ title, children, table }: { title: string; children: React.Re
   return (
     <section className="mb-8">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-(--crc-fg-muted)">{title}</h2>
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-(--renki-fg-muted)">{title}</h2>
         {table && (
           <Button variant="ghost" className="px-2! py-0.5! text-[11px]" onClick={() => setShowTable((v) => !v)}>
             {showTable ? "Hide table" : "View as table"}
@@ -376,8 +376,8 @@ function Section({ title, children, table }: { title: string; children: React.Re
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl bg-(--crc-surface) p-4">
-      <div className="mb-2 text-[11px] font-medium text-(--crc-fg-muted)">{title}</div>
+    <div className="rounded-xl bg-(--renki-surface) p-4">
+      <div className="mb-2 text-[11px] font-medium text-(--renki-fg-muted)">{title}</div>
       {children}
     </div>
   );
@@ -385,7 +385,7 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
 
 function Legend({ items }: { items: { label: string; color: string }[] }) {
   return (
-    <div className="mb-2 flex gap-3 text-[11px] text-(--crc-fg-muted)">
+    <div className="mb-2 flex gap-3 text-[11px] text-(--renki-fg-muted)">
       {items.map((it) => (
         <span key={it.label} className="inline-flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-full" style={{ background: it.color }} />
@@ -398,9 +398,9 @@ function Legend({ items }: { items: { label: string; color: string }[] }) {
 
 function StatTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl bg-(--crc-surface) p-4 shadow-(--crc-shadow-xs)">
-      <div className="text-[11px] font-medium text-(--crc-fg-muted)">{label}</div>
-      <div className="mt-1 text-xl font-semibold tracking-tight text-(--crc-fg)">{value}</div>
+    <div className="rounded-xl bg-(--renki-surface) p-4 shadow-(--renki-shadow-xs)">
+      <div className="text-[11px] font-medium text-(--renki-fg-muted)">{label}</div>
+      <div className="mt-1 text-xl font-semibold tracking-tight text-(--renki-fg)">{value}</div>
     </div>
   );
 }
@@ -429,7 +429,7 @@ function Bars({ items, colorA, colorB }: { items: BarItem[]; colorA: string; col
           const hB = ((it.b ?? 0) / max) * CHART_H;
           return (
             <div key={it.key} className="group relative flex h-full max-w-6 flex-1 flex-col justify-end">
-              <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 hidden -translate-x-1/2 whitespace-pre rounded-xl bg-(--crc-surface) px-2 py-1 text-[10px] text-(--crc-fg) shadow-lg group-hover:block">
+              <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 hidden -translate-x-1/2 whitespace-pre rounded-xl bg-(--renki-surface) px-2 py-1 text-[10px] text-(--renki-fg) shadow-lg group-hover:block">
                 {it.tooltip}
               </div>
               <div className="flex w-full flex-col justify-end gap-0.5" style={{ height: CHART_H }}>
@@ -442,16 +442,16 @@ function Bars({ items, colorA, colorB }: { items: BarItem[]; colorA: string; col
                     style={{ height: Math.max(hA, 2), background: colorA }}
                   />
                 ) : (
-                  <div className="h-px w-full bg-(--crc-border)" />
+                  <div className="h-px w-full bg-(--renki-border)" />
                 )}
               </div>
             </div>
           );
         })}
       </div>
-      <div className="mt-1 flex border-t border-(--crc-border) pt-1">
+      <div className="mt-1 flex border-t border-(--renki-border) pt-1">
         {items.map((it, i) => (
-          <div key={it.key} className="flex-1 text-center text-[9px] text-(--crc-fg-muted)">
+          <div key={it.key} className="flex-1 text-center text-[9px] text-(--renki-fg-muted)">
             {ticks.has(i) ? it.label : ""}
           </div>
         ))}
@@ -476,20 +476,20 @@ function RepoBars({ repos, metric }: { repos: RepoStatsBucket[]; metric: "cost" 
         const total = totalFor(r);
         return (
           <div key={r.repoId} className="flex items-center gap-2">
-            <div className="w-28 shrink-0 truncate text-[11px] text-(--crc-fg)" title={r.repoName}>
+            <div className="w-28 shrink-0 truncate text-[11px] text-(--renki-fg)" title={r.repoName}>
               {r.repoName}
             </div>
-            <div className="flex h-4 flex-1 overflow-hidden rounded-sm bg-(--crc-bg)">
+            <div className="flex h-4 flex-1 overflow-hidden rounded-sm bg-(--renki-bg)">
               {metric === "tokens" ? (
                 <>
-                  <div className="h-full" style={{ width: `${(r.inputTokens / max) * 100}%`, background: "var(--crc-chart-input)" }} />
-                  <div className="h-full" style={{ width: `${(r.outputTokens / max) * 100}%`, background: "var(--crc-chart-output)" }} />
+                  <div className="h-full" style={{ width: `${(r.inputTokens / max) * 100}%`, background: "var(--renki-chart-input)" }} />
+                  <div className="h-full" style={{ width: `${(r.outputTokens / max) * 100}%`, background: "var(--renki-chart-output)" }} />
                 </>
               ) : (
-                <div className="h-full rounded-sm" style={{ width: `${Math.max((total / max) * 100, total > 0 ? 2 : 0)}%`, background: "var(--crc-accent)" }} />
+                <div className="h-full rounded-sm" style={{ width: `${Math.max((total / max) * 100, total > 0 ? 2 : 0)}%`, background: "var(--renki-accent)" }} />
               )}
             </div>
-            <div className="w-16 shrink-0 text-right text-[11px] text-(--crc-fg-muted) tabular-nums">
+            <div className="w-16 shrink-0 text-right text-[11px] text-(--renki-fg-muted) tabular-nums">
               {metric === "cost" ? formatCost(total) : formatTokenCount(total)}
             </div>
           </div>
@@ -515,20 +515,20 @@ function CategoryBars({ buckets, metric, labelFor }: { buckets: StatsBucket[]; m
         const label = labelFor(b.key);
         return (
           <div key={b.key} className="flex items-center gap-2">
-            <div className="w-28 shrink-0 truncate text-[11px] text-(--crc-fg)" title={label}>
+            <div className="w-28 shrink-0 truncate text-[11px] text-(--renki-fg)" title={label}>
               {label}
             </div>
-            <div className="flex h-4 flex-1 overflow-hidden rounded-sm bg-(--crc-bg)">
+            <div className="flex h-4 flex-1 overflow-hidden rounded-sm bg-(--renki-bg)">
               {metric === "tokens" ? (
                 <>
-                  <div className="h-full" style={{ width: `${(b.inputTokens / max) * 100}%`, background: "var(--crc-chart-input)" }} />
-                  <div className="h-full" style={{ width: `${(b.outputTokens / max) * 100}%`, background: "var(--crc-chart-output)" }} />
+                  <div className="h-full" style={{ width: `${(b.inputTokens / max) * 100}%`, background: "var(--renki-chart-input)" }} />
+                  <div className="h-full" style={{ width: `${(b.outputTokens / max) * 100}%`, background: "var(--renki-chart-output)" }} />
                 </>
               ) : (
-                <div className="h-full rounded-sm" style={{ width: `${Math.max((total / max) * 100, total > 0 ? 2 : 0)}%`, background: "var(--crc-accent)" }} />
+                <div className="h-full rounded-sm" style={{ width: `${Math.max((total / max) * 100, total > 0 ? 2 : 0)}%`, background: "var(--renki-accent)" }} />
               )}
             </div>
-            <div className="w-16 shrink-0 text-right text-[11px] text-(--crc-fg-muted) tabular-nums">
+            <div className="w-16 shrink-0 text-right text-[11px] text-(--renki-fg-muted) tabular-nums">
               {metric === "cost" ? formatCost(total) : formatTokenCount(total)}
             </div>
           </div>
@@ -540,9 +540,9 @@ function CategoryBars({ buckets, metric, labelFor }: { buckets: StatsBucket[]; m
 
 function RepoTable({ rows }: { rows: RepoStatsBucket[] }) {
   return (
-    <div className="overflow-x-auto rounded-sm border border-(--crc-border)">
+    <div className="overflow-x-auto rounded-sm border border-(--renki-border)">
       <table className="w-full text-left text-[11px]">
-        <thead className="bg-(--crc-bg-elevated) text-(--crc-fg-muted)">
+        <thead className="bg-(--renki-bg-elevated) text-(--renki-fg-muted)">
           <tr>
             {["Repo", "Turns", "Success", "Input", "Output", "Cost", "Time waited"].map((h) => (
               <th key={h} className="px-2.5 py-1.5 font-medium">
@@ -551,16 +551,16 @@ function RepoTable({ rows }: { rows: RepoStatsBucket[] }) {
             ))}
           </tr>
         </thead>
-        <tbody className="[&>tr:nth-child(even)]:bg-(--crc-bg-elevated)/40">
+        <tbody className="[&>tr:nth-child(even)]:bg-(--renki-bg-elevated)/40">
           {rows.map((r) => (
             <tr key={r.repoId}>
-              <td className="px-2.5 py-1 text-(--crc-fg)">{r.repoName}</td>
-              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{r.turnCount}</td>
-              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatSuccessRate(r)}</td>
-              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatTokenCount(r.inputTokens)}</td>
-              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatTokenCount(r.outputTokens)}</td>
-              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatCost(r.costUsd)}</td>
-              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatDuration(r.durationMs)}</td>
+              <td className="px-2.5 py-1 text-(--renki-fg)">{r.repoName}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--renki-fg-muted)">{r.turnCount}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--renki-fg-muted)">{formatSuccessRate(r)}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--renki-fg-muted)">{formatTokenCount(r.inputTokens)}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--renki-fg-muted)">{formatTokenCount(r.outputTokens)}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--renki-fg-muted)">{formatCost(r.costUsd)}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--renki-fg-muted)">{formatDuration(r.durationMs)}</td>
             </tr>
           ))}
         </tbody>
@@ -584,9 +584,9 @@ function DataTable({
 }) {
   const ordered = reverse ? [...rows].reverse() : rows;
   return (
-    <div className="overflow-x-auto rounded-sm border border-(--crc-border)">
+    <div className="overflow-x-auto rounded-sm border border-(--renki-border)">
       <table className="w-full text-left text-[11px]">
-        <thead className="bg-(--crc-bg-elevated) text-(--crc-fg-muted)">
+        <thead className="bg-(--renki-bg-elevated) text-(--renki-fg-muted)">
           <tr>
             {[headerLabel, "Turns", "Success", "Input", "Output", "Cost", "Time waited"].map((h, i) => (
               <th key={i} className="px-2.5 py-1.5 font-medium">
@@ -595,16 +595,16 @@ function DataTable({
             ))}
           </tr>
         </thead>
-        <tbody className="[&>tr:nth-child(even)]:bg-(--crc-bg-elevated)/40">
+        <tbody className="[&>tr:nth-child(even)]:bg-(--renki-bg-elevated)/40">
           {ordered.map((r) => (
             <tr key={r.key}>
-              <td className="px-2.5 py-1 text-(--crc-fg)">{labelFor(r.key)}</td>
-              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{r.turnCount}</td>
-              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatSuccessRate(r)}</td>
-              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatTokenCount(r.inputTokens)}</td>
-              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatTokenCount(r.outputTokens)}</td>
-              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatCost(r.costUsd)}</td>
-              <td className="px-2.5 py-1 tabular-nums text-(--crc-fg-muted)">{formatDuration(r.durationMs)}</td>
+              <td className="px-2.5 py-1 text-(--renki-fg)">{labelFor(r.key)}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--renki-fg-muted)">{r.turnCount}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--renki-fg-muted)">{formatSuccessRate(r)}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--renki-fg-muted)">{formatTokenCount(r.inputTokens)}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--renki-fg-muted)">{formatTokenCount(r.outputTokens)}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--renki-fg-muted)">{formatCost(r.costUsd)}</td>
+              <td className="px-2.5 py-1 tabular-nums text-(--renki-fg-muted)">{formatDuration(r.durationMs)}</td>
             </tr>
           ))}
         </tbody>
@@ -615,7 +615,7 @@ function DataTable({
 
 function CenteredNote({ icon, text, sub, fill = true }: { icon?: string; text: string; sub?: string; fill?: boolean }) {
   return (
-    <div className={`flex flex-col items-center justify-center gap-2 text-center text-(--crc-fg-muted) ${fill ? "h-full" : "mb-8 py-12"}`}>
+    <div className={`flex flex-col items-center justify-center gap-2 text-center text-(--renki-fg-muted) ${fill ? "h-full" : "mb-8 py-12"}`}>
       {icon && <span className={`codicon ${icon} text-2xl`} />}
       <p className="text-sm">{text}</p>
       {sub && <p className="max-w-xs text-xs">{sub}</p>}
@@ -624,5 +624,5 @@ function CenteredNote({ icon, text, sub, fill = true }: { icon?: string; text: s
 }
 
 // formatCost/formatDuration/formatSuccessRate/formatDayLabel/formatMonthLabel/
-// lastNDays/tickIndices now live in @crc/client-core (statsFormat.ts), shared
+// lastNDays/tickIndices now live in @renki/client-core (statsFormat.ts), shared
 // with apps/mobile's identical Stats screen.

@@ -1,4 +1,4 @@
-import { classifyAttachment, MAX_ATTACHMENT_BYTES, type Attachment } from "@crc/client-core";
+import { classifyAttachment, MAX_ATTACHMENT_BYTES, type Attachment } from "@renki/client-core";
 import * as DocumentPicker from "expo-document-picker";
 import { randomUUID } from "expo-crypto";
 import * as FileSystem from "expo-file-system";

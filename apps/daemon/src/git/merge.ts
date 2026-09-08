@@ -1,4 +1,4 @@
-import type { Repo } from "@crc/protocol";
+import type { Repo } from "@renki/protocol";
 import { simpleGit } from "simple-git";
 import type { Config } from "../config.js";
 import { logger } from "../logger.js";
@@ -33,7 +33,7 @@ export async function attemptMerge(
     repo.path,
     scratchSessionId,
     targetBranch,
-    `crc-merge/${scratchSessionId}`,
+    `renki-merge/${scratchSessionId}`,
   );
   const git = simpleGit(worktreePath);
 

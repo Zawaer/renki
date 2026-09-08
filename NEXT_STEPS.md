@@ -30,10 +30,10 @@ features. The throughline for everything below: shrink "found the repo" →
       Also detects a loopback-only connection (e.g. pairing from a browser on
       `127.0.0.1:4517` itself) and offers the daemon's real Tailscale address
       instead of showing a QR that would only ever point back at itself.
-  - [x] **P1b — `crc init` wizard.** Done, narrower than originally scoped:
+  - [x] **P1b — `renki init` wizard.** Done, narrower than originally scoped:
         writing `.env` turned out to be unnecessary — auto-generated tokens
-        and `CRC_REPOS_ROOT`'s `~/coding` default mean there's often nothing
-        to write. `crc init` (`apps/daemon/src/cli.ts`) reports the resolved
+        and `RENKI_REPOS_ROOT`'s `~/coding` default mean there's often nothing
+        to write. `renki init` (`apps/daemon/src/cli.ts`) reports the resolved
         token + repos found, detects Tailscale and offers to run
         `tailscale serve --bg <port>` (with a clear remediation message if
         the operator isn't set), then prints the first pairing QR straight
@@ -43,8 +43,8 @@ features. The throughline for everything below: shrink "found the repo" →
         already configured by hand to onboard the rest. Verified both
         bare-metal and inside the Docker image.
 - [x] **P2a — Docker packaging.** Done: multi-stage `Dockerfile` +
-      `docker-compose.yml` for the daemon, scoped to just `@crc/daemon` +
-      `@crc/protocol` (`pnpm deploy` — web/mobile/vscode's dependency trees
+      `docker-compose.yml` for the daemon, scoped to just `@renki/daemon` +
+      `@renki/protocol` (`pnpm deploy` — web/mobile/vscode's dependency trees
       never run in the image). Reuses the host's `~/.claude` and repos via
       bind mounts; the auth token auto-generates the same way as bare-metal.
       Verified end to end on a real Linux homeserver (build, `cli.js repos`
@@ -53,14 +53,14 @@ features. The throughline for everything below: shrink "found the repo" →
       (`Dockerfile.web`, static build served by nginx) alongside it — one
       `docker compose up` now brings up both the daemon and the actual UI,
       matching what `ecosystem.config.cjs` already does for pm2 with
-      `crc-daemon` + `crc-web`. Prompted by a real homelab setup: someone
+      `renki-daemon` + `renki-web`. Prompted by a real homelab setup: someone
       pointed their own Caddy at the daemon expecting a webpage and got a
       bare `{"error":"unauthorized"}` — the daemon has no UI of its own.
   - [x] **P2b (half) — Prebuilt image.** Done:
         `.github/workflows/docker-publish.yml` builds both images
         (`Dockerfile`'s `runtime` target for the daemon, `Dockerfile.web`'s
         for the web UI) and pushes to GHCR
-        (`ghcr.io/zawaer/claude-remote-control` +
+        (`ghcr.io/zawaer/renki` +
         `…-web`) on every push to `main` (tag `latest` + `main-<sha>`) and on
         `v*.*.*` tags (semver tags, no `latest`). Uses `GITHUB_TOKEN` only —
         no registry secret to configure. Both Dockerfiles built locally
@@ -159,9 +159,9 @@ features. The throughline for everything below: shrink "found the repo" →
       `permission_resolved: deny` for any dangling permission request), and
       marks the session `error` so it's usable again. Covered by three new
       tests in `test/session-manager.test.ts`.
-- [ ] **VS Code extension.** Open `apps/vscode`, press F5, set `crc.daemonUrl` +
+- [ ] **VS Code extension.** Open `apps/vscode`, press F5, set `renki.daemonUrl` +
       run "Set Auth Token", open the panel. Confirm file links open worktree files.
-- [ ] **Android app.** `pnpm --filter @crc/mobile start`, run on a device via
+- [ ] **Android app.** `pnpm --filter @renki/mobile start`, run on a device via
       Expo Go; verify session list, streaming, take-control, permission approve.
 - [ ] **Push notifications.** Needs an EAS `projectId` in `app.json` and a dev
       build (`npx expo run:android` or `eas build`). Confirm a push arrives when a
@@ -178,7 +178,7 @@ features. The throughline for everything below: shrink "found the repo" →
       daemon switches + retries once, with the inline notice showing.
 - [ ] **Resume-survives-swap.** Confirm a session resumes correctly across a real
       `cswap` switch (expected to work — cswap swaps creds, not transcripts).
-- [ ] **Decide `CRC_FORCE_PERMISSION_PROMPTS`.** On = every tool asks the
+- [ ] **Decide `RENKI_FORCE_PERMISSION_PROMPTS`.** On = every tool asks the
       controller (good for approve-from-phone); off = inherit your `~/.claude`
       allow-list. Pick once the phone client is in use.
 
@@ -221,7 +221,7 @@ features. The throughline for everything below: shrink "found the repo" →
         per-device on both platforms (`lib/composerPrefs.ts` — localStorage
         on web, `expo-secure-store` on mobile; only permission mode
         persisted before). Shared resolver/validation logic and the Stats
-        screen's formatting helpers moved into `@crc/client-core` so web and
+        screen's formatting helpers moved into `@renki/client-core` so web and
         mobile can't drift apart on either.
       A `/security-review` pass on this whole range found no high-confidence
       issues; a `/simplify` pass found and fixed a handful of real ones
@@ -235,14 +235,14 @@ features. The throughline for everything below: shrink "found the repo" →
       session list — a mirror of web's `StatsView.tsx` (same `/stats` +
       `/rtk/gain` REST calls, same lifetime tiles, by-repo/daily/monthly
       token+cost+wait-time charts, and the RTK-savings section when
-      `CRC_ENABLE_RTK` is on). Two adaptations for touch/narrow-screen: web's
+      `RENKI_ENABLE_RTK` is on). Two adaptations for touch/narrow-screen: web's
       hover tooltips on each bar become tap-to-reveal (a bar chart column is a
       `TouchableOpacity` that shows its tooltip text below the chart until
       tapped again), and its side-by-side chart grid stacks into a single
       column. The "view as table" toggle per section is a horizontally
       scrollable fixed-width-column view (`SimpleTable`) standing in for
       HTML's `<table>`. Added `chartInput`/`chartOutput` to
-      `apps/mobile/src/theme.ts`, matching web's `--crc-chart-input`/`-output`
+      `apps/mobile/src/theme.ts`, matching web's `--renki-chart-input`/`-output`
       hex values exactly, since no chart colors previously existed on mobile.
       Verified with `tsc --noEmit` across the whole repo and an
       `expo export --platform android` bundle build; not yet exercised on a
@@ -305,7 +305,7 @@ features. The throughline for everything below: shrink "found the repo" →
       (anthropics/claude-agent-sdk-typescript#376), which permanently broke
       every permission-gated tool call from a background Agent-tool task once
       its spawning turn ended — so background agents never really worked
-      through CRC. Verified against the real CLI with a scripted smoke test:
+      through Renki. Verified against the real CLI with a scripted smoke test:
       two turns share one process and session id; a background agent spawned
       in turn 1 kept running through turn 2 and, 24 s after both turns ended,
       its Write permission request reached the resolver and the file landed;
@@ -316,12 +316,12 @@ features. The throughline for everything below: shrink "found the repo" →
       turns later is routed to the turn holding its Task block via a
       tool_use→turn map. Processes close on archive/delete/shutdown, after an
       account switch (idle ones only — a running process may cache the old
-      credentials), and after `CRC_LIVE_IDLE_MINUTES` (default 60) of true
+      credentials), and after `RENKI_LIVE_IDLE_MINUTES` (default 60) of true
       idleness. The RAM ceiling that originally motivated resume-per-prompt
       (~1 GiB/process) is now a config knob instead of an architecture.
       **Graceful restarts (same day, after a deploy killed a running turn):**
       SIGTERM/SIGINT now drain in-flight turns for up to
-      `CRC_SHUTDOWN_GRACE_SECONDS` (default 600) before closing processes;
+      `RENKI_SHUTDOWN_GRACE_SECONDS` (default 600) before closing processes;
       `docker-compose.yml` (`stop_grace_period: 11m`) and
       `ecosystem.config.cjs` (`kill_timeout`) are set above that so the
       process manager doesn't SIGKILL mid-drain. A turn that still gets cut
@@ -331,7 +331,7 @@ features. The throughline for everything below: shrink "found the repo" →
       Follow-ups worth doing on real hardware:
       - **Resume across a restart after queued messages.** Upstream #67 (queued
         streaming-input messages missing from the CLI's transcript) is still
-        open; CRC's own event log is complete regardless, but a session resumed
+        open; Renki's own event log is complete regardless, but a session resumed
         after a daemon restart could see Claude's history minus those user
         turns. Prompts are only ever sent one at a time here, so this may not
         bite at all — confirm with a real restart mid-conversation.
@@ -373,7 +373,7 @@ features. The throughline for everything below: shrink "found the repo" →
       are rounded with mono repo/branch. Verified with Playwright screenshots
       against the live daemon in dark + light, including a live permission
       prompt. VS Code embedding still tracks editor theme through the same
-      tokens (`--crc-surface` added, mapped to `editorWidget.background`).
+      tokens (`--renki-surface` added, mapped to `editorWidget.background`).
       Mobile untouched — it already had its own warmer redesign. A Lovable
       brief for further concepts was written the same day (not in repo).
 
@@ -440,10 +440,10 @@ features. The throughline for everything below: shrink "found the repo" →
       of open worktrees is real disk and a month of dead `crc/*` branches is
       real clutter, while the conversation is the part worth recovering. (The
       trade-off to remember: uncommitted work and session-branch commits still
-      die at delete time; `crc merge` first if they matter. Nothing was ever at
+      die at delete time; `renki merge` first if they matter. Nothing was ever at
       risk on GitHub — session branches have no upstream and are never pushed.)
       The daemon purges on the deadline, swept hourly and at boot;
-      `CRC_TRASH_RETENTION_DAYS` sets the window and `0` switches the bin off.
+      `RENKI_TRASH_RETENTION_DAYS` sets the window and `0` switches the bin off.
       Keeping DELETE as the *safe* verb was deliberate: the phone and VS Code
       clients gained the safety net without shipping a change, and permanent
       removal moved behind `?purge=true`, `Empty` on the Trash header, or
@@ -455,9 +455,25 @@ features. The throughline for everything below: shrink "found the repo" →
       to fix: an archived session no longer offers a Take control button that
       would 409, and its composer says it's read-only.
 
+- [x] **Renamed CRC -> Renki (2026-09-09).** "CRC" collides with *cyclic
+      redundancy check*, which makes a published project unsearchable, and the
+      old full name led with Anthropic's trademark. `renki` is Finnish for a
+      hired farmhand — someone who works your land while you're elsewhere.
+      The rename went all the way through: the `@renki/*` package scope, the
+      `renki` CLI, `RENKI_*` env vars, `--renki-*` CSS tokens, container and
+      hostname, the `renki/<id>` worktree branches, and the display name on
+      every client. Nothing stateful was allowed to break on the way: browsers
+      and phones migrate their `crc.*` storage keys on first launch (the
+      connection config lives there — a rename must not un-pair anything), the
+      daemon adopts an existing `crc.sqlite` (WAL sidecars included) rather
+      than silently starting empty, `isAutoBranch` still recognises pre-rename
+      `crc/` handles, and the VS Code extension falls back to its old secret,
+      globalState and settings keys. Entries above this line were written
+      under the old name and are left as they were.
+
 ## 4. Known fragilities
 
-- **Per-session git worktrees + the `crc merge` conflict flow may not scale to
+- **Per-session git worktrees + the `renki merge` conflict flow may not scale to
   frequent conflicts.** Today a merge conflict spawns exactly one Claude
   session (unattended, auto-approved) pre-loaded with the conflicted worktree
   to resolve it serially (`apps/daemon/src/sessions/mergeFlow.ts`,

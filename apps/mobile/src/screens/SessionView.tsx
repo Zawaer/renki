@@ -26,8 +26,8 @@ import {
   type TimelineItem,
   type TodoItemView,
   type TurnView,
-} from "@crc/client-core";
-import type { CapabilitiesResponse } from "@crc/protocol";
+} from "@renki/client-core";
+import type { CapabilitiesResponse } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { Fragment, useEffect, useRef, useState } from "react";
 import {

@@ -1,4 +1,4 @@
-import { describeConnectionError } from "@crc/client-core";
+import { describeConnectionError } from "@renki/client-core";
 import { useState } from "react";
 import { type AppConfig, getOrCreateDeviceId } from "../lib/config.js";
 import { Button } from "./ui.js";
@@ -37,14 +37,14 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
 
   return (
     <div className="flex h-full items-center justify-center p-6">
-      <div className="crc-enter w-full max-w-sm space-y-5 rounded-2xl border border-(--crc-border) bg-(--crc-surface) p-7 shadow-(--crc-shadow-lg)">
+      <div className="renki-enter w-full max-w-sm space-y-5 rounded-2xl border border-(--renki-border) bg-(--renki-surface) p-7 shadow-(--renki-shadow-lg)">
         <div className="space-y-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-(--crc-accent) text-(--crc-accent-fg) shadow-(--crc-shadow-sm)">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-(--renki-accent) text-(--renki-accent-fg) shadow-(--renki-shadow-sm)">
             <span className="codicon codicon-terminal text-xl" />
           </span>
           <div>
-            <h1 className="text-xl font-semibold tracking-tight text-(--crc-fg)">Connect to your daemon</h1>
-            <p className="mt-1 text-sm text-(--crc-fg-muted)">Point this browser at the CRC daemon on your homelab and paste its token.</p>
+            <h1 className="text-xl font-semibold tracking-tight text-(--renki-fg)">Connect to your daemon</h1>
+            <p className="mt-1 text-sm text-(--renki-fg-muted)">Point this browser at the Renki daemon on your homelab and paste its token.</p>
           </div>
         </div>
 
@@ -56,7 +56,7 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
               setFound(null);
             }}
             placeholder="http://homelab.tailnet:4517"
-            className="crc-input"
+            className="renki-input"
           />
         </Field>
         <Field label="Auth token">
@@ -68,29 +68,29 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
                 setFound(null);
               }}
               type={showToken ? "text" : "password"}
-              placeholder="CRC_AUTH_TOKEN"
-              className="crc-input min-w-0 flex-1"
+              placeholder="RENKI_AUTH_TOKEN"
+              className="renki-input min-w-0 flex-1"
             />
             <button
               type="button"
               onClick={() => setShowToken((v) => !v)}
-              className="shrink-0 text-xs text-(--crc-fg-muted) hover:text-(--crc-fg)"
+              className="shrink-0 text-xs text-(--renki-fg-muted) hover:text-(--renki-fg)"
             >
               {showToken ? "Hide" : "Show"}
             </button>
           </div>
         </Field>
         <Field label="This device's name">
-          <input value={deviceName} onChange={(e) => setDeviceName(e.target.value)} className="crc-input" />
+          <input value={deviceName} onChange={(e) => setDeviceName(e.target.value)} className="renki-input" />
         </Field>
 
-        {error && <p className="rounded-lg border border-(--crc-danger)/30 bg-(--crc-danger)/10 px-3 py-2 text-sm text-(--crc-danger)">{error}</p>}
+        {error && <p className="rounded-lg border border-(--renki-danger)/30 bg-(--renki-danger)/10 px-3 py-2 text-sm text-(--renki-danger)">{error}</p>}
 
         {found && (
-          <p className="rounded-lg border border-(--crc-success)/30 bg-(--crc-success)/10 px-3 py-2 text-sm text-(--crc-success)">
+          <p className="rounded-lg border border-(--renki-success)/30 bg-(--renki-success)/10 px-3 py-2 text-sm text-(--renki-success)">
             Connected — found {found.repos} repo{found.repos === 1 ? "" : "s"} under{" "}
-            <code className="text-(--crc-success)">{found.root}</code>.
-            {found.repos === 0 && " Add a git repo there (or point CRC_REPOS_ROOT elsewhere) before creating a session."}
+            <code className="text-(--renki-success)">{found.root}</code>.
+            {found.repos === 0 && " Add a git repo there (or point RENKI_REPOS_ROOT elsewhere) before creating a session."}
           </p>
         )}
 
@@ -111,7 +111,7 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block space-y-1">
-      <span className="text-xs font-medium text-(--crc-fg-muted)">{label}</span>
+      <span className="text-xs font-medium text-(--renki-fg-muted)">{label}</span>
       {children}
     </label>
   );

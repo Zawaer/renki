@@ -1,4 +1,4 @@
-import type { StatsBucket } from "@crc/protocol";
+import type { StatsBucket } from "@renki/protocol";
 
 /**
  * Activity-shaped views of the daemon's daily turn_result buckets — what the

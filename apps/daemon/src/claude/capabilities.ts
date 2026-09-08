@@ -1,4 +1,4 @@
-import type { CapabilitiesResponse } from "@crc/protocol";
+import type { CapabilitiesResponse } from "@renki/protocol";
 
 /**
  * Process-lifetime cache of what the Agent SDK reports as available (models,

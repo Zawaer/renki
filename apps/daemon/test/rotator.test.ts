@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import type { Account } from "@crc/protocol";
+import type { Account } from "@renki/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { AccountRotator } from "../src/accounts/rotator.js";
 import type { SessionManager } from "../src/sessions/manager.js";
@@ -283,7 +283,7 @@ describe("AccountRotator settings persistence", () => {
 describe("preferred account", () => {
   /**
    * The case this exists for: one login is used for coding, the other's quota
-   * is reserved for chatting elsewhere. So CRC should sit on the preferred
+   * is reserved for chatting elsewhere. So Renki should sit on the preferred
    * account whenever it can work, borrow the other only while the preferred
    * is over the threshold, and come back the moment it resets.
    */

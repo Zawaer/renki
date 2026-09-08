@@ -1,6 +1,6 @@
-import type { AttachmentMediaType } from "@crc/protocol";
+import type { AttachmentMediaType } from "@renki/protocol";
 
-export { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS_PER_PROMPT, type Attachment, type AttachmentMediaType } from "@crc/protocol";
+export { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS_PER_PROMPT, type Attachment, type AttachmentMediaType } from "@renki/protocol";
 
 /**
  * Extensions treated as plain text for attachment purposes even when the
@@ -54,7 +54,7 @@ const TEXT_EXTENSIONS = new Set([
 
 /**
  * Maps a picked file's reported name/MIME type to the wire `AttachmentMediaType`
- * CRC knows how to hand the model as a real content block, or null if it isn't
+ * Renki knows how to hand the model as a real content block, or null if it isn't
  * one of the supported kinds (image/PDF/text) — the caller should reject those
  * with a message to reference the file by absolute path instead.
  */

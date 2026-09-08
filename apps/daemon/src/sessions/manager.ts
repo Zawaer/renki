@@ -1,5 +1,5 @@
 import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk";
-import type { Attachment, EventPayload, MergeConflictMeta, Session, SessionPurpose, SessionStatus } from "@crc/protocol";
+import type { Attachment, EventPayload, MergeConflictMeta, Session, SessionPurpose, SessionStatus } from "@renki/protocol";
 import { desc, eq, ne } from "drizzle-orm";
 import { mkdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
@@ -348,7 +348,7 @@ export class SessionManager {
    * The live `claude` process closes and control is released. The session is
    * not resumable while it sits here.
    *
-   * With `CRC_TRASH_RETENTION_DAYS=0` the bin is switched off and this purges
+   * With `RENKI_TRASH_RETENTION_DAYS=0` the bin is switched off and this purges
    * straight away, matching the old behaviour for anyone who wants it.
    */
   async trashSession(id: string): Promise<Session | null> {

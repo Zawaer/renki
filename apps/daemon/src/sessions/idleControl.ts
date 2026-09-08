@@ -1,4 +1,4 @@
-import type { Session } from "@crc/protocol";
+import type { Session } from "@renki/protocol";
 
 /**
  * When the take-control lock should be released automatically.

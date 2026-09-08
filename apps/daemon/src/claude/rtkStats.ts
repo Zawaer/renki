@@ -1,12 +1,12 @@
 import { execFile } from "node:child_process";
-import type { RtkGainDay, RtkGainResponse, RtkGainSummary } from "@crc/protocol";
+import type { RtkGainDay, RtkGainResponse, RtkGainSummary } from "@renki/protocol";
 
 /** How many trailing days of `rtk gain --daily` to keep — matches rtk's own `--graph` window. */
 const DAY_WINDOW = 30;
 
 /**
  * Reads RTK's own `rtk gain --daily --format json` output — the same numbers
- * a user already gets running `rtk gain` on the daemon host themselves. CRC
+ * a user already gets running `rtk gain` on the daemon host themselves. Renki
  * doesn't compute any of this; it's read-only surfacing of RTK's local stats.
  * Only call this when `config.enableRtk` is on (see http.ts).
  */

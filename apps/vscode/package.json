@@ -1,13 +1,13 @@
 {
-  "name": "crc-vscode",
-  "displayName": "Claude Remote Control",
+  "name": "renki-vscode",
+  "displayName": "Renki",
   "description": "Drive your homelab Claude Code sessions from inside VS Code.",
   "version": "0.0.1",
   "private": true,
   "type": "commonjs",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Zawaer/claude-remote-control"
+    "url": "https://github.com/Zawaer/renki"
   },
   "engines": {
     "vscode": "^1.90.0"
@@ -18,21 +18,21 @@
   "contributes": {
     "commands": [
       {
-        "command": "crc.open",
-        "title": "Claude Remote Control: Open Panel"
+        "command": "renki.open",
+        "title": "Renki: Open Panel"
       },
       {
-        "command": "crc.setToken",
-        "title": "Claude Remote Control: Set Auth Token"
+        "command": "renki.setToken",
+        "title": "Renki: Set Auth Token"
       }
     ],
     "configuration": {
-      "title": "Claude Remote Control",
+      "title": "Renki",
       "properties": {
-        "crc.daemonUrl": {
+        "renki.daemonUrl": {
           "type": "string",
           "default": "",
-          "description": "Base URL of your CRC daemon, e.g. https://homelab.tailnet.ts.net"
+          "description": "Base URL of your Renki daemon, e.g. https://homelab.tailnet.ts.net"
         }
       }
     }
@@ -43,7 +43,7 @@
     "package": "vsce package --no-dependencies"
   },
   "dependencies": {
-    "@crc/web": "workspace:*"
+    "@renki/web": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",

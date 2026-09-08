@@ -35,7 +35,7 @@ login need to actually live there (see below), not on your laptop.
 ### Docker (recommended)
 
 ```bash
-git clone <this-repo> && cd claude-remote-control
+git clone <this-repo> && cd renki
 ```
 
 That's it for this step — `docker compose up --build` (step 3) builds the
@@ -54,7 +54,7 @@ image is visible inside the container.
 ### Without Docker
 
 ```bash
-git clone <this-repo> && cd claude-remote-control
+git clone <this-repo> && cd renki
 pnpm install
 pnpm build          # compiles protocol + daemon (+ web) to dist/
 ```
@@ -65,17 +65,17 @@ pnpm build          # compiles protocol + daemon (+ web) to dist/
 cp .env.example .env
 ```
 
-`CRC_AUTH_TOKEN` is optional — leave it commented out and the daemon mints one
-on first boot (`pnpm --filter @crc/daemon cli token`, or for Docker,
+`RENKI_AUTH_TOKEN` is optional — leave it commented out and the daemon mints one
+on first boot (`pnpm --filter @renki/daemon cli token`, or for Docker,
 `docker compose exec daemon node dist/cli.js token`, shows whichever one is
 active). Set it yourself only if you want to choose the value.
 
-`CRC_REPOS_ROOT` defaults to `~/coding` for the non-Docker path — only
+`RENKI_REPOS_ROOT` defaults to `~/coding` for the non-Docker path — only
 uncomment it if your repos live somewhere else. **For Docker, uncomment it
 and set an absolute path** — it's what gets mounted into the container, so
 it can't fall back to a default the way the bare-metal daemon can.
 
-Leave `CRC_HOST=127.0.0.1` — we expose it over Tailscale in step 4 rather
+Leave `RENKI_HOST=127.0.0.1` — we expose it over Tailscale in step 4 rather
 than binding to the network directly. (`docker-compose.yml` sets this to
 `0.0.0.0` *inside the container only*, which is what makes Docker's own port
 publishing work — the port it publishes to the host is still loopback-only,
@@ -84,7 +84,7 @@ so this doesn't change your actual exposure. Nothing to touch here.)
 Each session that has been prompted keeps one live `claude` process running
 between turns (that's what lets background agents keep working after their
 turn ends and still ask you for tool approvals). Budget roughly 1 GiB of RAM per
-live process. `CRC_LIVE_IDLE_MINUTES` (default 60) controls how long a process
+live process. `RENKI_LIVE_IDLE_MINUTES` (default 60) controls how long a process
 with nothing running — no turn, no background agent, no pending approval — is
 kept before the daemon closes it; the conversation itself is never lost, the
 next prompt simply resumes it in a fresh process. Set it to `0` to keep
@@ -94,21 +94,21 @@ Deleting a session moves it to a **Trash** section in the sidebar rather than
 destroying it outright. Think of it as **archive plus a timer**: the worktree
 and branch are cleaned up straight away, exactly as archiving does, and what
 the bin keeps is the **transcript** — **Restore** brings that back as an
-archived (read-only) session. After `CRC_TRASH_RETENTION_DAYS` (default 30) the
+archived (read-only) session. After `RENKI_TRASH_RETENTION_DAYS` (default 30) the
 daemon purges it and the transcript goes too; **Empty** on the Trash header or
 **Delete permanently** on a row does that immediately.
 
 So the conversation is recoverable for a month, but uncommitted work in the
 worktree and commits on the session branch are gone the moment you delete — if
-a session has work worth keeping, `crc merge` it (or push it) first. Nothing
-here ever touches GitHub: session branches have no upstream and CRC never
-pushes them. Set `CRC_TRASH_RETENTION_DAYS=0` to switch the bin off entirely
+a session has work worth keeping, `renki merge` it (or push it) first. Nothing
+here ever touches GitHub: session branches have no upstream and Renki never
+pushes them. Set `RENKI_TRASH_RETENTION_DAYS=0` to switch the bin off entirely
 and have delete mean delete, as it did before.
 
 Quick sanity check:
 
 ```bash
-pnpm --filter @crc/daemon cli repos   # should list your repos
+pnpm --filter @renki/daemon cli repos   # should list your repos
 # or, for Docker:
 docker compose run --rm daemon node dist/cli.js repos
 ```
@@ -125,20 +125,20 @@ docker compose logs -f daemon
 Brings up two containers: **`daemon`** (required) and **`web`** (optional —
 the actual UI, statically built and served by nginx, so it's reachable from
 any device without anyone needing a local dev environment or the repo
-cloned — the Docker equivalent of the `crc-web` pm2 process below). Reuses
+cloned — the Docker equivalent of the `renki-web` pm2 process below). Reuses
 your host's `claude` session (mounted from `~/.claude`) and your repos
-(mounted from `CRC_REPOS_ROOT`) — see `docker-compose.yml` for exactly what's
+(mounted from `RENKI_REPOS_ROOT`) — see `docker-compose.yml` for exactly what's
 mounted and why. Re-run the same command any time you pull new code;
 `restart: unless-stopped` means both survive a host reboot with no extra
 step. Only `daemon` is required if you'd rather just run
-`pnpm --filter @crc/web dev` locally instead — comment out the `web` service
+`pnpm --filter @renki/web dev` locally instead — comment out the `web` service
 in `docker-compose.yml` if you don't want to build/run it at all.
 
 ### Without Docker (pm2)
 
 pm2 is a solid fit for keeping this running in the background on a homelab
 box or a VPS alike. `ecosystem.config.cjs` defines two processes:
-**`crc-daemon`** (required) and **`crc-web`** (optional — the website itself,
+**`renki-daemon`** (required) and **`renki-web`** (optional — the website itself,
 served as a static build so it's reachable from any device without anyone
 needing a local dev environment or the repo cloned).
 
@@ -146,22 +146,22 @@ needing a local dev environment or the repo cloned).
 pnpm build
 pm2 start ecosystem.config.cjs
 pm2 save && pm2 startup     # survive reboots (follow the printed instruction)
-pm2 logs crc-daemon
-pm2 logs crc-web
+pm2 logs renki-daemon
+pm2 logs renki-web
 ```
 
-`crc-web` runs `vite preview` over `apps/web/dist` on port **4173**, bound to
+`renki-web` runs `vite preview` over `apps/web/dist` on port **4173**, bound to
 all interfaces — reachable at `http://<tailnet-ip>:4173` from any device on
 your tailnet. Unlike the daemon, it doesn't need `tailscale serve`/HTTPS: it's
 just static files, and a plain-HTTP page connecting to the daemon's `https://`
 URL isn't a mixed-content problem (only the reverse direction is). Only
-`crc-daemon` on its own is required if you'd rather just run
-`pnpm --filter @crc/web dev` locally on whichever device you're using at the
+`renki-daemon` on its own is required if you'd rather just run
+`pnpm --filter @renki/web dev` locally on whichever device you're using at the
 moment (what the rest of this guide assumes).
 
-To deploy a web change: `pnpm build` again, then `pm2 restart crc-web`.
+To deploy a web change: `pnpm build` again, then `pm2 restart renki-web`.
 
-For local daemon development instead of pm2, `pnpm --filter @crc/daemon dev`
+For local daemon development instead of pm2, `pnpm --filter @renki/daemon dev`
 (auto-reloads).
 
 ## 4. Reach it from anywhere with Tailscale
@@ -207,7 +207,7 @@ below.
 
 ### Alternative: bind to the tailnet directly
 
-If you'd rather not use `tailscale serve`, set `CRC_HOST=0.0.0.0` (or your
+If you'd rather not use `tailscale serve`, set `RENKI_HOST=0.0.0.0` (or your
 `100.x.y.z` tailnet IP) in `.env`. The token requirement doesn't change either
 way — the daemon always has one, auto-generated if you didn't set one — but
 you'll be on `http://…:4517` with no TLS, so the token travels in plaintext on
@@ -245,41 +245,41 @@ every other site already in it, reusing whatever internal CA you already
 have trusted rather than `tailscale serve`'s own cert:
 
 ```
-crc.your-homelab.internal {
+renki.your-homelab.internal {
     reverse_proxy 127.0.0.1:4173   # the actual web UI
     tls internal
 }
 
-crc-api.your-homelab.internal {
+renki-api.your-homelab.internal {
     reverse_proxy 127.0.0.1:4517   # the daemon (API only — no page to browse)
     tls internal
 }
 ```
 
 In the UI's own Setup screen, the Daemon URL is
-`https://crc-api.your-homelab.internal`. Two plain `reverse_proxy` blocks —
-nothing CRC-specific about them, so they slot into an existing Caddyfile the
+`https://renki-api.your-homelab.internal`. Two plain `reverse_proxy` blocks —
+nothing Renki-specific about them, so they slot into an existing Caddyfile the
 same way any other two-container app would. (If you'd rather have just one
 hostname, Caddy can also split by *path* instead of subdomain —
 `handle_path /api/*` routing to the daemon, everything else to the UI, with
-`https://crc.your-homelab.internal/api` as the Daemon URL — but that trades
+`https://renki.your-homelab.internal/api` as the Daemon URL — but that trades
 one DNS entry for a bit of Caddyfile that looks different from your other
 sites, so the two-hostname version above is the better default if your
 Caddyfile is otherwise this uniform.)
 
-You'll never actually browse to `crc-api.your-homelab.internal` in a tab —
+You'll never actually browse to `renki-api.your-homelab.internal` in a tab —
 it's not a page, just the address the UI's own JavaScript calls in the
 background, same as `api.example.com` on any site with a separate frontend
 and backend. It still needs to be a *real, trusted HTTPS* address though,
 not just a bare `IP:port`: once the UI is loaded over HTTPS, browsers flatly
 refuse to let its JS call anything served over plain HTTP ("mixed content"
-— not configurable, not a CRC thing, just how browsers work), so the daemon
+— not configurable, not a Renki thing, just how browsers work), so the daemon
 has to be HTTPS too, with a cert the browser actually trusts. Routing it
 through Caddy with `tls internal` is what gets you that.
 
 **Pairing an Android phone against a `tls internal` address?** A browser on
 that phone will happily prompt to trust the cert (or already does, if you
-installed your CA there for other `*.internal` sites). The CRC app itself
+installed your CA there for other `*.internal` sites). The Renki app itself
 also trusts user-installed CAs, not just system ones — same accommodation
 self-hosted apps like Immich make for exactly this setup. But that trust is
 still per-device: install your reverse proxy's root CA cert via Android
@@ -292,8 +292,8 @@ though the daemon is perfectly reachable.
 `docker-compose.yml` fronting several homelab services), the snippets above
 will 502: `127.0.0.1` inside Caddy's container means *itself*, not your
 host, so it has no route to either port at all. Change the `reverse_proxy`
-lines above to `crc-web:80` and `crc-daemon:4517` (container names instead of
-`127.0.0.1`), then put both CRC containers on whatever Docker network Caddy
+lines above to `renki-web:80` and `renki-daemon:4517` (container names instead of
+`127.0.0.1`), then put both Renki containers on whatever Docker network Caddy
 is already on — find that network's name with:
 
 ```
@@ -321,15 +321,15 @@ radius to exposing SSH than to exposing a blog. The bearer token becomes the
 *only* thing standing between the open internet and that access (see
 [Security model](#security-model-single-user-v1) below), and there's no rate
 limiting or other hardening built in for this scenario. If you do it anyway:
-always put TLS in front (Caddy, above), set your own strong `CRC_AUTH_TOKEN`
+always put TLS in front (Caddy, above), set your own strong `RENKI_AUTH_TOKEN`
 rather than relying on the auto-generated one, and treat that token with the
 same care as an SSH private key.
 
 ## 5. Connect a client
 
-- **Web:** `pnpm --filter @crc/web dev` → open `http://127.0.0.1:5173`, and in
+- **Web:** `pnpm --filter @renki/web dev` → open `http://127.0.0.1:5173`, and in
   the setup screen enter your daemon URL (the tailnet HTTPS URL) + token. (Or,
-  if you set up the always-on web container/`crc-web` pm2 process in step 3,
+  if you set up the always-on web container/`renki-web` pm2 process in step 3,
   just open `http://<tailnet-ip>:4173` from any device instead.)
 - Open a second browser/device to try the take-control handoff live.
 
@@ -342,7 +342,7 @@ adding, use **"Scan QR code"** on the Setup screen (Android) instead of typing
 — it runs the same connectivity test either way, so a stale or wrong QR still
 fails safely rather than "connecting" silently.
 
-### Alternative bootstrap: `crc init`
+### Alternative bootstrap: `renki init`
 
 The flow above assumes you open the web app first and type the daemon URL +
 token in once. If you'd rather skip that and onboard your **phone** directly
@@ -350,12 +350,12 @@ token in once. If you'd rather skip that and onboard your **phone** directly
 run this from the daemon host instead:
 
 ```bash
-pnpm --filter @crc/daemon cli init
+pnpm --filter @renki/daemon cli init
 # or, for Docker:
 docker compose exec daemon node dist/cli.js init
 ```
 
-Reports your resolved token and the repos found under `CRC_REPOS_ROOT`,
+Reports your resolved token and the repos found under `RENKI_REPOS_ROOT`,
 detects Tailscale and offers to run `tailscale serve` for you (printing the
 exact fix if the operator isn't set yet — see step 4), then prints a pairing
 QR straight to the terminal — scan *that* with the phone's **"Scan QR
@@ -375,26 +375,26 @@ pnpm build                                  # builds web + copies it into the ex
 
 Then, in VS Code:
 
-1. Open the `apps/vscode` folder and press **F5** ("Run CRC Extension") — this
+1. Open the `apps/vscode` folder and press **F5** ("Run Renki Extension") — this
    launches an Extension Development Host window. (Packaging a `.vsix` is
    optional and needs `@vscode/vsce`; the dev host doesn't.)
-2. In the dev-host window: set **`crc.daemonUrl`** in Settings, then run
-   **"Claude Remote Control: Set Auth Token"** from the command palette.
-3. Run **"Claude Remote Control: Open Panel"**. The token lives in VS Code's
+2. In the dev-host window: set **`renki.daemonUrl`** in Settings, then run
+   **"Renki: Set Auth Token"** from the command palette.
+3. Run **"Renki: Open Panel"**. The token lives in VS Code's
    SecretStorage (never in `settings.json`), and file paths in tool calls become
    clickable — they open the file from the session's worktree in your editor.
 
 ### Android app (Expo)
 
 ```bash
-pnpm --filter @crc/mobile start        # Metro; scan the QR with Expo Go (Android)
+pnpm --filter @renki/mobile start        # Metro; scan the QR with Expo Go (Android)
 ```
 
-(That QR just loads the JS bundle — Metro's own dev-client QR, not the CRC
+(That QR just loads the JS bundle — Metro's own dev-client QR, not the Renki
 pairing one below.)
 
 **"Unable to load script" / the app can't reach Metro?** This is a plain
-Metro-bundler connectivity problem, nothing CRC-specific. Metro defaults to
+Metro-bundler connectivity problem, nothing Renki-specific. Metro defaults to
 advertising your Mac/PC's Wi-Fi IP (e.g. `192.168.1.104:8081`); if the phone
 can't actually reach that (different network, client isolation on the
 router, or it's plugged in via USB with Wi-Fi off), the bundle fetch just
@@ -433,7 +433,7 @@ backgrounded) need a few extra one-time steps:
    send a prompt and background the app, you'll get a push if Claude needs a
    permission decision or the turn finishes. Tapping it opens that session.
 
-Enable `CRC_FORCE_PERMISSION_PROMPTS=1` on the daemon so tool permissions
+Enable `RENKI_FORCE_PERMISSION_PROMPTS=1` on the daemon so tool permissions
 actually reach your phone instead of being auto-approved by the host's
 allow-list.
 
@@ -444,7 +444,7 @@ If you have more than one Claude account, the daemon can automate the manual
 
 **Prerequisite:** install [`cswap`](https://github.com/realiti4/claude-swap),
 then add each account with **whichever of the three credential kinds below
-fits it** — CRC never distinguishes between them; it only ever calls
+fits it** — Renki never distinguishes between them; it only ever calls
 `cswap list` / `switch` / `switch-to`, so the choice per account is entirely
 yours. Confirm they're registered with `cswap list --json`.
 
@@ -496,9 +496,9 @@ than guessing which one is authoritative.
 Then set in `.env`:
 
 ```
-CRC_ACCOUNT_ROTATION=1
-CRC_ROTATION_THRESHOLD=90        # switch at 90% of the 5h or 7d window
-CRC_ROTATION_COOLDOWN_MINUTES=5  # anti-flip-flop
+RENKI_ACCOUNT_ROTATION=1
+RENKI_ROTATION_THRESHOLD=90        # switch at 90% of the 5h or 7d window
+RENKI_ROTATION_COOLDOWN_MINUTES=5  # anti-flip-flop
 ```
 
 How it behaves:
@@ -507,7 +507,7 @@ How it behaves:
   a turn actually fails because the account hit its limit, the daemon switches
   to the other account and — by default — **retries the same prompt once** on
   the new account. An inline notice shows this in the conversation. Turn off
-  the retry with `CRC_ROTATION_AUTORETRY=0`.
+  the retry with `RENKI_ROTATION_AUTORETRY=0`.
 - **Proactive threshold trigger (needs usage data — see below):** if usage % is
   available, it also switches when the active account's 5h **or** 7d usage
   crosses the threshold and another account has headroom.
@@ -526,7 +526,7 @@ How it behaves:
   claude.ai, so a poll often serves a cached value instantly. Net effect: the
   % you see is at most ~30s stale.
 - The **rotation threshold check** (decides whether to actually switch) runs on
-  its own timer, `CRC_ROTATION_POLL_SECONDS` (default **60s**) — independent of
+  its own timer, `RENKI_ROTATION_POLL_SECONDS` (default **60s**) — independent of
   how often a UI happens to be open and polling.
 - If a claude.ai poll fails (hiccup, expired key), the last-known value is kept
   rather than the bar going blank.
@@ -572,26 +572,26 @@ live usage, and you tap the right one.
   mobile note below (you already build outside Expo Go for push).
 - **Guided browser login (needs a display on the daemon host).** The daemon
   opens a real, headful browser on whatever machine it's running on — not
-  necessarily your Mac or phone, but wherever `crc-daemon` is — and reads the
+  necessarily your Mac or phone, but wherever `renki-daemon` is — and reads the
   session cookie once you sign in there. Requires Playwright on the daemon
-  host: `pnpm --filter @crc/daemon add playwright` (reuses your installed
-  Chrome via `CRC_USAGE_LOGIN_CHANNEL=chrome`, so no 150 MB download). You can
-  also run it headless of the app with `pnpm --filter @crc/daemon exec crc
+  host: `pnpm --filter @renki/daemon add playwright` (reuses your installed
+  Chrome via `RENKI_USAGE_LOGIN_CHANNEL=chrome`, so no 150 MB download). You can
+  also run it headless of the app with `pnpm --filter @renki/daemon exec renki
   usage login`.
 
-On the CLI, the same two steps: `crc usage orgs <sessionKey>` lists your orgs
-with their usage, then `crc usage connect <sessionKey> <orgId>` persists the
+On the CLI, the same two steps: `renki usage orgs <sessionKey>` lists your orgs
+with their usage, then `renki usage connect <sessionKey> <orgId>` persists the
 one you picked.
 
 **Picked the wrong org?** Every client shows a small **✕** next to any account
 with a connected usage key — tap it to stop tracking that account (a
 confirmation prompt guards against misclicks), then reconnect and pick the
-right org. On the CLI: `crc usage disconnect <email>`.
+right org. On the CLI: `renki usage disconnect <email>`.
 
 **Manual file (still supported).** Copy `apps/daemon/usage-accounts.example.json`
 to your data dir as `usage-accounts.json` (gitignored) and fill in the
 `sessionKey` **and** `orgId` for each account — get the `orgId` from
-`crc usage orgs <sessionKey>` first, since the daemon won't auto-pick one.
+`renki usage orgs <sessionKey>` first, since the daemon won't auto-pick one.
 
 The daemon fetches usage through a browser-fingerprinted HTTP client (claude.ai
 puts this endpoint behind Cloudflare, which blocks a plain server-side
@@ -601,14 +601,14 @@ works fine even without any of this.
 
 > **Mobile dev build:** the native login uses `react-native-webview` +
 > `@react-native-cookies/cookies`, which need native code. Rebuild the dev
-> client after installing: `pnpm --filter @crc/mobile exec expo prebuild` then
-> `pnpm --filter @crc/mobile run android` (or `ios`). It won't work in Expo Go.
+> client after installing: `pnpm --filter @renki/mobile exec expo prebuild` then
+> `pnpm --filter @renki/mobile run android` (or `ios`). It won't work in Expo Go.
 
 The daemon only ever asks `cswap` to change which account the **official** CLI
 loads at startup — it never extracts or reuses a token. That's the mechanism
 Anthropic has confirmed is within the Consumer Terms.
 
-Pair this with `CRC_FORCE_PERMISSION_PROMPTS=1` if you want tool approvals to
+Pair this with `RENKI_FORCE_PERMISSION_PROMPTS=1` if you want tool approvals to
 reach your phone rather than being auto-allowed.
 
 ## Previewing what a session builds (optional)
@@ -618,7 +618,7 @@ unreachable by default — not because of the filesystem, but because nothing
 routes to that port. Without this, every time Claude builds something you can
 look at, someone has to hand-make an SSH tunnel.
 
-If you already reverse-proxy CRC (§ Advanced networking), the tidiest fix is a
+If you already reverse-proxy Renki (§ Advanced networking), the tidiest fix is a
 wildcard host that maps a port onto a hostname. With Caddy on the same Docker
 network as the daemon:
 
@@ -626,7 +626,7 @@ network as the daemon:
 *.preview.internal {
 	@port header_regexp pport Host ^p([0-9]{2,5})\.preview\.internal$
 	handle @port {
-		reverse_proxy crc-daemon:{re.pport.1}
+		reverse_proxy renki-daemon:{re.pport.1}
 	}
 	handle {
 		respond "Use https://p<port>.preview.internal" 404
@@ -687,7 +687,7 @@ session can't log your host out; gh may warn when it can't write its state.
 
 **Be aware what this grants.** Every session gets your full GitHub reach —
 every repo and org that login can touch, not just the one it's working in.
-That's the same trust level CRC already assumes (a session can run arbitrary
+That's the same trust level Renki already assumes (a session can run arbitrary
 code on the host), but it now extends to your remote repositories.
 
 **Or give it a narrower token.** For a smaller blast radius, create a
@@ -710,16 +710,16 @@ sessions get no `gh` command.
 
 If you use [RTK](https://github.com/rtk-ai/rtk) locally, the daemon can rewrite
 Bash commands through it too — same 60-90% output-shrinking, applied to every
-session CRC runs.
+session Renki runs.
 
 Normal `rtk init -g` doesn't apply here: it wires up RTK via Claude Code's
-`settings.json` hook mechanism, but CRC strips any `hooks` a repo's own
+`settings.json` hook mechanism, but Renki strips any `hooks` a repo's own
 `.claude/settings.json`/`settings.local.json` defines before every turn (see
 [MCP servers](#mcp-servers-optional) below for why that's a repo file, not an
 SDK isolation flag). Instead, set:
 
 ```
-CRC_ENABLE_RTK=1
+RENKI_ENABLE_RTK=1
 ```
 
 This calls RTK's own `rtk hook claude` binary in-process for every Bash tool
@@ -735,22 +735,22 @@ quick-install script), point at it directly instead of relying on PATH
 lookup:
 
 ```
-CRC_RTK_BIN=/home/you/.local/bin/rtk
+RENKI_RTK_BIN=/home/you/.local/bin/rtk
 ```
 
-Note that `CRC_RTK_BIN` only changes how the daemon invokes RTK's own `rtk
+Note that `RENKI_RTK_BIN` only changes how the daemon invokes RTK's own `rtk
 hook claude` binary to decide the rewrite — the rewritten Bash command that
 actually runs afterward is just plain text RTK's hook produced (e.g. `rtk
 find . -maxdepth 2 -type f`), with no path baked in. That bare `rtk` still
 gets resolved via the shell's own `PATH` when the command executes, so the
-directory `CRC_RTK_BIN` points at must ALSO be on `PATH` for this to work
+directory `RENKI_RTK_BIN` points at must ALSO be on `PATH` for this to work
 end-to-end — otherwise the permission prompt shows the rewritten command
-just fine (since that step uses `CRC_RTK_BIN` directly), but running it fails
+just fine (since that step uses `RENKI_RTK_BIN` directly), but running it fails
 with "rtk: not found" once approved.
 
 **Docker is a different problem, not just PATH.** The container has its own
 filesystem — `~/.local/bin/rtk` on the host doesn't exist inside it at all,
-so `CRC_RTK_BIN` pointing at a host path will always `ENOENT` no matter what
+so `RENKI_RTK_BIN` pointing at a host path will always `ENOENT` no matter what
 you set. Install `rtk` on the host, then bind-mount that one binary into the
 container at `/root/.local/bin/rtk` specifically — not an arbitrary path —
 since that's the one directory the `Dockerfile` already adds to `PATH` (for
@@ -768,7 +768,7 @@ services:
       - ${HOME}/.local/share/rtk:/root/.local/share/rtk
 ```
 
-`CRC_RTK_BIN` doesn't need to be set at all in this case — `/root/.local/bin`
+`RENKI_RTK_BIN` doesn't need to be set at all in this case — `/root/.local/bin`
 is already on `PATH`, so the default (bare `rtk`) resolves correctly both for
 the daemon's own hook invocation and for the rewritten command it produces.
 
@@ -788,7 +788,7 @@ the host's `rtk` binary isn't compatible with the `node:20-bookworm-slim`
 image's libc — install a build of `rtk` linked against a compatible libc, or
 add an install step to the `Dockerfile` instead of bind-mounting.
 
-**Seeing the savings:** once `CRC_ENABLE_RTK=1` is set, every connected client
+**Seeing the savings:** once `RENKI_ENABLE_RTK=1` is set, every connected client
 shows a small rocket badge in the header (next to the accounts badge) with
 RTK's own token-savings numbers for the daemon host — commands run, tokens
 saved, average savings %, and the last 30 days. It's a thin read-only view
@@ -800,14 +800,14 @@ doesn't.
 
 ## MCP servers (optional)
 
-No CRC-side config needed — a repo's own `.mcp.json` (or user-level
+No Renki-side config needed — a repo's own `.mcp.json` (or user-level
 `~/.claude.json` MCP config on the daemon host) connects automatically,
-exactly like a local `claude` CLI session, since CRC's sessions load project
+exactly like a local `claude` CLI session, since Renki's sessions load project
 filesystem settings by default. Manage MCP servers the same way you would for
 any Claude Code project: edit `.mcp.json` in the repo, or `claude mcp add` on
 the daemon host.
 
-The one thing CRC strips out of that same filesystem-settings loading is
+The one thing Renki strips out of that same filesystem-settings loading is
 `hooks` (see the RTK section above) — a repo's `.claude/settings.json` can
 still define `mcpServers`, `permissions`, `statusLine`, etc.; only the
 `hooks` key is removed, and only from the session's own worktree copy, never
@@ -821,13 +821,13 @@ your source repo.
   only your clients can drive sessions even within the tailnet.
 - No third-party relay: prompts/data only ever go to Anthropic via the `claude`
   process the daemon runs locally.
-- `CRC_FORCE_PERMISSION_PROMPTS=1` makes every gated tool ask the controller
+- `RENKI_FORCE_PERMISSION_PROMPTS=1` makes every gated tool ask the controller
   instead of relying on your machine's allow-list — worth enabling once you
   approve actions from your phone.
 - A repo's own `.claude/settings.json`/`settings.local.json` can't smuggle in
   a `PreToolUse`/`PostToolUse` command hook to get shell execution around the
-  approval prompt — CRC strips the `hooks` key from both files, in the
+  approval prompt — Renki strips the `hooks` key from both files, in the
   session's worktree, before every turn. This matters regardless of
-  `CRC_FORCE_PERMISSION_PROMPTS`: a hook-defined command runs unconditionally,
+  `RENKI_FORCE_PERMISSION_PROMPTS`: a hook-defined command runs unconditionally,
   even when a tool call is denied, so it isn't something the permission
   system alone can catch.

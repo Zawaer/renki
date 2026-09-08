@@ -1,4 +1,4 @@
-import type { SessionEvent } from "@crc/protocol";
+import type { SessionEvent } from "@renki/protocol";
 import type { Config } from "../config.js";
 import { logger } from "../logger.js";
 import type { SessionManager } from "../sessions/manager.js";

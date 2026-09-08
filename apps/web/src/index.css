@@ -2,7 +2,7 @@
 @import "@vscode/codicons/dist/codicon.css";
 
 /*
- * Design tokens. Components consume --crc-* only.
+ * Design tokens. Components consume --renki-* only.
  *
  * Priority, low to high:
  *   1. :root                         warm dark (plain browser, no preference)
@@ -24,8 +24,8 @@
   --radius-xl: 16px;
   --radius-2xl: 20px;
   --radius-3xl: 24px;
-  --font-sans: var(--crc-font-ui);
-  --font-mono: var(--crc-font-mono);
+  --font-sans: var(--renki-font-ui);
+  --font-mono: var(--renki-font-mono);
 }
 
 :root {
@@ -38,77 +38,77 @@
    * is deliberately almost the page colour: hierarchy comes from tone and
    * spacing, not from panels.
    */
-  --crc-bg: oklch(0.18 0.014 63);
-  --crc-bg-elevated: oklch(0.19 0.015 63);
-  --crc-surface: oklch(0.23 0.018 63);
-  --crc-bg-inset: oklch(0.15 0.012 63);
-  --crc-hover: oklch(0.25 0.018 63);
+  --renki-bg: oklch(0.18 0.014 63);
+  --renki-bg-elevated: oklch(0.19 0.015 63);
+  --renki-surface: oklch(0.23 0.018 63);
+  --renki-bg-inset: oklch(0.15 0.012 63);
+  --renki-hover: oklch(0.25 0.018 63);
 
-  --crc-fg: oklch(0.95 0.019 79);
-  --crc-fg-muted: oklch(0.7 0.024 72);
-  --crc-border: oklch(0.26 0.016 66);
+  --renki-fg: oklch(0.95 0.019 79);
+  --renki-fg-muted: oklch(0.7 0.024 72);
+  --renki-border: oklch(0.26 0.016 66);
 
   /* Amber accent with dark text on it. */
-  --crc-accent: oklch(0.76 0.13 62);
-  --crc-accent-hover: oklch(0.8 0.13 62);
-  --crc-accent-fg: oklch(0.22 0.06 52);
-  --crc-selected: color-mix(in oklab, var(--crc-accent) 14%, transparent);
-  --crc-selected-fg: oklch(0.97 0.015 79);
-  --crc-link: oklch(0.76 0.07 236);
-  --crc-input-bg: oklch(0.16 0.013 63);
+  --renki-accent: oklch(0.76 0.13 62);
+  --renki-accent-hover: oklch(0.8 0.13 62);
+  --renki-accent-fg: oklch(0.22 0.06 52);
+  --renki-selected: color-mix(in oklab, var(--renki-accent) 14%, transparent);
+  --renki-selected-fg: oklch(0.97 0.015 79);
+  --renki-link: oklch(0.76 0.07 236);
+  --renki-input-bg: oklch(0.16 0.013 63);
 
-  --crc-success: oklch(0.79 0.15 156);
-  --crc-warning: oklch(0.85 0.14 88);
-  --crc-danger: oklch(0.68 0.16 26);
-  --crc-focus: oklch(0.8 0.11 66);
-  --crc-chart-input: oklch(0.72 0.1 236);
-  --crc-chart-output: oklch(0.76 0.13 62);
+  --renki-success: oklch(0.79 0.15 156);
+  --renki-warning: oklch(0.85 0.14 88);
+  --renki-danger: oklch(0.68 0.16 26);
+  --renki-focus: oklch(0.8 0.11 66);
+  --renki-chart-input: oklch(0.72 0.1 236);
+  --renki-chart-output: oklch(0.76 0.13 62);
 
-  --crc-shadow-xs: 0 1px 2px oklch(0 0 0 / 0.25);
-  --crc-shadow-sm: 0 2px 8px oklch(0 0 0 / 0.3);
-  --crc-shadow-md: 0 8px 24px oklch(0 0 0 / 0.38);
-  --crc-shadow-lg: 0 12px 34px oklch(0 0 0 / 0.45);
+  --renki-shadow-xs: 0 1px 2px oklch(0 0 0 / 0.25);
+  --renki-shadow-sm: 0 2px 8px oklch(0 0 0 / 0.3);
+  --renki-shadow-md: 0 8px 24px oklch(0 0 0 / 0.38);
+  --renki-shadow-lg: 0 12px 34px oklch(0 0 0 / 0.45);
   /* The permission card: a faint danger ring plus a deep lift, so it reads from across the room. */
-  --crc-shadow-alarm: 0 0 0 1px color-mix(in oklab, var(--crc-danger) 22%, transparent), 0 18px 44px oklch(0 0 0 / 0.5);
+  --renki-shadow-alarm: 0 0 0 1px color-mix(in oklab, var(--renki-danger) 22%, transparent), 0 18px 44px oklch(0 0 0 / 0.5);
 
-  --crc-font-ui: "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --crc-font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, "Courier New", monospace;
+  --renki-font-ui: "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --renki-font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, "Courier New", monospace;
 }
 
 @media (prefers-color-scheme: light) {
   :root {
     color-scheme: light;
 
-    --crc-bg: oklch(0.98 0.008 84);
-    --crc-bg-elevated: oklch(0.975 0.008 84);
-    --crc-surface: oklch(1 0 0);
-    --crc-bg-inset: oklch(0.955 0.012 82);
-    --crc-hover: oklch(0.94 0.012 82);
+    --renki-bg: oklch(0.98 0.008 84);
+    --renki-bg-elevated: oklch(0.975 0.008 84);
+    --renki-surface: oklch(1 0 0);
+    --renki-bg-inset: oklch(0.955 0.012 82);
+    --renki-hover: oklch(0.94 0.012 82);
 
-    --crc-fg: oklch(0.26 0.024 60);
-    --crc-fg-muted: oklch(0.52 0.02 65);
-    --crc-border: oklch(0.92 0.01 78);
+    --renki-fg: oklch(0.26 0.024 60);
+    --renki-fg-muted: oklch(0.52 0.02 65);
+    --renki-border: oklch(0.92 0.01 78);
 
-    --crc-accent: oklch(0.66 0.14 55);
-    --crc-accent-hover: oklch(0.62 0.14 55);
-    --crc-accent-fg: oklch(0.99 0.01 80);
-    --crc-selected: color-mix(in oklab, var(--crc-accent) 14%, transparent);
-    --crc-selected-fg: oklch(0.26 0.024 60);
-    --crc-link: oklch(0.52 0.11 245);
-    --crc-input-bg: oklch(1 0 0);
+    --renki-accent: oklch(0.66 0.14 55);
+    --renki-accent-hover: oklch(0.62 0.14 55);
+    --renki-accent-fg: oklch(0.99 0.01 80);
+    --renki-selected: color-mix(in oklab, var(--renki-accent) 14%, transparent);
+    --renki-selected-fg: oklch(0.26 0.024 60);
+    --renki-link: oklch(0.52 0.11 245);
+    --renki-input-bg: oklch(1 0 0);
 
-    --crc-success: oklch(0.58 0.14 155);
-    --crc-warning: oklch(0.68 0.14 78);
-    --crc-danger: oklch(0.56 0.18 26);
-    --crc-focus: oklch(0.66 0.14 55);
-    --crc-chart-input: oklch(0.55 0.11 245);
-    --crc-chart-output: oklch(0.66 0.14 55);
+    --renki-success: oklch(0.58 0.14 155);
+    --renki-warning: oklch(0.68 0.14 78);
+    --renki-danger: oklch(0.56 0.18 26);
+    --renki-focus: oklch(0.66 0.14 55);
+    --renki-chart-input: oklch(0.55 0.11 245);
+    --renki-chart-output: oklch(0.66 0.14 55);
 
-    --crc-shadow-xs: 0 1px 2px oklch(0.4 0.03 60 / 0.08);
-    --crc-shadow-sm: 0 1px 3px oklch(0.4 0.03 60 / 0.1);
-    --crc-shadow-md: 0 8px 22px oklch(0.4 0.03 60 / 0.12);
-    --crc-shadow-lg: 0 12px 30px oklch(0.4 0.03 60 / 0.14);
-    --crc-shadow-alarm: 0 0 0 1px color-mix(in oklab, var(--crc-danger) 25%, transparent), 0 16px 36px oklch(0.4 0.03 60 / 0.18);
+    --renki-shadow-xs: 0 1px 2px oklch(0.4 0.03 60 / 0.08);
+    --renki-shadow-sm: 0 1px 3px oklch(0.4 0.03 60 / 0.1);
+    --renki-shadow-md: 0 8px 22px oklch(0.4 0.03 60 / 0.12);
+    --renki-shadow-lg: 0 12px 30px oklch(0.4 0.03 60 / 0.14);
+    --renki-shadow-alarm: 0 0 0 1px color-mix(in oklab, var(--renki-danger) 25%, transparent), 0 16px 36px oklch(0.4 0.03 60 / 0.18);
   }
 }
 
@@ -118,30 +118,30 @@ body.vscode-high-contrast,
 body.vscode-high-contrast-light {
   color-scheme: normal;
 
-  --crc-bg: var(--vscode-editor-background);
-  --crc-bg-elevated: var(--vscode-sideBar-background, var(--vscode-editor-background));
-  --crc-surface: var(--vscode-editorWidget-background, var(--vscode-sideBar-background, var(--vscode-editor-background)));
-  --crc-bg-inset: var(--vscode-input-background, var(--vscode-editor-background));
-  --crc-fg: var(--vscode-foreground);
-  --crc-fg-muted: var(--vscode-descriptionForeground, var(--vscode-foreground));
-  --crc-border: var(--vscode-panel-border, var(--vscode-widget-border, var(--vscode-sideBar-border)));
-  --crc-accent: var(--vscode-button-background);
-  --crc-accent-hover: var(--vscode-button-hoverBackground, var(--vscode-button-background));
-  --crc-accent-fg: var(--vscode-button-foreground, #ffffff);
-  --crc-link: var(--vscode-textLink-foreground);
-  --crc-input-bg: var(--vscode-input-background);
-  --crc-hover: var(--vscode-list-hoverBackground);
-  --crc-selected: var(--vscode-list-activeSelectionBackground);
-  --crc-selected-fg: var(--vscode-list-activeSelectionForeground, var(--crc-fg));
-  --crc-success: var(--vscode-charts-green, #89d185);
-  --crc-warning: var(--vscode-charts-yellow, #cca700);
-  --crc-danger: var(--vscode-errorForeground, #f14c4c);
-  --crc-focus: var(--vscode-focusBorder);
-  --crc-chart-input: var(--vscode-charts-blue, #3987e5);
-  --crc-chart-output: var(--vscode-charts-orange, #d95926);
-  --crc-shadow-alarm: 0 0 0 1px color-mix(in oklab, var(--crc-danger) 25%, transparent), 0 12px 32px rgba(0, 0, 0, 0.45);
-  --crc-font-ui: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif);
-  --crc-font-mono: var(--vscode-editor-font-family, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+  --renki-bg: var(--vscode-editor-background);
+  --renki-bg-elevated: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  --renki-surface: var(--vscode-editorWidget-background, var(--vscode-sideBar-background, var(--vscode-editor-background)));
+  --renki-bg-inset: var(--vscode-input-background, var(--vscode-editor-background));
+  --renki-fg: var(--vscode-foreground);
+  --renki-fg-muted: var(--vscode-descriptionForeground, var(--vscode-foreground));
+  --renki-border: var(--vscode-panel-border, var(--vscode-widget-border, var(--vscode-sideBar-border)));
+  --renki-accent: var(--vscode-button-background);
+  --renki-accent-hover: var(--vscode-button-hoverBackground, var(--vscode-button-background));
+  --renki-accent-fg: var(--vscode-button-foreground, #ffffff);
+  --renki-link: var(--vscode-textLink-foreground);
+  --renki-input-bg: var(--vscode-input-background);
+  --renki-hover: var(--vscode-list-hoverBackground);
+  --renki-selected: var(--vscode-list-activeSelectionBackground);
+  --renki-selected-fg: var(--vscode-list-activeSelectionForeground, var(--renki-fg));
+  --renki-success: var(--vscode-charts-green, #89d185);
+  --renki-warning: var(--vscode-charts-yellow, #cca700);
+  --renki-danger: var(--vscode-errorForeground, #f14c4c);
+  --renki-focus: var(--vscode-focusBorder);
+  --renki-chart-input: var(--vscode-charts-blue, #3987e5);
+  --renki-chart-output: var(--vscode-charts-orange, #d95926);
+  --renki-shadow-alarm: 0 0 0 1px color-mix(in oklab, var(--renki-danger) 25%, transparent), 0 12px 32px rgba(0, 0, 0, 0.45);
+  --renki-font-ui: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif);
+  --renki-font-mono: var(--vscode-editor-font-family, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
 }
 
 html,
@@ -152,22 +152,22 @@ body,
 
 body {
   margin: 0;
-  background: var(--crc-bg);
-  color: var(--crc-fg);
-  font-family: var(--crc-font-ui);
+  background: var(--renki-bg);
+  color: var(--renki-fg);
+  font-family: var(--renki-font-ui);
   font-feature-settings: "cv11", "ss01", "ss03";
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
 ::selection {
-  background: color-mix(in oklab, var(--crc-accent) 35%, transparent);
+  background: color-mix(in oklab, var(--renki-accent) 35%, transparent);
 }
 
 /* Thin, quiet scrollbars — a long transcript shouldn't carry a chunky rail. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in oklab, var(--crc-fg-muted) 35%, transparent) transparent;
+  scrollbar-color: color-mix(in oklab, var(--renki-fg-muted) 35%, transparent) transparent;
 }
 *::-webkit-scrollbar {
   width: 8px;
@@ -175,7 +175,7 @@ body {
 }
 *::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: color-mix(in oklab, var(--crc-fg-muted) 35%, transparent);
+  background: color-mix(in oklab, var(--renki-fg-muted) 35%, transparent);
 }
 *::-webkit-scrollbar-track {
   background: transparent;
@@ -183,7 +183,7 @@ body {
 
 /* One focus treatment everywhere; visible for keyboards, invisible for mouse. */
 :focus-visible {
-  outline: 2px solid var(--crc-focus);
+  outline: 2px solid var(--renki-focus);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
@@ -193,52 +193,52 @@ input:focus-visible {
 }
 
 /* Shared form control — Setup, dialogs, Settings. */
-.crc-input {
+.renki-input {
   width: 100%;
   border-radius: var(--radius-md);
-  border: 1px solid var(--crc-border);
-  background: var(--crc-input-bg);
+  border: 1px solid var(--renki-border);
+  background: var(--renki-input-bg);
   padding: 0.5rem 0.75rem;
   font-size: 0.875rem;
-  color: var(--crc-fg);
+  color: var(--renki-fg);
   outline: none;
   transition:
     border-color 120ms ease,
     box-shadow 120ms ease;
 }
-.crc-input::placeholder {
-  color: var(--crc-fg-muted);
+.renki-input::placeholder {
+  color: var(--renki-fg-muted);
 }
-.crc-input:focus {
-  border-color: var(--crc-accent);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--crc-accent) 18%, transparent);
+.renki-input:focus {
+  border-color: var(--renki-accent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--renki-accent) 18%, transparent);
 }
 
 /* Status dots that need to read from across the room. */
-.crc-glow-warning {
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--crc-warning) 28%, transparent);
+.renki-glow-warning {
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--renki-warning) 28%, transparent);
 }
-.crc-glow-danger {
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--crc-danger) 30%, transparent);
+.renki-glow-danger {
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--renki-danger) 30%, transparent);
 }
 
-@keyframes crc-alarm {
+@keyframes renki-alarm {
   0%,
   100% {
-    box-shadow: var(--crc-shadow-alarm);
+    box-shadow: var(--renki-shadow-alarm);
   }
   50% {
     box-shadow:
-      0 0 0 1px color-mix(in oklab, var(--crc-danger) 45%, transparent),
+      0 0 0 1px color-mix(in oklab, var(--renki-danger) 45%, transparent),
       0 18px 44px oklch(0 0 0 / 0.5);
   }
 }
-.crc-alarm {
-  animation: crc-alarm 2.4s ease-in-out infinite;
+.renki-alarm {
+  animation: renki-alarm 2.4s ease-in-out infinite;
 }
 
 /* Skeleton placeholders: a slow sheen across an inset-toned block. */
-@keyframes crc-shimmer {
+@keyframes renki-shimmer {
   from {
     background-position: 200% 0;
   }
@@ -246,20 +246,20 @@ input:focus-visible {
     background-position: -200% 0;
   }
 }
-.crc-skeleton {
+.renki-skeleton {
   border-radius: var(--radius-md);
   background: linear-gradient(
     90deg,
-    var(--crc-bg-inset) 0%,
-    color-mix(in oklab, var(--crc-bg-inset) 60%, var(--crc-hover)) 50%,
-    var(--crc-bg-inset) 100%
+    var(--renki-bg-inset) 0%,
+    color-mix(in oklab, var(--renki-bg-inset) 60%, var(--renki-hover)) 50%,
+    var(--renki-bg-inset) 100%
   );
   background-size: 200% 100%;
-  animation: crc-shimmer 1.8s ease-in-out infinite;
+  animation: renki-shimmer 1.8s ease-in-out infinite;
 }
 
 /* Each block of a streaming reply eases in as it lands, rather than popping. */
-@keyframes crc-stream-in {
+@keyframes renki-stream-in {
   from {
     opacity: 0;
     transform: translateY(2px);
@@ -269,18 +269,18 @@ input:focus-visible {
     transform: none;
   }
 }
-.crc-stream-in {
-  animation: crc-stream-in 320ms ease-out both;
+.renki-stream-in {
+  animation: renki-stream-in 320ms ease-out both;
 }
 
 /*
  * Markdown that is still streaming fades in a word at a time: the renderer
- * wraps each word in `.crc-word`, so a word that has just arrived animates
+ * wraps each word in `.renki-word`, so a word that has just arrived animates
  * while everything already on screen stays put (React reuses those nodes, so
  * their animation never restarts). Opacity only — hundreds of these can be on
  * screen at once and transforms would cost layout work per frame.
  */
-@keyframes crc-word-in {
+@keyframes renki-word-in {
   from {
     opacity: 0;
   }
@@ -288,11 +288,11 @@ input:focus-visible {
     opacity: 1;
   }
 }
-.crc-stream-md .crc-word {
-  animation: crc-word-in 420ms ease-out both;
+.renki-stream-md .renki-word {
+  animation: renki-word-in 420ms ease-out both;
 }
 
-@keyframes crc-fade-up {
+@keyframes renki-fade-up {
   from {
     opacity: 0;
     transform: translateY(4px);
@@ -302,16 +302,16 @@ input:focus-visible {
     transform: none;
   }
 }
-.crc-enter {
-  animation: crc-fade-up 160ms ease-out both;
+.renki-enter {
+  animation: renki-fade-up 160ms ease-out both;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .crc-enter,
-  .crc-stream-in,
-  .crc-stream-md .crc-word,
-  .crc-alarm,
-  .crc-skeleton,
+  .renki-enter,
+  .renki-stream-in,
+  .renki-stream-md .renki-word,
+  .renki-alarm,
+  .renki-skeleton,
   .animate-pulse,
   .codicon-modifier-spin {
     animation: none !important;
@@ -322,7 +322,7 @@ input:focus-visible {
  * While the sidebar edge is being dragged: keep the resize cursor whatever the
  * pointer passes over, and stop the drag from selecting text on the way.
  */
-body.crc-resizing {
+body.renki-resizing {
   cursor: col-resize;
   user-select: none;
 }

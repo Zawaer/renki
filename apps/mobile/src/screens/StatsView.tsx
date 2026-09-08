@@ -1,4 +1,4 @@
-import type { RepoStatsBucket, RtkGainResponse, StatsBucket, StatsResponse } from "@crc/protocol";
+import type { RepoStatsBucket, RtkGainResponse, StatsBucket, StatsResponse } from "@renki/protocol";
 import {
   formatClientTypeLabel,
   formatCost,
@@ -10,7 +10,7 @@ import {
   formatTokenCount,
   lastNDays,
   tickIndices,
-} from "@crc/client-core";
+} from "@renki/client-core";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -405,7 +405,7 @@ function RtkSection({ rtk, colors, styles }: { rtk: RtkGainResponse; colors: The
         </>
       )}
 
-      <Text style={styles.footnote}>From `rtk gain` on the daemon host — not computed by CRC.</Text>
+      <Text style={styles.footnote}>From `rtk gain` on the daemon host — not computed by Renki.</Text>
     </Section>
   );
 }

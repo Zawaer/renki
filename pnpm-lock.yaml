@@ -28,15 +28,15 @@ importers:
       '@anthropic-ai/claude-agent-sdk':
         specifier: ^0.3.217
         version: 0.3.217(@anthropic-ai/sdk@0.112.5(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(zod@4.4.3)
-      '@crc/client-core':
-        specifier: workspace:*
-        version: link:../../packages/client-core
-      '@crc/protocol':
-        specifier: workspace:*
-        version: link:../../packages/protocol
       '@fastify/websocket':
         specifier: ^11.0.2
         version: 11.3.0
+      '@renki/client-core':
+        specifier: workspace:*
+        version: link:../../packages/client-core
+      '@renki/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
       better-sqlite3:
         specifier: ^11.7.0
         version: 11.10.0
@@ -86,18 +86,18 @@ importers:
 
   apps/mobile:
     dependencies:
-      '@crc/client-core':
-        specifier: workspace:*
-        version: link:../../packages/client-core
-      '@crc/protocol':
-        specifier: workspace:*
-        version: link:../../packages/protocol
       '@expo/vector-icons':
         specifier: ^14.0.4
         version: 14.0.4
       '@react-native-cookies/cookies':
         specifier: ^6.2.1
         version: 6.2.1(react-native@0.76.5(@babel/core@7.29.7)(@babel/preset-env@7.29.7(@babel/core@7.29.7))(@types/react@18.3.31)(react@18.3.1))
+      '@renki/client-core':
+        specifier: workspace:*
+        version: link:../../packages/client-core
+      '@renki/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
       entities:
         specifier: ^2.0.3
         version: 2.0.3
@@ -168,7 +168,7 @@ importers:
 
   apps/vscode:
     dependencies:
-      '@crc/web':
+      '@renki/web':
         specifier: workspace:*
         version: link:../web
     devDependencies:
@@ -187,10 +187,10 @@ importers:
 
   apps/web:
     dependencies:
-      '@crc/client-core':
+      '@renki/client-core':
         specifier: workspace:*
         version: link:../../packages/client-core
-      '@crc/protocol':
+      '@renki/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
       '@vscode/codicons':
@@ -251,7 +251,7 @@ importers:
 
   packages/client-core:
     dependencies:
-      '@crc/protocol':
+      '@renki/protocol':
         specifier: workspace:*
         version: link:../protocol
       zod:
@@ -2448,6 +2448,7 @@ packages:
   '@xmldom/xmldom@0.9.10':
     resolution: {integrity: sha512-A9gOqLdi6cV4ibazAjcQufGj0B1y/vDqYrcuP6d/6x8P27gRS8643Dj9o1dEKtB6O7fwxb2FgBmJS2mX7gpvdw==}
     engines: {node: '>=14.6'}
+    deprecated: this version has critical issues, please update to the latest version
 
   abort-controller@3.0.0:
     resolution: {integrity: sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg==}

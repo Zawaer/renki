@@ -30,7 +30,7 @@ export async function createWorktree(
   baseBranch: string,
   requestedBranch?: string,
 ): Promise<CreatedWorktree> {
-  const branch = requestedBranch?.trim() || `crc/${shortId()}`;
+  const branch = requestedBranch?.trim() || `renki/${shortId()}`;
   const worktreePath = resolve(config.worktreesDir, sessionId);
   const git = simpleGit(repoPath);
 

@@ -1,5 +1,5 @@
-import { applyEvents, initialConversation, RealtimeClient, RestClient, THINKING_VERBS } from "@crc/client-core";
-import type { CapabilitiesResponse, SessionEvent } from "@crc/protocol";
+import { applyEvents, initialConversation, RealtimeClient, RestClient, THINKING_VERBS } from "@renki/client-core";
+import type { CapabilitiesResponse, SessionEvent } from "@renki/protocol";
 import { fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { SessionView } from "../src/components/SessionView.js";
@@ -63,7 +63,7 @@ describe("SessionView", () => {
         repoId: "demo",
         repoName: "demo",
         baseBranch: "main",
-        branch: "crc/abc123",
+        branch: "renki/abc123",
         worktreePath: "/tmp/wt",
       }),
       ev(sessionId, { kind: "status_changed", status: "idle" }),
@@ -153,7 +153,7 @@ describe("SessionView", () => {
         repoId: "demo",
         repoName: "demo",
         baseBranch: "main",
-        branch: "crc/xyz",
+        branch: "renki/xyz",
         worktreePath: "/tmp/wt",
       }),
       ev(sessionId, { kind: "status_changed", status: "busy" }),
@@ -189,7 +189,7 @@ describe("SessionView", () => {
         repoId: "demo",
         repoName: "demo",
         baseBranch: "main",
-        branch: "crc/empty",
+        branch: "renki/empty",
         worktreePath: "/tmp/wt",
       }),
       ev(sessionId, { kind: "status_changed", status: "idle" }),
@@ -210,7 +210,7 @@ describe("SessionView", () => {
         repoId: "demo",
         repoName: "demo",
         baseBranch: "main",
-        branch: "crc/live",
+        branch: "renki/live",
         worktreePath: "/tmp/wt",
       }),
       ev(sessionId, { kind: "status_changed", status: "busy" }),
@@ -245,7 +245,7 @@ describe("SessionView", () => {
         repoId: "demo",
         repoName: "demo",
         baseBranch: "main",
-        branch: "crc/done",
+        branch: "renki/done",
         worktreePath: "/tmp/wt",
       }),
       { seq: 100, sessionId, ts: 1000, kind: "assistant_delta", turnId: "t1", blockIndex: 0, blockKind: "thinking", text: "Hmm…" } as SessionEvent,
@@ -278,7 +278,7 @@ describe("SessionView", () => {
         repoId: "demo",
         repoName: "demo",
         baseBranch: "main",
-        branch: "crc/opts",
+        branch: "renki/opts",
         worktreePath: "/tmp/wt",
       }),
       ev(sessionId, { kind: "status_changed", status: "idle" }),
@@ -320,7 +320,7 @@ describe("SessionView", () => {
         repoId: "demo",
         repoName: "demo",
         baseBranch: "main",
-        branch: "crc/custom-model",
+        branch: "renki/custom-model",
         worktreePath: "/tmp/wt",
       }),
       ev(sessionId, { kind: "status_changed", status: "idle" }),
@@ -360,7 +360,7 @@ describe("SessionView", () => {
         repoId: "demo",
         repoName: "demo",
         baseBranch: "main",
-        branch: "crc/slash",
+        branch: "renki/slash",
         worktreePath: "/tmp/wt",
       }),
       ev(sessionId, { kind: "status_changed", status: "idle" }),
@@ -387,7 +387,7 @@ describe("SessionView steering + unprompted turns", () => {
   it("renders a steered prompt inside the running turn after the block it interrupted, and labels a background-agent follow-up turn", () => {
     const sessionId = "s_steer";
     const events = [
-      ev(sessionId, { kind: "session_created", repoId: "demo", repoName: "demo", baseBranch: "main", branch: "crc/x", worktreePath: "/tmp/wt" }),
+      ev(sessionId, { kind: "session_created", repoId: "demo", repoName: "demo", baseBranch: "main", branch: "renki/x", worktreePath: "/tmp/wt" }),
       ev(sessionId, { kind: "status_changed", status: "busy" }),
       ev(sessionId, { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "refactor the parser" }),
       ev(sessionId, { kind: "turn_started", turnId: "t1", promptId: "p1", trigger: "prompt" }),
@@ -429,7 +429,7 @@ describe("long content", () => {
         repoId: "demo",
         repoName: "demo",
         baseBranch: "main",
-        branch: "crc/abc123",
+        branch: "renki/abc123",
         worktreePath: "/tmp/wt",
         purpose: "normal",
         mergeMeta: null,

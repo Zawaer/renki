@@ -1,5 +1,5 @@
-import { resolveEffortKey, resolvePermissionMode, type PermissionModeKey } from "@crc/client-core";
-import type { Attachment } from "@crc/protocol";
+import { resolveEffortKey, resolvePermissionMode, type PermissionModeKey } from "@renki/client-core";
+import type { Attachment } from "@renki/protocol";
 
 /**
  * The model / effort / permission mode a session's composer is set to,
@@ -15,9 +15,9 @@ import type { Attachment } from "@crc/protocol";
  * so a new session starts from what you were last using rather than blank, and
  * diverges the moment you change it there.
  */
-const MODE_KEY = "crc.permissionMode";
-const EFFORT_KEY = "crc.effortKey";
-const MODEL_KEY = "crc.model";
+const MODE_KEY = "renki.permissionMode";
+const EFFORT_KEY = "renki.effortKey";
+const MODEL_KEY = "renki.model";
 
 /** The session's own value, else the global "last used", else null. */
 function readScoped(key: string, sessionId: string | null): string | null {
@@ -123,7 +123,7 @@ export type ComposerDraft = {
   attachmentsDropped: boolean;
 };
 
-const DRAFT_PREFIX = "crc.draft.";
+const DRAFT_PREFIX = "renki.draft.";
 /** Well inside a typical 5MB localStorage budget, leaving room for other sessions' drafts. */
 const MAX_DRAFT_BYTES = 1_500_000;
 

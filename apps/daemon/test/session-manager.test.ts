@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import type { EventPayload } from "@crc/protocol";
+import type { EventPayload } from "@renki/protocol";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Config } from "../src/config.js";
@@ -107,7 +107,7 @@ describe("createSession", () => {
     const session = await newSession(manager, repoId);
 
     expect(session.status).toBe("idle");
-    expect(session.branch).toMatch(/^crc\//);
+    expect(session.branch).toMatch(/^renki\//);
     expect(existsSync(session.worktreePath)).toBe(true);
     expect(kinds(manager, session.id)).toEqual(["session_created", "status_changed"]);
     expect(manager.getSession(session.id).id).toBe(session.id);
@@ -530,7 +530,7 @@ describe("trash", () => {
     expect(manager.getSession(kept.id).status).toBe("idle");
   });
 
-  /** CRC_TRASH_RETENTION_DAYS=0 opts out of the bin entirely: delete means delete. */
+  /** RENKI_TRASH_RETENTION_DAYS=0 opts out of the bin entirely: delete means delete. */
   it("deletes straight away when the bin is switched off", async () => {
     const config = makeTestConfig({ trashRetentionMs: 0 });
     created.push(config);

@@ -1,4 +1,4 @@
-import type { Session, SessionStatus } from "@crc/protocol";
+import type { Session, SessionStatus } from "@renki/protocol";
 
 /**
  * The recycle bin's arithmetic, kept away from the manager so the interesting

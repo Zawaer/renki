@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Media types CRC hands to the model as a real content block (image or
+ * Media types Renki hands to the model as a real content block (image or
  * document), mirroring what Claude Code's own chat-box "attach" supports.
  * Anything else the user wants Claude to see, they reference by absolute
  * path in the prompt text instead — Claude reads it itself via the Read

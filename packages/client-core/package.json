@@ -1,5 +1,5 @@
 {
-  "name": "@crc/client-core",
+  "name": "@renki/client-core",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -18,7 +18,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@crc/protocol": "workspace:*",
+    "@renki/protocol": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {

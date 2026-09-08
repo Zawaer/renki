@@ -1,4 +1,4 @@
-import type { Session } from "@crc/protocol";
+import type { Session } from "@renki/protocol";
 
 /**
  * How the recycle bin's deadline is worded to the user.
@@ -50,7 +50,7 @@ export type SessionGroup = {
  * Group sessions by repo, most recently active first, with each group's
  * sessions in the same order.
  *
- * Shared by web and mobile: the grouping is part of how CRC reads, not a
+ * Shared by web and mobile: the grouping is part of how Renki reads, not a
  * per-client layout choice, and the two had drifted (mobile showed one flat
  * list) which made the same fleet look like a different product on a phone.
  */

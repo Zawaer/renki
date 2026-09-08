@@ -5,7 +5,7 @@ import {
   type Session,
   type ServerMessage,
   ServerMessage as ServerMessageSchema,
-} from "@crc/protocol";
+} from "@renki/protocol";
 import type { PermissionModeKey } from "./permissionMode.js";
 import { type ConversationState, applyEvent, applyEvents, initialConversation } from "./reducer.js";
 import { Store } from "./store.js";
@@ -165,7 +165,7 @@ export class RealtimeClient {
    * `model`/`maxThinkingTokens`/`permissionMode` are a per-message override —
    * omit for the daemon's own default, matching every call site before these
    * options existed. `attachments` travel inline as base64 (see
-   * `@crc/protocol`'s `Attachment`) and become real image/document content
+   * `@renki/protocol`'s `Attachment`) and become real image/document content
    * blocks for the model — `text` may be empty if at least one is present.
    */
   submitPrompt(

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { Impit } from "impit";
-import type { AccountUsage, AccountUsageExtra, AccountUsageLimit, UsageOrg } from "@crc/protocol";
+import type { AccountUsage, AccountUsageExtra, AccountUsageLimit, UsageOrg } from "@renki/protocol";
 import { logger } from "../logger.js";
 
 /**

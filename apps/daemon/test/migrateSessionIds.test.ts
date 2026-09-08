@@ -81,7 +81,7 @@ describe("migrateSessionIds", () => {
   it("is a no-op when no session has a legacy (UUID-form) id", async () => {
     const config = makeTestConfig();
     const db = makeTestDb();
-    const worktreePath = mkdtempSync(join(tmpdir(), "crc-wt-"));
+    const worktreePath = mkdtempSync(join(tmpdir(), "renki-wt-"));
     insertSession(db, { id: SHORT_ID, worktreePath });
     insertSessionCreatedEvent(db, SHORT_ID, { repoId: null, repoName: "demo", baseBranch: null, branch: null, worktreePath });
 
@@ -96,7 +96,7 @@ describe("migrateSessionIds", () => {
   it("migrates a plain (no-repo) legacy session: new id, moved directory, updated events", async () => {
     const config = makeTestConfig();
     const db = makeTestDb();
-    const parent = mkdtempSync(join(tmpdir(), "crc-scratch-"));
+    const parent = mkdtempSync(join(tmpdir(), "renki-scratch-"));
     const oldPath = join(parent, LEGACY_ID);
     mkdirSync(oldPath);
 
@@ -128,7 +128,7 @@ describe("migrateSessionIds", () => {
     const config = makeTestConfig();
     const db = makeTestDb();
     const { repoId, repoPath } = makeTestRepo(config.reposRoot, "demo-repo");
-    const worktreesParent = mkdtempSync(join(tmpdir(), "crc-worktrees-"));
+    const worktreesParent = mkdtempSync(join(tmpdir(), "renki-worktrees-"));
     const oldPath = join(worktreesParent, LEGACY_ID);
     git(repoPath, "worktree", "add", oldPath, "-b", "crc/legacy");
 
@@ -153,7 +153,7 @@ describe("migrateSessionIds", () => {
   it("remaps mergeMeta.sourceSessionId when it points at another session that's also being migrated", async () => {
     const config = makeTestConfig();
     const db = makeTestDb();
-    const parent = mkdtempSync(join(tmpdir(), "crc-scratch-"));
+    const parent = mkdtempSync(join(tmpdir(), "renki-scratch-"));
     const sourcePath = join(parent, LEGACY_ID);
     const conflictPath = join(parent, LEGACY_ID_2);
     mkdirSync(sourcePath);
@@ -193,7 +193,7 @@ describe("migrateSessionIds", () => {
   it("still migrates the DB row (with the old path) even if the worktree directory is already gone from disk", async () => {
     const config = makeTestConfig();
     const db = makeTestDb();
-    const missingPath = join(mkdtempSync(join(tmpdir(), "crc-scratch-")), "already-deleted", LEGACY_ID);
+    const missingPath = join(mkdtempSync(join(tmpdir(), "renki-scratch-")), "already-deleted", LEGACY_ID);
     // Deliberately never created on disk.
 
     insertSession(db, { id: LEGACY_ID, worktreePath: missingPath });

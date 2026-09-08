@@ -1,4 +1,4 @@
-import type { Account, AccountsResponse, RotationStatus } from "@crc/protocol";
+import type { Account, AccountsResponse, RotationStatus } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import {

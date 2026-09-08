@@ -1,4 +1,4 @@
-import { describeConnectionError, encodePairing, isLikelyLoopbackUrl } from "@crc/client-core";
+import { describeConnectionError, encodePairing, isLikelyLoopbackUrl } from "@renki/client-core";
 import QRCode from "qrcode";
 import { useEffect, useState } from "react";
 import { saveConfig } from "../lib/config.js";
@@ -83,7 +83,7 @@ export function PairDevice() {
   return (
     <>
       <button
-        className="rounded-sm border border-(--crc-border) px-3 py-1.5 text-sm font-medium text-(--crc-fg) hover:bg-(--crc-hover)"
+        className="rounded-sm border border-(--renki-border) px-3 py-1.5 text-sm font-medium text-(--renki-fg) hover:bg-(--renki-hover)"
         onClick={() => setOpen(true)}
       >
         Show QR code
@@ -94,12 +94,12 @@ export function PairDevice() {
           onClick={() => setOpen(false)}
         >
           <div
-            className="flex flex-col items-center gap-3 rounded-xl border border-(--crc-border) bg-(--crc-surface) p-6"
+            className="flex flex-col items-center gap-3 rounded-xl border border-(--renki-border) bg-(--renki-surface) p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <span className="text-sm font-medium text-(--crc-fg)">Scan with the CRC phone app</span>
+            <span className="text-sm font-medium text-(--renki-fg)">Scan with the Renki phone app</span>
             {loopback && (
-              <div className="max-w-70 space-y-2 rounded-sm border border-(--crc-warning)/50 bg-(--crc-warning)/10 px-2.5 py-2 text-[11px] leading-snug text-(--crc-warning)">
+              <div className="max-w-70 space-y-2 rounded-sm border border-(--renki-warning)/50 bg-(--renki-warning)/10 px-2.5 py-2 text-[11px] leading-snug text-(--renki-warning)">
                 <p>
                   This browser is connected via <code>{config.baseUrl}</code> — a loopback address that
                   only means "this computer." A phone scanning this QR would try to reach itself and fail.
@@ -120,17 +120,17 @@ export function PairDevice() {
                     <button
                       onClick={() => reconnectUsing(suggestion)}
                       disabled={switching}
-                      className="w-full rounded-sm bg-(--crc-warning)/25 py-1 text-(--crc-warning) hover:bg-(--crc-warning)/35 disabled:opacity-50"
+                      className="w-full rounded-sm bg-(--renki-warning)/25 py-1 text-(--renki-warning) hover:bg-(--renki-warning)/35 disabled:opacity-50"
                     >
                       {switching ? "Reconnecting…" : "Reconnect using this address"}
                     </button>
-                    {switchError && <p className="text-(--crc-danger)">{switchError}</p>}
+                    {switchError && <p className="text-(--renki-danger)">{switchError}</p>}
                   </>
                 )}
               </div>
             )}
             {!loopback && suggestionDiffers && (
-              <div className="max-w-70 space-y-2 rounded-sm border border-(--crc-border) bg-(--crc-bg-inset) px-2.5 py-2 text-[11px] leading-snug text-(--crc-fg-muted)">
+              <div className="max-w-70 space-y-2 rounded-sm border border-(--renki-border) bg-(--renki-bg-inset) px-2.5 py-2 text-[11px] leading-snug text-(--renki-fg-muted)">
                 {qrOverride ? (
                   <>
                     <p>
@@ -139,7 +139,7 @@ export function PairDevice() {
                     </p>
                     <button
                       onClick={() => setQrOverride(null)}
-                      className="w-full rounded-sm border border-(--crc-border) py-1 text-(--crc-fg) hover:bg-(--crc-hover)"
+                      className="w-full rounded-sm border border-(--renki-border) py-1 text-(--renki-fg) hover:bg-(--renki-hover)"
                     >
                       Use {config.baseUrl} instead
                     </button>
@@ -156,7 +156,7 @@ export function PairDevice() {
                     </p>
                     <button
                       onClick={() => setQrOverride(suggestion)}
-                      className="w-full rounded-sm border border-(--crc-border) py-1 text-(--crc-fg) hover:bg-(--crc-hover)"
+                      className="w-full rounded-sm border border-(--renki-border) py-1 text-(--renki-fg) hover:bg-(--renki-hover)"
                     >
                       Use this for the QR
                     </button>
@@ -167,15 +167,15 @@ export function PairDevice() {
             {dataUrl ? (
               <img src={dataUrl} alt="Pairing QR code" width={280} height={280} className="rounded-sm" />
             ) : (
-              <div className="flex h-[280px] w-[280px] items-center justify-center text-xs text-(--crc-fg-muted)">
+              <div className="flex h-[280px] w-[280px] items-center justify-center text-xs text-(--renki-fg-muted)">
                 Generating…
               </div>
             )}
-            <span className="text-[11px] text-(--crc-fg-muted)">
+            <span className="text-[11px] text-(--renki-fg-muted)">
               Setup → Scan QR. Grants the same access this browser has.
             </span>
             <button
-              className="mt-1 rounded-sm border border-(--crc-border) px-3 py-1 text-xs text-(--crc-fg) hover:bg-(--crc-hover)"
+              className="mt-1 rounded-sm border border-(--renki-border) px-3 py-1 text-xs text-(--renki-fg) hover:bg-(--renki-hover)"
               onClick={() => setOpen(false)}
             >
               Close

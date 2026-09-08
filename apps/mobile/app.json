@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Claude Remote Control",
-    "slug": "crc",
-    "scheme": "crc",
+    "name": "Renki",
+    "slug": "renki",
+    "scheme": "renki",
     "version": "0.0.1",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
@@ -20,7 +20,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Used to scan a pairing QR code from another CRC device — no photos are taken or stored."
+          "cameraPermission": "Used to scan a pairing QR code from another Renki device — no photos are taken or stored."
         }
       ],
       [

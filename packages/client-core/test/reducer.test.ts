@@ -1,4 +1,4 @@
-import type { EventPayload, SessionEvent } from "@crc/protocol";
+import type { EventPayload, SessionEvent } from "@renki/protocol";
 import { describe, expect, it } from "vitest";
 import {
   applyEvent,

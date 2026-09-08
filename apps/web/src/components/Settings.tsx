@@ -1,4 +1,4 @@
-import type { Account, AccountsResponse, RotationStatus } from "@crc/protocol";
+import type { Account, AccountsResponse, RotationStatus } from "@renki/protocol";
 import { useCallback, useEffect, useState } from "react";
 import { saveConfig } from "../lib/config.js";
 import { useClient, useStoreValue } from "../lib/client.js";
@@ -20,7 +20,7 @@ export function Settings({ onReset, managed }: { onReset: () => void; managed: b
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-[760px] px-6 py-10">
-        <h1 className="text-[22px] font-semibold tracking-tight text-(--crc-fg)">Settings</h1>
+        <h1 className="text-[22px] font-semibold tracking-tight text-(--renki-fg)">Settings</h1>
         <div className="mt-5 flex flex-col gap-4">
           <ThisDeviceSection />
           <ConnectionSection status={status} />
@@ -45,9 +45,9 @@ function Card({
   children: React.ReactNode;
 }) {
   return (
-    <section className={`rounded-2xl bg-(--crc-surface) p-5 shadow-(--crc-shadow-sm) ${danger ? "ring-1 ring-(--crc-danger)/35" : ""}`}>
-      <h2 className="text-[15px] font-semibold tracking-tight text-(--crc-fg)">{title}</h2>
-      <p className="mt-1 text-[12.5px] leading-relaxed text-(--crc-fg-muted)">{description}</p>
+    <section className={`rounded-2xl bg-(--renki-surface) p-5 shadow-(--renki-shadow-sm) ${danger ? "ring-1 ring-(--renki-danger)/35" : ""}`}>
+      <h2 className="text-[15px] font-semibold tracking-tight text-(--renki-fg)">{title}</h2>
+      <p className="mt-1 text-[12.5px] leading-relaxed text-(--renki-fg-muted)">{description}</p>
       <div className="mt-4">{children}</div>
     </section>
   );
@@ -55,15 +55,15 @@ function Card({
 
 /** Label-above-control field, the one shape every form in Settings uses. */
 function FieldLabel({ children }: { children: React.ReactNode }) {
-  return <span className="block text-[11px] font-medium tracking-[0.12em] text-(--crc-fg-muted) uppercase">{children}</span>;
+  return <span className="block text-[11px] font-medium tracking-[0.12em] text-(--renki-fg-muted) uppercase">{children}</span>;
 }
 
 /** A key/value line — Connection's URL and token rows. */
 function KeyRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-4 py-2.5 text-[13px]">
-      <span className="shrink-0 text-(--crc-fg-muted)">{label}</span>
-      <span className="flex min-w-0 items-center gap-2 font-mono text-[12.5px] text-(--crc-fg)">{children}</span>
+      <span className="shrink-0 text-(--renki-fg-muted)">{label}</span>
+      <span className="flex min-w-0 items-center gap-2 font-mono text-[12.5px] text-(--renki-fg)">{children}</span>
     </div>
   );
 }
@@ -89,7 +89,7 @@ function ThisDeviceSection() {
             onKeyDown={(e) => {
               if (e.key === "Enter" && dirty) save();
             }}
-            className="crc-input min-w-0 flex-1 border-transparent bg-(--crc-bg-inset) px-3.5 py-2.5 text-[13.5px]"
+            className="renki-input min-w-0 flex-1 border-transparent bg-(--renki-bg-inset) px-3.5 py-2.5 text-[13.5px]"
           />
           {dirty && (
             <Button variant="primary" onClick={save}>
@@ -108,10 +108,10 @@ function ConnectionSection({ status }: { status: "connecting" | "open" | "closed
   const [copied, setCopied] = useState(false);
   const badge =
     status === "open"
-      ? { dot: "bg-(--crc-success)", tone: "text-(--crc-success)", label: "Connected" }
+      ? { dot: "bg-(--renki-success)", tone: "text-(--renki-success)", label: "Connected" }
       : status === "connecting"
-        ? { dot: "bg-(--crc-warning) animate-pulse", tone: "text-(--crc-warning)", label: "Connecting…" }
-        : { dot: "bg-(--crc-danger)", tone: "text-(--crc-danger)", label: "Offline — reconnecting" };
+        ? { dot: "bg-(--renki-warning) animate-pulse", tone: "text-(--renki-warning)", label: "Connecting…" }
+        : { dot: "bg-(--renki-danger)", tone: "text-(--renki-danger)", label: "Offline — reconnecting" };
 
   async function copyUrl() {
     try {
@@ -129,20 +129,20 @@ function ConnectionSection({ status }: { status: "connecting" | "open" | "closed
         <span className={`h-1.5 w-1.5 rounded-full ${badge.dot}`} />
         {badge.label}
       </span>
-      <div className="mt-3 divide-y divide-(--crc-border)/60">
+      <div className="mt-3 divide-y divide-(--renki-border)/60">
         <KeyRow label="Daemon URL">
           <span className="truncate">{config.baseUrl}</span>
-          <button onClick={copyUrl} className="shrink-0 font-sans text-xs text-(--crc-link) hover:underline" title="Copy URL">
+          <button onClick={copyUrl} className="shrink-0 font-sans text-xs text-(--renki-link) hover:underline" title="Copy URL">
             {copied ? "Copied" : "Copy"}
           </button>
         </KeyRow>
         <KeyRow label="Auth token">
           <span className="truncate">{showToken ? config.token : "•".repeat(12)}</span>
-          <button onClick={() => setShowToken((v) => !v)} className="shrink-0 font-sans text-xs text-(--crc-link) hover:underline">
+          <button onClick={() => setShowToken((v) => !v)} className="shrink-0 font-sans text-xs text-(--renki-link) hover:underline">
             {showToken ? "Hide" : "Show"}
           </button>
           {status === "open" && (
-            <span className="inline-flex shrink-0 items-center gap-1 font-sans text-xs text-(--crc-success)">
+            <span className="inline-flex shrink-0 items-center gap-1 font-sans text-xs text-(--renki-success)">
               <span className="codicon codicon-verified text-[12px]" /> verified
             </span>
           )}
@@ -198,7 +198,7 @@ function AccountsSection() {
       {!data ? (
         <div className="flex flex-col gap-2" aria-busy="true" aria-label="Loading accounts">
           {[0, 1].map((i) => (
-            <div key={i} className="rounded-xl bg-(--crc-bg-inset)/70 px-4 py-3">
+            <div key={i} className="rounded-xl bg-(--renki-bg-inset)/70 px-4 py-3">
               <div className="flex items-center gap-2.5">
                 <Skeleton className="h-1.5 w-1.5 rounded-full" />
                 <Skeleton className="h-3.5 w-44" />
@@ -212,8 +212,8 @@ function AccountsSection() {
           ))}
         </div>
       ) : accounts.length === 0 ? (
-        <div className="rounded-xl bg-(--crc-bg-inset)/70 px-4 py-4 text-[13px] text-(--crc-fg-muted)">
-          No accounts yet. Add a coding account below — it runs <code className="font-mono text-(--crc-fg)">cswap add-token</code> on the daemon host.
+        <div className="rounded-xl bg-(--renki-bg-inset)/70 px-4 py-4 text-[13px] text-(--renki-fg-muted)">
+          No accounts yet. Add a coding account below — it runs <code className="font-mono text-(--renki-fg)">cswap add-token</code> on the daemon host.
         </div>
       ) : (
         <div className="flex flex-col gap-2">
@@ -291,19 +291,19 @@ function RotationSettings({
   const thresholdDirty = threshold.trim() !== "" && Number(threshold) !== rotation.threshold;
 
   return (
-    <div className="mt-4 rounded-xl bg-(--crc-bg-inset)/70 px-4 py-3">
+    <div className="mt-4 rounded-xl bg-(--renki-bg-inset)/70 px-4 py-3">
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
-          <div className="text-[13px] font-medium text-(--crc-fg)">Auto-switch accounts</div>
-          <div className="mt-0.5 text-xs text-(--crc-fg-muted)">
+          <div className="text-[13px] font-medium text-(--renki-fg)">Auto-switch accounts</div>
+          <div className="mt-0.5 text-xs text-(--renki-fg-muted)">
             When the active account's 5-hour or 7-day usage crosses the threshold, switch to one with headroom. Never mid-turn.
           </div>
         </div>
         <Switch checked={rotation.enabled} disabled={busy} onChange={toggleEnabled} label="Auto-switch accounts" />
       </div>
       {rotation.enabled && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-(--crc-border)/60 pt-3 text-[13px]">
-          <span className="text-(--crc-fg-muted)">Switch at</span>
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-(--renki-border)/60 pt-3 text-[13px]">
+          <span className="text-(--renki-fg-muted)">Switch at</span>
           <input
             type="number"
             min={1}
@@ -313,11 +313,11 @@ function RotationSettings({
             onKeyDown={(e) => {
               if (e.key === "Enter" && thresholdDirty) saveThreshold();
             }}
-            className="crc-input w-20 border-transparent bg-(--crc-surface) px-2.5 py-1.5 font-mono text-[12.5px]"
+            className="renki-input w-20 border-transparent bg-(--renki-surface) px-2.5 py-1.5 font-mono text-[12.5px]"
           />
-          <span className="text-(--crc-fg-muted)">% of either window</span>
+          <span className="text-(--renki-fg-muted)">% of either window</span>
           {rotation.lastHoldReason && (
-            <span className="ml-auto text-xs text-(--crc-fg-muted)">Holding: {rotation.lastHoldReason}</span>
+            <span className="ml-auto text-xs text-(--renki-fg-muted)">Holding: {rotation.lastHoldReason}</span>
           )}
           {thresholdDirty && (
             <Button variant="primary" size="sm" onClick={saveThreshold}>
@@ -327,8 +327,8 @@ function RotationSettings({
         </div>
       )}
       {rotation.enabled && accounts.length > 1 && (
-        <div className="mt-3 border-t border-(--crc-border)/60 pt-3">
-          <div className="text-[13px] text-(--crc-fg-muted)">Prefer</div>
+        <div className="mt-3 border-t border-(--renki-border)/60 pt-3">
+          <div className="text-[13px] text-(--renki-fg-muted)">Prefer</div>
           <div className="mt-2">
             <Select
               value={rotation.preferredEmail ?? ""}
@@ -339,7 +339,7 @@ function RotationSettings({
               ]}
             />
           </div>
-          <div className="mt-2 text-xs text-(--crc-fg-muted)">
+          <div className="mt-2 text-xs text-(--renki-fg-muted)">
             {rotation.preferredEmail
               ? "Sessions run as this account whenever it has headroom, borrow another only while it's over the threshold, and come back as soon as it resets — so the other account's quota stays free for use elsewhere."
               : "Any account with headroom will do."}
@@ -359,7 +359,7 @@ function Switch({ checked, disabled, onChange, label }: { checked: boolean; disa
       aria-label={label}
       disabled={disabled}
       onClick={onChange}
-      className={`relative h-6 w-10 shrink-0 rounded-full transition-colors disabled:opacity-50 ${checked ? "bg-(--crc-accent)" : "bg-(--crc-border)"}`}
+      className={`relative h-6 w-10 shrink-0 rounded-full transition-colors disabled:opacity-50 ${checked ? "bg-(--renki-accent)" : "bg-(--renki-border)"}`}
     >
       {/*
         * left-0.5 is load-bearing: with no inset the knob takes its *static*
@@ -368,7 +368,7 @@ function Switch({ checked, disabled, onChange, label }: { checked: boolean; disa
         * travel is exactly 40 - 20 - 2*2 = 16px.
         */}
       <span
-        className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-(--crc-shadow-sm) transition-transform duration-150 ${
+        className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-(--renki-shadow-sm) transition-transform duration-150 ${
           checked ? "translate-x-4" : "translate-x-0"
         }`}
       />
@@ -412,14 +412,14 @@ function AccountRow({
   }
 
   return (
-    <div className={`rounded-xl px-4 py-3 ${account.active ? "bg-(--crc-bg-inset)/70 ring-1 ring-(--crc-accent)/30" : "bg-(--crc-bg-inset)/70"}`}>
+    <div className={`rounded-xl px-4 py-3 ${account.active ? "bg-(--renki-bg-inset)/70 ring-1 ring-(--renki-accent)/30" : "bg-(--renki-bg-inset)/70"}`}>
       <div className="flex items-center gap-2.5">
-        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${account.active ? "bg-(--crc-success)" : "bg-(--crc-fg-muted)/60"}`} />
-        <span className="truncate text-[13px] text-(--crc-fg)">{account.email}</span>
-        {account.active && <span className="text-xs font-medium text-(--crc-success)">Active</span>}
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${account.active ? "bg-(--renki-success)" : "bg-(--renki-fg-muted)/60"}`} />
+        <span className="truncate text-[13px] text-(--renki-fg)">{account.email}</span>
+        {account.active && <span className="text-xs font-medium text-(--renki-success)">Active</span>}
         <div className="ml-auto flex shrink-0 items-center gap-3 text-xs">
           {!usageConnected && !connecting && (
-            <button onClick={() => setConnecting(true)} className="text-[12.5px] text-(--crc-link) hover:underline">
+            <button onClick={() => setConnecting(true)} className="text-[12.5px] text-(--renki-link) hover:underline">
               Connect tracking
             </button>
           )}
@@ -428,7 +428,7 @@ function AccountRow({
               onClick={disconnectUsage}
               disabled={busy !== null}
               title="Stop tracking usage for this account"
-              className="text-(--crc-fg-muted) hover:text-(--crc-danger) disabled:opacity-40"
+              className="text-(--renki-fg-muted) hover:text-(--renki-danger) disabled:opacity-40"
             >
               {busy === "disconnect" ? "…" : "Stop tracking"}
             </button>
@@ -456,7 +456,7 @@ function AccountRow({
       ) : account.usage ? (
         <UsageLimits usage={account.usage} className="mt-3 pl-4" />
       ) : (
-        <div className="mt-1.5 pl-4 text-xs text-(--crc-fg-muted)">
+        <div className="mt-1.5 pl-4 text-xs text-(--renki-fg-muted)">
           {account.usageError ??
             (usageConnected ? "Usage not available right now." : "Usage not tracked — connect it below to see limits.")}
         </div>
@@ -501,17 +501,17 @@ function AddCodingAccount({ onAdded }: { onAdded: () => void }) {
 
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)} className="inline-flex items-center gap-1 text-(--crc-link) hover:underline">
+      <button onClick={() => setOpen(true)} className="inline-flex items-center gap-1 text-(--renki-link) hover:underline">
         <span className="codicon codicon-add text-[12px]" /> Add coding account
       </button>
     );
   }
 
   return (
-    <div className="w-full space-y-2 rounded-xl bg-(--crc-bg-inset)/70 p-3.5 text-xs">
-      <p className="text-[12.5px] leading-relaxed text-(--crc-fg-muted)">
-        Paste the output of <code className="font-mono text-(--crc-fg)">claude setup-token</code>, or a plain Anthropic Console API
-        key. This runs <code className="font-mono text-(--crc-fg)">cswap add-token</code> on the daemon host.
+    <div className="w-full space-y-2 rounded-xl bg-(--renki-bg-inset)/70 p-3.5 text-xs">
+      <p className="text-[12.5px] leading-relaxed text-(--renki-fg-muted)">
+        Paste the output of <code className="font-mono text-(--renki-fg)">claude setup-token</code>, or a plain Anthropic Console API
+        key. This runs <code className="font-mono text-(--renki-fg)">cswap add-token</code> on the daemon host.
       </p>
       <textarea
         value={token}
@@ -519,17 +519,17 @@ function AddCodingAccount({ onAdded }: { onAdded: () => void }) {
         placeholder="sk-ant-…"
         spellCheck={false}
         rows={2}
-        className="crc-input w-full resize-none border-transparent bg-(--crc-surface) font-mono text-[12px]"
+        className="renki-input w-full resize-none border-transparent bg-(--renki-surface) font-mono text-[12px]"
       />
       <div className="flex items-center justify-between">
-        <button onClick={() => setOpen(false)} className="text-(--crc-fg-muted) hover:text-(--crc-fg)">
+        <button onClick={() => setOpen(false)} className="text-(--renki-fg-muted) hover:text-(--renki-fg)">
           Cancel
         </button>
         <Button variant="primary" size="sm" onClick={submit} disabled={busy || token.trim().length === 0}>
           {busy ? "Adding…" : "Add account"}
         </Button>
       </div>
-      {msg && <p className={msg.ok ? "text-(--crc-success)" : "text-(--crc-danger)"}>{msg.text}</p>}
+      {msg && <p className={msg.ok ? "text-(--renki-success)" : "text-(--renki-danger)"}>{msg.text}</p>}
     </div>
   );
 }

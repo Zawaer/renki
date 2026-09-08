@@ -1,4 +1,4 @@
-# Contributing to Claude Remote Control
+# Contributing to Renki
 
 Thanks for taking a look. This is a young, solo-built project, so process is
 intentionally light — the main thing is keeping the pure core (protocol +
@@ -7,8 +7,8 @@ client-core + daemon logic) well-tested, since every client depends on it.
 ## Development setup
 
 ```bash
-git clone https://github.com/Zawaer/claude-remote-control
-cd claude-remote-control
+git clone https://github.com/Zawaer/renki
+cd renki
 pnpm install
 pnpm build       # compiles packages/protocol + packages/client-core (+ apps) to dist/
 ```
@@ -20,8 +20,8 @@ yourself walkthrough (daemon, web, VS Code, Android, Tailscale).
 ## Running things while you work
 
 ```bash
-pnpm --filter @crc/daemon dev   # daemon, auto-reloads (tsx watch)
-pnpm --filter @crc/web dev      # web client at http://127.0.0.1:5173
+pnpm --filter @renki/daemon dev   # daemon, auto-reloads (tsx watch)
+pnpm --filter @renki/web dev      # web client at http://127.0.0.1:5173
 ```
 
 ## Before opening a PR

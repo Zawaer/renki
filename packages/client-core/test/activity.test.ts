@@ -1,4 +1,4 @@
-import type { StatsBucket } from "@crc/protocol";
+import type { StatsBucket } from "@renki/protocol";
 import { describe, expect, it } from "vitest";
 import { activityGrid, intensity, streaks, sumRecent, tokensInPerspective } from "../src/activity.js";
 

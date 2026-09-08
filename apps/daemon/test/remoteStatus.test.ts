@@ -33,14 +33,14 @@ afterEach(() => {
 
 /** An origin repo with one commit, plus a clone of it (the local repo under test). */
 function setup(): { originPath: string; localPath: string } {
-  const originPath = mkdtempSync(join(tmpdir(), "crc-origin-"));
+  const originPath = mkdtempSync(join(tmpdir(), "renki-origin-"));
   dirs.push(originPath);
   execFileSync("git", ["init", "-b", "main", originPath], { stdio: "ignore" });
   writeFileSync(join(originPath, "file.txt"), "v1\n");
   git(originPath, "add", "-A");
   git(originPath, "commit", "-m", "init");
 
-  const localPath = mkdtempSync(join(tmpdir(), "crc-local-"));
+  const localPath = mkdtempSync(join(tmpdir(), "renki-local-"));
   dirs.push(localPath);
   rmSync(localPath, { recursive: true, force: true }); // clone wants to create it itself
   execFileSync("git", ["clone", originPath, localPath], { stdio: "ignore" });

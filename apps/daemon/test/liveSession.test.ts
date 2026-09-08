@@ -1,5 +1,5 @@
 import type { Options, Query, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { EventPayload } from "@crc/protocol";
+import type { EventPayload } from "@renki/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { InputChannel, LiveClaudeSession, type LiveSessionOptions } from "../src/claude/liveSession.js";
 import type { RunTurnResult } from "../src/claude/runner.js";

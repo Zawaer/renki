@@ -1,4 +1,4 @@
-import type { StatsBucket } from "@crc/protocol";
+import type { StatsBucket } from "@renki/protocol";
 
 /** Shared formatting/data-shaping helpers for the web and mobile Stats screens — kept identical so the two never drift. */
 

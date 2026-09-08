@@ -25,10 +25,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - image: claude-remote-control
+          - image: renki
             dockerfile: Dockerfile
             target: runtime
-          - image: claude-remote-control-web
+          - image: renki-web
             dockerfile: Dockerfile.web
             target: runtime
     steps:

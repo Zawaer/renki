@@ -1,4 +1,4 @@
-import { RealtimeClient, RestClient, type Store } from "@crc/client-core";
+import { RealtimeClient, RestClient, type Store } from "@renki/client-core";
 import { createContext, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
 import type { AppConfig } from "./config.js";
 

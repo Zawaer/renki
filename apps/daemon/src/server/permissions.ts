@@ -1,4 +1,4 @@
-import type { PermissionDecision } from "@crc/protocol";
+import type { PermissionDecision } from "@renki/protocol";
 import { logger } from "../logger.js";
 import type { PermissionOutcome, PermissionRequest } from "../claude/runner.js";
 

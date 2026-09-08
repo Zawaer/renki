@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
-# Builds just @crc/web (+ its workspace deps, @crc/protocol and
-# @crc/client-core) as a static production build, served by nginx —
-# the Docker equivalent of the crc-web pm2 process for bare-metal setups.
+# Builds just @renki/web (+ its workspace deps, @renki/protocol and
+# @renki/client-core) as a static production build, served by nginx —
+# the Docker equivalent of the renki-web pm2 process for bare-metal setups.
 # Daemon/VS Code/mobile aren't part of this image.
 
 FROM node:20-bookworm-slim AS base
@@ -13,7 +13,7 @@ WORKDIR /app
 # Manifests only, before any source — so `pnpm install` stays a cached layer
 # across ordinary source edits and only re-runs when a package.json/lockfile
 # changes. pnpm needs every workspace member's package.json to resolve the
-# graph, even though --filter below only installs @crc/web's slice of it.
+# graph, even though --filter below only installs @renki/web's slice of it.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY scripts ./scripts
 COPY packages/protocol/package.json packages/protocol/package.json
@@ -23,11 +23,11 @@ COPY apps/daemon/package.json apps/daemon/package.json
 COPY apps/mobile/package.json apps/mobile/package.json
 COPY apps/vscode/package.json apps/vscode/package.json
 
-# Scoped to @crc/web + its workspace deps, so the daemon/mobile/vscode
+# Scoped to @renki/web + its workspace deps, so the daemon/mobile/vscode
 # dependency trees never run here. The cache mount persists pnpm's package
 # store across builds on the same Docker host.
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile --filter "@crc/web..."
+    pnpm install --frozen-lockfile --filter "@renki/web..."
 
 # Dev target: branches off here, before any source is copied in or built —
 # docker-compose.dev.yml bind-mounts live source over /app instead, and
@@ -35,14 +35,14 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
 # never needs rebuilding after the first `--build` (only `base` reruns, and
 # only on a package.json/lockfile change).
 FROM base AS dev
-CMD ["pnpm", "--filter", "@crc/web", "dev"]
+CMD ["pnpm", "--filter", "@renki/web", "dev"]
 
 FROM base AS builder
 
 # Now bring in the actual source and build.
 COPY . .
 
-RUN pnpm --filter @crc/protocol build && pnpm --filter @crc/client-core build && pnpm --filter @crc/web build
+RUN pnpm --filter @renki/protocol build && pnpm --filter @renki/client-core build && pnpm --filter @renki/web build
 
 # apps/web uses client-side routing (react-router), so unknown paths like
 # /stats need to fall back to index.html instead of 404ing — see nginx.web.conf.

@@ -58,7 +58,7 @@ async function runRtkHook(bin: string, input: HookInput, signal: AbortSignal): P
   }
 }
 
-/** `bin` is the `rtk` executable to invoke — name on PATH or absolute path (CRC_RTK_BIN). */
+/** `bin` is the `rtk` executable to invoke — name on PATH or absolute path (RENKI_RTK_BIN). */
 export function createRtkPreToolUseHook(bin: string): HookCallbackMatcher {
   return {
     matcher: "Bash",

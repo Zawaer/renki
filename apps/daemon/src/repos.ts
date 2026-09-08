@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Repo } from "@crc/protocol";
+import type { Repo } from "@renki/protocol";
 import { simpleGit } from "simple-git";
 import type { Config } from "./config.js";
 import { logger } from "./logger.js";

@@ -1,18 +1,29 @@
-# Claude Remote Control (CRC)
+# Renki
 
-[![CI](https://github.com/Zawaer/claude-remote-control/actions/workflows/ci.yml/badge.svg)](https://github.com/Zawaer/claude-remote-control/actions/workflows/ci.yml)
+[![CI](https://github.com/Zawaer/renki/actions/workflows/ci.yml/badge.svg)](https://github.com/Zawaer/renki/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
 
-Self-hosted, multi-device remote control for [Claude Code](https://claude.com/claude-code).
-Run and watch multiple parallel Claude Code sessions across your repos from any
-device — your Mac, VS Code, or your phone — with real-time sync and a
-**take-control** lock so one device drives while the others watch live.
+**Run [Claude Code](https://claude.com/claude-code) on your own server, and
+drive it from your phone.**
 
-It runs entirely on your own hardware — a homelab box or a personal VPS,
-whichever you already have running 24/7. Prompts and code only ever reach
-Anthropic through the `claude` process the daemon runs locally; there is no
-relay server.
+Renki is a daemon you run on the machine that already holds your repos — a
+homelab box, a VPS, whatever is on 24/7. It owns the `claude` processes; web,
+VS Code and Android clients attach to it over your tailnet. Close your laptop
+and the work carries on; open your phone on the bus and you're in the same
+session, mid-turn, with every tool call and approval request live.
+
+> *renki* is Finnish for a hired farmhand — someone who works your land while
+> you're elsewhere. That's the whole idea.
+
+Nothing runs in anyone else's cloud. Prompts and code reach Anthropic only
+through the `claude` process on your own machine; there is no relay server,
+and no account but yours is involved.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/session-dark.png">
+  <img alt="A Renki session: the repo-grouped sidebar, a turn's tool calls as disclosure rows, and the reply" src="docs/screenshots/session-light.png">
+</picture>
 
 ## Why
 
@@ -43,31 +54,47 @@ never touching tokens itself). See [SETUP.md](./SETUP.md).
 
 ## Features
 
+- **Sessions that outlive your laptop** — the daemon owns one long-lived
+  `claude` process per session, so background agents keep working (and keep
+  asking for approvals) after the turn that spawned them ends.
+- **Steer a turn while it runs** — a prompt sent mid-turn is delivered into the
+  running turn at its next tool boundary, not queued behind it. Change your
+  mind halfway through a refactor without stopping it.
 - **Live, replayable sessions** — an event-sourced log means a reconnect or a
   fresh device catches up perfectly; nothing is ever missed or duplicated.
+  "Exit and rejoin to see updates" is impossible by construction.
 - **Take-control locking** — one device drives, every other connected device
-  watches the same session stream live; handing off control is instant.
-- **Per-session git worktrees** — parallel sessions on the same repo never
-  step on each other's file state.
-- **Four clients from one core** — web, VS Code (embeds the web bundle in a
+  watches the same stream live; handing off control is instant.
+- **Per-session git worktrees** — parallel sessions on the same repo never step
+  on each other's file state, each on its own branch, merged back with
+  `renki merge` (which spawns a resolution session only when git actually
+  conflicts).
+- **Remote approvals** — a gated tool call pages whichever device holds
+  control, on the phone included, and auto-denies rather than hanging forever.
+- **Three clients from one core** — web, VS Code (embeds the web bundle in a
   webview), and a native Android app all share the same reducer and
   reconnecting WebSocket client (`packages/client-core`).
 - **QR device pairing** — an already-connected client shows a QR of its own
-  working connection; scan it from a new device instead of typing a tailnet
-  URL and a 43-character token by hand.
+  working connection; scan it instead of typing a tailnet URL and a
+  43-character token by hand.
 - **Push notifications** (Android) for permission requests and turn completion
   while the app is backgrounded.
-- **A Settings screen and a Stats screen on every client** — device/connection
-  info, cswap account management (switch/add/rotation threshold), and
-  cost/token/wait-time analytics (lifetime, daily, monthly, by-repo), at full
-  parity between web and the Android app.
-- **Optional multi-account rotation** — proactively (or on a real rate-limit
-  failure) switches which Claude account the CLI uses next, via `cswap`.
+- **Usage you can actually read** — every window claude.ai reports (the 5-hour
+  session, the weekly all-model cap, and the separate weekly cap on a premium
+  model), with reset times, on every client.
+- **Optional multi-account rotation** — proactively, or on a real rate-limit
+  failure, switches which Claude account the CLI uses next via
+  [`cswap`](https://github.com/realiti4/claude-swap) — with a preferred account
+  it returns to as soon as that one has headroom again.
+- **A trash, not a cliff** — deleting a session keeps its transcript
+  recoverable for 30 days.
+- **Preview what a session builds** — a dev server started inside a session is
+  reachable from your phone at a URL, with no port publishing or tunnels.
+- **Stats** — cost, tokens, wait time and streaks, lifetime / daily / monthly /
+  per-repo, on web and phone.
 - **Optional [RTK](https://github.com/rtk-ai/rtk) support** — rewrites Bash
-  commands through RTK's compacting proxy to cut token usage 60-90% on common
-  dev operations (`git`, test runners, linters, etc), with its savings stats
-  surfaced live in every client. See
-  [SETUP.md](./SETUP.md#rtk-token-savings-support-optional).
+  commands through RTK's compacting proxy to cut token usage on common dev
+  operations, with its savings surfaced live in every client.
 - **Tailscale-first security model** — no ports on the public internet, a
   constant-time bearer token on top, session isolation by construction.
 
@@ -120,9 +147,9 @@ rotation).
 ```bash
 pnpm install && pnpm build
 cp .env.example .env
-pnpm --filter @crc/daemon cli token   # -> paste into .env as CRC_AUTH_TOKEN
-pnpm --filter @crc/daemon dev          # start the daemon
-pnpm --filter @crc/web dev             # open http://127.0.0.1:5173
+pnpm --filter @renki/daemon cli token   # -> paste into .env as RENKI_AUTH_TOKEN
+pnpm --filter @renki/daemon dev          # start the daemon
+pnpm --filter @renki/web dev             # open http://127.0.0.1:5173
 ```
 
 Run the test suite (Vitest) with `pnpm test` — it covers the pure core: the
@@ -135,20 +162,20 @@ merge-conflict-flow migrations — plus component tests for the web app.
 
 ## Status
 
-- [x] Protocol contract + daemon core (worktrees, SDK, persistence)
-- [x] WebSocket + REST server with event-sourced replay & take-control lock
-- [x] Shared `client-core` + React web app
-- [x] Security: Tailscale-friendly, token auth, safe-bind guard
-- [x] VS Code extension (webview reusing the web bundle + editor bridge)
-- [x] Android app (Expo) + push notifications
-- [x] QR device pairing (scan instead of typing a URL + token)
-- [x] Optional multi-account usage rotation (cswap) + usage % with org picker
-- [x] Vitest unit suite over the pure core (reducer, event log, lock invariants)
-- [x] CI (build + typecheck + test on every push/PR)
+Single-user and self-hosted, running daily on the author's homelab. The
+protocol, daemon, web/VS Code/Android clients, pairing, rotation and the test
+suite are all in place; [NEXT_STEPS.md](./NEXT_STEPS.md) is the running
+punch-list of what's next.
 
-All six build steps complete. Single-user, self-hosted, v1. Built as a
-portfolio project — see [NEXT_STEPS.md](./NEXT_STEPS.md) for what's next,
-including the open-source/onboarding roadmap.
+Worth knowing before you deploy it:
+
+- **It authenticates one user, not many.** A single bearer token guards the
+  daemon; there are no accounts or per-user permissions. It's designed to sit
+  on a tailnet, not on the public internet — see [SECURITY.md](./SECURITY.md).
+- **Sessions run with your `claude` credentials** on your own machine, with
+  whatever filesystem access that machine gives them.
+- **Android only** on mobile. The web app works fine in mobile Safari; there
+  is no iOS build.
 
 ## Contributing
 

@@ -1,4 +1,4 @@
-import type { Attachment, SessionEvent, SessionStatus } from "@crc/protocol";
+import type { Attachment, SessionEvent, SessionStatus } from "@renki/protocol";
 
 /**
  * The event-log → view-state reducer. This is the piece that makes every client

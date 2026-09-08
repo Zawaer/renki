@@ -17,7 +17,7 @@ import { logger } from "../logger.js";
 export class PlaywrightUnavailableError extends Error {
   constructor() {
     super(
-      "Playwright isn't installed on the daemon host. Run `pnpm --filter @crc/daemon add playwright` " +
+      "Playwright isn't installed on the daemon host. Run `pnpm --filter @renki/daemon add playwright` " +
         "(it will reuse your installed Chrome), then retry.",
     );
     this.name = "PlaywrightUnavailableError";

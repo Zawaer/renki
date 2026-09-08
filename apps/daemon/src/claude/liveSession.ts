@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Options, PermissionMode, PermissionResult, Query, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { Attachment, CapabilitiesResponse, EventPayload } from "@crc/protocol";
+import type { Attachment, CapabilitiesResponse, EventPayload } from "@renki/protocol";
 import { newTurnId } from "../ids.js";
 import { logger } from "../logger.js";
 import { createRtkPreToolUseHook } from "./rtk.js";
@@ -20,7 +20,7 @@ import {
 import { stripUntrustedHooks } from "./settingsHygiene.js";
 
 /**
- * One long-lived `claude` process for one CRC session.
+ * One long-lived `claude` process for one Renki session.
  *
  * The SDK's `query()` is fed an input stream that never ends on its own
  * (`InputChannel`), so the child's stdin stays open across turns. That is the

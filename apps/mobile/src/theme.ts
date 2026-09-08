@@ -5,14 +5,14 @@ import { useColorScheme } from "react-native";
  * app (rounded pills and cards, near-black/near-white surfaces, minimal hard
  * borders) rather than mobile's original VS Code Dark+/Light+ mirror — that
  * flat, sharp-cornered, thin-border look reads as a code editor, not a phone
- * app. Web/VS Code keep their own --crc-* mirror; this palette is
+ * app. Web/VS Code keep their own --renki-* mirror; this palette is
  * mobile-only.
  */
 /**
  * The web app's "golden-hour" palette, converted from its oklch tokens (see
  * apps/web/src/index.css) to hex because React Native can't parse oklch.
  *
- * Kept in step with the web deliberately: CRC is one product seen from a
+ * Kept in step with the web deliberately: Renki is one product seen from a
  * phone, a browser and an editor, and until now the phone was warm-grey with a
  * BLUE accent while the web had gone amber — the same session looked like two
  * different apps. Surfaces run darkest to lightest: inset < bg ≈ bgElevated <

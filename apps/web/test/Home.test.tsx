@@ -1,5 +1,5 @@
-import { RealtimeClient, RestClient } from "@crc/client-core";
-import type { Session, StatsResponse } from "@crc/protocol";
+import { RealtimeClient, RestClient } from "@renki/client-core";
+import type { Session, StatsResponse } from "@renki/protocol";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { Home } from "../src/components/Home.js";

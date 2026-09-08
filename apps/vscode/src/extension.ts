@@ -14,8 +14,8 @@ let panel: vscode.WebviewPanel | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
-    vscode.commands.registerCommand("crc.setToken", () => setToken(context)),
-    vscode.commands.registerCommand("crc.open", () => openPanel(context)),
+    vscode.commands.registerCommand("renki.setToken", () => setToken(context)),
+    vscode.commands.registerCommand("renki.open", () => openPanel(context)),
   );
 }
 
@@ -25,30 +25,36 @@ export function deactivate(): void {
 
 async function setToken(context: vscode.ExtensionContext): Promise<void> {
   const token = await vscode.window.showInputBox({
-    prompt: "CRC daemon auth token (stored in VS Code SecretStorage)",
+    prompt: "Renki daemon auth token (stored in VS Code SecretStorage)",
     password: true,
     ignoreFocusOut: true,
   });
   if (token) {
-    await context.secrets.store("crc.token", token);
-    vscode.window.showInformationMessage("CRC auth token saved.");
+    await context.secrets.store("renki.token", token);
+    vscode.window.showInformationMessage("Renki auth token saved.");
   }
 }
 
 async function openPanel(context: vscode.ExtensionContext): Promise<void> {
-  const daemonUrl = vscode.workspace.getConfiguration("crc").get<string>("daemonUrl")?.trim();
+  const daemonUrl = (
+    vscode.workspace.getConfiguration("renki").get<string>("daemonUrl") ??
+    // The pre-rename setting, so an existing settings.json still works.
+    vscode.workspace.getConfiguration("crc") /* pre-rename */.get<string>("daemonUrl")
+  )?.trim();
   if (!daemonUrl) {
     const pick = await vscode.window.showErrorMessage(
-      "Set crc.daemonUrl in Settings first.",
+      "Set renki.daemonUrl in Settings first.",
       "Open Settings",
     );
-    if (pick) vscode.commands.executeCommand("workbench.action.openSettings", "crc.daemonUrl");
+    if (pick) vscode.commands.executeCommand("workbench.action.openSettings", "renki.daemonUrl");
     return;
   }
 
-  const token = await context.secrets.get("crc.token");
+  // Fall back to the pre-rename key so an existing install isn't asked to
+  // paste its token again just because the project changed names.
+  const token = (await context.secrets.get("renki.token")) ?? (await context.secrets.get("crc.token"));
   if (!token) {
-    const pick = await vscode.window.showErrorMessage("No CRC token set.", "Set Token");
+    const pick = await vscode.window.showErrorMessage("No Renki token set.", "Set Token");
     if (pick) await setToken(context);
     return;
   }
@@ -58,7 +64,7 @@ async function openPanel(context: vscode.ExtensionContext): Promise<void> {
     return;
   }
 
-  panel = vscode.window.createWebviewPanel("crc.panel", "Claude Remote Control", vscode.ViewColumn.Beside, {
+  panel = vscode.window.createWebviewPanel("renki.panel", "Renki", vscode.ViewColumn.Beside, {
     enableScripts: true,
     // Keep the WebSocket + state alive when the tab is hidden — no reconnect
     // churn just because you switched editor tabs.
@@ -92,9 +98,9 @@ function handleMessage(msg: unknown): void {
 
 /** Stable per-install device id so the take-control lock recognizes this editor. */
 function deviceId(context: vscode.ExtensionContext): string {
-  const existing = context.globalState.get<string>("crc.deviceId");
+  const existing = context.globalState.get<string>("renki.deviceId") ?? context.globalState.get<string>("crc.deviceId");
   if (existing) return existing;
   const id = `vscode_${randomUUID()}`;
-  void context.globalState.update("crc.deviceId", id);
+  void context.globalState.update("renki.deviceId", id);
   return id;
 }

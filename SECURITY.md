@@ -1,6 +1,6 @@
 # Security policy
 
-Claude Remote Control gives connected devices the ability to drive a real
+Renki gives connected devices the ability to drive a real
 `claude` process on your machine — a genuine "run things on my computer"
 surface. Reports about auth bypass, the take-control lock, session isolation
 (worktrees), or the daemon's network exposure are all in scope and taken
@@ -30,13 +30,13 @@ In scope:
 Out of scope:
 - Anthropic's own infrastructure (the `claude` CLI, the Agent SDK, claude.ai) —
   report those to Anthropic directly.
-- Issues that require the attacker to already have your `CRC_AUTH_TOKEN` **and**
+- Issues that require the attacker to already have your `RENKI_AUTH_TOKEN` **and**
   network access to your daemon — that's the intended trust boundary (see the
   security model below), not a bypass of it.
 
 ## Current security model
 
-CRC is single-user, self-hosted software with a deliberately small trust
+Renki is single-user, self-hosted software with a deliberately small trust
 boundary — worth understanding before reporting something that's a known
 design tradeoff rather than a bug:
 
@@ -49,7 +49,7 @@ design tradeoff rather than a bug:
   built-in rate limiting) — see
   [SETUP.md § Advanced: other networking options](./SETUP.md#advanced-other-networking-options)
   before considering it.
-- **Auth:** a single shared bearer token (`CRC_AUTH_TOKEN`), compared in
+- **Auth:** a single shared bearer token (`RENKI_AUTH_TOKEN`), compared in
   constant time, required on every request including the WebSocket upgrade.
   The daemon refuses to bind a non-loopback host without one.
 - **Session isolation:** each session runs in its own git worktree, so

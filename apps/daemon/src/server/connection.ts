@@ -4,7 +4,7 @@ import {
   type SessionEvent,
   type ServerMessage,
   WsErrorCode,
-} from "@crc/protocol";
+} from "@renki/protocol";
 import type { WebSocket } from "ws";
 import { logger } from "../logger.js";
 import type { DeviceRegistry } from "../push/devices.js";

@@ -23,7 +23,7 @@ labels: bug
 - Node version (`node -v`):
 - How the daemon is exposed (Tailscale `serve`, direct tailnet bind, LAN, other):
 
-**Daemon logs**, if relevant (redact your `CRC_AUTH_TOKEN` and any session keys):
+**Daemon logs**, if relevant (redact your `RENKI_AUTH_TOKEN` and any session keys):
 
 ```
 paste here

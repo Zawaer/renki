@@ -1,4 +1,4 @@
-import type { Attachment, EventPayload } from "@crc/protocol";
+import type { Attachment, EventPayload } from "@renki/protocol";
 import { describe, expect, it } from "vitest";
 import {
   classifyRateLimit,

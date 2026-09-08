@@ -1,4 +1,4 @@
-import type { SessionEvent } from "@crc/protocol";
+import type { SessionEvent } from "@renki/protocol";
 import { describe, expect, it } from "vitest";
 import { EventLog } from "../src/events/log.js";
 import { makeTestDb } from "./helpers.js";

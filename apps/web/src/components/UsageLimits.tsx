@@ -1,12 +1,12 @@
-import { formatResetTime, usageSeverity } from "@crc/client-core";
-import type { AccountUsage, AccountUsageExtra, AccountUsageLimit } from "@crc/protocol";
+import { formatResetTime, usageSeverity } from "@renki/client-core";
+import type { AccountUsage, AccountUsageExtra, AccountUsageLimit } from "@renki/protocol";
 
 /**
  * A plan's usage, one card per window claude.ai actually reports.
  *
  * There are three at once — a 5-hour rolling session window, a weekly cap
  * across all models, and a separate weekly cap for a premium model like Opus
- * or Fable — and any one of them can be what stops the next prompt. CRC used
+ * or Fable — and any one of them can be what stops the next prompt. Renki used
  * to show only the first two, so a model-specific allowance running out was
  * invisible until a turn failed.
  *
@@ -15,14 +15,14 @@ import type { AccountUsage, AccountUsageExtra, AccountUsageLimit } from "@crc/pr
  */
 
 const TONE: Record<"normal" | "warning" | "critical", { bar: string; text: string }> = {
-  normal: { bar: "bg-(--crc-success)", text: "text-(--crc-success)" },
-  warning: { bar: "bg-(--crc-warning)", text: "text-(--crc-warning)" },
-  critical: { bar: "bg-(--crc-danger)", text: "text-(--crc-danger)" },
+  normal: { bar: "bg-(--renki-success)", text: "text-(--renki-success)" },
+  warning: { bar: "bg-(--renki-warning)", text: "text-(--renki-warning)" },
+  critical: { bar: "bg-(--renki-danger)", text: "text-(--renki-danger)" },
 };
 
 function Bar({ pct, tone }: { pct: number; tone: string }) {
   return (
-    <div className="h-1.5 overflow-hidden rounded-full bg-(--crc-bg-inset)">
+    <div className="h-1.5 overflow-hidden rounded-full bg-(--renki-bg-inset)">
       <div className={`h-full rounded-full transition-[width] duration-500 ${tone}`} style={{ width: `${pct}%` }} />
     </div>
   );
@@ -42,21 +42,21 @@ function LimitCard({ limit }: { limit: AccountUsageLimit }) {
   const badge = limit.kind.startsWith("weekly") ? "Weekly" : null;
 
   return (
-    <div className="rounded-xl bg-(--crc-bg-inset)/60 px-3.5 py-3">
+    <div className="rounded-xl bg-(--renki-bg-inset)/60 px-3.5 py-3">
       <div className="flex items-baseline justify-between gap-2">
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate text-[13px] font-medium text-(--crc-fg)">{limit.label}</span>
+          <span className="truncate text-[13px] font-medium text-(--renki-fg)">{limit.label}</span>
           {badge && (
-            <span className="shrink-0 rounded-md bg-(--crc-surface) px-1.5 py-px text-[10px] text-(--crc-fg-muted)">{badge}</span>
+            <span className="shrink-0 rounded-md bg-(--renki-surface) px-1.5 py-px text-[10px] text-(--renki-fg-muted)">{badge}</span>
           )}
         </span>
         <span className={`shrink-0 text-[13px] font-semibold tabular-nums ${tone.text}`}>{Math.round(pct)}%</span>
       </div>
-      {limit.kind === "session" && <div className="mt-0.5 text-[11px] text-(--crc-fg-muted)">5-hour rolling window</div>}
+      {limit.kind === "session" && <div className="mt-0.5 text-[11px] text-(--renki-fg-muted)">5-hour rolling window</div>}
       <div className="mt-2">
         <Bar pct={pct} tone={tone.bar} />
       </div>
-      <div className="mt-1.5 text-[11px] text-(--crc-fg-muted)">{reset}</div>
+      <div className="mt-1.5 text-[11px] text-(--renki-fg-muted)">{reset}</div>
     </div>
   );
 }
@@ -72,12 +72,12 @@ function ExtraCard({ extra }: { extra: AccountUsageExtra }) {
   // nothing rather than an empty "0.00 / 0.00" meter.
   const tone = TONE[usageSeverity(extra.severity, pct)];
   return (
-    <div className="rounded-xl bg-(--crc-bg-inset)/60 px-3.5 py-3">
+    <div className="rounded-xl bg-(--renki-bg-inset)/60 px-3.5 py-3">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[13px] font-medium text-(--crc-fg)">Extra usage</span>
+        <span className="text-[13px] font-medium text-(--renki-fg)">Extra usage</span>
         <span className={`shrink-0 text-[13px] font-semibold tabular-nums ${tone.text}`}>{Math.round(pct)}%</span>
       </div>
-      <div className="mt-0.5 text-[11px] text-(--crc-fg-muted)">
+      <div className="mt-0.5 text-[11px] text-(--renki-fg-muted)">
         {formatUsd(extra.usedDollars)} / {formatUsd(extra.limitDollars)} {extra.currency}
       </div>
       <div className="mt-2">

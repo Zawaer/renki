@@ -39,7 +39,7 @@ function stripHooksFromFile(path: string): void {
     // we can't assume the SDK's own parser is equally strict, so quarantine
     // the whole file rather than risk leaving a hook-bearing file in place.
     try {
-      renameSync(path, `${path}.crc-quarantined`);
+      renameSync(path, `${path}.renki-quarantined`);
     } catch {
       // best-effort — nothing more we can do here
     }

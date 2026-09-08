@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { BrowserRouter, MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { ClientProvider, useClient, useStoreValue } from "./lib/client.js";
 import { type AppConfig, clearConfig, loadConfig, saveConfig } from "./lib/config.js";
+import { RenkiMark } from "./components/ui.js";
 import { AccountsBar } from "./components/AccountsBar.js";
 import { Home } from "./components/Home.js";
 import { SessionList } from "./components/SessionList.js";
@@ -156,7 +157,7 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
             title="Home"
           >
             <span className="flex h-6 w-6 items-center justify-center rounded-md bg-(--renki-accent) text-(--renki-accent-fg) shadow-(--renki-shadow-xs)">
-              <span className="codicon codicon-terminal text-[13px]" />
+              <RenkiMark className="h-3.5 w-3.5" />
             </span>
           </button>
           <HeaderButton active={false} title="Show sidebar (⌘B)" icon="layout-sidebar-left" onClick={() => setSidebarOpen(true)} />
@@ -181,7 +182,7 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
         <div className="flex h-12 shrink-0 items-center gap-1 pr-2 pl-4">
           <button onClick={() => navigate("/")} className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg py-1 text-left" title="Home">
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-(--renki-accent) text-(--renki-accent-fg) shadow-(--renki-shadow-xs)">
-              <span className="codicon codicon-terminal text-[13px]" />
+              <RenkiMark className="h-3.5 w-3.5" />
             </span>
             <span className="truncate text-[13px] font-semibold tracking-tight text-(--renki-fg)">Renki</span>
           </button>

@@ -8,7 +8,11 @@
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "android": {
-      "package": "com.zawaer.clauderemotecontrol"
+      "package": "com.zawaer.clauderemotecontrol",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ec9d53"
+      }
     },
     "androidNavigationBar": {
       "backgroundColor": "#191918",
@@ -20,13 +24,13 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Used to scan a pairing QR code from another Renki device — no photos are taken or stored."
+          "cameraPermission": "Used to scan a pairing QR code from another Renki device \u2014 no photos are taken or stored."
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "Used to attach a photo to a prompt — sent to Claude the same as any other attachment, never stored elsewhere."
+          "photosPermission": "Used to attach a photo to a prompt \u2014 sent to Claude the same as any other attachment, never stored elsewhere."
         }
       ],
       [
@@ -45,6 +49,12 @@
         "projectId": "56903ad1-4135-4e58-93fa-c7e2b1354aad"
       }
     },
-    "owner": "zawaer"
+    "owner": "zawaer",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#16100b"
+    }
   }
 }

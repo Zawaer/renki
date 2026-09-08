@@ -1,3 +1,5 @@
+<img src="docs/logo.svg" width="76" align="right" alt="">
+
 # Renki
 
 [![CI](https://github.com/Zawaer/renki/actions/workflows/ci.yml/badge.svg)](https://github.com/Zawaer/renki/actions/workflows/ci.yml)

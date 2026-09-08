@@ -1,5 +1,6 @@
 import { tokenizeJson, tokenizeShell, type SyntaxKind } from "@crc/client-core";
 import { memo } from "react";
+import { Collapsible } from "./ui.js";
 
 /**
  * Syntax-coloured code for the two things a transcript actually shows: the
@@ -38,18 +39,22 @@ function Tokens({ tokens }: { tokens: { text: string; kind: SyntaxKind }[] }) {
 /** A shell command, with the `$` prompt marker the way a terminal shows it. */
 export const ShellCode = memo(function ShellCode({ command, className = "" }: { command: string; className?: string }) {
   return (
-    <pre className={`overflow-x-auto rounded-lg bg-(--crc-bg-inset)/70 px-3 py-2 font-mono leading-relaxed text-(--crc-fg) ${className}`}>
-      <span className="mr-2 select-none text-(--crc-fg-muted)">$</span>
-      <Tokens tokens={tokenizeShell(command)} />
-    </pre>
+    <Collapsible text={command} collapseLines={14} copyLabel="Copy command">
+      <pre className={`overflow-x-auto rounded-lg bg-(--crc-bg-inset)/70 px-3 py-2 font-mono leading-relaxed text-(--crc-fg) ${className}`}>
+        <span className="mr-2 select-none text-(--crc-fg-muted)">$</span>
+        <Tokens tokens={tokenizeShell(command)} />
+      </pre>
+    </Collapsible>
   );
 });
 
 /** A JSON payload (a tool's raw input when there's no nicer view for it). */
 export const JsonCode = memo(function JsonCode({ json, className = "" }: { json: string; className?: string }) {
   return (
-    <pre className={`overflow-x-auto rounded-lg bg-(--crc-bg-inset)/70 px-3 py-2 font-mono leading-relaxed text-(--crc-fg) ${className}`}>
-      <Tokens tokens={tokenizeJson(json)} />
-    </pre>
+    <Collapsible text={json} collapseLines={14} copyLabel="Copy JSON">
+      <pre className={`overflow-x-auto rounded-lg bg-(--crc-bg-inset)/70 px-3 py-2 font-mono leading-relaxed text-(--crc-fg) ${className}`}>
+        <Tokens tokens={tokenizeJson(json)} />
+      </pre>
+    </Collapsible>
   );
 });

@@ -413,3 +413,57 @@ describe("SessionView steering + unprompted turns", () => {
     expect(screen.getByText(/Background agent finished/)).toBeTruthy();
   });
 });
+
+describe("long content", () => {
+  /**
+   * The copy button is the part jsdom can actually see. Whether the block gets
+   * CLIPPED depends on measured layout (scrollHeight vs a line-height clamp),
+   * which jsdom doesn't compute — that behaviour is verified in a real browser
+   * instead, and the safe fallback here is content shown in full.
+   */
+  it("offers a copy button on a fenced code block, and leaves the prose alone", () => {
+    const sessionId = "s_code";
+    const events = [
+      ev(sessionId, {
+        kind: "session_created",
+        repoId: "demo",
+        repoName: "demo",
+        baseBranch: "main",
+        branch: "crc/abc123",
+        worktreePath: "/tmp/wt",
+        purpose: "normal",
+        mergeMeta: null,
+      }),
+      ev(sessionId, { kind: "status_changed", status: "idle" }),
+      ev(sessionId, { kind: "turn_started", turnId: "t1", promptId: "p1", trigger: "prompt" }),
+      ev(sessionId, {
+        kind: "assistant_block",
+        turnId: "t1",
+        blockIndex: 0,
+        blockKind: "text",
+        text: "Here you go:\n\n```\nline one\nline two\n```\n\nPlain paragraph.",
+        toolUseId: null,
+        toolName: null,
+        toolInput: null,
+      }),
+      ev(sessionId, {
+        kind: "turn_result",
+        turnId: "t1",
+        promptId: "p1",
+        ok: true,
+        costUsd: 0.01,
+        durationMs: 1000,
+        errorMessage: null,
+        inputTokens: 5,
+        outputTokens: 5,
+      }),
+    ];
+
+    renderSession(sessionId, events);
+
+    expect(screen.getByRole("button", { name: "Copy code" })).toBeInTheDocument();
+    // Nothing is hidden when the layout can't be measured: the code is there.
+    expect(screen.getByText(/line one/)).toBeInTheDocument();
+    expect(screen.getByText("Plain paragraph.")).toBeInTheDocument();
+  });
+});

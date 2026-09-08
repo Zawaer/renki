@@ -1,5 +1,5 @@
 import type { SessionStatus } from "@crc/protocol";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "default" | "primary" | "ghost" | "danger";
@@ -321,5 +321,96 @@ export function InfoHint({
         </span>
       )}
     </span>
+  );
+}
+
+/**
+ * A long block of text that keeps its own height in check: clipped to about
+ * `collapseLines` tall with a fade and a "Show all" toggle, and a copy button
+ * in the corner.
+ *
+ * Transcripts are full of blocks worth keeping but not worth scrolling past
+ * every time you open the session — a 60-line note template, a config file the
+ * model wrote out, a pasted prompt. Collapsed, the whole exchange stays
+ * skimmable; the toggle is there when the content IS the point.
+ *
+ * Whether it's actually too long is MEASURED rather than counted from the
+ * text, because the two disagree exactly where it matters: a `pre` doesn't
+ * wrap, so its lines are its height, while one pasted paragraph is a single
+ * line of text and half a screen of wrapped prose.
+ */
+export function Collapsible({
+  text,
+  collapseLines = 18,
+  copyLabel = "Copy",
+  moreLabel,
+  hideCopy = false,
+  className = "",
+  children,
+}: {
+  text: string;
+  collapseLines?: number;
+  copyLabel?: string;
+  /** Defaults to "Show all N lines", which only makes sense for code. */
+  moreLabel?: string;
+  /** For places that already offer a copy button of their own. */
+  hideCopy?: boolean;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const [long, setLong] = useState(false);
+  const [maxPx, setMaxPx] = useState<number | null>(null);
+  const inner = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const el = inner.current;
+    // Once known to be long it stays long: expanded, the element no longer
+    // overflows, and re-measuring would take the "Show less" button away.
+    if (!el || open) return;
+    // The clamp is N lines OF THE CONTENT, so the line height has to come from
+    // the content itself — this wrapper's own font size is the transcript's,
+    // which is half again bigger than the code inside it.
+    const child = el.firstElementChild;
+    const lineHeight = child ? Number.parseFloat(getComputedStyle(child).lineHeight) : Number.NaN;
+    if (!Number.isFinite(lineHeight) || lineHeight <= 0) return;
+    const clamp = lineHeight * collapseLines;
+    setMaxPx(clamp);
+    setLong(el.scrollHeight > clamp + 4);
+  }, [text, open, collapseLines]);
+
+  const clipped = long && !open;
+  const lines = text.split("\n").length;
+
+  return (
+    <div className={`group relative ${className}`}>
+      <div
+        ref={inner}
+        className={`relative ${clipped ? "overflow-hidden" : ""}`}
+        style={open || maxPx == null ? undefined : { maxHeight: maxPx }}
+      >
+        {children}
+        {/* Anchored inside the clipped box, not the wrapper — anchored outside
+            it, the fade spilled past the block and washed over the toggle. */}
+        {clipped && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-linear-to-t from-(--crc-bg-inset) to-transparent" />
+        )}
+      </div>
+      {!hideCopy && (
+        <div className="absolute top-1.5 right-1.5">
+          <CopyButton text={text} label={copyLabel} className="bg-(--crc-surface)/85 opacity-0 backdrop-blur-sm" />
+        </div>
+      )}
+      {long && (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="relative mt-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11.5px] text-(--crc-fg-muted) transition-colors hover:bg-(--crc-hover) hover:text-(--crc-fg)"
+        >
+          <span className={`codicon ${open ? "codicon-chevron-up" : "codicon-chevron-down"} text-[11px]`} />
+          {open ? "Show less" : (moreLabel ?? `Show all ${lines} lines`)}
+        </button>
+      )}
+    </div>
   );
 }

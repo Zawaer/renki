@@ -47,7 +47,7 @@ import {
 } from "../lib/composerPrefs.js";
 import { JsonCode, ShellCode } from "./Code.js";
 import { Markdown } from "./Markdown.js";
-import { Button, CopyButton, InfoHint, Skeleton, StatusBadge } from "./ui.js";
+import { Button, Collapsible, CopyButton, InfoHint, Skeleton, StatusBadge } from "./ui.js";
 
 export function SessionView({ sessionId }: { sessionId: string }) {
   const { realtime, rest, config } = useClient();
@@ -329,10 +329,16 @@ function TimelineRow({ item }: { item: TimelineItem }) {
       <div className="crc-enter group flex items-center justify-end gap-1">
         {item.text && <CopyButton text={item.text} label="Copy message" />}
         <div className="max-w-[85%] rounded-2xl bg-(--crc-surface) px-4 py-3">
+          {/* A pasted brief can be longer than the reply it asks for; clipping
+              it keeps the answer on screen, and it's your own text — you know
+              what it says. The copy button the wrapper adds is redundant with
+              the one beside the bubble, so it's suppressed here. */}
           {item.text && (
-            <div className="whitespace-pre-wrap text-[14px] leading-relaxed text-(--crc-fg)">
-              {item.text}
-            </div>
+            <Collapsible text={item.text} collapseLines={14} moreLabel="Show full message" hideCopy>
+              <div className="whitespace-pre-wrap text-[14px] leading-relaxed text-(--crc-fg)">
+                {item.text}
+              </div>
+            </Collapsible>
           )}
           {item.attachments && item.attachments.length > 0 && (
             <div

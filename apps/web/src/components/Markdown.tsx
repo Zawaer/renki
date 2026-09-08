@@ -1,6 +1,7 @@
 import { memo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Collapsible } from "./ui.js";
 
 /**
  * Renders assistant text as GitHub-flavored Markdown, themed to match the dark
@@ -44,6 +45,20 @@ function rehypeWrapWords() {
   return (tree: Node) => walk(tree, false);
 }
 
+/**
+ * The raw text inside a hast node — what a copy button should copy.
+ *
+ * Taken from the source tree rather than the rendered children because those
+ * are React elements by then (a `code` element wrapping spans), and
+ * reconstructing a string from them is guesswork about whitespace.
+ */
+function hastText(node: unknown): string {
+  const n = node as { type?: string; value?: string; children?: unknown[] } | undefined;
+  if (!n) return "";
+  if (n.type === "text") return n.value ?? "";
+  return (n.children ?? []).map(hastText).join("");
+}
+
 const components: Components = {
   h1: ({ node, ...p }) => <h1 className="text-base font-semibold text-(--crc-fg)" {...p} />,
   h2: ({ node, ...p }) => <h2 className="text-sm font-semibold text-(--crc-fg)" {...p} />,
@@ -64,13 +79,16 @@ const components: Components = {
   code: ({ node, ...p }) => (
     <code className="rounded-md bg-(--crc-bg-inset) px-1.5 py-0.5 font-(family-name:--crc-font-mono) text-[0.85em] text-(--crc-fg)" {...p} />
   ),
-  // Fenced blocks: the descendant selectors neutralize the inline-code pill so
-  // the code sits flush inside the block.
+  // Fenced blocks: copyable, and clipped when long enough to bury the rest of
+  // the reply. The descendant selectors neutralize the inline-code pill so the
+  // code sits flush inside the block.
   pre: ({ node, ...p }) => (
-    <pre
-      className="overflow-x-auto rounded-xl border border-(--crc-border) bg-(--crc-bg-inset) p-3.5 font-(family-name:--crc-font-mono) text-xs leading-relaxed text-(--crc-fg) [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit"
-      {...p}
-    />
+    <Collapsible text={hastText(node)} copyLabel="Copy code">
+      <pre
+        className="overflow-x-auto rounded-xl border border-(--crc-border) bg-(--crc-bg-inset) p-3.5 font-(family-name:--crc-font-mono) text-xs leading-relaxed text-(--crc-fg) [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit"
+        {...p}
+      />
+    </Collapsible>
   ),
   table: ({ node, ...p }) => (
     <div className="overflow-x-auto">

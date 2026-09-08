@@ -59,14 +59,77 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
   const sessionMatch = location.pathname.match(/^\/session\/(.+)$/);
   const selected = sessionMatch ? decodeURIComponent(sessionMatch[1]!) : null;
   const [sidebarOpen, setSidebarOpen] = useState(loadSidebarOpen);
+  const [sidebarWidth, setSidebarWidth] = useState(loadSidebarWidth);
 
   useEffect(() => {
     try {
       localStorage.setItem(SIDEBAR_KEY, sidebarOpen ? "1" : "0");
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
     } catch {
       // Storage unavailable — the preference just won't persist.
     }
-  }, [sidebarOpen]);
+  }, [sidebarOpen, sidebarWidth]);
+
+  /**
+   * Drag the sidebar's edge to resize it, and keep dragging left to collapse
+   * it to the rail — the same gesture an editor uses, so it needs no
+   * explaining.
+   *
+   * The listeners live on the WINDOW, not the handle: crossing the collapse
+   * threshold swaps which of the two sidebar branches is rendered, which
+   * unmounts the handle mid-drag. Pointer capture on the handle would die with
+   * it, stranding the drag; the window doesn't go anywhere.
+   */
+  function startResize(e: React.PointerEvent) {
+    e.preventDefault();
+    const move = (ev: PointerEvent) => {
+      // The sidebar starts at the window's left edge, so the pointer's x IS
+      // the width the user is asking for.
+      if (ev.clientX < SIDEBAR_COLLAPSE_AT) {
+        setSidebarOpen(false);
+        return;
+      }
+      setSidebarOpen(true);
+      setSidebarWidth(clampSidebarWidth(ev.clientX));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.classList.remove("crc-resizing");
+    };
+    // Held on <body> so the resize cursor survives crossing other elements and
+    // a drag can't select text on the way past.
+    document.body.classList.add("crc-resizing");
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  /** Arrow keys move the edge; pushing past the minimum collapses it, as dragging does. */
+  function resizeByKey(e: React.KeyboardEvent) {
+    const step = e.shiftKey ? 64 : 16;
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      if (!sidebarOpen) return;
+      if (sidebarWidth <= SIDEBAR_MIN) setSidebarOpen(false);
+      else setSidebarWidth(clampSidebarWidth(sidebarWidth - step));
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      if (!sidebarOpen) setSidebarOpen(true);
+      else setSidebarWidth(clampSidebarWidth(sidebarWidth + step));
+    }
+  }
+
+  const resizeHandle = (
+    <ResizeHandle
+      width={sidebarOpen ? sidebarWidth : SIDEBAR_RAIL}
+      onPointerDown={startResize}
+      onKeyDown={resizeByKey}
+      onDoubleClick={() => {
+        setSidebarOpen(true);
+        setSidebarWidth(SIDEBAR_DEFAULT);
+      }}
+    />
+  );
 
   // ⌘B / Ctrl+B toggles the sidebar, as in every editor.
   useEffect(() => {
@@ -83,8 +146,10 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
   if (!sidebarOpen) {
     // Collapsed: a slim rail keeps the essentials one click away.
     return (
-      <div className="grid h-full grid-cols-[48px_1fr] overflow-hidden">
-        <aside className="flex min-h-0 flex-col items-center border-r border-(--crc-border) bg-(--crc-bg-elevated) py-2">
+      <div className="grid h-full overflow-hidden" style={{ gridTemplateColumns: `${SIDEBAR_RAIL}px 1fr` }}>
+        <aside className="relative flex min-h-0 flex-col items-center border-r border-(--crc-border) bg-(--crc-bg-elevated) py-2">
+          {/* Draggable from the rail too, so the gesture that collapsed it brings it back. */}
+          {resizeHandle}
           <button
             onClick={() => navigate("/")}
             className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-(--crc-hover)"
@@ -110,8 +175,9 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
   }
 
   return (
-    <div className="grid h-full grid-cols-[288px_1fr] overflow-hidden">
-      <aside className="flex min-h-0 flex-col border-r border-(--crc-border) bg-(--crc-bg-elevated)">
+    <div className="grid h-full overflow-hidden" style={{ gridTemplateColumns: `${sidebarWidth}px 1fr` }}>
+      <aside className="relative flex min-h-0 flex-col border-r border-(--crc-border) bg-(--crc-bg-elevated)">
+        {resizeHandle}
         <div className="flex h-12 shrink-0 items-center gap-1 pr-2 pl-4">
           <button onClick={() => navigate("/")} className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg py-1 text-left" title="Home">
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-(--crc-accent) text-(--crc-accent-fg) shadow-(--crc-shadow-xs)">
@@ -154,6 +220,22 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
 }
 
 const SIDEBAR_KEY = "crc.sidebar.open";
+const SIDEBAR_WIDTH_KEY = "crc.sidebar.width";
+/** The collapsed rail: wide enough for one 32px button with breathing room. */
+const SIDEBAR_RAIL = 48;
+const SIDEBAR_DEFAULT = 288;
+const SIDEBAR_MIN = 200;
+const SIDEBAR_MAX = 560;
+/**
+ * Drag narrower than this and the sidebar collapses instead of shrinking.
+ * Comfortably below SIDEBAR_MIN so the collapse reads as a deliberate shove
+ * past the end rather than something that happens while you're still adjusting.
+ */
+const SIDEBAR_COLLAPSE_AT = 140;
+
+function clampSidebarWidth(px: number): number {
+  return Math.round(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, px)));
+}
 
 function loadSidebarOpen(): boolean {
   try {
@@ -161,6 +243,54 @@ function loadSidebarOpen(): boolean {
   } catch {
     return true;
   }
+}
+
+function loadSidebarWidth(): number {
+  try {
+    const raw = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    return Number.isFinite(raw) && raw > 0 ? clampSidebarWidth(raw) : SIDEBAR_DEFAULT;
+  } catch {
+    return SIDEBAR_DEFAULT;
+  }
+}
+
+/**
+ * The sidebar's draggable edge.
+ *
+ * Invisible until you approach it — a permanent divider line on a UI whose
+ * hierarchy comes from tone would be a piece of furniture you can't use for
+ * anything else. The hit area straddles the border and is wider than the line
+ * it draws, because a 1px target is a target you miss.
+ */
+function ResizeHandle({
+  width,
+  onPointerDown,
+  onKeyDown,
+  onDoubleClick,
+}: {
+  width: number;
+  onPointerDown: (e: React.PointerEvent) => void;
+  onKeyDown: (e: React.KeyboardEvent) => void;
+  onDoubleClick: () => void;
+}) {
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize sidebar"
+      aria-valuenow={width}
+      aria-valuemin={SIDEBAR_RAIL}
+      aria-valuemax={SIDEBAR_MAX}
+      tabIndex={0}
+      onPointerDown={onPointerDown}
+      onKeyDown={onKeyDown}
+      onDoubleClick={onDoubleClick}
+      title="Drag to resize · drag left to collapse · double-click to reset"
+      className="group absolute top-0 -right-1 z-30 h-full w-2 cursor-col-resize focus-visible:outline-none"
+    >
+      <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-(--crc-accent) opacity-0 transition-opacity duration-150 group-hover:opacity-70 group-focus-visible:opacity-100 group-active:opacity-100" />
+    </div>
+  );
 }
 
 function MainColumn({

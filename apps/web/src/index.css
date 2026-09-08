@@ -317,3 +317,12 @@ input:focus-visible {
     animation: none !important;
   }
 }
+
+/*
+ * While the sidebar edge is being dragged: keep the resize cursor whatever the
+ * pointer passes over, and stop the drag from selecting text on the way.
+ */
+body.crc-resizing {
+  cursor: col-resize;
+  user-select: none;
+}

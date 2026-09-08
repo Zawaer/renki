@@ -89,32 +89,39 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   // are known — otherwise a slow SecureStore read racing a fast capabilities
   // fetch could let the default stomp a persisted pick.
   useEffect(() => {
+    let live = true;
     Promise.all([
-      loadModel(),
-      loadEffortKey(),
-      loadPermissionMode(),
+      loadModel(sessionId),
+      loadEffortKey(sessionId),
+      loadPermissionMode(sessionId),
       rest.getCapabilities().catch((): CapabilitiesResponse => ({ models: [], commands: [] })),
     ]).then(([m, e, p, caps]) => {
+      // Opening another session mid-read would otherwise apply the previous
+      // session's picks to this one — the exact leak this is meant to end.
+      if (!live) return;
       setCapabilities(caps);
       setEffortKeyState(e);
       setPermissionModeState(p);
       setModelState(m || caps.models[0]?.value || "");
     });
-  }, [rest]);
+    return () => {
+      live = false;
+    };
+  }, [rest, sessionId]);
 
   function setModel(next: string) {
     setModelState(next);
-    saveModel(next);
+    saveModel(next, sessionId);
   }
 
   function setEffortKey(next: string) {
     setEffortKeyState(next);
-    saveEffortKey(next);
+    saveEffortKey(next, sessionId);
   }
 
   function setPermissionMode(next: PermissionModeKey) {
     setPermissionModeState(next);
-    savePermissionMode(next);
+    savePermissionMode(next, sessionId);
   }
 
   const isController = conv.controller === config.deviceId;
@@ -537,6 +544,15 @@ function TimelineRow({
     return (
       <View style={styles.noticeWrap}>
         <Text style={[styles.notice, item.level === "warn" && styles.noticeWarn]}>{item.text}</Text>
+      </View>
+    );
+  }
+  if (item.type === "model_change") {
+    return (
+      <View style={styles.modelChangeRow}>
+        <View style={styles.modelChangeRule} />
+        <Text style={styles.modelChangeText}>Switched to {item.model ?? "the default model"}</Text>
+        <View style={styles.modelChangeRule} />
       </View>
     );
   }
@@ -1241,6 +1257,13 @@ const makeStyles = (colors: ThemeColors) =>
     thinkingHeader: { color: colors.faint, fontSize: 11 },
     running: { color: colors.dim, fontSize: 16 },
     meta: { color: colors.faint, fontSize: 11 },
+    // A rule across the transcript where the model changed, so a reply's
+    // author is never ambiguous when scrolling back through a session that
+    // switched mid-way. The raw id is the label on purpose — a friendly name
+    // would hide the version detail you switched for.
+    modelChangeRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 2 },
+    modelChangeRule: { flex: 1, height: 1, backgroundColor: colors.border },
+    modelChangeText: { color: colors.faint, fontSize: 11 },
     turnFooter: { flexDirection: "row", alignItems: "center", gap: 6 },
     turnDetails: {
       marginTop: 6,

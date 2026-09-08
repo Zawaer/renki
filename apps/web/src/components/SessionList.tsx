@@ -1,6 +1,7 @@
 import { activeSessions, displayBranch, formatPurgeCountdown, groupByRepo, trashedSessions } from "@crc/client-core";
 import type { Session } from "@crc/protocol";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { clearComposerPrefs, clearDraft } from "../lib/composerPrefs.js";
 import { useClient } from "../lib/client.js";
 import { NewSessionDialog } from "./NewSessionDialog.js";
 import { Button, Eyebrow, SessionGlyph, Skeleton } from "./ui.js";
@@ -120,6 +121,7 @@ export function SessionList({
   async function purge(id: string) {
     if (!confirm("Delete permanently? The transcript goes too, with no undo.")) return;
     await rest.purgeSession(id);
+    forgetLocally(id);
     onDeleted(id);
     refresh();
   }
@@ -128,8 +130,22 @@ export function SessionList({
     if (!confirm(`Permanently delete ${trashed.length} session${trashed.length === 1 ? "" : "s"}? There's no undo.`))
       return;
     await rest.emptyTrash();
-    for (const s of trashed) onDeleted(s.id);
+    for (const s of trashed) {
+      forgetLocally(s.id);
+      onDeleted(s.id);
+    }
     refresh();
+  }
+
+  /**
+   * Drop what this browser remembered about a session that no longer exists —
+   * its half-typed draft and its composer picks. Nothing reads them again, so
+   * they'd sit in localStorage forever, taking room from the drafts of
+   * sessions that DO exist.
+   */
+  function forgetLocally(id: string) {
+    clearDraft(id);
+    clearComposerPrefs(id);
   }
 
   const rowProps = (s: Session) => ({

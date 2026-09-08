@@ -30,6 +30,7 @@ const SAMPLES: Record<EventKind, unknown> = {
   turn_result: { kind: "turn_result", turnId: "t1", promptId: "p1", ok: true, costUsd: 0.01, durationMs: 10, errorMessage: null, inputTokens: 100, outputTokens: 50 },
   error: { kind: "error", message: "boom", code: null },
   notice: { kind: "notice", text: "switched", level: "info" },
+  model_changed: { kind: "model_changed", model: "claude-fable-5-1", previousModel: "claude-opus-5" },
   context_usage: { kind: "context_usage", usedTokens: 42_000, maxTokens: 128_000, percentage: 33, autoCompact: true },
   background_task: { kind: "background_task", taskId: "task1", toolUseId: "tu", status: "completed", summary: "done" },
 };

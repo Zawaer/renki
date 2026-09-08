@@ -371,7 +371,28 @@ function TimelineRow({ item }: { item: TimelineItem }) {
       </div>
     );
   }
+  if (item.type === "model_change") {
+    return <ModelChangeMarker model={item.model} />;
+  }
   return <AssistantTurn turn={item.turn} />;
+}
+
+/**
+ * A rule across the transcript marking where the model changed — the same
+ * gesture the Claude Code CLI uses, so a reply's author is never ambiguous
+ * when you scroll back through a session that switched mid-way.
+ *
+ * The raw model id is the label on purpose: it's what you picked, and a
+ * friendly name would hide exactly the version detail you switched for.
+ */
+function ModelChangeMarker({ model }: { model: string | null }) {
+  return (
+    <div className="flex items-center gap-3 py-1 text-[11.5px] text-(--crc-fg-muted)">
+      <span className="h-px flex-1 bg-(--crc-border)" />
+      <span className="shrink-0">Switched to {model ?? "the default model"}</span>
+      <span className="h-px flex-1 bg-(--crc-border)" />
+    </div>
+  );
 }
 
 /**
@@ -1366,14 +1387,15 @@ function Composer({
   const [draftNote, setDraftNote] = useState(restored.current?.attachmentsDropped ?? false);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  // All three persisted in localStorage (see composerPrefs.ts) so they don't
-  // silently reset to their defaults every refresh/reopen. model starts ""
-  // (nothing persisted yet) until either a saved pick loads or capabilities
-  // arrive and default it to the SDK's own recommended entry.
-  const [model, setModelState] = useState(loadModel);
-  const [effortKey, setEffortKeyState] = useState(loadEffortKey);
-  const [permissionMode, setPermissionModeState] =
-    useState<PermissionModeKey>(loadPermissionMode);
+  // All three persisted per session (see composerPrefs.ts) so they don't
+  // silently reset every refresh — and so a cheap model chatting in one
+  // session doesn't re-arm the composer of the one running a refactor. A
+  // session with no pick of its own inherits the last pick made anywhere.
+  // SessionView is keyed by session id (see App.tsx), so this remounts —
+  // reading the stored value at init is enough, no resync effect needed.
+  const [model, setModelState] = useState(() => loadModel(sessionId));
+  const [effortKey, setEffortKeyState] = useState(() => loadEffortKey(sessionId));
+  const [permissionMode, setPermissionModeState] = useState<PermissionModeKey>(() => loadPermissionMode(sessionId));
   const [capabilities, setCapabilities] = useState<CapabilitiesResponse>({
     models: [],
     commands: [],
@@ -1446,18 +1468,18 @@ function Composer({
    */
   function setPermissionMode(next: PermissionModeKey) {
     setPermissionModeState(next);
-    savePermissionMode(next);
+    savePermissionMode(next, sessionId);
     if (busy) realtime.setPermissionMode(sessionId, next);
   }
 
   function setModel(next: string) {
     setModelState(next);
-    saveModel(next);
+    saveModel(next, sessionId);
   }
 
   function setEffortKey(next: string) {
     setEffortKeyState(next);
-    saveEffortKey(next);
+    saveEffortKey(next, sessionId);
   }
 
   function send() {

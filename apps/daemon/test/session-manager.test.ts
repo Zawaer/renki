@@ -604,6 +604,84 @@ const okTurn: RunTurnResult = {
   interrupted: false,
 };
 
+describe("model changes", () => {
+  beforeEach(() => {
+    runTurn.mockReset().mockResolvedValue(okTurn);
+    vi.mocked(generateSessionTitle).mockReset().mockResolvedValue(null);
+  });
+
+  const prompt = (manager: SessionManager, id: string, promptId: string, model?: string) =>
+    manager.submitPrompt({ sessionId: id, deviceId: "d1", promptId, text: "hi", model, resolvePermission: noopResolve });
+
+  /** "Switched to X" as the opening line of a transcript reads like something went wrong. */
+  it("says nothing on the first turn — there is nothing to have switched from", async () => {
+    const { manager, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+
+    await prompt(manager, s.id, "p1", "claude-opus-5");
+
+    expect(kinds(manager, s.id)).not.toContain("model_changed");
+  });
+
+  it("marks the switch, before the prompt it applies to", async () => {
+    const { manager, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+    await prompt(manager, s.id, "p1", "claude-opus-5");
+
+    await prompt(manager, s.id, "p2", "claude-fable-5-1");
+
+    const log = manager.events.read(s.id);
+    const marker = log.find((e) => e.kind === "model_changed");
+    expect(marker).toMatchObject({ model: "claude-fable-5-1", previousModel: "claude-opus-5" });
+    // The reader has to see WHY the next reply sounds different before reading it.
+    const secondPrompt = log.findIndex((e) => e.kind === "prompt_submitted" && e.promptId === "p2");
+    expect(log.indexOf(marker!)).toBeLessThan(secondPrompt);
+  });
+
+  it("stays quiet when turn after turn runs the same model", async () => {
+    const { manager, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+    await prompt(manager, s.id, "p1", "claude-opus-5");
+    await prompt(manager, s.id, "p2", "claude-opus-5");
+    await prompt(manager, s.id, "p3", "claude-opus-5");
+
+    expect(kinds(manager, s.id).filter((k) => k === "model_changed")).toEqual([]);
+  });
+
+  /** Dropping an explicit pick is a switch too — back to whatever the CLI defaults to. */
+  it("records going back to the default model", async () => {
+    const { manager, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+    await prompt(manager, s.id, "p1", "claude-opus-5");
+
+    await prompt(manager, s.id, "p2");
+
+    expect(manager.events.read(s.id).find((e) => e.kind === "model_changed")).toMatchObject({
+      model: null,
+      previousModel: "claude-opus-5",
+    });
+  });
+
+  it("remembers the model across a live-process recycle, so a restart doesn't invent a switch", async () => {
+    const { manager, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+    await prompt(manager, s.id, "p1", "claude-opus-5");
+    // Whatever the process knew is gone; only the session row remembers.
+    // (recycleIdleLiveSessions is the real path this happens by — an account
+    // switch, or the idle reaper closing a quiet process.)
+    manager.recycleIdleLiveSessions("test recycle");
+
+    await prompt(manager, s.id, "p2", "claude-opus-5");
+
+    expect(kinds(manager, s.id)).not.toContain("model_changed");
+  });
+});
+
 describe("auto-titling", () => {
   beforeEach(() => {
     runTurn.mockReset().mockResolvedValue(okTurn);

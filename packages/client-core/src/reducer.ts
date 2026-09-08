@@ -79,11 +79,13 @@ export type TurnView = {
   interrupted: boolean;
 };
 
-/** A prompt the controller sent, an assistant turn, or a system notice. */
+/** A prompt the controller sent, an assistant turn, a system notice, or a model switch. */
 export type TimelineItem =
   | { type: "prompt"; promptId: string; deviceId: string; text: string; attachments?: Attachment[] }
   | { type: "turn"; turn: TurnView }
-  | { type: "notice"; text: string; level: "info" | "warn" };
+  | { type: "notice"; text: string; level: "info" | "warn" }
+  /** null on either side means the SDK's own default model. */
+  | { type: "model_change"; model: string | null; previousModel: string | null };
 
 export type PermissionView = {
   requestId: string;
@@ -131,6 +133,12 @@ export type ConversationState = {
   queuedPrompts: QueuedPromptView[];
   /** null until the daemon has reported it for this session (after its first turn). */
   context: ContextUsageView | null;
+  /**
+   * The model the session's turns are running under, as the LOG reports it —
+   * null for the SDK's default or before any turn has run. Distinct from the
+   * composer's picker, which is per-device and about the NEXT prompt.
+   */
+  model: string | null;
   /** Highest seq folded in — sent as lastSeq on (re)subscribe. */
   lastSeq: number;
 };
@@ -147,6 +155,7 @@ export function initialConversation(sessionId: string): ConversationState {
     pending: [],
     queuedPrompts: [],
     context: null,
+    model: null,
     lastSeq: -1,
   };
 }
@@ -276,6 +285,10 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       return s;
 
     case "turn_result":
+      // Also the fallback source of `model` for a transcript recorded before
+      // model_changed existed, where the turn's own result is the only place
+      // the model was ever written down.
+      if (e.model !== undefined) s.model = e.model;
       s.timeline = updateTurn(s.timeline, e.turnId, (turn) => ({
         ...turn,
         promptId: e.promptId,
@@ -309,6 +322,13 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
 
     case "notice":
       s.timeline = [...s.timeline, { type: "notice", text: e.text, level: e.level }];
+      return s;
+
+    case "model_changed":
+      s.timeline = [...s.timeline, { type: "model_change", model: e.model, previousModel: e.previousModel }];
+      // What the session is running NOW — a client can offer this as the
+      // composer's model on a device that has never opened this session.
+      s.model = e.model;
       return s;
 
     case "background_task": {

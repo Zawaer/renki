@@ -39,6 +39,12 @@ export const sessions = sqliteTable("sessions", {
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
   lastActivityAt: integer("last_activity_at").notNull(),
+  /**
+   * The model the session's last turn actually ran under (null = the SDK's own
+   * default, or no turn yet). Kept so a model switch is detected across process
+   * recycles and daemon restarts, not just within one live process.
+   */
+  lastModel: text("last_model"),
   /** When the session was moved to the trash; null unless status = "trashed". */
   trashedAt: integer("trashed_at"),
   /**
@@ -97,7 +103,8 @@ export const DDL = `
     purpose TEXT NOT NULL DEFAULT 'normal',
     merge_meta TEXT,
     trashed_at INTEGER,
-    trashed_from TEXT
+    trashed_from TEXT,
+    last_model TEXT
   );
 
   CREATE TABLE IF NOT EXISTS events (

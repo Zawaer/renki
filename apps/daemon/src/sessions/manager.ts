@@ -263,6 +263,7 @@ export class SessionManager {
       lastActivityAt: now,
       trashedAt: null,
       trashedFrom: null,
+      lastModel: null,
     };
     this.db.insert(sessions).values(row).run();
 
@@ -468,6 +469,24 @@ export class SessionManager {
     return ids.length;
   }
 
+  /**
+   * Record which model this turn runs under, and log a marker when it differs
+   * from the last one.
+   *
+   * The first turn of a session never produces a marker: there's nothing to
+   * have switched FROM, and "switched to X" as the opening line of a
+   * transcript reads like something went wrong.
+   */
+  private recordModelChange(id: string, model: string | null, hasRunBefore: boolean): void {
+    const row = this.db.select({ lastModel: sessions.lastModel }).from(sessions).where(eq(sessions.id, id)).get();
+    const previous = row?.lastModel ?? null;
+    if (hasRunBefore && previous !== model) {
+      this.events.append(id, { kind: "model_changed", model, previousModel: previous });
+      logger.info("session model changed", { id, from: previous, to: model });
+    }
+    if (previous !== model) this.patch(id, { lastModel: model });
+  }
+
   /** `trashedFrom` isn't on the public Session type — it's only ever needed here. */
   private trashedFromOf(id: string): string | null {
     const row = this.db.select({ trashedFrom: sessions.trashedFrom }).from(sessions).where(eq(sessions.id, id)).get();
@@ -578,6 +597,14 @@ export class SessionManager {
   /** Runs exactly one Claude turn for an already-idle session. */
   private async runOneTurn(input: SubmitPromptInput): Promise<void> {
     const session = this.getSession(input.sessionId);
+
+    // Mark a model switch BEFORE the prompt it applies to, so the transcript
+    // reads in the order it happened. Only a turn that actually starts gets
+    // here — a prompt steered into a running turn can't change the model
+    // mid-flight (see applyKnobs), so it never claims one.
+    // `claudeSessionId` is the daemon's record that a turn has run here
+    // before — it's only set once the SDK hands one back.
+    this.recordModelChange(input.sessionId, input.model ?? null, session.claudeSessionId != null);
 
     // Flip to busy and record the prompt BEFORE any await, so a concurrent
     // submit for the same session loses the race and gets queued instead.

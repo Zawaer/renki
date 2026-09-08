@@ -228,6 +228,23 @@ const payloads = [
   }),
 
   /**
+   * The model in effect for this session changed — recorded when a turn STARTS
+   * under a different model than the last one that ran, so the transcript says
+   * which model wrote what.
+   *
+   * Emitted by the daemon rather than the picker's client, because the picker
+   * is per-device and the transcript is shared: what belongs in the log is the
+   * model that actually ran, not what someone selected somewhere.
+   *
+   * null on either side means the SDK's own default (no explicit override).
+   */
+  z.object({
+    kind: z.literal("model_changed"),
+    model: z.string().nullable(),
+    previousModel: z.string().nullable(),
+  }),
+
+  /**
    * How full this session's context window is, as the CLI itself reports it
    * (Query.getContextUsage). Read after a turn settles rather than polled:
    * it only changes when the conversation grows. `maxTokens` is the usable

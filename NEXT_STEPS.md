@@ -22,7 +22,10 @@ features. The throughline for everything below: shrink "found the repo" →
       GitHub Actions CI (build + typecheck + test), the accidental root-level
       Expo artifacts cleaned up (twice — `expo prebuild` from the repo root
       keeps being a footgun, watch for it), and the Android package name
-      settled on `com.zawaer.clauderemotecontrol`.
+      settled on `com.zawaer.clauderemotecontrol`, renamed to
+      `com.zawaer.renki` with the rest of the project on 2026-09-09 (Android
+      treats a new package id as a different app, so that one cost an
+      uninstall and a re-pair).
 - [x] **P1a — QR device pairing.** Done: any connected client (web or phone)
       shows a QR of its own working `{ baseUrl, token }`
       (`packages/client-core/src/pairing.ts`); a new device scans it via

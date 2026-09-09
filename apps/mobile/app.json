@@ -8,7 +8,7 @@
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "android": {
-      "package": "com.zawaer.clauderemotecontrol",
+      "package": "com.zawaer.renki",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ec9d53"

@@ -68,11 +68,14 @@ features. The throughline for everything below: shrink "found the repo" →
         `v*.*.*` tags (semver tags, no `latest`). Uses `GITHUB_TOKEN` only —
         no registry secret to configure. Both Dockerfiles built locally
         against the exact same target the workflow uses to confirm they're
-        green before relying on CI. Still needs: the repo flipped to public
-        (GHCR packages under a private repo aren't pullable without auth) and
-        `docker-compose.yml`/SETUP.md updated to offer `image:` as an
-        alternative to `build:` once a few tagged releases exist. No prebuilt
-        Android APK / Expo Go path yet — that half is still open.
+        green before relying on CI. The repo went public on 2026-09-09, but
+        the two GHCR packages are deliberately still **private**, so nobody
+        else can pull them — a decision to revisit, not an oversight. Nothing
+        depends on it meanwhile: `docker-compose.yml` uses `build:`, and
+        neither README nor SETUP.md points anyone at GHCR. Making them public
+        (Package settings -> Change visibility) is what unlocks offering
+        `image:` as an alternative to `build:`. No prebuilt Android APK /
+        Expo Go path yet — that half is still open.
 - [x] **P3a — README + architecture + security docs.** Done: README has a
       one-paragraph what/why, a features list, a Mermaid architecture diagram,
       a 3-step quickstart, and Contributing/Security/License pointers.

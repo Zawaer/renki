@@ -617,6 +617,33 @@ Anthropic has confirmed is within the Consumer Terms.
 Pair this with `RENKI_FORCE_PERMISSION_PROMPTS=1` if you want tool approvals to
 reach your phone rather than being auto-allowed.
 
+## Building a signed Android APK (optional)
+
+The release build falls back to the debug keystore, so `expo run:android
+--variant release` works out of the box for your own phone. For an APK you
+hand to anyone else, sign it with a keystore of your own — Android identifies
+an app by its signature, and switching keys later forces every existing
+install to be uninstalled before it can update.
+
+```bash
+keytool -genkeypair -v -keystore ~/.renki/renki-release.keystore \
+  -alias renki -keyalg RSA -keysize 4096 -validity 10950
+
+export RENKI_ANDROID_KEYSTORE=$HOME/.renki/renki-release.keystore
+export RENKI_ANDROID_KEYSTORE_PASSWORD=...
+export RENKI_ANDROID_KEY_ALIAS=renki
+export RENKI_ANDROID_KEY_PASSWORD=...
+
+pnpm --filter @renki/mobile exec expo run:android --variant release
+```
+
+Keep the keystore **outside** the repo and backed up: `expo prebuild --clean`
+deletes everything under `apps/mobile/android/`, and losing the key means no
+future build can ever update an install signed with it. The signing config
+itself is applied by `plugins/withReleaseSigning.js` (a config plugin, so it
+survives prebuild regenerating the native project) and it throws rather than
+quietly falling back if a future Expo template stops matching.
+
 ## Previewing what a session builds (optional)
 
 Sessions run inside the daemon container, so a dev server they start is

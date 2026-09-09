@@ -42,7 +42,8 @@
         }
       ],
       "./plugins/withAndroidUserCaTrust.js",
-      "./plugins/withAndroidDarkChrome.js"
+      "./plugins/withAndroidDarkChrome.js",
+      "./plugins/withReleaseSigning.js"
     ],
     "extra": {
       "eas": {

@@ -1,4 +1,4 @@
-import { resolveEffortKey, resolvePermissionMode, type PermissionModeKey } from "@renki/client-core";
+import { resolveEffortKey, resolvePalette, resolvePermissionMode, type PaletteKey, type PermissionModeKey } from "@renki/client-core";
 import * as SecureStore from "expo-secure-store";
 
 /**
@@ -84,4 +84,23 @@ export async function loadModel(sessionId: string | null = null): Promise<string
 
 export function saveModel(model: string, sessionId: string | null = null): void {
   writeScoped(MODEL_KEY, sessionId, model);
+}
+
+/**
+ * The accent palette, device-wide rather than per session — it's a look, not a
+ * property of the work. Stored beside the composer prefs because it's the same
+ * kind of thing: a small local preference, not state the daemon owns.
+ */
+const PALETTE_KEY = "renki.palette";
+
+export async function loadPalette(): Promise<PaletteKey> {
+  try {
+    return resolvePalette(await SecureStore.getItemAsync(PALETTE_KEY));
+  } catch {
+    return resolvePalette(null);
+  }
+}
+
+export function savePalette(palette: PaletteKey): void {
+  void SecureStore.setItemAsync(PALETTE_KEY, palette).catch(() => {});
 }

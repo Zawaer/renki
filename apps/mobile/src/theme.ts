@@ -1,3 +1,5 @@
+import { DEFAULT_PALETTE, type PaletteKey } from "@renki/client-core";
+import { createContext, useContext, useMemo } from "react";
 import { useColorScheme } from "react-native";
 
 /**
@@ -73,9 +75,39 @@ const lightColors: typeof darkColors = {
 
 export type ThemeColors = typeof darkColors;
 
+/**
+ * The accent-only overlays for each palette, converted from the web's
+ * data-palette blocks (apps/web/src/index.css).
+ *
+ * "linen" swaps the amber for the app's own near-white/near-black pair, which
+ * means it inverts between light and dark: a cream button reads on a dark
+ * ground and vanishes on a light one. `selected` comes off the text colour
+ * rather than the accent for the same reason — a 12% tint of cream is a
+ * colourless wash.
+ */
+const PALETTE_OVERRIDES: Record<PaletteKey, { dark: Partial<ThemeColors>; light: Partial<ThemeColors> }> = {
+  amber: { dark: {}, light: {} },
+  linen: {
+    dark: { accent: "#efe8da", accentHover: "#fbf6ec", accentFg: "#16100b", chartOutput: "#efe8da" },
+    light: { accent: "#2d2118", accentHover: "#3d2f23", accentFg: "#fbf8f2", chartOutput: "#2d2118" },
+  },
+};
+
+/**
+ * The palette this device is set to, held in context so changing it in
+ * Settings re-renders every screen — `useTheme` is called from all of them,
+ * and a module-level variable would leave the app half-repainted until
+ * navigation.
+ */
+const PaletteContext = createContext<PaletteKey>(DEFAULT_PALETTE);
+export const PaletteProvider = PaletteContext.Provider;
+
 export function useTheme(): ThemeColors {
   const scheme = useColorScheme();
-  return scheme === "light" ? lightColors : darkColors;
+  const palette = useContext(PaletteContext);
+  const base = scheme === "light" ? lightColors : darkColors;
+  const overlay = PALETTE_OVERRIDES[palette][scheme === "light" ? "light" : "dark"];
+  return useMemo(() => ({ ...base, ...overlay }), [base, overlay]);
 }
 
 export function statusColorFor(colors: ThemeColors): Record<string, string> {

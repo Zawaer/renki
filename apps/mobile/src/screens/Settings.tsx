@@ -1,3 +1,4 @@
+import { DEFAULT_PALETTE, PALETTES, type PaletteKey } from "@renki/client-core";
 import type { Account, AccountsResponse, RotationStatus } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
@@ -14,6 +15,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient, useStoreValue } from "../lib/client";
+import { loadPalette, savePalette } from "../lib/composerPrefs";
 import { radius, type ThemeColors, useTheme, withAlpha } from "../theme";
 import { UsageLimits } from "../components/UsageLimits";
 import { ConnectUsage } from "./ConnectUsage";
@@ -31,11 +33,13 @@ export function Settings({
   onReset,
   onReconnect,
   onRenameDevice,
+  onPaletteChange,
 }: {
   onBack: () => void;
   onReset: () => void;
   onReconnect: (baseUrl: string) => Promise<void>;
   onRenameDevice: (name: string) => Promise<void>;
+  onPaletteChange: (palette: PaletteKey) => void;
 }) {
   const colors = useTheme();
   const styles = makeStyles(colors);
@@ -54,6 +58,7 @@ export function Settings({
         <View style={{ width: 22 }} />
       </View>
       <ScrollView contentContainerStyle={styles.body}>
+        <AppearanceSection colors={colors} styles={styles} onPaletteChange={onPaletteChange} />
         <ThisDeviceSection colors={colors} styles={styles} onSaved={onRenameDevice} />
         <ConnectionSection colors={colors} styles={styles} status={status} />
         <AccountsSection styles={styles} />
@@ -114,6 +119,62 @@ function Section({
       <Text style={styles.sectionDesc}>{description}</Text>
       <View style={styles.sectionBody}>{children}</View>
     </View>
+  );
+}
+
+/**
+ * The accent palette. Light and dark still follow the phone's own setting —
+ * this picks what the accent is on top of that, and each palette covers both.
+ *
+ * Writing straight to SecureStore and lifting the value to App's provider, so
+ * every screen repaints immediately rather than on next navigation.
+ */
+function AppearanceSection({
+  colors,
+  styles,
+  onPaletteChange,
+}: {
+  colors: ThemeColors;
+  styles: Styles;
+  onPaletteChange: (palette: PaletteKey) => void;
+}) {
+  const [current, setCurrent] = useState<PaletteKey>(DEFAULT_PALETTE);
+  useEffect(() => {
+    loadPalette().then(setCurrent);
+  }, []);
+
+  return (
+    <Section
+      title="Appearance"
+      description="Light and dark follow your phone. This is the accent on top of it."
+      colors={colors}
+      styles={styles}
+    >
+      <View style={styles.paletteRow}>
+        {PALETTES.map((p) => {
+          const active = p.key === current;
+          return (
+            <TouchableOpacity
+              key={p.key}
+              style={[styles.paletteOption, active && { borderColor: colors.accent, backgroundColor: withAlpha(colors.accent, 0.12) }]}
+              onPress={() => {
+                setCurrent(p.key);
+                savePalette(p.key);
+                onPaletteChange(p.key);
+              }}
+            >
+              <View style={styles.paletteSwatchRow}>
+                {/* The swatch shows what the choice does: the accent over the ground it sits on. */}
+                <View style={[styles.paletteSwatch, { backgroundColor: p.key === "amber" ? "#ec9d53" : "#efe8da" }]} />
+                <Text style={[styles.paletteLabel, active && { color: colors.text }]}>{p.label}</Text>
+                {active && <Ionicons name="checkmark" size={15} color={colors.accent} />}
+              </View>
+              <Text style={styles.paletteDesc}>{p.description}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </Section>
   );
 }
 
@@ -508,6 +569,19 @@ const makeStyles = (colors: ThemeColors) =>
     acctHead: { flexDirection: "row", alignItems: "center", gap: 8 },
     acctEmail: { color: colors.text, fontSize: 13, fontWeight: "600", flex: 1 },
     acctMeters: { marginTop: 8, marginLeft: 15, gap: 4 },
+    paletteRow: { gap: 8 },
+    paletteOption: {
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      gap: 4,
+    },
+    paletteSwatchRow: { flexDirection: "row", alignItems: "center", gap: 9 },
+    paletteSwatch: { width: 16, height: 16, borderRadius: 8 },
+    paletteLabel: { color: colors.dim, fontSize: 14, fontWeight: "600", flex: 1 },
+    paletteDesc: { color: colors.faint, fontSize: 12, marginLeft: 25 },
     acctNa: { color: colors.faint, fontSize: 11, marginLeft: 15, marginTop: 4 },
     rotation: { marginTop: 14, gap: 10 },
     thresholdInput: {

@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, BackHandler, StyleSheet, Text, View } from "react-native";
+import { DEFAULT_PALETTE, type PaletteKey } from "@renki/client-core";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as Notifications from "expo-notifications";
 import { type AppConfig, clearConfig, loadConfig, saveConfig } from "./lib/config";
+import { loadPalette } from "./lib/composerPrefs";
 import { migrateLegacyStorage } from "./lib/storageMigration";
 import { ClientProvider } from "./lib/client";
 import { registerForPush } from "./lib/push";
@@ -12,7 +14,7 @@ import { Settings } from "./screens/Settings";
 import { SessionList } from "./screens/SessionList";
 import { SessionView } from "./screens/SessionView";
 import { StatsView } from "./screens/StatsView";
-import { type ThemeColors, useTheme } from "./theme";
+import { PaletteProvider, type ThemeColors, useTheme } from "./theme";
 
 // Show notifications while the app is foregrounded too.
 Notifications.setNotificationHandler({
@@ -27,14 +29,32 @@ Notifications.setNotificationHandler({
 });
 
 export function App() {
+  // The palette wraps everything, including the loading and Setup screens, so
+  // there's no amber flash before a linen device's preference loads. It starts
+  // at the default and swaps once SecureStore answers — a read too fast to see
+  // on the loading spinner, and the only alternative is blocking first paint
+  // on the keychain.
+  const [palette, setPalette] = useState<PaletteKey>(DEFAULT_PALETTE);
+  useEffect(() => {
+    let live = true;
+    loadPalette().then((p) => {
+      if (live) setPalette(p);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
   return (
-    <SafeAreaProvider>
-      <AppBody />
-    </SafeAreaProvider>
+    <PaletteProvider value={palette}>
+      <SafeAreaProvider>
+        <AppBody onPaletteChange={setPalette} />
+      </SafeAreaProvider>
+    </PaletteProvider>
   );
 }
 
-function AppBody() {
+function AppBody({ onPaletteChange }: { onPaletteChange: (p: PaletteKey) => void }) {
   const colors = useTheme();
   const styles = makeStyles(colors);
   const [loading, setLoading] = useState(true);
@@ -93,6 +113,7 @@ function AppBody() {
           await saveConfig(next);
           setConfig(next);
         }}
+        onPaletteChange={onPaletteChange}
       />
     </ClientProvider>
   );
@@ -103,11 +124,13 @@ function Main({
   onReset,
   onReconnect,
   onRenameDevice,
+  onPaletteChange,
 }: {
   config: AppConfig;
   onReset: () => void;
   onReconnect: (baseUrl: string) => Promise<void>;
   onRenameDevice: (name: string) => Promise<void>;
+  onPaletteChange: (palette: PaletteKey) => void;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -161,6 +184,7 @@ function Main({
         onReset={onReset}
         onReconnect={onReconnect}
         onRenameDevice={onRenameDevice}
+        onPaletteChange={onPaletteChange}
       />
     );
   }

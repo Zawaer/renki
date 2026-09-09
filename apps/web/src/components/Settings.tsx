@@ -1,6 +1,9 @@
+import { PALETTES, resolvePalette, type PaletteKey } from "@renki/client-core";
 import type { Account, AccountsResponse, RotationStatus } from "@renki/protocol";
 import { useCallback, useEffect, useState } from "react";
 import { saveConfig } from "../lib/config.js";
+import { isHosted } from "../lib/host.js";
+import { loadPalette, savePalette } from "../lib/palette.js";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { UsageLimits } from "./UsageLimits.js";
 import { PairDevice } from "./PairDevice.js";
@@ -22,6 +25,7 @@ export function Settings({ onReset, managed }: { onReset: () => void; managed: b
       <div className="mx-auto w-full max-w-[760px] px-6 py-10">
         <h1 className="text-[22px] font-semibold tracking-tight text-(--renki-fg)">Settings</h1>
         <div className="mt-5 flex flex-col gap-4">
+          <AppearanceSection managed={managed} />
           <ThisDeviceSection />
           <ConnectionSection status={status} />
           <AccountsSection />
@@ -65,6 +69,36 @@ function KeyRow({ label, children }: { label: string; children: React.ReactNode 
       <span className="shrink-0 text-(--renki-fg-muted)">{label}</span>
       <span className="flex min-w-0 items-center gap-2 font-mono text-[12.5px] text-(--renki-fg)">{children}</span>
     </div>
+  );
+}
+
+/**
+ * The accent palette. Light/dark still follows the OS — this is the orthogonal
+ * choice of what the accent is, and each palette covers both.
+ *
+ * Hidden inside the VS Code webview, where the host's own theme drives every
+ * token (see the body.vscode-* block in index.css): offering a picker that a
+ * higher-specificity rule overrules would just look broken.
+ */
+function AppearanceSection({ managed }: { managed: boolean }) {
+  const [palette, setPalette] = useState<PaletteKey>(loadPalette);
+  if (managed || isHosted()) return null;
+
+  return (
+    <Card title="Appearance" description="Light and dark follow your system. This is the accent on top of it.">
+      <div className="flex flex-col gap-1.5">
+        <FieldLabel>Accent</FieldLabel>
+        <Select
+          value={palette}
+          options={PALETTES.map((p) => ({ value: p.key, label: p.label, description: p.description }))}
+          onChange={(next) => {
+            const key = resolvePalette(next);
+            setPalette(key);
+            savePalette(key);
+          }}
+        />
+      </div>
+    </Card>
   );
 }
 

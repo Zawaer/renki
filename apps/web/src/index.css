@@ -112,6 +112,38 @@
   }
 }
 
+/*
+ * Accent palettes, chosen in Settings and stamped on <html data-palette>.
+ * Orthogonal to light/dark — each palette defines both — and only the accent
+ * family moves, so grounds, text and the success/warning/danger signals stay
+ * exactly where they are.
+ *
+ * "linen" replaces the amber with the page's own near-white/near-black pair,
+ * which means it has to INVERT between themes: a cream button reads on a dark
+ * ground and disappears on a light one. That's also why `selected` is
+ * redefined rather than left as a color-mix of the accent — 14% of cream is a
+ * colourless wash, so the row tint comes off the foreground instead.
+ */
+:root[data-palette="linen"] {
+  --renki-accent: oklch(0.93 0.014 88);
+  --renki-accent-hover: oklch(0.97 0.012 88);
+  --renki-accent-fg: oklch(0.18 0.014 63);
+  --renki-selected: color-mix(in oklab, var(--renki-fg) 12%, transparent);
+  --renki-focus: oklch(0.93 0.014 88);
+  --renki-chart-output: oklch(0.93 0.014 88);
+}
+
+@media (prefers-color-scheme: light) {
+  :root[data-palette="linen"] {
+    --renki-accent: oklch(0.26 0.024 60);
+    --renki-accent-hover: oklch(0.32 0.024 60);
+    --renki-accent-fg: oklch(0.99 0.008 84);
+    --renki-selected: color-mix(in oklab, var(--renki-fg) 8%, transparent);
+    --renki-focus: oklch(0.26 0.024 60);
+    --renki-chart-output: oklch(0.26 0.024 60);
+  }
+}
+
 body.vscode-dark,
 body.vscode-light,
 body.vscode-high-contrast,

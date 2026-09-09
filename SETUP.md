@@ -90,6 +90,12 @@ kept before the daemon closes it; the conversation itself is never lost, the
 next prompt simply resumes it in a fresh process. Set it to `0` to keep
 processes until archive/delete/shutdown if you have the memory to spare.
 
+Light and dark follow whatever your OS is set to. On top of that, **Settings →
+Appearance** picks the accent: **Amber** (the default, warm) or **Linen**
+(near-monochrome — cream on dark, ink on light). It's per device, not synced,
+and the VS Code extension ignores it because the editor's own theme drives
+those colours there.
+
 Deleting a session moves it to a **Trash** section in the sidebar rather than
 destroying it outright. Think of it as **archive plus a timer**: the worktree
 and branch are cleaned up straight away, exactly as archiving does, and what

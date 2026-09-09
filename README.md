@@ -1,6 +1,4 @@
-<img src="docs/logo.svg" width="76" align="right" alt="">
-
-# Renki
+# <img src="docs/logo.svg" width="30" alt="" valign="middle"> Renki
 
 [![CI](https://github.com/Zawaer/renki/actions/workflows/ci.yml/badge.svg)](https://github.com/Zawaer/renki/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)

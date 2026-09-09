@@ -32,9 +32,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { Fragment, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Image,
   KeyboardAvoidingView,
   Modal,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   Platform,
   ScrollView,
   StyleSheet,
@@ -61,6 +64,17 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const store = realtime.conversation(sessionId);
   const conv = useStoreValue(store);
   const scrollRef = useRef<ScrollView>(null);
+  /*
+   * Follow the newest output ONLY while the reader is already at the bottom
+   * (same rule as the web client). Scrolling up is a deliberate act — reading
+   * something further back — and a streaming reply that yanks you forward
+   * makes the transcript unusable. The threshold absorbs sub-pixel rounding
+   * and the last row's bottom padding, nothing more.
+   */
+  const stickToBottom = useRef(true);
+  const [atBottom, setAtBottom] = useState(true);
+  /** While our own animated scrollToEnd is in flight, its intermediate scroll events must not un-stick us. */
+  const jumpingUntil = useRef(0);
   const inputRef = useRef<TextInput>(null);
   const [text, setText] = useState("");
   // All three persisted on-device (see lib/composerPrefs.ts) so they don't
@@ -127,6 +141,33 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const isController = conv.controller === config.deviceId;
   const status = conv.status ?? "idle";
   const canSend = isController && status !== "busy";
+
+  function onTimelineScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    const stick = contentSize.height - contentOffset.y - layoutMeasurement.height <= 24;
+    if (!stick && Date.now() < jumpingUntil.current) return;
+    stickToBottom.current = stick;
+    setAtBottom((was) => (was === stick ? was : stick));
+  }
+
+  /** Content grew or the viewport changed (keyboard): keep the bottom pinned only if we were there. */
+  function followBottom() {
+    if (stickToBottom.current) scrollRef.current?.scrollToEnd({ animated: false });
+  }
+
+  function jumpToLatest() {
+    jumpingUntil.current = Date.now() + 600;
+    stickToBottom.current = true;
+    setAtBottom(true);
+    scrollRef.current?.scrollToEnd({ animated: true });
+  }
+
+  // Opening a different session always starts at its newest output.
+  useEffect(() => {
+    stickToBottom.current = true;
+    setAtBottom(true);
+    scrollRef.current?.scrollToEnd({ animated: false });
+  }, [sessionId]);
 
   // Pop the keyboard to the composer as soon as this device gains control
   // (whether by taking it explicitly or via auto-claim on session creation).
@@ -230,18 +271,39 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
         "always" is the safer choice for the one ScrollView the fix has to
         actually work on.
       */}
-      <ScrollView
-        ref={scrollRef}
-        style={styles.timeline}
-        contentContainerStyle={styles.timelineContent}
-        onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
-        keyboardShouldPersistTaps="handled"
-      >
-        {conv.timeline.length === 0 && <Text style={styles.empty}>No messages yet.</Text>}
-        {conv.timeline.map((item, i) => (
-          <TimelineRow key={i} item={item} colors={colors} styles={styles} onPreview={setPreviewAttachment} />
-        ))}
-      </ScrollView>
+      <View style={styles.timelineWrap}>
+        <ScrollView
+          ref={scrollRef}
+          style={styles.timeline}
+          contentContainerStyle={styles.timelineContent}
+          onContentSizeChange={followBottom}
+          onLayout={followBottom}
+          onScroll={onTimelineScroll}
+          scrollEventThrottle={32}
+          keyboardShouldPersistTaps="handled"
+        >
+          {conv.timeline.length === 0 && <Text style={styles.empty}>No messages yet.</Text>}
+          {conv.timeline.map((item, i) => (
+            <TimelineRow key={i} item={item} colors={colors} styles={styles} onPreview={setPreviewAttachment} />
+          ))}
+        </ScrollView>
+        {/* Scrolled up while more arrives below: one tap back to the live end. */}
+        {!atBottom && conv.timeline.length > 0 && (
+          <View style={styles.jumpWrap} pointerEvents="box-none">
+            <TouchableOpacity style={styles.jump} onPress={jumpToLatest} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Jump to latest">
+              {status === "busy" ? (
+                <>
+                  <PulseDot color={colors.busy} />
+                  <Text style={styles.jumpText}>Claude is writing</Text>
+                </>
+              ) : (
+                <Text style={styles.jumpText}>Jump to latest</Text>
+              )}
+              <Ionicons name="arrow-down" size={14} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
 
       {/* Pending permissions */}
       {conv.pending.map((p) => (
@@ -507,6 +569,22 @@ function ImagePreviewModal({ attachment, onClose }: { attachment: Attachment | n
       </TouchableOpacity>
     </Modal>
   );
+}
+
+/** A softly pulsing status dot — the web pill's `animate-pulse` equivalent. */
+function PulseDot({ color }: { color: string }) {
+  const opacity = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.35, duration: 700, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [opacity]);
+  return <Animated.View style={{ width: 7, height: 7, borderRadius: 999, backgroundColor: color, opacity }} />;
 }
 
 const previewStyles = StyleSheet.create({
@@ -1188,8 +1266,21 @@ const makeStyles = (colors: ThemeColors) =>
     dot: { width: 8, height: 8, borderRadius: 4 },
     ctrlBtn: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 8 },
     ctrlBtnText: { color: colors.accentFg, fontSize: 13, fontWeight: "700" },
+    timelineWrap: { flex: 1 },
     timeline: { flex: 1 },
     timelineContent: { padding: 14, gap: 14 },
+    jumpWrap: { position: "absolute", left: 0, right: 0, bottom: 12, alignItems: "center" },
+    jump: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 7,
+      backgroundColor: colors.panel,
+      borderRadius: radius.pill,
+      paddingHorizontal: 14,
+      paddingVertical: 9,
+      ...softShadow(colors),
+    },
+    jumpText: { color: colors.text, fontSize: 13, fontWeight: "600" },
     empty: { color: colors.faint, fontSize: 14 },
     noticeWrap: { alignItems: "center" },
     notice: {

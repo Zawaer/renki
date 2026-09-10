@@ -90,11 +90,71 @@ describe("AccountRotator.evaluate (via tick)", () => {
     expect(rotator.status().lastHoldReason).toBe("disabled");
   });
 
-  it("holds when there's no active account", async () => {
-    const { rotator, cswap } = setup({ accounts: [account({ active: false })] });
+  /**
+   * cswap reports nothing active when the credential in use doesn't match a
+   * snapshot it registered (a Claude Code token refresh leaves the new blob
+   * "unclaimed"). Sessions keep working, so it reads as cosmetic — but every
+   * rotation decision is relative to the active account, so the feature goes
+   * silently inert. Claiming one is what keeps auto-switch actually automatic.
+   */
+  it("claims an account when cswap reports none active, instead of stalling forever", async () => {
+    const { rotator, cswap } = setup({ accounts: [account({ number: 4, active: false })] });
     await rotator.tick();
-    expect(cswap.switch).not.toHaveBeenCalled();
-    expect(rotator.status().lastHoldReason).toBe("no active account");
+    expect(cswap.switchTo).toHaveBeenCalledWith(4);
+    expect(rotator.status().lastHoldReason).toBeNull();
+  });
+
+  it("claims the preferred account when nothing is active and it has headroom", async () => {
+    const { rotator, cswap } = setup({
+      accounts: [
+        account({ number: 1, email: "fallback@example.com", active: false }),
+        account({ number: 3, email: "preferred@example.com", active: false }),
+      ],
+    });
+    (rotator as any).preferredEmail = "preferred@example.com";
+    await rotator.tick();
+    expect(cswap.switchTo).toHaveBeenCalledWith(3);
+  });
+
+  /** Being on a known account at its limit still beats being on none — rotation can at least see the limit and act. */
+  it("still claims an account when every one is over the threshold", async () => {
+    const over = { fiveHour: { pct: 99, resetsAt: null }, sevenDay: { pct: 99, resetsAt: null }, extra: null };
+    const { rotator, cswap } = setup({
+      threshold: 90,
+      accounts: [
+        account({ number: 1, email: "fallback@example.com", active: false, usage: over }),
+        account({ number: 3, email: "preferred@example.com", active: false, usage: over }),
+      ],
+    });
+    (rotator as any).preferredEmail = "preferred@example.com";
+    await rotator.tick();
+    expect(cswap.switchTo).toHaveBeenCalledWith(3);
+  });
+
+  it("never claims mid-turn — a swap changes which credentials the next process loads", async () => {
+    const { rotator, cswap } = setup({ accounts: [account({ active: false })], busy: true });
+    await rotator.tick();
+    expect(cswap.switchTo).not.toHaveBeenCalled();
+    expect(rotator.status().lastHoldReason).toBe("session busy");
+  });
+
+  /** Bounds the retry rate: a switchTo that fails to stick would otherwise hammer cswap every tick. */
+  it("rate-limits claiming with the same cooldown as any other switch", async () => {
+    const { rotator, cswap } = setup({
+      accounts: [account({ active: false })],
+      cooldownMs: 5 * 60_000,
+      lastSwitchAt: Date.now() - 60_000,
+    });
+    await rotator.tick();
+    expect(cswap.switchTo).not.toHaveBeenCalled();
+    expect(rotator.status().lastHoldReason).toBe("cooldown");
+  });
+
+  it("holds when there are no accounts at all", async () => {
+    const { rotator, cswap } = setup({ accounts: [] });
+    await rotator.tick();
+    expect(cswap.switchTo).not.toHaveBeenCalled();
+    expect(rotator.status().lastHoldReason).toBe("no accounts configured");
   });
 
   it("holds when the active account's usage is unavailable", async () => {

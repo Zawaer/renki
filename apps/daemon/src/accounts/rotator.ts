@@ -252,7 +252,7 @@ export class AccountRotator {
     const { accounts } = await this.mergedAccounts();
 
     const active = accounts.find((a) => a.active);
-    if (!active) return this.hold("no active account");
+    if (!active) return this.claimAnAccount(accounts, cooldownMs);
 
     /**
      * A preferred account is one you want to be on whenever it can work —
@@ -307,6 +307,52 @@ export class AccountRotator {
    */
   setOnSwitched(fn: (() => void) | null): void {
     this.onSwitched = fn;
+  }
+
+  /**
+   * cswap reports no active account when the credential the `claude` CLI is
+   * actually using doesn't match any snapshot it has registered — most often
+   * because Claude Code refreshed its own token, which leaves the new blob in
+   * cswap's "unclaimed credentials" pile. Sessions keep working (the CLI uses
+   * whatever is on disk), so this looks purely cosmetic in the UI. It isn't:
+   * every decision in `evaluate` is relative to the active account, so
+   * rotation goes silently inert and stays that way until someone switches by
+   * hand. That's the opposite of what auto-switch is for — it's meant to be
+   * the thing you don't have to think about.
+   *
+   * So claim one. The preferred account first, since that's the whole point of
+   * expressing a preference; otherwise anything with headroom; otherwise the
+   * preferred (or first) account anyway, because being on a known account at
+   * its limit still beats being on none — at least rotation can then see the
+   * limit and act on it.
+   *
+   * Only reachable with rotation enabled (checked at the top of `evaluate`):
+   * if you've turned auto-switch off, Renki has no business changing which
+   * account you're on.
+   */
+  private async claimAnAccount(accounts: Account[], cooldownMs: number): Promise<void> {
+    if (accounts.length === 0) return this.hold("no accounts configured");
+    // Same rails as any other switch: never mid-turn, and rate-limited, so a
+    // switchTo that fails to stick can't hammer cswap every tick.
+    if (this.anyBusy()) return this.hold("session busy");
+    if (this.lastSwitchAt && Date.now() - this.lastSwitchAt < cooldownMs) return this.hold("cooldown");
+
+    const preferred = this.preferredEmail ? accounts.find((a) => a.email.toLowerCase() === this.preferredEmail) : undefined;
+    const target =
+      (preferred && this.hasHeadroom(preferred) ? preferred : undefined) ??
+      accounts.find((a) => this.hasHeadroom(a)) ??
+      preferred ??
+      accounts[0]!;
+
+    const newActive = await this.cswap.switchTo(target.number);
+    this.onSwitched?.();
+    this.lastSwitchAt = Date.now();
+    this.lastHoldReason = null;
+    logger.info("claimed an account — cswap reported none active", {
+      email: target.email,
+      newActive,
+      wasPreferred: target.email.toLowerCase() === this.preferredEmail,
+    });
   }
 
   private hold(reason: string | null): void {

@@ -1,11 +1,14 @@
+import { removeHost, updateHost, type HostsState } from "@renki/client-core";
 import { PALETTES, resolvePalette, type PaletteKey } from "@renki/client-core";
 import type { Account, AccountsResponse, RotationStatus } from "@renki/protocol";
 import { useCallback, useEffect, useState } from "react";
 import { saveConfig } from "../lib/config.js";
+import { loadHosts, saveHosts } from "../lib/hosts.js";
 import { isHosted } from "../lib/host.js";
 import { loadPalette, savePalette } from "../lib/palette.js";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { UsageLimits } from "./UsageLimits.js";
+import { AddHostModal } from "./AddHostModal.js";
 import { PairDevice } from "./PairDevice.js";
 import { UsageConnect } from "./UsageConnect.js";
 import { Button, Select, Skeleton } from "./ui.js";
@@ -26,6 +29,7 @@ export function Settings({ onReset, managed }: { onReset: () => void; managed: b
         <h1 className="text-[22px] font-semibold tracking-tight text-(--renki-fg)">Settings</h1>
         <div className="mt-5 flex flex-col gap-4">
           <AppearanceSection managed={managed} />
+          {!managed && <HostsSection />}
           <ThisDeviceSection />
           <ConnectionSection status={status} />
           <AccountsSection />
@@ -102,13 +106,127 @@ function AppearanceSection({ managed }: { managed: boolean }) {
   );
 }
 
+/**
+ * Every daemon this browser knows about, with switch/rename/remove — the
+ * management view behind the sidebar's quick switcher. Not shown when
+ * managed (VS Code): that connection belongs to the workspace's own settings,
+ * not a list this screen owns.
+ */
+function HostsSection() {
+  const [state, setState] = useState(loadHosts);
+  const [adding, setAdding] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+
+  function persist(next: HostsState) {
+    saveHosts(next);
+    setState(next);
+  }
+
+  function switchTo(id: string) {
+    if (id === state.activeId) return;
+    saveHosts({ ...state, activeId: id });
+    window.location.reload();
+  }
+
+  function commitRename(id: string) {
+    const label = draft.trim();
+    setRenamingId(null);
+    if (!label) return;
+    persist(updateHost(state, id, { label }));
+  }
+
+  function remove(id: string, label: string) {
+    if (state.hosts.length === 1) {
+      if (!confirm(`Remove ${label}? This is your only host, so you'll see the setup screen again.`)) return;
+    } else if (!confirm(`Remove ${label} from your host list?`)) {
+      return;
+    }
+    const next = removeHost(state, id);
+    saveHosts(next);
+    if (id === state.activeId) window.location.reload();
+    else setState(next);
+  }
+
+  return (
+    <Card
+      title="Hosts"
+      description="Every daemon this browser can switch to — a homelab box, a laptop, wherever Renki is running. Switching doesn't re-pair anything."
+    >
+      <div className="flex flex-col gap-2">
+        {state.hosts.map((h) => (
+          <div
+            key={h.id}
+            className={`flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 ${h.id === state.activeId ? "bg-(--renki-bg-inset)" : ""}`}
+          >
+            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${h.id === state.activeId ? "bg-(--renki-success)" : "bg-(--renki-fg-muted)/40"}`} />
+            {renamingId === h.id ? (
+              <input
+                autoFocus
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={() => commitRename(h.id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
+                  else if (e.key === "Escape") setRenamingId(null);
+                }}
+                className="renki-input min-w-0 flex-1 border-transparent bg-(--renki-surface) px-2 py-1 text-[13px]"
+              />
+            ) : (
+              <button
+                onClick={() => switchTo(h.id)}
+                className="min-w-0 flex-1 truncate text-left text-[13px] text-(--renki-fg)"
+                title={h.baseUrl}
+              >
+                {h.label}
+                <span className="ml-2 truncate font-mono text-[11px] text-(--renki-fg-muted)">{h.baseUrl}</span>
+              </button>
+            )}
+            {renamingId !== h.id && (
+              <button
+                onClick={() => {
+                  setDraft(h.label);
+                  setRenamingId(h.id);
+                }}
+                title="Rename"
+                className="shrink-0 rounded-md p-1 text-(--renki-fg-muted) hover:bg-(--renki-hover) hover:text-(--renki-fg)"
+              >
+                <span className="codicon codicon-edit text-[13px]" />
+              </button>
+            )}
+            <button
+              onClick={() => remove(h.id, h.label)}
+              title="Remove"
+              className="shrink-0 rounded-md p-1 text-(--renki-fg-muted) hover:bg-(--renki-danger)/12 hover:text-(--renki-danger)"
+            >
+              <span className="codicon codicon-trash text-[13px]" />
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        onClick={() => setAdding(true)}
+        className="mt-2.5 flex items-center gap-1.5 text-[13px] text-(--renki-link) hover:underline"
+      >
+        <span className="codicon codicon-add text-[12px]" /> Add another host
+      </button>
+      {adding && <AddHostModal state={state} onClose={() => setAdding(false)} />}
+    </Card>
+  );
+}
+
 function ThisDeviceSection() {
   const { config } = useClient();
   const [name, setName] = useState(config.deviceName);
   const dirty = name.trim().length > 0 && name.trim() !== config.deviceName;
 
   function save() {
-    saveConfig({ ...config, deviceName: name.trim() });
+    // A host-backed connection persists the rename into its host record —
+    // saveConfig alone would write to a legacy key nothing reads back once a
+    // host list exists. Only a VS Code-injected connection (no hostId) has no
+    // host list to update, so it falls back to the old single-config key.
+    if (config.hostId) saveHosts(updateHost(loadHosts(), config.hostId, { deviceName: name.trim() }));
+    else saveConfig({ ...config, deviceName: name.trim() });
     window.location.reload();
   }
 

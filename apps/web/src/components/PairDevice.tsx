@@ -1,7 +1,9 @@
 import { describeConnectionError, encodePairing, isLikelyLoopbackUrl } from "@renki/client-core";
 import QRCode from "qrcode";
 import { useEffect, useState } from "react";
+import { updateHost } from "@renki/client-core";
 import { saveConfig } from "../lib/config.js";
+import { loadHosts, saveHosts } from "../lib/hosts.js";
 import { useClient } from "../lib/client.js";
 
 /**
@@ -67,7 +69,11 @@ export function PairDevice() {
     try {
       const res = await fetch(`${url}/repos`, { headers: { authorization: `Bearer ${config.token}` } });
       if (!res.ok) throw new Error(`Daemon responded ${res.status} at ${url}.`);
-      saveConfig({ ...config, baseUrl: url });
+      // Same fallback as ThisDeviceSection: a host-backed connection updates
+      // its host record so the switcher and Settings' host list stay
+      // accurate; only a VS Code-injected connection has no host to update.
+      if (config.hostId) saveHosts(updateHost(loadHosts(), config.hostId, { baseUrl: url }));
+      else saveConfig({ ...config, baseUrl: url });
       window.location.reload();
     } catch (e) {
       setSwitchError(

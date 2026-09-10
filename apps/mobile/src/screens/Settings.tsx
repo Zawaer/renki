@@ -1,4 +1,4 @@
-import { DEFAULT_PALETTE, PALETTES, type PaletteKey } from "@renki/client-core";
+import { DEFAULT_PALETTE, PALETTES, removeHost, updateHost, type HostsState, type PaletteKey } from "@renki/client-core";
 import type { Account, AccountsResponse, RotationStatus } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
@@ -19,6 +19,7 @@ import { loadPalette, savePalette } from "../lib/composerPrefs";
 import { radius, type ThemeColors, useTheme, withAlpha } from "../theme";
 import { UsageLimits } from "../components/UsageLimits";
 import { ConnectUsage } from "./ConnectUsage";
+import { AddHostModal } from "./AddHostModal";
 import { PairDevice } from "./PairDevice";
 
 /**
@@ -34,12 +35,16 @@ export function Settings({
   onReconnect,
   onRenameDevice,
   onPaletteChange,
+  hostsState,
+  onHostsChange,
 }: {
   onBack: () => void;
   onReset: () => void;
   onReconnect: (baseUrl: string) => Promise<void>;
   onRenameDevice: (name: string) => Promise<void>;
   onPaletteChange: (palette: PaletteKey) => void;
+  hostsState: HostsState;
+  onHostsChange: (next: HostsState) => void;
 }) {
   const colors = useTheme();
   const styles = makeStyles(colors);
@@ -59,6 +64,7 @@ export function Settings({
       </View>
       <ScrollView contentContainerStyle={styles.body}>
         <AppearanceSection colors={colors} styles={styles} onPaletteChange={onPaletteChange} />
+        <HostsSection colors={colors} styles={styles} hostsState={hostsState} onHostsChange={onHostsChange} />
         <ThisDeviceSection colors={colors} styles={styles} onSaved={onRenameDevice} />
         <ConnectionSection colors={colors} styles={styles} status={status} />
         <AccountsSection styles={styles} />
@@ -129,6 +135,112 @@ function Section({
  * Writing straight to SecureStore and lifting the value to App's provider, so
  * every screen repaints immediately rather than on next navigation.
  */
+/**
+ * Every daemon this phone can switch to. Switching re-points the whole app at
+ * that host's sessions without re-pairing — the pairing (URL + token) is what
+ * each row stores, and this phone's own identity is shared across all of them.
+ *
+ * Lives here rather than as a header control: on a phone, Settings is already
+ * where connection management lives, and the session list header has no room
+ * for a dropdown next to its title and actions.
+ */
+function HostsSection({
+  colors,
+  styles,
+  hostsState,
+  onHostsChange,
+}: {
+  colors: ThemeColors;
+  styles: Styles;
+  hostsState: HostsState;
+  onHostsChange: (next: HostsState) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+
+  function commitRename(id: string) {
+    const label = draft.trim();
+    setRenamingId(null);
+    if (label) onHostsChange(updateHost(hostsState, id, { label }));
+  }
+
+  function confirmRemove(id: string, label: string) {
+    const last = hostsState.hosts.length === 1;
+    Alert.alert(
+      `Remove ${label}?`,
+      last
+        ? "This is your only host, so you'll see the setup screen again. Sessions keep running on it either way."
+        : "Removes it from this phone's host list. Sessions keep running on it either way.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Remove", style: "destructive", onPress: () => onHostsChange(removeHost(hostsState, id)) },
+      ],
+    );
+  }
+
+  return (
+    <Section
+      title="Hosts"
+      description="Every daemon this phone can switch to — your server, a laptop. Switching doesn't re-pair anything."
+      colors={colors}
+      styles={styles}
+    >
+      {hostsState.hosts.map((h) => {
+        const active = h.id === hostsState.activeId;
+        return (
+          <View key={h.id} style={[styles.hostRow, active && { backgroundColor: withAlpha(colors.accent, 0.1) }]}>
+            <View style={[styles.dot, { backgroundColor: active ? colors.ok : withAlpha(colors.dim, 0.5) }]} />
+            {renamingId === h.id ? (
+              <TextInput
+                autoFocus
+                style={[styles.input, styles.hostRenameInput]}
+                value={draft}
+                onChangeText={setDraft}
+                onBlur={() => commitRename(h.id)}
+                onSubmitEditing={() => commitRename(h.id)}
+              />
+            ) : (
+              <TouchableOpacity
+                style={styles.hostRowMain}
+                onPress={() => {
+                  if (!active) onHostsChange({ ...hostsState, activeId: h.id });
+                }}
+              >
+                <Text style={styles.hostLabel} numberOfLines={1}>
+                  {h.label}
+                </Text>
+                <Text style={styles.hostUrl} numberOfLines={1}>
+                  {h.baseUrl}
+                </Text>
+              </TouchableOpacity>
+            )}
+            {renamingId !== h.id && (
+              <TouchableOpacity
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                onPress={() => {
+                  setDraft(h.label);
+                  setRenamingId(h.id);
+                }}
+              >
+                <Ionicons name="create-outline" size={17} color={colors.dim} />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={() => confirmRemove(h.id, h.label)}>
+              <Ionicons name="trash-outline" size={17} color={colors.dim} />
+            </TouchableOpacity>
+          </View>
+        );
+      })}
+      <TouchableOpacity style={styles.pairBtn} onPress={() => setAdding(true)}>
+        <Ionicons name="add" size={15} color={colors.accent} />
+        <Text style={styles.pairBtnText}>Add another host</Text>
+      </TouchableOpacity>
+      <AddHostModal visible={adding} state={hostsState} onClose={() => setAdding(false)} onAdded={onHostsChange} />
+    </Section>
+  );
+}
+
 function AppearanceSection({
   colors,
   styles,
@@ -569,6 +681,19 @@ const makeStyles = (colors: ThemeColors) =>
     acctHead: { flexDirection: "row", alignItems: "center", gap: 8 },
     acctEmail: { color: colors.text, fontSize: 13, fontWeight: "600", flex: 1 },
     acctMeters: { marginTop: 8, marginLeft: 15, gap: 4 },
+    hostRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      borderRadius: radius.md,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      marginBottom: 6,
+    },
+    hostRowMain: { flex: 1, minWidth: 0 },
+    hostLabel: { color: colors.text, fontSize: 14, fontWeight: "600" },
+    hostUrl: { color: colors.faint, fontSize: 11, marginTop: 1 },
+    hostRenameInput: { flex: 1, paddingVertical: 6, fontSize: 14 },
     paletteRow: { gap: 8 },
     paletteOption: {
       borderWidth: 1,

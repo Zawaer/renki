@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, BackHandler, StyleSheet, Text, View } from "react-native";
-import { DEFAULT_PALETTE, type PaletteKey } from "@renki/client-core";
+import { addHost, DEFAULT_PALETTE, emptyHostsState, removeHost, updateHost, type HostsState, type PaletteKey } from "@renki/client-core";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as Notifications from "expo-notifications";
-import { type AppConfig, clearConfig, loadConfig, saveConfig } from "./lib/config";
+import { type AppConfig, getOrCreateDeviceId } from "./lib/config";
+import { loadHosts, saveHosts } from "./lib/hosts";
 import { loadPalette } from "./lib/composerPrefs";
 import { migrateLegacyStorage } from "./lib/storageMigration";
 import { ClientProvider } from "./lib/client";
@@ -58,18 +59,28 @@ function AppBody({ onPaletteChange }: { onPaletteChange: (p: PaletteKey) => void
   const colors = useTheme();
   const styles = makeStyles(colors);
   const [loading, setLoading] = useState(true);
-  const [config, setConfig] = useState<AppConfig | null>(null);
+  const [hostsState, setHostsState] = useState<HostsState>(emptyHostsState());
+  const [deviceId, setDeviceId] = useState("");
 
   useEffect(() => {
     // Bring `crc.*` keys over before the first read, so the rename doesn't
-    // un-pair this phone or lose its composer picks.
+    // un-pair this phone or lose its composer picks. deviceId is loaded once
+    // here alongside the host list — it's shared across every host (see
+    // hosts.ts in client-core), not part of any one host record.
     migrateLegacyStorage()
-      .then(loadConfig)
-      .then((c) => {
-        setConfig(c);
+      .then(() => Promise.all([loadHosts(), getOrCreateDeviceId()]))
+      .then(([state, id]) => {
+        setHostsState(state);
+        setDeviceId(id);
         setLoading(false);
       });
   }, []);
+
+  /** Every host mutation (switch, add, rename, remove) goes through here: write, then update the state that drives everything downstream — no reload, this is React Native. */
+  function persist(next: HostsState): void {
+    setHostsState(next);
+    void saveHosts(next);
+  }
 
   if (loading) {
     return (
@@ -80,14 +91,15 @@ function AppBody({ onPaletteChange }: { onPaletteChange: (p: PaletteKey) => void
     );
   }
 
-  if (!config) {
+  const active = hostsState.hosts.find((h) => h.id === hostsState.activeId) ?? null;
+
+  if (!active) {
     return (
       <>
         <StatusBar style="light" backgroundColor={colors.bg} />
         <Setup
-          onSave={async (c) => {
-            await saveConfig(c);
-            setConfig(c);
+          onSave={(c, label) => {
+            persist(addHost(hostsState, { label: label || "Home", baseUrl: c.baseUrl, token: c.token, deviceName: c.deviceName }));
           }}
         />
       </>
@@ -95,23 +107,59 @@ function AppBody({ onPaletteChange }: { onPaletteChange: (p: PaletteKey) => void
   }
 
   return (
+    <AppBodyConnected
+      colors={colors}
+      hostsState={hostsState}
+      active={active}
+      deviceId={deviceId}
+      onHostsChange={persist}
+      onPaletteChange={onPaletteChange}
+    />
+  );
+}
+
+/**
+ * Split out so `config` can be memoized on the primitive fields that matter
+ * (baseUrl/token/deviceId/deviceName/hostId) rather than recomputed as a new
+ * object every render — `ClientProvider` reconstructs its RestClient and
+ * RealtimeClient, and reconnects the socket, whenever `config`'s identity
+ * changes, so an unmemoized object literal here would reconnect on every
+ * unrelated re-render of the tree above it (a session selected, a palette
+ * flipped, anything).
+ */
+function AppBodyConnected({
+  colors,
+  hostsState,
+  active,
+  deviceId,
+  onHostsChange,
+  onPaletteChange,
+}: {
+  colors: ThemeColors;
+  hostsState: HostsState;
+  active: HostsState["hosts"][number];
+  deviceId: string;
+  onHostsChange: (next: HostsState) => void;
+  onPaletteChange: (palette: PaletteKey) => void;
+}) {
+  const config = useMemo<AppConfig>(
+    () => ({ baseUrl: active.baseUrl, token: active.token, deviceId, deviceName: active.deviceName, hostId: active.id }),
+    [active.baseUrl, active.token, deviceId, active.deviceName, active.id],
+  );
+
+  return (
     <ClientProvider config={config}>
       <StatusBar style="light" backgroundColor={colors.bg} />
       <Main
         config={config}
-        onReset={async () => {
-          await clearConfig();
-          setConfig(null);
-        }}
+        hostsState={hostsState}
+        onHostsChange={onHostsChange}
+        onReset={() => onHostsChange(removeHost(hostsState, active.id))}
         onReconnect={async (baseUrl) => {
-          const next = { ...config, baseUrl };
-          await saveConfig(next);
-          setConfig(next);
+          onHostsChange(updateHost(hostsState, active.id, { baseUrl }));
         }}
         onRenameDevice={async (deviceName) => {
-          const next = { ...config, deviceName };
-          await saveConfig(next);
-          setConfig(next);
+          onHostsChange(updateHost(hostsState, active.id, { deviceName }));
         }}
         onPaletteChange={onPaletteChange}
       />
@@ -121,12 +169,16 @@ function AppBody({ onPaletteChange }: { onPaletteChange: (p: PaletteKey) => void
 
 function Main({
   config,
+  hostsState,
+  onHostsChange,
   onReset,
   onReconnect,
   onRenameDevice,
   onPaletteChange,
 }: {
   config: AppConfig;
+  hostsState: HostsState;
+  onHostsChange: (next: HostsState) => void;
   onReset: () => void;
   onReconnect: (baseUrl: string) => Promise<void>;
   onRenameDevice: (name: string) => Promise<void>;
@@ -185,6 +237,8 @@ function Main({
         onReconnect={onReconnect}
         onRenameDevice={onRenameDevice}
         onPaletteChange={onPaletteChange}
+        hostsState={hostsState}
+        onHostsChange={onHostsChange}
       />
     );
   }

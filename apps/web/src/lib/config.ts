@@ -8,6 +8,14 @@ export type AppConfig = {
   token: string;
   deviceId: string;
   deviceName: string;
+  /**
+   * Which stored host (see lib/hosts.ts) this config came from, so a
+   * component that edits the connection (renaming this device, switching to a
+   * Tailscale-detected URL) knows which host record to persist the change
+   * back to. Absent for a VS Code-injected config, which isn't part of the
+   * host list — that connection is owned by the workspace's own settings.
+   */
+  hostId?: string;
 };
 
 const KEY = "renki.config";

@@ -11,6 +11,13 @@ export type AppConfig = {
   token: string;
   deviceId: string;
   deviceName: string;
+  /**
+   * Which stored host (see lib/hosts.ts) this config came from, so a screen
+   * that edits the connection (renaming this device, reconnecting to a
+   * Tailscale-detected URL) knows which host record to persist the change
+   * back to.
+   */
+  hostId?: string;
 };
 
 const CONFIG_KEY = "renki.config";

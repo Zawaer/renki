@@ -3,15 +3,36 @@ import { useState } from "react";
 import { type AppConfig, getOrCreateDeviceId } from "../lib/config.js";
 import { Button } from "./ui.js";
 
-/** First-run screen: point the client at your daemon and enter the token. */
-export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
+/**
+ * Point a client at a daemon and enter its token — used both for first-run
+ * onboarding (full screen, no way to cancel: there's nothing to go back to
+ * yet) and for adding a second host to switch between (a modal, with Cancel).
+ *
+ * `label` is the second thing add-host mode collects beyond `AppConfig`: it's
+ * what this host is called in the switcher ("Mac", "Homelab"), which is a
+ * different question from `deviceName` (what THIS device calls itself to
+ * THAT daemon's other clients). Onboarding doesn't ask for it — with only one
+ * host there's nothing to distinguish yet — so callers in that mode can
+ * ignore the second argument.
+ */
+export function Setup({
+  onSave,
+  onCancel,
+  mode = "onboarding",
+}: {
+  onSave: (config: AppConfig, label: string) => void;
+  onCancel?: () => void;
+  mode?: "onboarding" | "add-host";
+}) {
   const [baseUrl, setBaseUrl] = useState("http://127.0.0.1:4517");
   const [token, setToken] = useState("");
   const [showToken, setShowToken] = useState(false);
   const [deviceName, setDeviceName] = useState("Web");
+  const [label, setLabel] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [found, setFound] = useState<{ repos: number; root: string } | null>(null);
+  const adding = mode === "add-host";
 
   async function submit() {
     setError(null);
@@ -32,7 +53,7 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
   }
 
   function continueSetup() {
-    onSave({ baseUrl: baseUrl.replace(/\/$/, ""), token, deviceId: getOrCreateDeviceId(), deviceName });
+    onSave({ baseUrl: baseUrl.replace(/\/$/, ""), token, deviceId: getOrCreateDeviceId(), deviceName }, label.trim());
   }
 
   return (
@@ -43,10 +64,22 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
             <span className="codicon codicon-terminal text-xl" />
           </span>
           <div>
-            <h1 className="text-xl font-semibold tracking-tight text-(--renki-fg)">Connect to your daemon</h1>
-            <p className="mt-1 text-sm text-(--renki-fg-muted)">Point this browser at the Renki daemon on your homelab and paste its token.</p>
+            <h1 className="text-xl font-semibold tracking-tight text-(--renki-fg)">
+              {adding ? "Add another host" : "Connect to your daemon"}
+            </h1>
+            <p className="mt-1 text-sm text-(--renki-fg-muted)">
+              {adding
+                ? "Another daemon this device can switch to — your Mac, a second server. Uses the same take-control identity you already have."
+                : "Point this browser at the Renki daemon on your homelab and paste its token."}
+            </p>
           </div>
         </div>
+
+        {adding && (
+          <Field label="Name for this host (shown in the switcher)">
+            <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Mac, Homelab" className="renki-input" />
+          </Field>
+        )}
 
         <Field label="Daemon URL">
           <input
@@ -100,9 +133,17 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
           disabled={testing || !token}
           onClick={found ? continueSetup : submit}
         >
-          {testing ? "Testing…" : found ? "Continue" : "Connect"}
+          {testing ? "Testing…" : found ? (adding ? "Add host" : "Continue") : "Connect"}
         </Button>
-
+        {onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="block w-full text-center text-xs text-(--renki-fg-muted) hover:text-(--renki-fg)"
+          >
+            Cancel
+          </button>
+        )}
       </div>
     </div>
   );

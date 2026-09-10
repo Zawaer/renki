@@ -1,7 +1,10 @@
+import { addHost, removeHost, type HostsState } from "@renki/client-core";
 import { useEffect, useState } from "react";
 import { BrowserRouter, MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { ClientProvider, useClient, useStoreValue } from "./lib/client.js";
-import { type AppConfig, clearConfig, loadConfig, saveConfig } from "./lib/config.js";
+import { type AppConfig, getOrCreateDeviceId } from "./lib/config.js";
+import { loadHosts, saveHosts } from "./lib/hosts.js";
+import { HostSwitcher } from "./components/HostSwitcher.js";
 import { RenkiMark } from "./components/ui.js";
 import { AccountsBar } from "./components/AccountsBar.js";
 import { Home } from "./components/Home.js";
@@ -13,38 +16,68 @@ import { StatsView } from "./components/StatsView.js";
 import { injectedConfig } from "./lib/host.js";
 
 export function App() {
-  // A host (VS Code webview) can inject config; otherwise fall back to what this
-  // browser saved. When hosted, we never show the Setup/Disconnect flow — the
-  // host owns the connection settings.
+  // A host (VS Code webview) can inject config; that connection is owned by
+  // the workspace's own settings, so it bypasses the host list entirely —
+  // there's nothing to switch between inside one workspace's webview.
   const injected = injectedConfig();
-  const [config, setConfig] = useState<AppConfig | null>(() => injected ?? loadConfig());
+  if (injected !== null) return <ManagedApp config={injected} />;
+  return <MultiHostApp />;
+}
 
-  if (!config) {
+/** VS Code webview path: unchanged from before hosts existed — one injected connection, no Setup/Disconnect/switcher. */
+function ManagedApp({ config }: { config: AppConfig }) {
+  return (
+    <ClientProvider config={config}>
+      <MemoryRouter>
+        <Workspace managed onReset={() => {}} />
+      </MemoryRouter>
+    </ClientProvider>
+  );
+}
+
+/**
+ * The ordinary path: a plain browser tab, backed by the stored host list.
+ * Reads the list fresh each render rather than in state — every mutation
+ * below reloads the page, so this component is never alive to see a change
+ * happen out from under it; state would just be an unused setter.
+ */
+function MultiHostApp() {
+  const hostsState = loadHosts();
+  const active = hostsState.hosts.find((h) => h.id === hostsState.activeId) ?? null;
+
+  function persist(next: HostsState) {
+    saveHosts(next);
+    // A full reload rather than just updating state: ClientProvider's
+    // RestClient/RealtimeClient are constructed once per config identity, and
+    // a host switch changes baseUrl/token/deviceId all at once — the same
+    // "reload after a connection change" pattern Settings' rename-device and
+    // PairDevice's reconnect already use.
+    window.location.reload();
+  }
+
+  if (!active) {
     return (
       <Setup
-        onSave={(c) => {
-          saveConfig(c);
-          setConfig(c);
+        onSave={(c, label) => {
+          persist(addHost(hostsState, { label: label || "Home", baseUrl: c.baseUrl, token: c.token, deviceName: c.deviceName }));
         }}
       />
     );
   }
 
-  // A VS Code webview has no real address bar to navigate — routes there
-  // live only in memory. A plain browser tab gets real, bookmarkable URLs.
-  const Router = injected !== null ? MemoryRouter : BrowserRouter;
+  const config: AppConfig = {
+    baseUrl: active.baseUrl,
+    token: active.token,
+    deviceId: getOrCreateDeviceId(),
+    deviceName: active.deviceName,
+    hostId: active.id,
+  };
 
   return (
     <ClientProvider config={config}>
-      <Router>
-        <Workspace
-          managed={injected !== null}
-          onReset={() => {
-            clearConfig();
-            setConfig(null);
-          }}
-        />
-      </Router>
+      <BrowserRouter>
+        <Workspace managed={false} onReset={() => persist(removeHost(hostsState, active.id))} />
+      </BrowserRouter>
     </ClientProvider>
   );
 }
@@ -179,13 +212,22 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
     <div className="grid h-full overflow-hidden" style={{ gridTemplateColumns: `${sidebarWidth}px 1fr` }}>
       <aside className="relative flex min-h-0 flex-col border-r border-(--renki-border) bg-(--renki-bg-elevated)">
         {resizeHandle}
-        <div className="flex h-12 shrink-0 items-center gap-1 pr-2 pl-4">
-          <button onClick={() => navigate("/")} className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg py-1 text-left" title="Home">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-(--renki-accent) text-(--renki-accent-fg) shadow-(--renki-shadow-xs)">
-              <RenkiMark className="h-3.5 w-3.5" />
-            </span>
-            <span className="truncate text-[13px] font-semibold tracking-tight text-(--renki-fg)">Renki</span>
+        <div className="flex h-12 shrink-0 items-center gap-1.5 pr-2 pl-4">
+          <button
+            onClick={() => navigate("/")}
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-(--renki-accent) text-(--renki-accent-fg) shadow-(--renki-shadow-xs)"
+            title="Home"
+          >
+            <RenkiMark className="h-3.5 w-3.5" />
           </button>
+          {/* The wordmark doubles as a switcher between stored daemons — not
+              meaningful for a VS Code-managed connection, which belongs to
+              the workspace's own settings rather than a switchable list. */}
+          {managed ? (
+            <span className="min-w-0 flex-1 truncate text-[13px] font-semibold tracking-tight text-(--renki-fg)">Renki</span>
+          ) : (
+            <HostSwitcher />
+          )}
           <HeaderButton active={false} title="Hide sidebar (⌘B)" icon="layout-sidebar-left-off" onClick={() => setSidebarOpen(false)} />
         </div>
 

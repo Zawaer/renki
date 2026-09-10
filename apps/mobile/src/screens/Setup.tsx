@@ -15,17 +15,38 @@ import {
 import { type AppConfig, getOrCreateDeviceId } from "../lib/config";
 import { radius, type ThemeColors, useTheme } from "../theme";
 
-export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
+/**
+ * Point a client at a daemon and enter its token — used both for first-run
+ * onboarding (full screen, no way to cancel) and for adding a second host to
+ * switch between (a modal, with a Cancel link).
+ *
+ * `label` is the second thing add-host mode collects beyond `AppConfig`:
+ * what this host is called in the switcher ("Mac", "Homelab") — a different
+ * question from `deviceName` (what THIS phone calls itself to that daemon's
+ * other clients). Onboarding doesn't ask for it, so callers in that mode can
+ * ignore the second argument.
+ */
+export function Setup({
+  onSave,
+  onCancel,
+  mode = "onboarding",
+}: {
+  onSave: (config: AppConfig, label: string) => void;
+  onCancel?: () => void;
+  mode?: "onboarding" | "add-host";
+}) {
   const colors = useTheme();
   const styles = makeStyles(colors);
   const [baseUrl, setBaseUrl] = useState("https://");
   const [token, setToken] = useState("");
   const [showToken, setShowToken] = useState(false);
   const [deviceName, setDeviceName] = useState("Phone");
+  const [label, setLabel] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [found, setFound] = useState<{ repos: number; root: string; url: string; tok: string } | null>(null);
+  const adding = mode === "add-host";
 
   async function connectWith(url: string, tok: string) {
     setError(null);
@@ -46,7 +67,7 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
 
   async function continueSetup() {
     if (!found) return;
-    onSave({ baseUrl: found.url, token: found.tok, deviceId: await getOrCreateDeviceId(), deviceName });
+    onSave({ baseUrl: found.url, token: found.tok, deviceId: await getOrCreateDeviceId(), deviceName }, label.trim());
   }
 
   function onScanned(raw: string) {
@@ -64,8 +85,19 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
   return (
     <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.body}>
-        <Text style={styles.title}>Connect to your daemon</Text>
-        <Text style={styles.sub}>Scan a pairing QR from another Renki device, or enter the details manually.</Text>
+        <Text style={styles.title}>{adding ? "Add another host" : "Connect to your daemon"}</Text>
+        <Text style={styles.sub}>
+          {adding
+            ? "Another daemon this phone can switch to — a homelab box, a laptop. Uses the same take-control identity you already have."
+            : "Scan a pairing QR from another Renki device, or enter the details manually."}
+        </Text>
+
+        {adding && (
+          <>
+            <Text style={styles.label}>Name for this host (shown in the switcher)</Text>
+            <TextInput style={styles.input} value={label} onChangeText={setLabel} placeholder="e.g. Mac, Homelab" placeholderTextColor={colors.faint} />
+          </>
+        )}
 
         <TouchableOpacity style={styles.scanButton} onPress={() => setScanning(true)}>
           <Text style={styles.scanButtonText}>Scan QR code</Text>
@@ -132,9 +164,14 @@ export function Setup({ onSave }: { onSave: (config: AppConfig) => void }) {
           {testing ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.buttonText}>{found ? "Continue" : "Connect"}</Text>
+            <Text style={styles.buttonText}>{found ? (adding ? "Add host" : "Continue") : "Connect"}</Text>
           )}
         </TouchableOpacity>
+        {onCancel && (
+          <TouchableOpacity onPress={onCancel} style={{ marginTop: 14, alignItems: "center" }}>
+            <Text style={styles.link}>Cancel</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <Modal visible={scanning} animationType="slide" onRequestClose={() => setScanning(false)}>

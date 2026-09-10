@@ -10,6 +10,13 @@ import type { UsageReader } from "./usage.js";
 type PersistedRotationSettings = { enabled?: boolean; threshold?: number; preferredEmail?: string | null };
 
 /**
+ * Outcome of a hard rate-limit switch. `reason` is user-facing: it's shown in
+ * the transcript when nothing moved, so the notice can say *why* no retry
+ * happened instead of the old catch-all "no other account available".
+ */
+export type RateLimitSwitch = { switched: boolean; active: number | null; reason?: string };
+
+/**
  * Automates the manual "hit the limit, run cswap --switch, keep going" habit.
  *
  * cswap does the mechanics (usage + the lock-safe credential swap); the rotator
@@ -112,22 +119,64 @@ export class AccountRotator {
   }
 
   /**
-   * Hard rate-limit trigger: a turn actually failed with a rate limit, so switch
-   * now regardless of usage numbers (which we may not even have). The caller
-   * limits this to once per prompt, so there's no flip-flop risk.
+   * Hard rate-limit trigger: a turn actually failed with a rate limit, so
+   * switch now. The caller limits this to once per prompt, so there's no
+   * flip-flop risk.
+   *
+   * This used to delegate to `cswap --switch --strategy best` and report
+   * success unconditionally. cswap's "best" can't see the usage numbers Renki
+   * fetches from the usage API, so it picked the account that was already
+   * active and already spent: the transcript said "Switched account (now #1) —
+   * retrying", the retry ran on that same exhausted login, and died with an
+   * identical 429. Three prompts in a row went that way on 2026-09-10.
+   *
+   * So choose the target here, using the same candidate rule as the periodic
+   * check, and only claim a switch when the active account really changed —
+   * otherwise the caller burns a retry that cannot possibly succeed.
    */
-  async rateLimitSwitch(): Promise<{ switched: boolean; active: number | null }> {
-    const { accounts } = await this.cswap.list();
-    if (accounts.length < 2) return { switched: false, active: null };
+  async rateLimitSwitch(): Promise<RateLimitSwitch> {
+    let accounts: Account[];
+    let before: number | null;
     try {
-      const active = await this.cswap.switch(this.config.rotation.strategy);
+      const merged = await this.mergedAccounts();
+      accounts = merged.accounts;
+      before = merged.activeAccountNumber;
+    } catch (err) {
+      logger.warn("rate-limit switch could not read accounts", { err: String(err) });
+      return { switched: false, active: null, reason: "Couldn't check the other accounts." };
+    }
+    if (accounts.length < 2) {
+      return { switched: false, active: before, reason: "Only one account is set up, so there's nothing to switch to." };
+    }
+
+    // Unknown usage still counts as a candidate here, unlike the periodic
+    // check: the 429 is already proof that staying put won't work, so trying a
+    // login we can't measure beats giving up.
+    const candidates = this.switchCandidates(accounts, true);
+    // Straight to the preferred account when it's usable — that's the whole
+    // point of naming one, and it's what the periodic check would do next tick.
+    const preferred = this.preferredEmail ? candidates.find((a) => a.email.toLowerCase() === this.preferredEmail) : undefined;
+    const target = preferred ?? candidates[0];
+    if (!target) {
+      logger.info("rate-limit switch skipped: every other account is at its limit", { before });
+      return { switched: false, active: before, reason: "Every account is at its limit, so there's nothing to switch to." };
+    }
+
+    try {
+      const active = await this.cswap.switchTo(target.number);
+      // A switch that didn't take must not be reported as one: re-running the
+      // prompt on the same account just reproduces the same rate limit.
+      if (active !== null && before !== null && active === before) {
+        logger.warn("rate-limit switch did not move the active account", { active, wanted: target.number });
+        return { switched: false, active, reason: "The account switch didn't take effect." };
+      }
       this.onSwitched?.();
       this.lastSwitchAt = Date.now();
-      logger.info("rate-limit switch", { active });
+      logger.info("rate-limit switch", { from: before, to: active, email: target.email, wasPreferred: !!preferred });
       return { switched: true, active };
     } catch (err) {
       logger.warn("rate-limit switch failed", { err: String(err) });
-      return { switched: false, active: null };
+      return { switched: false, active: null, reason: "Couldn't switch account." };
     }
   }
 
@@ -230,6 +279,22 @@ export class AccountRotator {
     return account.usageStatus === "ok" && !!account.usage && this.worstPct(account) < this.threshold;
   }
 
+  /**
+   * Accounts worth switching to: never the one we're already on, and never one
+   * that's already out of room.
+   *
+   * `includeUnknownUsage` is the only difference between the two callers. The
+   * periodic check refuses to switch blind, so it demands real numbers and
+   * holds without them. The rate-limit path takes accounts whose usage can't be
+   * read, because a turn has already failed on the current one.
+   */
+  private switchCandidates(accounts: Account[], includeUnknownUsage: boolean): Account[] {
+    const others = accounts.filter((a) => !a.active);
+    const withHeadroom = others.filter((a) => this.hasHeadroom(a));
+    if (withHeadroom.length > 0 || !includeUnknownUsage) return withHeadroom;
+    return others.filter((a) => a.usageStatus !== "ok" || !a.usage);
+  }
+
   /** Run one evaluation. Called on the interval; also exposed for tests. */
   async tick(): Promise<void> {
     if (this.ticking) return; // don't overlap slow cswap calls
@@ -279,7 +344,7 @@ export class AccountRotator {
     if (worst < threshold) return this.hold(null); // healthy — nothing to do
 
     // A switch only helps if another account actually has room.
-    const alternatives = accounts.filter((a) => !a.active && this.hasHeadroom(a));
+    const alternatives = this.switchCandidates(accounts, false);
     if (alternatives.length === 0) return this.hold("all accounts at limit");
 
     if (this.lastSwitchAt && Date.now() - this.lastSwitchAt < cooldownMs) return this.hold("cooldown");

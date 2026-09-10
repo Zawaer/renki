@@ -526,6 +526,30 @@ features. The throughline for everything below: shrink "found the repo" →
       does), so every successful switch reported `null`: a missing "(now #3)"
       in the transcript's rate-limit notice and a null `activeAccountNumber`
       over REST.
+- [x] **The rate-limit retry switched onto the exhausted account and called it
+      a success (2026-09-10).** Toivo asked why a turn hit a usage limit when
+      `toivo@stuhi.org` sat at 91%, and the answer was that stuhi was never the
+      account in play: the reset time in the error (12:10pm UTC) belonged to
+      `toivo@otamaps.fi`, which the periodic check had rotated onto at 09:16
+      and which then ran itself to 100%. Three prompts in a row at 09:53 each
+      logged `rate-limit switch {"active":1}` — a "switch" to the account that
+      was already active and already spent — and each retry died with the same
+      429. Cause: `rateLimitSwitch` delegated the choice to `cswap --switch
+      --strategy best` and returned `switched: true` unconditionally. cswap's
+      "best" has no access to the usage percentages Renki pulls from the usage
+      API, so it can't know which login has room; Renki *did* have that data
+      and threw it away on this one path, while the periodic `evaluate` right
+      below it filtered on exactly that. Now both share
+      `switchCandidates()` (never the active account, never one without
+      headroom), the rate-limit path picks its own target via `switchTo` and
+      prefers the preferred account, and a switch that leaves the active
+      account unchanged reports `switched: false` so the single retry isn't
+      burned on a certain failure. The transcript notice now leads with
+      "looking for another account" rather than promising a switch, and says
+      which of the failure cases applied. The one asymmetry is deliberate: the
+      rate-limit path accepts an account whose usage can't be read, because a
+      429 is already proof that staying put won't work, whereas the periodic
+      check holds rather than switch blind.
 
 ## 4. Known fragilities
 

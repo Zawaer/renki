@@ -32,7 +32,8 @@ import { dueForPurge, purgeAtFor } from "./trash.js";
 /** Injected by the rotator so a rate-limited turn can switch account + retry. */
 export type RateLimitAutoSwitch = {
   autoRetryEnabled: boolean;
-  rateLimitSwitch: () => Promise<{ switched: boolean; active: number | null }>;
+  /** `reason` explains a `switched: false` outcome; it goes straight into the transcript. */
+  rateLimitSwitch: () => Promise<{ switched: boolean; active: number | null; reason?: string }>;
 };
 
 /** Cap on how many prompts can pile up behind a busy session before we push back. */
@@ -650,7 +651,10 @@ export class SessionManager {
     // The turn has already ended, so this swap is at a clean boundary — never
     // mid-flight. Once only, so two exhausted accounts can't loop.
     if (!result.ok && result.rateLimited && this.autoSwitch?.autoRetryEnabled) {
-      this.events.append(input.sessionId, { kind: "notice", text: "Usage limit hit — switching account…", level: "warn" });
+      // Deliberately not "switching account" — the switch may turn out to be
+      // impossible (every login at its limit), and promising one we don't make
+      // reads as a bug.
+      this.events.append(input.sessionId, { kind: "notice", text: "Usage limit hit — looking for another account…", level: "warn" });
       const sw = await this.autoSwitch.rateLimitSwitch();
       if (sw.switched) {
         this.events.append(input.sessionId, {
@@ -664,7 +668,14 @@ export class SessionManager {
         result = await runOnce();
         resumeId = result.claudeSessionId ?? resumeId;
       } else {
-        this.events.append(input.sessionId, { kind: "notice", text: "No other account available to switch to.", level: "warn" });
+        // `reason` says which of the several "didn't switch" cases this was, so
+        // the transcript can distinguish "all accounts spent" from "the switch
+        // silently failed" — they call for opposite responses.
+        this.events.append(input.sessionId, {
+          kind: "notice",
+          text: sw.reason ?? "No other account available to switch to.",
+          level: "warn",
+        });
       }
     }
 

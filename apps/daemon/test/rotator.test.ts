@@ -59,6 +59,7 @@ function setup(opts: {
   cooldownMs?: number;
   lastSwitchAt?: number | null;
   switchImpl?: () => Promise<number | null>;
+  switchToImpl?: (target: number | string) => Promise<number | null>;
 }) {
   const config = makeTestConfig({
     rotation: {
@@ -74,6 +75,9 @@ function setup(opts: {
   const cswap = fakeCswap({
     list: async () => ({ activeAccountNumber: opts.activeAccountNumber ?? null, accounts: opts.accounts }),
     switch: opts.switchImpl,
+    // Default to "the switch landed where it was told", so a test only has to
+    // spell this out when it's exercising a switch that misbehaves.
+    switchTo: opts.switchToImpl ?? (async (target) => (typeof target === "number" ? target : null)),
   });
   const rotator = new AccountRotator(config, fakeManager(opts.busy ?? false), fakeUsage());
   (rotator as any).cswap = cswap;
@@ -245,32 +249,125 @@ describe("AccountRotator.evaluate (via tick)", () => {
 });
 
 describe("AccountRotator.rateLimitSwitch", () => {
+  const spent = { fiveHour: { pct: 100, resetsAt: null }, sevenDay: { pct: 76, resetsAt: null }, extra: null };
+  const roomy = { fiveHour: { pct: 34, resetsAt: null }, sevenDay: { pct: 34, resetsAt: null }, extra: null };
+
   it("does not switch with fewer than 2 accounts", async () => {
-    const { rotator, cswap } = setup({ accounts: [account()] });
+    const { rotator, cswap } = setup({ accounts: [account({ active: true })], activeAccountNumber: 1 });
     const result = await rotator.rateLimitSwitch();
-    expect(result).toEqual({ switched: false, active: null });
+    expect(result.switched).toBe(false);
+    expect(result.reason).toMatch(/only one account/i);
+    expect(cswap.switchTo).not.toHaveBeenCalled();
     expect(cswap.switch).not.toHaveBeenCalled();
   });
 
-  it("switches unconditionally (regardless of usage numbers) with 2+ accounts", async () => {
+  /**
+   * The regression this whole path was rewritten for. cswap's own "best"
+   * strategy can't see the usage numbers Renki pulls from the usage API, so it
+   * chose the account that was already active and already spent; the retry then
+   * died with the identical 429. Pick the target from the usage data instead,
+   * and never delegate to `cswap --switch`.
+   */
+  it("switches to an account that has headroom, not to cswap's own choice", async () => {
     const { rotator, cswap } = setup({
-      switchImpl: async () => 2,
-      accounts: [account({ number: 1 }), account({ number: 2, email: "b@example.com" })],
+      threshold: 95,
+      activeAccountNumber: 1,
+      accounts: [
+        account({ number: 1, email: "a@example.com", active: true, usage: spent }),
+        account({ number: 3, email: "b@example.com", active: false, usage: roomy }),
+      ],
     });
     const result = await rotator.rateLimitSwitch();
-    expect(result).toEqual({ switched: true, active: 2 });
-    expect(cswap.switch).toHaveBeenCalledOnce();
+    expect(result).toEqual({ switched: true, active: 3 });
+    expect(cswap.switchTo).toHaveBeenCalledWith(3);
+    expect(cswap.switch).not.toHaveBeenCalled();
   });
 
-  it("reports switched:false when cswap.switch() throws", async () => {
-    const { rotator } = setup({
-      accounts: [account({ number: 1 }), account({ number: 2, email: "b@example.com" })],
-      switchImpl: async () => {
-        throw new Error("switch failed");
-      },
+  /**
+   * Burning the one retry on a login that's also out of room just reproduces
+   * the same failure, so say so instead and let the turn end.
+   */
+  it("refuses to retry when every other account is also at its limit", async () => {
+    const { rotator, cswap } = setup({
+      threshold: 95,
+      activeAccountNumber: 1,
+      accounts: [
+        account({ number: 1, email: "a@example.com", active: true, usage: spent }),
+        account({ number: 3, email: "b@example.com", active: false, usage: spent }),
+      ],
     });
     const result = await rotator.rateLimitSwitch();
-    expect(result).toEqual({ switched: false, active: null });
+    expect(result.switched).toBe(false);
+    expect(result.active).toBe(1);
+    expect(result.reason).toMatch(/every account is at its limit/i);
+    expect(cswap.switchTo).not.toHaveBeenCalled();
+  });
+
+  /** A switch that leaves us on the same account is not a switch. */
+  it("reports switched:false when the active account did not actually change", async () => {
+    const { rotator } = setup({
+      threshold: 95,
+      activeAccountNumber: 1,
+      switchToImpl: async () => 1,
+      accounts: [
+        account({ number: 1, email: "a@example.com", active: true, usage: spent }),
+        account({ number: 3, email: "b@example.com", active: false, usage: roomy }),
+      ],
+    });
+    const result = await rotator.rateLimitSwitch();
+    expect(result.switched).toBe(false);
+    expect(result.reason).toMatch(/didn't take effect/i);
+  });
+
+  it("goes straight to the preferred account when it has headroom", async () => {
+    const { rotator, cswap } = setup({
+      threshold: 95,
+      activeAccountNumber: 1,
+      accounts: [
+        account({ number: 1, email: "a@example.com", active: true, usage: spent }),
+        account({ number: 2, email: "spare@example.com", active: false, usage: roomy }),
+        account({ number: 3, email: "preferred@example.com", active: false, usage: roomy }),
+      ],
+    });
+    (rotator as any).preferredEmail = "preferred@example.com";
+    const result = await rotator.rateLimitSwitch();
+    expect(result).toEqual({ switched: true, active: 3 });
+    expect(cswap.switchTo).toHaveBeenCalledWith(3);
+  });
+
+  /**
+   * Unmeasurable is not the same as full. With usage tracking unconnected we
+   * have no numbers to reason about, but the 429 already proved the current
+   * account is spent — so trying the other login is still the better bet.
+   */
+  it("switches to an account with unreadable usage rather than giving up", async () => {
+    const { rotator, cswap } = setup({
+      activeAccountNumber: 1,
+      accounts: [
+        account({ number: 1, email: "a@example.com", active: true, usage: spent }),
+        account({ number: 3, email: "b@example.com", active: false, usageStatus: "unavailable", usage: null }),
+      ],
+    });
+    const result = await rotator.rateLimitSwitch();
+    expect(result).toEqual({ switched: true, active: 3 });
+    expect(cswap.switchTo).toHaveBeenCalledWith(3);
+  });
+
+  it("reports switched:false when the switch throws", async () => {
+    const { rotator } = setup({
+      threshold: 95,
+      activeAccountNumber: 1,
+      switchToImpl: async () => {
+        throw new Error("switch failed");
+      },
+      accounts: [
+        account({ number: 1, email: "a@example.com", active: true, usage: spent }),
+        account({ number: 3, email: "b@example.com", active: false, usage: roomy }),
+      ],
+    });
+    const result = await rotator.rateLimitSwitch();
+    expect(result.switched).toBe(false);
+    expect(result.active).toBeNull();
   });
 });
 

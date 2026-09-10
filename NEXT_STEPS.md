@@ -477,6 +477,56 @@ features. The throughline for everything below: shrink "found the repo" →
       globalState and settings keys. Entries above this line were written
       under the old name and are left as they were.
 
+- [x] **Host switcher — several daemons, one client (2026-09-10).** Sessions
+      live wherever the daemon runs, which is right until the work needs a
+      *specific* machine: Toivo's case was an app using his Mac's webcam with
+      inference running locally, where a homelab daemon simply cannot help.
+      Nothing ever stopped a second daemon on that machine; the client did, by
+      holding exactly one connection so switching meant re-pairing. Clients now
+      store a list of hosts (label + baseUrl + token). `deviceId` stays shared
+      across them deliberately — it identifies the browser or phone, not a
+      pairing, and each daemon only tracks take-control within its own event
+      log, so there's nothing to collide. An existing single `renki.config`
+      folds into host #1 ("Home") on first load, so the upgrade can't un-pair
+      anyone. Web puts a quick switcher in the sidebar header (always
+      interactive, since that's the discoverable path to adding a second) plus
+      a Hosts card in Settings; mobile keeps it all in Settings, where phone
+      connection management already lives. The platforms apply a switch
+      differently on purpose: web reloads (the pattern rename-device and
+      PairDevice already use), while React Native has no reload, so mobile
+      threads host state through React — which made a latent hazard explicit,
+      since `ClientProvider` reconnects whenever `config`'s identity changes
+      and an unmemoized object literal there would reconnect the socket on
+      every unrelated re-render. Deliberately **not** built: a merged
+      fleet view showing every host's sessions at once, and any bridge letting
+      a session on one host reach another machine's filesystem — the second is
+      a trap, since a session's power comes from its repo being under its own
+      cwd, and an agent that can run `top` remotely but not read the file it
+      just found is worse than not having it.
+- [x] **Rotation was silently inert whenever cswap lost track of the active
+      account (2026-09-10).** Toivo noticed both accounts showing inactive
+      while chat kept working, and guessed cswap — correctly. cswap matches the
+      credential the `claude` CLI is using against snapshots it registered per
+      account; when Claude Code refreshes its own token, the new blob lands in
+      cswap's "unclaimed credentials" pile (four on the homelab, two dated the
+      day of the rename, when the daemon restarted repeatedly). The CLI keeps
+      using whatever is on disk, so nothing looks broken — but every decision
+      in the rotator is relative to the active account, and `evaluate` bailed
+      at `if (!active)` *before* the preferred-account branch. So the feature
+      whose whole job is moving you off an exhausted account had been doing
+      nothing, and would have kept doing nothing until someone switched by
+      hand. It now claims one (preferred first, else anything with headroom,
+      else the preferred anyway — a known account at its limit still beats
+      none, because rotation can then see the limit), under the same rails as
+      any switch: never mid-turn, cooldown-limited, and only with rotation
+      enabled. Verified live: the first tick after deploy claimed
+      `toivo@stuhi.org` and cswap now agrees it's active. Also fixed the
+      related parse bug this surfaced — `readActiveNumber` read the *list*
+      response's fields, which don't exist on a switch response (`to.number`
+      does), so every successful switch reported `null`: a missing "(now #3)"
+      in the transcript's rate-limit notice and a null `activeAccountNumber`
+      over REST.
+
 ## 4. Known fragilities
 
 - **Per-session git worktrees + the `renki merge` conflict flow may not scale to

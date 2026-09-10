@@ -443,6 +443,75 @@ Enable `RENKI_FORCE_PERMISSION_PROMPTS=1` on the daemon so tool permissions
 actually reach your phone instead of being auto-approved by the host's
 allow-list.
 
+## More than one host (optional)
+
+Everything above assumes one daemon on one always-on machine, which is the
+right default. But some work needs a *specific* machine: a webcam or a USB
+device attached to it, a GPU, a local model, or simply "why is this laptop's
+CPU pegged". None of that can be done from a daemon somewhere else, however
+good the connection is — the session has to be running on the machine in
+question.
+
+So run a daemon there too. A client stores a **list** of hosts and switches
+between them:
+
+- **Web:** click the name in the sidebar header → **Add another host**, or
+  Settings → **Hosts** for renaming and removing.
+- **Phone:** Settings → **Hosts** → **Add another host** (the QR scanner works
+  here too, so you can pair a new host without typing its token).
+
+Switching re-points the client at that daemon's sessions. It doesn't re-pair
+anything: each host keeps its own URL and token, and this device keeps one
+identity across all of them, so the take-control lock behaves the same
+wherever you point it. Your existing connection becomes host #1 (labelled
+"Home") the first time you open a client after upgrading.
+
+Two things worth knowing before you lean on it:
+
+- **A laptop isn't an always-on host, and that's fine** — but its sessions
+  pause when it sleeps. The client reconnects and replays on wake, so nothing
+  is lost; just don't expect a turn to progress with the lid shut.
+- **Each daemon is a separate world.** Its own repos, its own sessions, its
+  own `claude` login and accounts. Sessions don't move between hosts, and
+  neither does anything in `/repos` — a host switch is "look at a different
+  machine's work", not "take my work with me".
+
+### Running a daemon natively (for local hardware)
+
+The Docker setup in step 1 is right for a server, and wrong for the case
+above: a container can't see your webcam, and on macOS the `claude` CLI keeps
+its login in the system Keychain, which isn't a mountable file. So on a
+machine you want sessions to run *on*, run the daemon natively instead:
+
+```bash
+# On the machine itself (macOS example), from a clone of this repo:
+pnpm install && pnpm build
+
+export RENKI_REPOS_ROOT="$HOME/code"        # this machine's own repos
+export RENKI_DATA_DIR="$HOME/.renki"        # its own sessions/database
+pnpm --filter @renki/daemon cli token       # prints the token to pair with
+pnpm --filter @renki/daemon start
+```
+
+It uses whatever `claude login` you already have on that machine, and sees
+that machine's hardware, filesystem and network — which is the entire point.
+
+Reaching it from your phone works the same way as step 4, and note the daemon
+binds `127.0.0.1` by default:
+
+```bash
+tailscale serve --bg 4517
+```
+
+That publishes HTTPS + WSS at the machine's own MagicDNS name while the daemon
+itself stays bound to loopback, so nothing is exposed beyond your tailnet. Pair
+the phone against `https://<that-machine>.<tailnet>.ts.net`, give the host a
+label like "Mac", and switch to it when you need the hardware — and back to
+your server for everything that should keep running when the laptop closes.
+
+If you want it running without starting it by hand each time, put it behind a
+login item (macOS) or `pm2` (see step 3), same as the always-on host.
+
 ## Multi-account usage rotation (optional)
 
 If you have more than one Claude account, the daemon can automate the manual

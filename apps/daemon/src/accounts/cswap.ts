@@ -127,7 +127,23 @@ function normalizeAccount(a: any): Account {
   };
 }
 
-function readActiveNumber(raw: any): number | null {
+/**
+ * The account number a `--switch`/`--switch-to` landed on.
+ *
+ * cswap's switch response has no `activeAccountNumber` at all — it reports
+ * `{ switched, from: {number,email}, to: {number,email}, reason, message }`,
+ * so `to.number` is the account now in force. This read the two fields the
+ * LIST response uses instead, which don't exist here, and so returned null on
+ * every successful switch. That wasn't only a wrong log line: it's what
+ * `manualSwitch` hands back as `activeAccountNumber` over REST, and what makes
+ * the rate-limit notice in a transcript say "Switched account" with the
+ * "(now #3)" silently omitted.
+ *
+ * `to.number` is checked first, with the list-shaped fields kept as fallbacks
+ * in case a future cswap converges the two response shapes.
+ */
+export function readActiveNumber(raw: any): number | null {
+  if (typeof raw?.to?.number === "number") return raw.to.number;
   if (typeof raw?.activeAccountNumber === "number") return raw.activeAccountNumber;
   if (typeof raw?.active?.number === "number") return raw.active.number;
   return null;

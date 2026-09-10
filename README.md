@@ -74,6 +74,11 @@ never touching tokens itself). See [SETUP.md](./SETUP.md).
 - **Three clients from one core** — web, VS Code (embeds the web bundle in a
   webview), and a native Android app all share the same reducer and
   reconnecting WebSocket client (`packages/client-core`).
+- **More than one host** — a client stores a list of daemons and switches
+  between them, so work that needs a *particular* machine (a webcam, a GPU, a
+  USB device, that laptop's own CPU) runs there while everything else keeps
+  living on the always-on box. Switching re-points the client; it never
+  re-pairs anything.
 - **QR device pairing** — an already-connected client shows a QR of its own
   working connection; scan it instead of typing a tailnet URL and a
   43-character token by hand.

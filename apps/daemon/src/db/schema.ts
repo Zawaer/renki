@@ -45,6 +45,18 @@ export const sessions = sqliteTable("sessions", {
    * recycles and daemon restarts, not just within one live process.
    */
   lastModel: text("last_model"),
+  /**
+   * The composer settings pinned to this session — the model, thinking effort
+   * and permission mode it runs with, seeded from the creating device's
+   * defaults and then owned by the session. See SessionComposer in
+   * @renki/protocol for why these are free strings rather than enums.
+   *
+   * Distinct from `lastModel` above, which records what the last turn actually
+   * RAN under; this is what the composer is SET to for the next one.
+   */
+  composerModel: text("composer_model"),
+  composerEffortKey: text("composer_effort_key"),
+  composerPermissionMode: text("composer_permission_mode"),
   /** When the session was moved to the trash; null unless status = "trashed". */
   trashedAt: integer("trashed_at"),
   /**
@@ -104,7 +116,10 @@ export const DDL = `
     merge_meta TEXT,
     trashed_at INTEGER,
     trashed_from TEXT,
-    last_model TEXT
+    last_model TEXT,
+    composer_model TEXT,
+    composer_effort_key TEXT,
+    composer_permission_mode TEXT
   );
 
   CREATE TABLE IF NOT EXISTS events (

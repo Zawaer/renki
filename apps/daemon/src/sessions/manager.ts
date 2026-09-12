@@ -1,5 +1,13 @@
 import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk";
-import type { Attachment, EventPayload, MergeConflictMeta, Session, SessionPurpose, SessionStatus } from "@renki/protocol";
+import type {
+  Attachment,
+  EventPayload,
+  MergeConflictMeta,
+  Session,
+  SessionComposerPatch,
+  SessionPurpose,
+  SessionStatus,
+} from "@renki/protocol";
 import { desc, eq, ne } from "drizzle-orm";
 import { mkdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
@@ -185,13 +193,34 @@ export class SessionManager {
     baseBranch?: string;
     newBranch?: string;
     title?: string;
+    /** The creating device's composer defaults — read once, here, and then owned by the session. */
+    composer?: SessionComposerPatch;
   }): Promise<Session> {
     const id = newSessionId();
     const created = input.repoId
       ? await this.createRepoSession(id, input.repoId, input.baseBranch, input.newBranch)
       : this.createPlainSession(id);
 
-    return this.finalizeNewSession(id, { ...created, purpose: "normal", mergeMeta: null }, input.title);
+    return this.finalizeNewSession(id, { ...created, purpose: "normal", mergeMeta: null }, input.title, input.composer);
+  }
+
+  /**
+   * Repin some of a session's composer settings. Omitted fields keep their
+   * current value, so two devices editing different pickers don't clobber each
+   * other, and an explicit null clears one back to the client's own default.
+   *
+   * Goes through `patch`, so every connected client gets the new session object
+   * pushed immediately — which is the whole point: change the model on a laptop
+   * and the phone's picker follows without a refresh.
+   */
+  setSessionComposer(id: string, composer: SessionComposerPatch): Session {
+    this.getSession(id); // throws session_not_found if missing/deleted
+    const fields: Partial<typeof sessions.$inferInsert> = {};
+    if (composer.model !== undefined) fields.composerModel = composer.model;
+    if (composer.effortKey !== undefined) fields.composerEffortKey = composer.effortKey;
+    if (composer.permissionMode !== undefined) fields.composerPermissionMode = composer.permissionMode;
+    if (Object.keys(fields).length > 0) this.patch(id, fields);
+    return this.getSession(id);
   }
 
   /**
@@ -244,6 +273,7 @@ export class SessionManager {
       mergeMeta: MergeConflictMeta | null;
     },
     title: string | undefined,
+    composer?: SessionComposerPatch,
   ): Session {
     const now = Date.now();
     const row = {
@@ -265,6 +295,11 @@ export class SessionManager {
       trashedAt: null,
       trashedFrom: null,
       lastModel: null,
+      // Seeded from whichever device created the session; null wherever that
+      // device had no preference, which the client reads as "use my default".
+      composerModel: composer?.model ?? null,
+      composerEffortKey: composer?.effortKey ?? null,
+      composerPermissionMode: composer?.permissionMode ?? null,
     };
     this.db.insert(sessions).values(row).run();
 
@@ -990,6 +1025,11 @@ function rowToSession(row: typeof sessions.$inferSelect, retentionMs: number): S
     lastActivityAt: row.lastActivityAt,
     trashedAt: row.trashedAt,
     purgeAt: purgeAtFor(row.trashedAt, retentionMs),
+    composer: {
+      model: row.composerModel,
+      effortKey: row.composerEffortKey,
+      permissionMode: row.composerPermissionMode,
+    },
     purpose: row.purpose as SessionPurpose,
     mergeMeta: row.mergeMeta ? (JSON.parse(row.mergeMeta) as MergeConflictMeta) : null,
   };

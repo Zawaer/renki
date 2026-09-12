@@ -3,6 +3,7 @@ import {
   type ClientMessage,
   type PermissionDecision,
   type Session,
+  type SessionComposer,
   type ServerMessage,
   ServerMessage as ServerMessageSchema,
 } from "@renki/protocol";
@@ -32,6 +33,13 @@ export type RealtimeOptions = {
   deviceId: string;
   deviceName?: string;
 };
+
+/** Field-wise equality for a session's pinned composer settings. */
+function sameComposer(a: SessionComposer | null, b: SessionComposer | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.model === b.model && a.effortKey === b.effortKey && a.permissionMode === b.permissionMode;
+}
 
 export class RealtimeClient {
   readonly status = new Store<ConnectionStatus>("closed");
@@ -259,9 +267,25 @@ export class RealtimeClient {
       case "error":
         this.lastError.set({ code: msg.code, message: msg.message, ref: msg.ref });
         return;
-      case "session":
+      case "session": {
+        // Roster listeners (the session list) plus, when this session is open,
+        // its conversation store — that's how a composer pick made on another
+        // device lands in this one's pickers without a refresh. Only an
+        // EXISTING store is touched: `conversation()` would otherwise mint one
+        // for every session in the roster on every unrelated change.
         for (const cb of this.sessionListeners) cb(msg.session);
+        const store = this.conversations.get(msg.session.id);
+        if (store) {
+          const composer = msg.session.composer ?? null;
+          // By VALUE, not identity: every push carries a freshly parsed object,
+          // and swapping in an equal one on each unrelated session change (a
+          // status flip, say) would keep re-notifying subscribers. A composer
+          // that re-arrives mid-edit would then stomp the pick the user just
+          // made while its own request is still in flight.
+          store.update((s) => (sameComposer(s.composer, composer) ? s : { ...s, composer }));
+        }
         return;
+      }
       case "session_removed":
         for (const cb of this.sessionRemovedListeners) cb(msg.sessionId);
         return;

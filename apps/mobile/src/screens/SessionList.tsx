@@ -6,6 +6,7 @@ import { Alert, FlatList, Keyboard, ScrollView, StyleSheet, Text, TextInput, Tou
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Sheet } from "../components/Sheet";
 import { useClient } from "../lib/client";
+import { loadDeviceDefaults } from "../lib/composerPrefs";
 import { radius, statusColorFor, type ThemeColors, useTheme, withAlpha } from "../theme";
 import { AccountsBar } from "./AccountsBar";
 
@@ -430,9 +431,15 @@ function NewSessionModal({
     setBusy(true);
     setError(null);
     try {
+      // The one place this device's defaults are read: they're copied onto the
+      // new session, which owns them from here on. Changing a default later
+      // never reaches back into a session that already exists.
+      const composer = await loadDeviceDefaults();
       onCreated(
         await rest.createSession(
-          repoId ? { repoId, baseBranch, title: title.trim() || undefined } : { title: title.trim() || undefined },
+          repoId
+            ? { repoId, baseBranch, title: title.trim() || undefined, composer }
+            : { title: title.trim() || undefined, composer },
         ),
       );
     } catch (e) {

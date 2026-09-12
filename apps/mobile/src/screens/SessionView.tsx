@@ -1,6 +1,8 @@
 import {
   DEFAULT_EFFORT_KEY,
   DEFAULT_PERMISSION_MODE,
+  resolveEffortKey,
+  resolvePermissionMode,
   EFFORT_LEVELS,
   estimateTokens,
   formatCost,
@@ -50,7 +52,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Markdown } from "../components/Markdown";
 import { Sheet } from "../components/Sheet";
 import { pickDocumentAttachments, pickImageAttachments, type PendingAttachment } from "../lib/attachments";
-import { loadEffortKey, loadModel, loadPermissionMode, saveEffortKey, saveModel, savePermissionMode } from "../lib/composerPrefs";
+import { loadDeviceDefaults, rememberDeviceDefaults } from "../lib/composerPrefs";
 import { useClient, useStoreValue } from "../lib/client";
 import { useAndroidKeyboardResizeAnimation } from "../lib/useAndroidKeyboardResizeAnimation";
 import { radius, softShadow, statusColorFor, type ThemeColors, useTheme, withAlpha } from "../theme";
@@ -77,8 +79,16 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const jumpingUntil = useRef(0);
   const inputRef = useRef<TextInput>(null);
   const [text, setText] = useState("");
-  // All three persisted on-device (see lib/composerPrefs.ts) so they don't
-  // silently reset to their defaults every app restart.
+  /**
+   * All three belong to the SESSION, not to this phone: they're pushed by the
+   * daemon and written back through `rest.updateSessionComposer`, so a session
+   * started here opens on a laptop set to exactly what was chosen here, and a
+   * change on either device moves the other.
+   *
+   * These hold the mirrored value so a pick feels instant; this device's own
+   * defaults fill in until the first push arrives and for any field the
+   * session hasn't pinned.
+   */
   const [model, setModelState] = useState("");
   const [effortKey, setEffortKeyState] = useState(DEFAULT_EFFORT_KEY);
   const [permissionMode, setPermissionModeState] = useState<PermissionModeKey>(DEFAULT_PERMISSION_MODE);
@@ -98,44 +108,72 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
 
   useAndroidKeyboardResizeAnimation();
 
-  // Capabilities and the persisted prefs are fetched together so the
-  // "default model from capabilities" logic below only ever runs once both
-  // are known — otherwise a slow SecureStore read racing a fast capabilities
-  // fetch could let the default stomp a persisted pick.
+  // Capabilities and this device's defaults are fetched together so the
+  // "default model from capabilities" fallback only runs once both are known —
+  // otherwise a slow SecureStore read racing a fast capabilities fetch could
+  // let the fallback stomp the device default. Whatever the SESSION has pinned
+  // overrides both, applied by the effect below as soon as it's pushed.
   useEffect(() => {
     let live = true;
     Promise.all([
-      loadModel(sessionId),
-      loadEffortKey(sessionId),
-      loadPermissionMode(sessionId),
+      loadDeviceDefaults(),
       rest.getCapabilities().catch((): CapabilitiesResponse => ({ models: [], commands: [] })),
-    ]).then(([m, e, p, caps]) => {
-      // Opening another session mid-read would otherwise apply the previous
-      // session's picks to this one — the exact leak this is meant to end.
+    ]).then(([defaults, caps]) => {
+      // Opening another session mid-read would otherwise apply this read to the
+      // wrong screen.
       if (!live) return;
       setCapabilities(caps);
-      setEffortKeyState(e);
-      setPermissionModeState(p);
-      setModelState(m || caps.models[0]?.value || "");
+      setEffortKeyState(defaults.effortKey);
+      setPermissionModeState(defaults.permissionMode);
+      setModelState(defaults.model || caps.models[0]?.value || "");
     });
     return () => {
       live = false;
     };
   }, [rest, sessionId]);
 
+  // Adopt whatever the session is pinned to whenever that actually changes: the
+  // first push after opening, and any later change made on another device.
+  // `conv.composer` only gets a new identity when a field really differs (see
+  // RealtimeClient's sameComposer), so this can't fight an in-flight local
+  // pick. A null field means nothing is pinned, so the device default stands.
+  const composer = conv.composer;
+  useEffect(() => {
+    if (!composer) return;
+    if (composer.model !== null) setModelState(composer.model);
+    if (composer.effortKey !== null) setEffortKeyState(resolveEffortKey(composer.effortKey));
+    if (composer.permissionMode !== null) setPermissionModeState(resolvePermissionMode(composer.permissionMode));
+  }, [composer]);
+
+  /**
+   * Pin a pick onto the session and remember it as this device's default for
+   * the next new one. The daemon echoes the change to every other client.
+   *
+   * A failed write is swallowed: the picker keeps the value locally and the
+   * daemon's next push corrects it, which beats an error dialog for flicking a
+   * sheet.
+   */
+  function pin(patch: { model?: string; effortKey?: string; permissionMode?: PermissionModeKey }) {
+    rememberDeviceDefaults(patch);
+    void rest.updateSessionComposer(sessionId, patch).catch(() => {});
+  }
+
   function setModel(next: string) {
     setModelState(next);
-    saveModel(next, sessionId);
+    pin({ model: next });
   }
 
   function setEffortKey(next: string) {
     setEffortKeyState(next);
-    saveEffortKey(next, sessionId);
+    pin({ effortKey: next });
   }
 
   function setPermissionMode(next: PermissionModeKey) {
     setPermissionModeState(next);
-    savePermissionMode(next, sessionId);
+    pin({ permissionMode: next });
+    // Matches the web: flipping to Auto mid-turn should stop the REST of that
+    // turn asking again, not only change what the next one does.
+    if (status === "busy" && isController) realtime.setPermissionMode(sessionId, next);
   }
 
   const isController = conv.controller === config.deviceId;

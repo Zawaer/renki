@@ -61,6 +61,40 @@ export const MergeConflictMeta = z.object({
 export type MergeConflictMeta = z.infer<typeof MergeConflictMeta>;
 
 /**
+ * The model, thinking effort and permission mode a session runs with.
+ *
+ * Pinned to the SESSION, not to the device. A session started on a phone keeps
+ * its settings when it's reopened on a laptop, and changing a device's own
+ * defaults afterwards never reaches back into work already in flight — the
+ * defaults are only ever read once, to seed a session at creation.
+ *
+ * Every field is nullable and means "nothing pinned yet": a null `model` is the
+ * SDK's own default, and a null `effortKey`/`permissionMode` lets the client
+ * fall back to its usual default.
+ *
+ * `effortKey` and `permissionMode` are plain strings rather than enums on
+ * purpose. Both vocabularies live in @renki/client-core (EFFORT_LEVELS,
+ * resolvePermissionMode), which depends on this package and so can't be
+ * imported here; clients already resolve these leniently on read, which also
+ * means a value written by a newer client can't make an older one fail to
+ * parse a session.
+ */
+export const SessionComposer = z.object({
+  model: z.string().nullable(),
+  effortKey: z.string().nullable(),
+  permissionMode: z.string().nullable(),
+});
+export type SessionComposer = z.infer<typeof SessionComposer>;
+
+/** A partial composer update: omitted fields are left alone, explicit null clears one. */
+export const SessionComposerPatch = z.object({
+  model: z.string().nullable().optional(),
+  effortKey: z.string().nullable().optional(),
+  permissionMode: z.string().nullable().optional(),
+});
+export type SessionComposerPatch = z.infer<typeof SessionComposerPatch>;
+
+/**
  * A single Claude Code session, pinned to a dedicated git worktree so parallel
  * sessions on the same repo never collide on file state. A session can also
  * be created with no repo at all (`repoId`/`baseBranch`/`branch` all null) —
@@ -103,6 +137,11 @@ export const Session = z.object({
    */
   trashedAt: z.number().int().nullable().optional(),
   purgeAt: z.number().int().nullable().optional(),
+  /**
+   * Composer settings pinned to this session — see SessionComposer. Optional so
+   * sessions stored before this existed still parse; treat absent as all-null.
+   */
+  composer: SessionComposer.optional(),
   /** Optional/absent means "normal" — kept optional so older events/fixtures without it still parse. */
   purpose: SessionPurpose.optional(),
   mergeMeta: MergeConflictMeta.nullable().optional(),

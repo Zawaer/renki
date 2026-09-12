@@ -6,6 +6,7 @@ import {
   CreateSessionRequest,
   RegisterPushTokenRequest,
   RenameSessionRequest,
+  UpdateSessionComposerRequest,
   SwitchAccountRequest,
   UpdateRotationRequest,
 } from "@renki/protocol";
@@ -223,6 +224,16 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues });
     try {
       return { session: manager.renameSession(req.params.id, parsed.data.title) };
+    } catch (err) {
+      return sendSessionError(reply, err);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/sessions/:id/composer", async (req, reply) => {
+    const parsed = UpdateSessionComposerRequest.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues });
+    try {
+      return { session: manager.setSessionComposer(req.params.id, parsed.data) };
     } catch (err) {
       return sendSessionError(reply, err);
     }

@@ -551,6 +551,31 @@ features. The throughline for everything below: shrink "found the repo" →
       429 is already proof that staying put won't work, whereas the periodic
       check holds rather than switch blind.
 
+- [x] **Model, effort and permission mode belong to the session, not the device
+      (2026-09-12).** They were kept per session but in each client's own
+      storage — localStorage on web, SecureStore on the phone — which made them
+      a property of the device looking at the work rather than of the work. A
+      session started on the phone opened on the Mac set to whatever the Mac
+      last used, the two could disagree about what a session was set to, and
+      changing a device default reached back into sessions that already
+      existed. They now live on the session: three columns on `sessions`, a
+      `composer` object on the protocol's `Session`, `POST
+      /sessions/:id/composer` for partial updates, and a seed passed at
+      creation from the creating device's defaults — which is the only point a
+      device default is read at all. The existing roster push does the
+      syncing, so a pick on one client moves the others with no refresh and no
+      new event kind; `ConversationState.composer` deliberately rides that push
+      rather than being folded from the event log, since replaying a transcript
+      shouldn't rewind which model the picker is set to. Partial updates are
+      the reason the endpoint takes a patch: two devices touching different
+      pickers must not clobber each other. What's left device-local is the
+      seed, defined as the last pick made anywhere on that device, since there
+      is no settings screen for it. Verified in two browser profiles against a
+      live daemon: a session pinned to High showed High on a device whose own
+      default was Low and on another whose default was Medium, a change to Max
+      on one appeared on the other without a reload, and a newly created
+      session still took its creator's defaults.
+
 ## 4. Known fragilities
 
 - **Per-session git worktrees + the `renki merge` conflict flow may not scale to

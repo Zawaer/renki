@@ -12,6 +12,8 @@ import {
   parsePlan,
   parseTodos,
   PERMISSION_MODES,
+  resolveEffortKey,
+  resolvePermissionMode,
   THINKING_VERBS,
   describeTool,
   displayBranch,
@@ -30,20 +32,16 @@ import {
   type TodoItemView,
   type TurnView,
 } from "@renki/client-core";
-import type { CapabilitiesResponse } from "@renki/protocol";
+import type { CapabilitiesResponse, SessionComposer } from "@renki/protocol";
 import { useEffect, useRef, useState, Fragment } from "react";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { hostOpenFile, isHosted } from "../lib/host.js";
 import {
   clearDraft,
+  loadDeviceDefaults,
   loadDraft,
-  loadEffortKey,
-  loadModel,
-  loadPermissionMode,
+  rememberDeviceDefaults,
   saveDraft,
-  saveEffortKey,
-  saveModel,
-  savePermissionMode,
 } from "../lib/composerPrefs.js";
 import { JsonCode, ShellCode } from "./Code.js";
 import { Markdown } from "./Markdown.js";
@@ -305,6 +303,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
 
       <Composer
         sessionId={sessionId}
+        composer={conv.composer}
         disabled={!isController || status === "trashed" || status === "archived"}
         reason={
           status === "trashed"
@@ -1353,6 +1352,7 @@ function ImagePreviewDialog({
 
 function Composer({
   sessionId,
+  composer,
   disabled,
   reason,
   onSend,
@@ -1360,6 +1360,8 @@ function Composer({
   onStop,
 }: {
   sessionId: string;
+  /** What the SESSION is pinned to, pushed by the daemon; null until the first push. */
+  composer: SessionComposer | null;
   disabled: boolean;
   reason: string;
   onSend: (
@@ -1387,15 +1389,27 @@ function Composer({
   const [draftNote, setDraftNote] = useState(restored.current?.attachmentsDropped ?? false);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  // All three persisted per session (see composerPrefs.ts) so they don't
-  // silently reset every refresh — and so a cheap model chatting in one
-  // session doesn't re-arm the composer of the one running a refactor. A
-  // session with no pick of its own inherits the last pick made anywhere.
-  // SessionView is keyed by session id (see App.tsx), so this remounts —
-  // reading the stored value at init is enough, no resync effect needed.
-  const [model, setModelState] = useState(() => loadModel(sessionId));
-  const [effortKey, setEffortKeyState] = useState(() => loadEffortKey(sessionId));
-  const [permissionMode, setPermissionModeState] = useState<PermissionModeKey>(() => loadPermissionMode(sessionId));
+  /**
+   * All three belong to the SESSION, not to this browser: they're pushed by
+   * the daemon and written back through `rest.updateSessionComposer`, so a
+   * session started on a phone opens here set to exactly what the phone chose,
+   * and changing it on either device moves the other.
+   *
+   * Local state mirrors the pushed value so a pick feels instant. Until that
+   * first push lands — and for any field the session has left unpinned — this
+   * browser's own default fills in, which is also what a new session is
+   * created with (see loadDeviceDefaults).
+   */
+  const deviceDefaults = useRef(loadDeviceDefaults());
+  const [model, setModelState] = useState(() => composer?.model ?? deviceDefaults.current.model);
+  const [effortKey, setEffortKeyState] = useState(() =>
+    composer?.effortKey != null ? resolveEffortKey(composer.effortKey) : deviceDefaults.current.effortKey,
+  );
+  const [permissionMode, setPermissionModeState] = useState<PermissionModeKey>(() =>
+    composer?.permissionMode != null
+      ? resolvePermissionMode(composer.permissionMode)
+      : deviceDefaults.current.permissionMode,
+  );
   const [capabilities, setCapabilities] = useState<CapabilitiesResponse>({
     models: [],
     commands: [],
@@ -1412,6 +1426,19 @@ function Composer({
       .then(setCapabilities)
       .catch(() => {});
   }, [rest]);
+
+  // Adopt whatever the session is pinned to whenever that actually changes —
+  // the first push after opening, and any later change made on another device.
+  // `conv.composer` only gets a new identity when a field really differs (see
+  // RealtimeClient's sameComposer), so this can't fight an in-flight local
+  // pick. A null field means the session has pinned nothing, so the value
+  // already on screen (this browser's default) stands.
+  useEffect(() => {
+    if (!composer) return;
+    if (composer.model !== null) setModelState(composer.model);
+    if (composer.effortKey !== null) setEffortKeyState(resolveEffortKey(composer.effortKey));
+    if (composer.permissionMode !== null) setPermissionModeState(resolvePermissionMode(composer.permissionMode));
+  }, [composer]);
 
   // Persist the in-progress prompt, debounced so a fast typist isn't writing
   // to storage on every keystroke.
@@ -1435,9 +1462,11 @@ function Composer({
   // (first in the list) — no need for our own placeholder on top of it. Once
   // the real list loads, default the selection to that entry rather than an
   // empty value that wouldn't match any <option>.
+  // Local only, deliberately: merely opening a session shouldn't pin a model
+  // onto it. This just stops the picker reading blank before anyone chooses.
   useEffect(() => {
     if (!model && capabilities.models.length > 0)
-      setModel(capabilities.models[0]?.value ?? "");
+      setModelState(capabilities.models[0]?.value ?? "");
   }, [capabilities, model]);
 
   // Move focus to the composer as soon as this device gains control (whether
@@ -1466,20 +1495,33 @@ function Composer({
    * permission request is sitting there actually stop the rest of that turn
    * from asking again, instead of only changing what the NEXT turn does.
    */
+  /**
+   * Pin a pick onto the session and remember it as this browser's default for
+   * the next new one. The daemon echoes the change to every other client.
+   *
+   * A failed write is swallowed: the picker keeps the value locally and the
+   * daemon's next push corrects it, which beats throwing an error dialog at
+   * someone for flicking a dropdown.
+   */
+  function pin(patch: Parameters<typeof rememberDeviceDefaults>[0]) {
+    rememberDeviceDefaults(patch);
+    void rest.updateSessionComposer(sessionId, patch).catch(() => {});
+  }
+
   function setPermissionMode(next: PermissionModeKey) {
     setPermissionModeState(next);
-    savePermissionMode(next, sessionId);
+    pin({ permissionMode: next });
     if (busy) realtime.setPermissionMode(sessionId, next);
   }
 
   function setModel(next: string) {
     setModelState(next);
-    saveModel(next, sessionId);
+    pin({ model: next });
   }
 
   function setEffortKey(next: string) {
     setEffortKeyState(next);
-    saveEffortKey(next, sessionId);
+    pin({ effortKey: next });
   }
 
   function send() {

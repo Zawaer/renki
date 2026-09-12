@@ -16,6 +16,8 @@ import type {
   ListSessionsResponse,
   PullBranchResponse,
   RenameSessionResponse,
+  UpdateSessionComposerRequest,
+  UpdateSessionComposerResponse,
   RestoreSessionResponse,
   RtkGainResponse,
   Session,
@@ -98,6 +100,23 @@ export class RestClient {
   /** Manual rename — permanently takes title ownership away from the auto-titler, even if it hasn't upgraded the placeholder yet. */
   async renameSession(sessionId: string, title: string): Promise<Session> {
     const res = await this.post<RenameSessionResponse>(`/sessions/${encodeURIComponent(sessionId)}/rename`, { title });
+    return res.session;
+  }
+
+  /**
+   * Repin part of a session's composer (model / thinking effort / permission
+   * mode). Send only what changed: omitted fields keep their current value, so
+   * this can't clobber a pick someone just made on another device.
+   *
+   * The daemon broadcasts the updated session to every connected client, so
+   * callers don't need to merge the response into their own state — though it
+   * is returned for the optimistic-update case.
+   */
+  async updateSessionComposer(sessionId: string, composer: UpdateSessionComposerRequest): Promise<Session> {
+    const res = await this.post<UpdateSessionComposerResponse>(
+      `/sessions/${encodeURIComponent(sessionId)}/composer`,
+      composer,
+    );
     return res.session;
   }
 

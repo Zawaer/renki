@@ -2,101 +2,74 @@ import { resolveEffortKey, resolvePermissionMode, type PermissionModeKey } from 
 import type { Attachment } from "@renki/protocol";
 
 /**
- * The model / effort / permission mode a session's composer is set to,
- * persisted in localStorage so they survive a refresh instead of resetting.
- * Per-browser, not synced across devices.
+ * This BROWSER's default model / effort / permission mode: the values a NEW
+ * session is created with.
  *
- * These are kept PER SESSION. Sessions are how work is separated here — a
- * cheap model chatting in one, Opus grinding through a refactor in another —
- * and a single global pick meant every switch between them silently re-armed
- * the composer with the other session's choice.
+ * These used to be the composer's state itself, kept per session in
+ * localStorage. That made the settings a property of the device rather than of
+ * the work: a session started on a phone opened on a laptop with whatever that
+ * laptop last used, and the two devices could disagree about what a session was
+ * set to. They now live on the session, served by the daemon (see
+ * SessionComposer in @renki/protocol), and what's left here is only the seed.
  *
- * A session that has never been set falls back to the last pick made anywhere,
- * so a new session starts from what you were last using rather than blank, and
- * diverges the moment you change it there.
+ * "Default" is simply the last pick made anywhere in this browser, since
+ * there's no separate settings screen for it. So choosing Opus in one session
+ * means the next new session starts on Opus — but it never reaches back into
+ * sessions that already exist, including this one's siblings.
  */
 const MODE_KEY = "renki.permissionMode";
 const EFFORT_KEY = "renki.effortKey";
 const MODEL_KEY = "renki.model";
 
-/** The session's own value, else the global "last used", else null. */
-function readScoped(key: string, sessionId: string | null): string | null {
+export type DeviceComposerDefaults = {
+  /** "" means "no pick yet" — the composer fills it from capabilities. */
+  model: string;
+  effortKey: string;
+  permissionMode: PermissionModeKey;
+};
+
+function read(key: string): string | null {
   try {
-    const scoped = sessionId ? localStorage.getItem(`${key}.${sessionId}`) : null;
-    return scoped ?? localStorage.getItem(key);
+    return localStorage.getItem(key);
   } catch {
     return null;
   }
 }
 
-/**
- * Fix a session's value the first time it's read, so it stops tracking picks
- * made elsewhere.
- *
- * Inheriting the last pick once, when a session is first opened, is the useful
- * half of a global default; inheriting forever is the bug — choosing Haiku in
- * one session would silently change what an untouched session sends. Only ever
- * writes the SESSION's key: the global stays whatever was last chosen
- * deliberately, so it's still what the next new session inherits.
- */
-function pinScoped(key: string, sessionId: string | null, resolved: string): void {
-  if (!sessionId) return;
-  try {
-    const k = `${key}.${sessionId}`;
-    if (localStorage.getItem(k) === null) localStorage.setItem(k, resolved);
-  } catch {
-    /* storage unavailable — it just won't be remembered */
-  }
-}
-
-/** Writes both the session's value and the global fallback for the next new session. */
-function writeScoped(key: string, sessionId: string | null, value: string): void {
-  try {
-    if (sessionId) localStorage.setItem(`${key}.${sessionId}`, value);
-    localStorage.setItem(key, value);
-  } catch {
-    // Quota or private mode — the picker still works for this session, it just
-    // won't be remembered.
-  }
-}
-
-export function loadPermissionMode(sessionId: string | null = null): PermissionModeKey {
-  const resolved = resolvePermissionMode(readScoped(MODE_KEY, sessionId));
-  pinScoped(MODE_KEY, sessionId, resolved);
-  return resolved;
-}
-
-export function savePermissionMode(mode: PermissionModeKey, sessionId: string | null = null): void {
-  writeScoped(MODE_KEY, sessionId, mode);
-}
-
-export function loadEffortKey(sessionId: string | null = null): string {
-  const resolved = resolveEffortKey(readScoped(EFFORT_KEY, sessionId));
-  pinScoped(EFFORT_KEY, sessionId, resolved);
-  return resolved;
-}
-
-export function saveEffortKey(key: string, sessionId: string | null = null): void {
-  writeScoped(EFFORT_KEY, sessionId, key);
+/** What a new session should start with, resolved against the known vocabularies. */
+export function loadDeviceDefaults(): DeviceComposerDefaults {
+  return {
+    model: read(MODEL_KEY) ?? "",
+    effortKey: resolveEffortKey(read(EFFORT_KEY)),
+    permissionMode: resolvePermissionMode(read(MODE_KEY)),
+  };
 }
 
 /**
- * "" is a valid persisted value too — means "use the SDK's own default", same
- * as before anything's ever been picked. Deliberately NOT pinned when empty:
- * the composer fills an empty pick from capabilities, and pinning "" would
- * freeze a session onto whatever that list happened to start with.
+ * Record a pick as this browser's new default. Called alongside the write that
+ * pins the value onto the session, so the next new session inherits what you
+ * were last using — the one useful half of the old global behaviour.
  */
-export function loadModel(sessionId: string | null = null): string {
-  const resolved = readScoped(MODEL_KEY, sessionId) ?? "";
-  if (resolved) pinScoped(MODEL_KEY, sessionId, resolved);
-  return resolved;
+export function rememberDeviceDefaults(patch: {
+  model?: string;
+  effortKey?: string;
+  permissionMode?: PermissionModeKey;
+}): void {
+  try {
+    if (patch.model !== undefined) localStorage.setItem(MODEL_KEY, patch.model);
+    if (patch.effortKey !== undefined) localStorage.setItem(EFFORT_KEY, patch.effortKey);
+    if (patch.permissionMode !== undefined) localStorage.setItem(MODE_KEY, patch.permissionMode);
+  } catch {
+    // Quota or private mode — the picker still works, the next new session
+    // just won't inherit this pick.
+  }
 }
 
-export function saveModel(model: string, sessionId: string | null = null): void {
-  writeScoped(MODEL_KEY, sessionId, model);
-}
-
-/** Drops a session's remembered picks — called when its transcript is deleted for good. */
+/**
+ * Drop the per-session keys the old scheme wrote. Nothing reads them any more,
+ * so this is pure tidying: called when a session's transcript is deleted for
+ * good, the same as its draft.
+ */
 export function clearComposerPrefs(sessionId: string): void {
   try {
     for (const key of [MODE_KEY, EFFORT_KEY, MODEL_KEY]) localStorage.removeItem(`${key}.${sessionId}`);

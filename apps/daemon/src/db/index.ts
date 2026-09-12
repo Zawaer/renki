@@ -61,6 +61,9 @@ export function openDb(config: Config) {
   ensureColumn(sqlite, "sessions", "trashed_at", "INTEGER");
   ensureColumn(sqlite, "sessions", "trashed_from", "TEXT");
   ensureColumn(sqlite, "sessions", "last_model", "TEXT");
+  ensureColumn(sqlite, "sessions", "composer_model", "TEXT");
+  ensureColumn(sqlite, "sessions", "composer_effort_key", "TEXT");
+  ensureColumn(sqlite, "sessions", "composer_permission_mode", "TEXT");
   ensureSessionsRepoColumnsNullable(sqlite);
 
   logger.info("database ready", { path: config.dbPath });

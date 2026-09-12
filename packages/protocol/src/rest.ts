@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Repo, Session } from "./domain.js";
+import { Repo, Session, SessionComposerPatch } from "./domain.js";
 import { SessionEvent } from "./events.js";
 
 /**
@@ -84,6 +84,13 @@ export const CreateSessionRequest = z
     /** New branch to create for this session's worktree. Omit to derive one. */
     newBranch: z.string().min(1).optional(),
     title: z.string().min(1).max(200).optional(),
+    /**
+     * The creating device's own composer defaults, copied onto the new session.
+     * This is the ONLY point at which a device default is read: from here on
+     * the session carries its own settings, so changing the default on this
+     * device (or opening the session on another) leaves it untouched.
+     */
+    composer: SessionComposerPatch.optional(),
   })
   .refine((v) => !v.repoId || !!v.baseBranch, {
     message: "baseBranch is required when repoId is set",
@@ -139,6 +146,19 @@ export const RenameSessionResponse = z.object({
   session: Session,
 });
 export type RenameSessionResponse = z.infer<typeof RenameSessionResponse>;
+
+/**
+ * Repins one or more of a session's composer settings. Omitted fields keep
+ * their current value, so a client that only changed the effort picker sends
+ * only `effortKey` and can't clobber a model someone picked on another device.
+ */
+export const UpdateSessionComposerRequest = SessionComposerPatch;
+export type UpdateSessionComposerRequest = z.infer<typeof UpdateSessionComposerRequest>;
+
+export const UpdateSessionComposerResponse = z.object({
+  session: Session,
+});
+export type UpdateSessionComposerResponse = z.infer<typeof UpdateSessionComposerResponse>;
 
 /** Full transcript for cold-loading a session outside the WS flow. */
 export const GetTranscriptResponse = z.object({

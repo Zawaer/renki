@@ -1,6 +1,7 @@
 import type { GithubRepo, Repo, Session } from "@renki/protocol";
 import { useEffect, useState } from "react";
 import { useClient } from "../lib/client.js";
+import { loadDeviceDefaults } from "../lib/composerPrefs.js";
 import { Button, Select } from "./ui.js";
 
 /** Sentinel repoId value for "no repo" — a real repo's id is never empty. */
@@ -124,14 +125,19 @@ export function NewSessionDialog({
     setBusy(true);
     setError(null);
     try {
+      // The one place this browser's defaults are read: they're copied onto the
+      // new session, which owns them from here on. Changing a default later
+      // never reaches back into a session that already exists.
+      const composer = loadDeviceDefaults();
       const session = await rest.createSession(
         repoId === NO_REPO
-          ? { title: title.trim() || undefined }
+          ? { title: title.trim() || undefined, composer }
           : {
               repoId,
               baseBranch,
               newBranch: newBranch.trim() || undefined,
               title: title.trim() || undefined,
+              composer,
             },
       );
       onCreated(session);

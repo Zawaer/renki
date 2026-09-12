@@ -68,6 +68,8 @@ describe("initialConversation", () => {
       queuedPrompts: [],
       context: null,
       model: null,
+      // Session-owned composer settings; null until the daemon pushes them.
+      composer: null,
       lastSeq: -1,
     });
   });

@@ -183,6 +183,66 @@ describe("REST: sessions CRUD", () => {
     expect((await authed(`/sessions/${kept.id}/transcript`)).status).toBe(200);
   });
 
+  /**
+   * The round trip that makes the feature real: a session is created carrying
+   * one device's defaults, and a later pick from a DIFFERENT device is pinned
+   * onto the session rather than onto that device.
+   */
+  it("carries composer defaults through creation and repins them per field", async () => {
+    const { base, config, repoId } = await startServer();
+    const authed = authedFetch(base, config.authToken);
+
+    const { session } = await (
+      await authed("/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          repoId,
+          baseBranch: "main",
+          composer: { model: "claude-opus-5", effortKey: "high", permissionMode: "acceptEdits" },
+        }),
+      })
+    ).json();
+    expect(session.composer).toEqual({ model: "claude-opus-5", effortKey: "high", permissionMode: "acceptEdits" });
+
+    const res = await authed(`/sessions/${session.id}/composer`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ effortKey: "low" }),
+    });
+    expect(res.status).toBe(200);
+    // Only the field that was sent moved.
+    expect((await res.json()).session.composer).toEqual({
+      model: "claude-opus-5",
+      effortKey: "low",
+      permissionMode: "acceptEdits",
+    });
+
+    // And it's what any other client now reads.
+    const list = await (await authed("/sessions")).json();
+    const fresh = list.sessions.find((x: { id: string }) => x.id === session.id);
+    expect(fresh.composer.effortKey).toBe("low");
+  });
+
+  it("400s an invalid composer body", async () => {
+    const { base, config, repoId } = await startServer();
+    const authed = authedFetch(base, config.authToken);
+    const { session } = await (
+      await authed("/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ repoId, baseBranch: "main" }),
+      })
+    ).json();
+
+    const res = await authed(`/sessions/${session.id}/composer`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ effortKey: 7 }),
+    });
+    expect(res.status).toBe(400);
+  });
+
   it("400s an invalid rename body", async () => {
     const { base, config, repoId } = await startServer();
     const authed = authedFetch(base, config.authToken);

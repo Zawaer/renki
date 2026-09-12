@@ -1,4 +1,4 @@
-import type { Attachment, SessionEvent, SessionStatus } from "@renki/protocol";
+import type { Attachment, SessionComposer, SessionEvent, SessionStatus } from "@renki/protocol";
 
 /**
  * The event-log → view-state reducer. This is the piece that makes every client
@@ -139,6 +139,18 @@ export type ConversationState = {
    * composer's picker, which is per-device and about the NEXT prompt.
    */
   model: string | null;
+  /**
+   * The model / thinking effort / permission mode pinned to this SESSION, as
+   * last pushed by the daemon. Null until that first push arrives (the daemon
+   * sends one on subscribe, so that's immediately in practice).
+   *
+   * Deliberately not folded from the event log like everything else here: the
+   * composer is session *settings*, not conversation history, and replaying a
+   * transcript shouldn't rewind which model the picker is set to. It rides the
+   * roster `session` push instead, which is also what makes a change on one
+   * device show up on another without a refresh.
+   */
+  composer: SessionComposer | null;
   /** Highest seq folded in — sent as lastSeq on (re)subscribe. */
   lastSeq: number;
 };
@@ -156,6 +168,7 @@ export function initialConversation(sessionId: string): ConversationState {
     queuedPrompts: [],
     context: null,
     model: null,
+    composer: null,
     lastSeq: -1,
   };
 }

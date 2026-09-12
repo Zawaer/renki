@@ -139,6 +139,82 @@ describe("createSession", () => {
   });
 });
 
+/**
+ * The composer (model / thinking effort / permission mode) belongs to the
+ * SESSION, not to the device that happens to be looking at it. A session
+ * started on a phone has to keep its settings when it's opened on a laptop,
+ * and changing that laptop's own defaults afterwards must not reach back into
+ * it — which is the whole point of storing this server-side.
+ */
+describe("session composer", () => {
+  it("seeds from the creating device's defaults", async () => {
+    const { manager, repoId } = setup();
+    const s = await manager.createSession({
+      repoId,
+      baseBranch: "main",
+      composer: { model: "claude-opus-5", effortKey: "high", permissionMode: "acceptEdits" },
+    });
+    expect(s.composer).toEqual({ model: "claude-opus-5", effortKey: "high", permissionMode: "acceptEdits" });
+    // And it's persisted, not just echoed back from the insert.
+    expect(manager.getSession(s.id).composer).toEqual(s.composer);
+  });
+
+  it("leaves every field null when the creating client sends no defaults", async () => {
+    const { manager, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    expect(s.composer).toEqual({ model: null, effortKey: null, permissionMode: null });
+  });
+
+  it("updates only the fields it is given, so two devices can't clobber each other", async () => {
+    const { manager, repoId } = setup();
+    const s = await manager.createSession({
+      repoId,
+      baseBranch: "main",
+      composer: { model: "claude-opus-5", effortKey: "high", permissionMode: "acceptEdits" },
+    });
+
+    const after = manager.setSessionComposer(s.id, { effortKey: "low" });
+    expect(after.composer).toEqual({ model: "claude-opus-5", effortKey: "low", permissionMode: "acceptEdits" });
+  });
+
+  it("clears a field when explicitly set to null", async () => {
+    const { manager, repoId } = setup();
+    const s = await manager.createSession({ repoId, baseBranch: "main", composer: { model: "claude-opus-5" } });
+    expect(manager.setSessionComposer(s.id, { model: null }).composer?.model).toBeNull();
+  });
+
+  /** The push is what makes a pick on one device show up on another without a refresh. */
+  it("broadcasts the updated session so other clients follow", async () => {
+    const { manager, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    const seen: string[] = [];
+    manager.setBroadcast({
+      onSessionChanged: (session) => {
+        if (session.id === s.id && session.composer?.model) seen.push(session.composer.model);
+      },
+      onSessionRemoved: () => {},
+    });
+
+    manager.setSessionComposer(s.id, { model: "claude-sonnet-5" });
+    expect(seen).toEqual(["claude-sonnet-5"]);
+  });
+
+  it("is a no-op that still reads back cleanly when given an empty patch", async () => {
+    const { manager, repoId } = setup();
+    const s = await manager.createSession({ repoId, baseBranch: "main", composer: { effortKey: "max" } });
+    expect(manager.setSessionComposer(s.id, {}).composer).toEqual({
+      model: null,
+      effortKey: "max",
+      permissionMode: null,
+    });
+  });
+
+  it("rejects an unknown session", async () => {
+    const { manager } = setup();
+    expect(() => manager.setSessionComposer("s_nope", { model: "x" })).toThrow();
+  });
+});
+
 describe("createConflictResolutionSession", () => {
   it("defaults an ordinary session's purpose to normal with no merge metadata", async () => {
     const { manager, repoId } = setup();

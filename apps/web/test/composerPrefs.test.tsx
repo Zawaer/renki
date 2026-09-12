@@ -1,50 +1,50 @@
 import { DEFAULT_EFFORT_KEY, DEFAULT_PERMISSION_MODE } from "@renki/client-core";
 import { describe, expect, it } from "vitest";
-import {
-  loadEffortKey,
-  loadModel,
-  loadPermissionMode,
-  saveEffortKey,
-  saveModel,
-  savePermissionMode,
-  clearDraft,
-  loadDraft,
-  saveDraft,
-} from "../src/lib/composerPrefs.js";
+import { clearDraft, loadDeviceDefaults, loadDraft, rememberDeviceDefaults, saveDraft } from "../src/lib/composerPrefs.js";
 
 // Plain unit tests, no rendering — .tsx only to match this project's
 // vitest.config.ts include glob (test/**/*.test.tsx).
 
-describe("composerPrefs", () => {
-  it("defaults permission mode/effort/model when nothing is persisted yet", () => {
-    expect(loadPermissionMode()).toBe(DEFAULT_PERMISSION_MODE);
-    expect(loadEffortKey()).toBe(DEFAULT_EFFORT_KEY);
-    expect(loadModel()).toBe("");
+/**
+ * These are the defaults a NEW session is created with — this browser's last
+ * pick. The composer's live state is no longer stored here at all: it belongs
+ * to the session and is served by the daemon, which is what lets a session
+ * started on a phone keep its settings when it's opened here.
+ */
+describe("device composer defaults", () => {
+  it("falls back to the built-in defaults when nothing has been picked yet", () => {
+    const d = loadDeviceDefaults();
+    expect(d.permissionMode).toBe(DEFAULT_PERMISSION_MODE);
+    expect(d.effortKey).toBe(DEFAULT_EFFORT_KEY);
+    expect(d.model).toBe("");
   });
 
-  it("round-trips a saved permission mode", () => {
-    savePermissionMode("acceptEdits");
-    expect(loadPermissionMode()).toBe("acceptEdits");
+  it("round-trips each field, including a custom model id that's in no list", () => {
+    rememberDeviceDefaults({ permissionMode: "acceptEdits" });
+    rememberDeviceDefaults({ effortKey: "high" });
+    rememberDeviceDefaults({ model: "claude-opus-4-8" });
+    expect(loadDeviceDefaults()).toEqual({
+      permissionMode: "acceptEdits",
+      effortKey: "high",
+      model: "claude-opus-4-8",
+    });
   });
 
-  it("round-trips a saved effort key", () => {
-    saveEffortKey("high");
-    expect(loadEffortKey()).toBe("high");
+  it("updates only the fields it is given", () => {
+    rememberDeviceDefaults({ effortKey: "low", model: "sonnet", permissionMode: "acceptEdits" });
+    rememberDeviceDefaults({ model: "opus" });
+    const d = loadDeviceDefaults();
+    expect(d.model).toBe("opus");
+    expect(d.effortKey).toBe("low");
+    expect(d.permissionMode).toBe("acceptEdits");
   });
 
-  it("round-trips a saved model, including a custom (not-in-list) model id", () => {
-    saveModel("claude-opus-4-8");
-    expect(loadModel()).toBe("claude-opus-4-8");
-  });
-
-  it("ignores a corrupted/unknown persisted permission mode and falls back to the default", () => {
-    localStorage.setItem("crc.permissionMode", "bypassPermissions");
-    expect(loadPermissionMode()).toBe(DEFAULT_PERMISSION_MODE);
-  });
-
-  it("ignores a corrupted/unknown persisted effort key and falls back to the default", () => {
-    localStorage.setItem("crc.effortKey", "turbo");
-    expect(loadEffortKey()).toBe(DEFAULT_EFFORT_KEY);
+  it("ignores a stored value that is no longer a known mode or effort", () => {
+    localStorage.setItem("renki.permissionMode", "bypassPermissions");
+    localStorage.setItem("renki.effortKey", "turbo");
+    const d = loadDeviceDefaults();
+    expect(d.permissionMode).toBe(DEFAULT_PERMISSION_MODE);
+    expect(d.effortKey).toBe(DEFAULT_EFFORT_KEY);
   });
 });
 

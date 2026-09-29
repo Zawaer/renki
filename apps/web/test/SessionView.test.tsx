@@ -469,7 +469,7 @@ describe("long content", () => {
   });
 });
 
-describe("SessionView resume banner", () => {
+describe("SessionView session snapshot", () => {
   const session = (resume: unknown) => ({
     id: "s1",
     repoId: null,
@@ -492,6 +492,16 @@ describe("SessionView resume banner", () => {
   function push(realtime: RealtimeClient, s: unknown) {
     flushSync(() => (realtime as unknown as { onMessage(raw: string): void }).onMessage(JSON.stringify({ type: "session", session: s })));
   }
+
+  it("names the browser tab after the open session, following renames", () => {
+    const { realtime } = renderSession("s1", [ev("s1", { kind: "status_changed", status: "idle" })]);
+    push(realtime, { ...session(null), title: "Fix login bug" });
+    expect(document.title).toBe("Fix login bug · Renki");
+    push(realtime, { ...session(null), title: "Fix login redirect" });
+    expect(document.title).toBe("Fix login redirect · Renki");
+    cleanupRoots();
+    expect(document.title).toBe("Renki");
+  });
 
   it("shows when a paused turn will continue, and sends the buttons' actions", () => {
     const { realtime } = renderSession("s1", [ev("s1", { kind: "status_changed", status: "idle" })]);

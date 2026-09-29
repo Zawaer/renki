@@ -70,15 +70,27 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   const [purgeAt, setPurgeAt] = useState<number | null>(null);
   /** A turn paused on a usage limit, waiting to continue — also only on the snapshot. */
   const [resume, setResume] = useState<SessionResume | null>(null);
+  const [title, setTitle] = useState<string | null>(null);
   useEffect(() => {
     setPurgeAt(null);
     setResume(null);
+    setTitle(null);
     return realtime.onSessionChanged((s) => {
       if (s.id !== sessionId) return;
       setPurgeAt(s.purgeAt ?? null);
       setResume(s.resume ?? null);
+      setTitle(s.title);
     });
   }, [realtime, sessionId]);
+
+  // Name the browser tab after the open session, the same way the session
+  // list does (title, else repo), so a row of Renki tabs can be told apart.
+  // Follows the auto-titler's upgrades live; back to plain "Renki" on leave.
+  const tabName = title || conv.repoName;
+  useEffect(() => {
+    document.title = tabName ? `${tabName} · Renki` : "Renki";
+  }, [tabName]);
+  useEffect(() => () => void (document.title = "Renki"), []);
 
   /**
    * Follow the newest output ONLY while the reader is already at the bottom.

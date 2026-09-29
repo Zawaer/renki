@@ -8,6 +8,7 @@ import { createRtkPreToolUseHook } from "./rtk.js";
 import {
   type BlockTracking,
   type PermissionResolver,
+  type RateLimitHit,
   type RunTurnResult,
   buildUserMessage,
   classifyRateLimit,
@@ -15,6 +16,7 @@ import {
   handleStreamEvent,
   handleToolResults,
   isInterruptedTerminalReason,
+  rejectedRateLimit,
   summarizeResultError,
 } from "./runner.js";
 import { stripUntrustedHooks } from "./settingsHygiene.js";
@@ -109,6 +111,8 @@ type InflightTurn = {
   model: string | null;
   clientType: string | null;
   sawRateLimitError: boolean;
+  /** Set when the CLI reports a rejected limit mid-turn — tells the resume scheduler when to come back. */
+  rateLimit: RateLimitHit | null;
   resolve: (r: RunTurnResult) => void;
 };
 
@@ -311,6 +315,7 @@ export class LiveClaudeSession {
         model: args.model ?? null,
         clientType: args.clientType ?? null,
         sawRateLimitError: false,
+        rateLimit: null,
         resolve,
       };
       this._lastActivityAt = Date.now();
@@ -494,6 +499,12 @@ export class LiveClaudeSession {
 
   private handle(message: SDKMessage): void {
     switch (message.type) {
+      case "rate_limit_event": {
+        const hit = rejectedRateLimit(message.rate_limit_info);
+        if (hit && this.inflight) this.inflight.rateLimit = hit;
+        break;
+      }
+
       case "stream_event": {
         const turnId = this.turnFor(message.parent_tool_use_id);
         const t = this.trackingFor(message.parent_tool_use_id);
@@ -634,7 +645,8 @@ export class LiveClaudeSession {
       costUsd,
       durationMs: message.duration_ms ?? null,
       errorMessage,
-      rateLimited: !ok && (sawRateLimit || classifyRateLimit(errorMessage)),
+      rateLimited: !ok && (sawRateLimit || classifyRateLimit(errorMessage) || this.inflight?.rateLimit != null),
+      rateLimit: ok ? null : (this.inflight?.rateLimit ?? null),
       interrupted,
     };
 
@@ -692,6 +704,7 @@ export class LiveClaudeSession {
       durationMs: null,
       errorMessage,
       rateLimited,
+      rateLimit: this.inflight?.rateLimit ?? null,
       interrupted: false,
     };
   }

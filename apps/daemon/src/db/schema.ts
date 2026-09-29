@@ -65,6 +65,14 @@ export const sessions = sqliteTable("sessions", {
    * come back archived, not idle with a worktree that no longer exists.
    */
   trashedFrom: text("trashed_from"),
+  /**
+   * A turn that stopped on a usage limit and is waiting to be continued: when
+   * to try (epoch ms) and a JSON-encoded ResumeState (the prompt to send, why
+   * it's waiting, how many attempts have failed). Both null otherwise. On the
+   * row rather than in memory so a daemon restart doesn't forget the wait.
+   */
+  resumeAt: integer("resume_at"),
+  resumeState: text("resume_state"),
   /** "normal" or "merge_conflict" — see MergeConflictMeta in @renki/protocol. */
   purpose: text("purpose").notNull().default("normal"),
   /** JSON-encoded MergeConflictMeta, only set when purpose = "merge_conflict". */
@@ -119,7 +127,9 @@ export const DDL = `
     last_model TEXT,
     composer_model TEXT,
     composer_effort_key TEXT,
-    composer_permission_mode TEXT
+    composer_permission_mode TEXT,
+    resume_at INTEGER,
+    resume_state TEXT
   );
 
   CREATE TABLE IF NOT EXISTS events (

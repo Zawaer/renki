@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatResetTime, usageSeverity } from "../src/resetTime.js";
+import { formatResetTime, formatResumeAt, usageSeverity } from "../src/resetTime.js";
 
 // Fixed "now": Monday 2026-09-07, 10:00 local.
 const NOW = new Date(2026, 8, 7, 10, 0, 0);
@@ -44,5 +44,17 @@ describe("usageSeverity", () => {
     expect(usageSeverity(undefined, 95)).toBe("critical");
     expect(usageSeverity("weird", 75)).toBe("warning");
     expect(usageSeverity(undefined, 10)).toBe("normal");
+  });
+});
+
+describe("formatResumeAt", () => {
+  it("says when a paused turn will continue", () => {
+    expect(formatResumeAt(new Date(2026, 8, 7, 15, 31).getTime(), NOW)).toBe("Continues today 15:31");
+    expect(formatResumeAt(new Date(2026, 8, 8, 9, 5).getTime(), NOW)).toBe("Continues tomorrow 09:05");
+  });
+
+  /** The daemon can hold a due resume for a minute (a busy session, a switch) — don't show a time in the past. */
+  it("says shortly once the moment has passed", () => {
+    expect(formatResumeAt(NOW.getTime() - 5_000, NOW)).toBe("Continuing shortly…");
   });
 });

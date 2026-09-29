@@ -58,11 +58,24 @@ export function StatusDot({ status, pendingPermission }: { status: SessionStatus
  * outline for idle, a spinner while working, a shield when it needs you, a
  * cross on error, a box when archived. Reads at a glance and without color.
  */
-export function SessionGlyph({ status, pendingPermission }: { status: SessionStatus; pendingPermission?: boolean }) {
+export function SessionGlyph({
+  status,
+  pendingPermission,
+  paused,
+}: {
+  status: SessionStatus;
+  pendingPermission?: boolean;
+  /** Waiting on a usage limit to reset (Session.resume) — shown only while not busy. */
+  paused?: boolean;
+}) {
   let icon: string;
   let tone: string;
   let label: string;
-  if (pendingPermission && status === "busy") {
+  if (paused && status !== "busy") {
+    icon = "codicon-debug-pause";
+    tone = "text-(--renki-warning)";
+    label = "Paused on a usage limit";
+  } else if (pendingPermission && status === "busy") {
     icon = "codicon-shield animate-pulse";
     tone = "text-(--renki-danger)";
     label = "Needs your approval";

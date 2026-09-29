@@ -381,6 +381,7 @@ function AccountsSection() {
       )}
 
       {data && accounts.length > 1 && <RotationSettings rotation={data.rotation} accounts={accounts} onChanged={refresh} />}
+      {data && <ResumeSettings rotation={data.rotation} multiAccount={accounts.length > 1} onChanged={refresh} />}
 
       <div className="mt-5 flex flex-col items-start gap-2 text-[13px]">
         <UsageConnect configured={data?.usageConfigured ?? false} onConnected={refresh} />
@@ -498,6 +499,48 @@ function RotationSettings({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Continue a turn that stopped on a usage limit once a limit resets — the daemon's ResumeScheduler. */
+function ResumeSettings({
+  rotation,
+  multiAccount,
+  onChanged,
+}: {
+  rotation: RotationStatus;
+  multiAccount: boolean;
+  onChanged: () => void;
+}) {
+  const { rest } = useClient();
+  const [busy, setBusy] = useState(false);
+
+  async function toggle() {
+    setBusy(true);
+    try {
+      await rest.updateRotation({ autoResume: !rotation.autoResume });
+    } finally {
+      setBusy(false);
+      onChanged();
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-xl bg-(--renki-bg-inset)/70 px-4 py-3">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-[13px] font-medium text-(--renki-fg)">Continue when limits reset</div>
+          <div className="mt-0.5 text-xs text-(--renki-fg-muted)">
+            {multiAccount && rotation.enabled
+              ? "When every account is out of usage, pause the turn and continue it as soon as any account resets — switching to that one first."
+              : multiAccount
+                ? "When a turn hits a usage limit, pause it and continue once the active account resets. Turn on auto-switch to also use whichever account resets first."
+                : "When a turn hits a usage limit, pause it and continue it automatically once the limit resets."}
+          </div>
+        </div>
+        <Switch checked={rotation.autoResume} disabled={busy} onChange={toggle} label="Continue when limits reset" />
+      </div>
     </div>
   );
 }

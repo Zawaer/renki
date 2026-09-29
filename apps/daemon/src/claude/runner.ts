@@ -50,9 +50,29 @@ export type RunTurnResult = {
   errorMessage: string | null;
   /** True when the failure looks like an account usage/rate limit. */
   rateLimited: boolean;
+  /**
+   * The limit the CLI reported as rejected during this turn, when it said
+   * which (its `rate_limit_event`). Null when it didn't — an API-key login, or
+   * a failure only recognisable from the error text.
+   */
+  rateLimit?: RateLimitHit | null;
   /** True when this failure is the controller stopping the turn, not a real error. */
   interrupted: boolean;
 };
+
+/** Which plan limit rejected a request, and when it resets (epoch ms), from the SDK's `rate_limit_event`. */
+export type RateLimitHit = { resetsAt: number | null; type: string | null };
+
+/**
+ * The SDK's `rate_limit_info`, if it describes a rejection. `resetsAt` arrives
+ * in epoch seconds; anything already in milliseconds is passed through.
+ */
+export function rejectedRateLimit(info: { status?: string; resetsAt?: number; rateLimitType?: string } | undefined): RateLimitHit | null {
+  if (!info || info.status !== "rejected") return null;
+  const raw = info.resetsAt;
+  const resetsAt = typeof raw === "number" && raw > 0 ? (raw < 1e12 ? raw * 1000 : raw) : null;
+  return { resetsAt, type: info.rateLimitType ?? null };
+}
 
 /** Pure heuristic: does this error text/flag indicate a usage/rate limit? */
 export function classifyRateLimit(text: string | null | undefined): boolean {

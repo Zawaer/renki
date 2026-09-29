@@ -591,6 +591,19 @@ How it behaves:
   the swap lands at a clean boundary. Idle live `claude` processes are recycled
   after a swap (a running one may cache the old account's credentials) and the
   next prompt resumes the same transcript in a fresh process.
+- **Continue when limits reset:** when a turn still can't run (every account is
+  out, or rotation is off), it's paused rather than left failed. The daemon
+  waits for the earliest reset (across every account with rotation on, only the
+  active one's with it off), switches to the account that freed up, and
+  continues the turn: it re-sends the prompt if the turn got nowhere, or asks
+  Claude to carry on if it got partway. Every client shows a "Paused · continues
+  today 15:31" banner with **Continue now** and **Cancel**. The wait is stored
+  on the session, so a daemon restart keeps it. Sending a new message replaces
+  it. It gives up after 8 automatic attempts. Reset times come from the CLI's
+  own rate-limit report, plus usage data when that's connected; with neither,
+  it retries on a backoff starting at 15 minutes. Toggle it under Settings →
+  **Continue when limits reset** (on by default). This works with one account
+  too, no rotation needed.
 - **Fail-safe:** if usage is unavailable or a check errors, it holds rather than
   switching blind.
 - All clients show a live per-account usage strip and a manual **Switch** button.

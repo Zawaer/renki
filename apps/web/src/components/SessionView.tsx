@@ -31,8 +31,11 @@ import {
   type TimelineItem,
   type TodoItemView,
   type TurnView,
+  formatResumeAt,
+  modelFullName,
+  modelMenuLabel,
 } from "@renki/client-core";
-import type { CapabilitiesResponse, SessionComposer } from "@renki/protocol";
+import type { CapabilitiesResponse, SessionComposer, SessionResume } from "@renki/protocol";
 import { useEffect, useRef, useState, Fragment } from "react";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { hostOpenFile, isHosted } from "../lib/host.js";
@@ -65,10 +68,15 @@ export function SessionView({ sessionId }: { sessionId: string }) {
    * the session snapshot the daemon pushes on subscribe and on every change.
    */
   const [purgeAt, setPurgeAt] = useState<number | null>(null);
+  /** A turn paused on a usage limit, waiting to continue — also only on the snapshot. */
+  const [resume, setResume] = useState<SessionResume | null>(null);
   useEffect(() => {
     setPurgeAt(null);
+    setResume(null);
     return realtime.onSessionChanged((s) => {
-      if (s.id === sessionId) setPurgeAt(s.purgeAt ?? null);
+      if (s.id !== sessionId) return;
+      setPurgeAt(s.purgeAt ?? null);
+      setResume(s.resume ?? null);
     });
   }, [realtime, sessionId]);
 
@@ -301,6 +309,15 @@ export function SessionView({ sessionId }: { sessionId: string }) {
         </div>
       )}
 
+      {resume && status !== "busy" && (
+        <ResumeBanner
+          resume={resume}
+          // Anyone may act once the lock has lapsed — see the daemon's resumeAction.
+          canAct={isController || !conv.controller}
+          onAction={(action) => realtime.resumeAction(sessionId, action)}
+        />
+      )}
+
       <Composer
         sessionId={sessionId}
         composer={conv.composer}
@@ -318,6 +335,55 @@ export function SessionView({ sessionId }: { sessionId: string }) {
         busy={isController && status === "busy"}
         onStop={() => realtime.interrupt(sessionId)}
       />
+    </div>
+  );
+}
+
+/**
+ * "Paused on a usage limit — continues today 15:31", with the two things you
+ * might want instead: go now (you bought extra usage, or know better than the
+ * numbers), or don't continue at all.
+ */
+function ResumeBanner({
+  resume,
+  canAct,
+  onAction,
+}: {
+  resume: SessionResume;
+  canAct: boolean;
+  onAction: (action: "cancel" | "now") => void;
+}) {
+  // Re-render once a minute so "today 15:31" becomes "shortly" on time.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <div className="px-6 pb-2">
+      <div className="renki-enter mx-auto flex w-full max-w-3xl items-center gap-3 rounded-xl border border-(--renki-border) bg-(--renki-surface) px-3.5 py-2.5">
+        <span className="codicon codicon-debug-pause shrink-0 text-(--renki-warning)" />
+        <div className="min-w-0 flex-1">
+          <div className="text-[13px] font-medium text-(--renki-fg)">
+            Paused on a usage limit · {formatResumeAt(resume.at, now)}
+          </div>
+          <div className="truncate text-xs text-(--renki-fg-muted)" title={resume.reason}>
+            {resume.reason}
+            {resume.attempt > 0 && ` Attempt ${resume.attempt + 1}.`}
+          </div>
+        </div>
+        {canAct && (
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button variant="ghost" size="sm" onClick={() => onAction("cancel")}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={() => onAction("now")}>
+              Continue now
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1631,11 +1697,11 @@ function Composer({
                 >
                   <div className="min-w-0">
                     <div className="truncate font-medium text-(--renki-fg)">
-                      {m.displayName}
+                      {modelMenuLabel(m).title}
                     </div>
-                    {m.description && (
+                    {modelMenuLabel(m).subtitle && (
                       <div className="truncate text-(--renki-fg-muted)">
-                        {m.description}
+                        {modelMenuLabel(m).subtitle}
                       </div>
                     )}
                   </div>
@@ -1869,14 +1935,25 @@ function Composer({
               />
               {openMenu === "mode" && menuPanel("start")}
             </div>
-            <div className="ml-auto flex items-center gap-1">
+            {/* The empty stretch between the pickers belongs to the text box:
+                clicking it focuses the input, like clicking above it does.
+                mousedown + preventDefault so focus never leaves for the div. */}
+            <div
+              aria-hidden
+              className={`h-7 flex-1 ${disabled ? "" : "cursor-text"}`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                if (!disabled) textareaRef.current?.focus();
+              }}
+            />
+            <div className="flex items-center gap-1">
               <div className="relative">
                 <PickerButton
                   label={
                     capabilities.models.length === 0 && !model ? (
                       <Skeleton className="h-3 w-24" />
                     ) : (
-                      (selectedModel?.displayName ?? model ?? "Default")
+                      (selectedModel ? modelFullName(selectedModel) : (model ?? "Default"))
                     )
                   }
                   open={openMenu === "model"}

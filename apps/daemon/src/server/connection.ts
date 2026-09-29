@@ -141,6 +141,12 @@ export class Connection {
         return;
       }
 
+      case "resume_action": {
+        this.manager.resumeAction(msg.sessionId, this.deviceId, msg.action);
+        // No direct reply: the cleared/updated session and its notice reach every client.
+        return;
+      }
+
       case "resolve_permission": {
         // Only the current controller may answer a permission request.
         const session = this.manager.getSession(msg.sessionId);

@@ -8,7 +8,8 @@ export type SessionErrorCode =
   | "session_archived"
   | "session_trashed"
   | "queue_full"
-  | "not_busy";
+  | "not_busy"
+  | "no_resume";
 
 export class SessionError extends Error {
   constructor(

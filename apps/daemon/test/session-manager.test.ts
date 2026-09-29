@@ -10,7 +10,13 @@ import { generateSessionTitle } from "../src/claude/titler.js";
 import type { DB } from "../src/db/index.js";
 import { sessions } from "../src/db/schema.js";
 import { SessionError } from "../src/sessions/errors.js";
-import { MAX_QUEUED_PROMPTS, SessionManager, TITLE_UPGRADE_ATTEMPT_CAP } from "../src/sessions/manager.js";
+import {
+  MAX_QUEUED_PROMPTS,
+  MAX_RESUME_ATTEMPTS,
+  RESUME_CONTINUE_TEXT,
+  SessionManager,
+  TITLE_UPGRADE_ATTEMPT_CAP,
+} from "../src/sessions/manager.js";
 import { cleanupConfig, makeTestConfig, makeTestDb, makeTestRepo } from "./helpers.js";
 
 // Auto-titling (see "auto-titling" describe block below) needs to drive a real
@@ -1021,5 +1027,241 @@ describe("live process pool", () => {
     expect(() => manager.interruptSession(s.id, "d1")).toThrow(SessionError);
     liveInstances[0]!.busy = true;
     expect(() => manager.interruptSession(s.id, "d1")).not.toThrow();
+  });
+});
+
+describe("resuming after a usage limit", () => {
+  const limited: RunTurnResult = {
+    claudeSessionId: "claude-1",
+    ok: false,
+    costUsd: null,
+    durationMs: 1,
+    errorMessage: "You've hit your limit · resets 3pm",
+    rateLimited: true,
+    rateLimit: { resetsAt: Date.now() + 3_600_000, type: "five_hour" },
+    interrupted: false,
+  };
+
+  beforeEach(() => {
+    runTurn.mockReset();
+    vi.mocked(generateSessionTitle).mockReset().mockResolvedValue(null);
+  });
+
+  /** A rotator stand-in: rotation off, so a limit goes straight to scheduling. */
+  function autoSwitch(overrides: Partial<Parameters<SessionManager["setAutoSwitch"]>[0]> = {}) {
+    return {
+      autoRetryEnabled: false,
+      rateLimitSwitch: vi.fn(async () => ({ switched: false, active: null })),
+      autoResumeEnabled: true,
+      planResume: vi.fn(async () => ({ at: Date.now() + 3_600_000, reason: "Waiting for the 5-hour limit to reset." })),
+      prepareResume: vi.fn(async () => ({ proceed: true as const })),
+      ...overrides,
+    };
+  }
+
+  async function pausedSession(sw = autoSwitch()) {
+    const ctx = setup();
+    ctx.manager.setAutoSwitch(sw);
+    ctx.manager.setPermissionResolverFactory(() => noopResolve);
+    const s = await newSession(ctx.manager, ctx.repoId);
+    ctx.manager.takeControl(s.id, "d1");
+    runTurn.mockResolvedValueOnce(limited);
+    await ctx.manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p1", text: "fix the bug", resolvePermission: noopResolve });
+    return { ...ctx, s, sw };
+  }
+
+  const texts = () => runTurn.mock.calls.map((c) => (c[0] as { prompt: string }).prompt);
+
+  it("schedules a resume instead of leaving the turn dead", async () => {
+    const { manager, s } = await pausedSession();
+    const session = manager.getSession(s.id);
+    expect(session.resume).toMatchObject({ reason: "Waiting for the 5-hour limit to reset.", attempt: 0 });
+    // Handled, not failed: the list shows the pause instead of an error badge.
+    expect(session.status).toBe("idle");
+    const notice = manager.events.read(s.id).find((e) => e.kind === "notice" && e.text.startsWith("Paused on a usage limit"));
+    expect(notice).toBeDefined();
+  });
+
+  it("passes the CLI's reset report and the session's model to the planner", async () => {
+    const sw = autoSwitch();
+    const { manager, repoId } = setup();
+    manager.setAutoSwitch(sw);
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+    runTurn.mockResolvedValueOnce(limited);
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p1", text: "hi", model: "opus", resolvePermission: noopResolve });
+    expect(sw.planResume).toHaveBeenCalledWith({ model: "opus", hit: limited.rateLimit, attempt: 0 });
+  });
+
+  it("re-sends the original prompt when the turn got nowhere", async () => {
+    const { manager, s } = await pausedSession();
+    runTurn.mockResolvedValueOnce(okTurn);
+    manager.resumeAction(s.id, "d1", "now");
+    await vi.waitFor(() => expect(runTurn).toHaveBeenCalledTimes(2));
+    expect(texts()).toEqual(["fix the bug", "fix the bug"]);
+    await vi.waitFor(() => expect(manager.getSession(s.id).resume).toBeNull());
+  });
+
+  /** Re-sending the prompt after work was done would read as "start over". */
+  it("asks to continue when the turn got partway", async () => {
+    const sw = autoSwitch();
+    const { manager, repoId } = setup();
+    manager.setAutoSwitch(sw);
+    manager.setPermissionResolverFactory(() => noopResolve);
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+    runTurn.mockImplementationOnce(async () => {
+      liveInstances.at(-1)!.opts.emit({ kind: "tool_result", turnId: "t1", toolUseId: "tu1", ok: true, summary: "edited" });
+      return limited;
+    });
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p1", text: "fix the bug", resolvePermission: noopResolve });
+
+    runTurn.mockResolvedValueOnce(okTurn);
+    manager.resumeAction(s.id, "d1", "now");
+    await vi.waitFor(() => expect(runTurn).toHaveBeenCalledTimes(2));
+    expect(texts()[1]).toBe(RESUME_CONTINUE_TEXT);
+  });
+
+  it("runs by itself when the reset comes", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    try {
+      const { manager, s } = await pausedSession();
+      runTurn.mockResolvedValueOnce(okTurn);
+      await vi.advanceTimersByTimeAsync(3_600_000 + 1_000);
+      await vi.waitFor(() => expect(runTurn).toHaveBeenCalledTimes(2));
+      expect(manager.getSession(s.id).resume).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** The readiness check found every account still spent: wait again rather than burn an attempt. */
+  it("waits again when no account can take it yet", async () => {
+    const later = Date.now() + 7_200_000;
+    const sw = autoSwitch({
+      prepareResume: vi.fn(async () => ({ proceed: false as const, plan: { at: later, reason: "Waiting for the weekly limit to reset." } })),
+    });
+    const { manager, s } = await pausedSession(sw);
+    await (manager as unknown as { runResume(id: string, force: boolean): Promise<void> }).runResume(s.id, false);
+    expect(runTurn).toHaveBeenCalledTimes(1);
+    expect(manager.getSession(s.id).resume).toMatchObject({ at: later, reason: "Waiting for the weekly limit to reset." });
+  });
+
+  it("counts attempts, and gives up after the cap", async () => {
+    const { manager, s } = await pausedSession();
+    for (let i = 1; i <= MAX_RESUME_ATTEMPTS; i++) {
+      runTurn.mockResolvedValueOnce(limited);
+      manager.resumeAction(s.id, "d1", "now");
+      await vi.waitFor(() => expect(runTurn).toHaveBeenCalledTimes(i + 1));
+      await vi.waitFor(() => expect(manager.getSession(s.id).status).not.toBe("busy"));
+    }
+    expect(manager.getSession(s.id).resume).toBeNull();
+    expect(manager.getSession(s.id).status).toBe("error");
+    const last = manager.events.read(s.id).filter((e) => e.kind === "notice").at(-1);
+    expect(last).toMatchObject({ text: expect.stringContaining("stopped retrying") });
+  });
+
+  it("holds prompts queued behind the paused turn until it resumes", async () => {
+    const { manager, repoId } = setup();
+    manager.setAutoSwitch(autoSwitch());
+    manager.setPermissionResolverFactory(() => noopResolve);
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+    let finish!: (r: RunTurnResult) => void;
+    runTurn.mockImplementationOnce(() => new Promise<RunTurnResult>((r) => (finish = r)));
+    const first = manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p1", text: "one", resolvePermission: noopResolve });
+    await vi.waitFor(() => expect(runTurn).toHaveBeenCalledTimes(1));
+    // Busy with no live turn to steer into: the fake is never `busy`, so this queues.
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p2", text: "two", resolvePermission: noopResolve });
+    finish(limited);
+    await first;
+    expect(runTurn).toHaveBeenCalledTimes(1);
+
+    runTurn.mockResolvedValue(okTurn);
+    manager.resumeAction(s.id, "d1", "now");
+    await vi.waitFor(() => expect(runTurn).toHaveBeenCalledTimes(3));
+    expect(texts()).toEqual(["one", "one", "two"]);
+  });
+
+  it("is superseded by a new message", async () => {
+    const { manager, s } = await pausedSession();
+    runTurn.mockResolvedValueOnce(okTurn);
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p2", text: "something else", resolvePermission: noopResolve });
+    expect(manager.getSession(s.id).resume).toBeNull();
+    expect(texts()).toEqual(["fix the bug", "something else"]);
+  });
+
+  it("can be cancelled, by anyone once nobody holds the lock", async () => {
+    const { manager, s } = await pausedSession();
+    expect(() => manager.resumeAction(s.id, "d2", "cancel")).toThrow(SessionError);
+    manager.releaseControl(s.id, "d1");
+    manager.resumeAction(s.id, "d2", "cancel");
+    expect(manager.getSession(s.id).resume).toBeNull();
+    expect(() => manager.resumeAction(s.id, "d2", "cancel")).toThrow(/Nothing is waiting/);
+  });
+
+  /** The timer firing just as someone presses "Continue now" must still run the turn once. */
+  it("runs once when two triggers race", async () => {
+    let release!: () => void;
+    const sw = autoSwitch({ prepareResume: vi.fn(() => new Promise<{ proceed: true }>((r) => (release = () => r({ proceed: true })))) });
+    const { manager, s } = await pausedSession(sw);
+    runTurn.mockResolvedValue(okTurn);
+    manager.resumeAction(s.id, "d1", "now");
+    manager.resumeAction(s.id, "d1", "now");
+    release();
+    await vi.waitFor(() => expect(manager.getSession(s.id).resume).toBeNull());
+    await vi.waitFor(() => expect(manager.getSession(s.id).status).toBe("idle"));
+    expect(runTurn).toHaveBeenCalledTimes(2);
+  });
+
+  it("lets queued prompts run once the resume is cancelled", async () => {
+    const { manager, repoId } = setup();
+    manager.setAutoSwitch(autoSwitch());
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+    let finish!: (r: RunTurnResult) => void;
+    runTurn.mockImplementationOnce(() => new Promise<RunTurnResult>((r) => (finish = r)));
+    const first = manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p1", text: "one", resolvePermission: noopResolve });
+    await vi.waitFor(() => expect(runTurn).toHaveBeenCalledTimes(1));
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p2", text: "two", resolvePermission: noopResolve });
+    finish(limited);
+    await first;
+
+    runTurn.mockResolvedValue(okTurn);
+    manager.resumeAction(s.id, "d1", "cancel");
+    await vi.waitFor(() => expect(runTurn).toHaveBeenCalledTimes(2));
+    expect(texts()).toEqual(["one", "two"]);
+  });
+
+  it("isn't scheduled with auto-resume off", async () => {
+    const { manager, s } = await pausedSession(autoSwitch({ autoResumeEnabled: false }));
+    expect(manager.getSession(s.id).resume).toBeNull();
+    expect(manager.getSession(s.id).status).toBe("error");
+  });
+
+  it("is dropped when the session is archived", async () => {
+    const { manager, s } = await pausedSession();
+    await manager.archiveSession(s.id);
+    expect(manager.getSession(s.id).resume).toBeNull();
+  });
+
+  /** A deploy mid-wait must not forget the wait. */
+  it("survives a daemon restart", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    try {
+      const { manager, config, db, s } = await pausedSession();
+      manager.closeAll();
+      const restarted = new SessionManager(config, db);
+      restarted.setAutoSwitch(autoSwitch());
+      restarted.setPermissionResolverFactory(() => noopResolve);
+      expect(restarted.getSession(s.id).resume).not.toBeNull();
+      restarted.restoreScheduledResumes();
+      runTurn.mockResolvedValueOnce(okTurn);
+      await vi.advanceTimersByTimeAsync(3_600_000 + 1_000);
+      await vi.waitFor(() => expect(runTurn).toHaveBeenCalledTimes(2));
+      expect(texts()[1]).toBe("fix the bug");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

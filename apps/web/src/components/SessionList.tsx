@@ -410,7 +410,7 @@ function Row({
           className="flex h-7 min-w-0 flex-1 items-center gap-2.5 text-left"
           title={branch ? `${session.repoName} · ${branch}` : session.repoName}
         >
-          <SessionGlyph status={session.status} pendingPermission={session.hasPendingPermission} />
+          <SessionGlyph status={session.status} pendingPermission={session.hasPendingPermission} paused={!!session.resume} />
           <span className="truncate text-[13px] text-(--renki-fg)">{session.title || session.repoName}</span>
           {/* In the bin, the deadline is the only thing worth the row's spare
               space — the branch is still there, which is the point, but it

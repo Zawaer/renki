@@ -3,11 +3,13 @@ import { dirname } from "node:path";
 import type { Account, AccountsResponse, RotationStatus, SwitchAccountResponse } from "@renki/protocol";
 import type { Config } from "../config.js";
 import { logger } from "../logger.js";
+import type { RateLimitHit } from "../claude/runner.js";
 import type { SessionManager } from "../sessions/manager.js";
 import { Cswap } from "./cswap.js";
+import { type ResumePlan, type ResumeReadiness, accountFreeAt, planResume } from "./resumePlan.js";
 import type { UsageReader } from "./usage.js";
 
-type PersistedRotationSettings = { enabled?: boolean; threshold?: number; preferredEmail?: string | null };
+type PersistedRotationSettings = { enabled?: boolean; threshold?: number; preferredEmail?: string | null; autoResume?: boolean };
 
 /**
  * Outcome of a hard rate-limit switch. `reason` is user-facing: it's shown in
@@ -47,6 +49,8 @@ export class AccountRotator {
   private threshold: number;
   /** Lower-cased email of the account to run as whenever it has headroom; null = no preference. */
   private preferredEmail: string | null = null;
+  /** Continue a rate-limited turn once a limit resets — see planResume/prepareResume. */
+  private autoResume = true;
 
   constructor(
     private readonly config: Config,
@@ -72,6 +76,7 @@ export class AccountRotator {
       if (typeof raw.enabled === "boolean") this.enabled = raw.enabled;
       if (typeof raw.threshold === "number" && raw.threshold >= 1 && raw.threshold <= 100) this.threshold = raw.threshold;
       if (typeof raw.preferredEmail === "string" || raw.preferredEmail === null) this.preferredEmail = raw.preferredEmail;
+      if (typeof raw.autoResume === "boolean") this.autoResume = raw.autoResume;
     } catch (err) {
       logger.warn("could not read rotation config", { path, err: String(err) });
     }
@@ -81,7 +86,12 @@ export class AccountRotator {
     const path = this.config.rotationConfigPath;
     try {
       mkdirSync(dirname(path), { recursive: true });
-      const body: PersistedRotationSettings = { enabled: this.enabled, threshold: this.threshold, preferredEmail: this.preferredEmail };
+      const body: PersistedRotationSettings = {
+        enabled: this.enabled,
+        threshold: this.threshold,
+        preferredEmail: this.preferredEmail,
+        autoResume: this.autoResume,
+      };
       writeFileSync(path, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
     } catch (err) {
       logger.warn("could not write rotation config", { path, err: String(err) });
@@ -89,12 +99,13 @@ export class AccountRotator {
   }
 
   /** Update the rotation policy from Settings. Persists so it survives a restart. */
-  updateSettings(patch: { enabled?: boolean; threshold?: number; preferredEmail?: string | null }): RotationStatus {
+  updateSettings(patch: { enabled?: boolean; threshold?: number; preferredEmail?: string | null; autoResume?: boolean }): RotationStatus {
     if (patch.enabled !== undefined) this.enabled = patch.enabled;
+    if (patch.autoResume !== undefined) this.autoResume = patch.autoResume;
     if (patch.preferredEmail !== undefined) this.preferredEmail = patch.preferredEmail?.toLowerCase() || null;
     if (patch.threshold !== undefined) this.threshold = patch.threshold;
     this.persistSettings();
-    logger.info("rotation settings updated", { enabled: this.enabled, threshold: this.threshold });
+    logger.info("rotation settings updated", { enabled: this.enabled, threshold: this.threshold, autoResume: this.autoResume });
     return this.status();
   }
 
@@ -178,6 +189,74 @@ export class AccountRotator {
       logger.warn("rate-limit switch failed", { err: String(err) });
       return { switched: false, active: null, reason: "Couldn't switch account." };
     }
+  }
+
+  get autoResumeEnabled(): boolean {
+    return this.autoResume;
+  }
+
+  /**
+   * When to come back to a turn that just stopped on a limit. Reads the same
+   * merged accounts as everything else here; if cswap can't be reached, plans
+   * from the CLI's own report alone rather than giving up on the resume.
+   */
+  async planResume(input: { model: string | null; hit: RateLimitHit | null; attempt: number }): Promise<ResumePlan> {
+    const accounts = await this.mergedAccounts()
+      .then((m) => m.accounts)
+      .catch((err) => {
+        logger.warn("resume planning could not read accounts", { err: String(err) });
+        return [] as Account[];
+      });
+    return planResume({ ...input, accounts, rotationEnabled: this.enabled, now: Date.now() });
+  }
+
+  /**
+   * A scheduled resume has come due: make sure the turn lands on an account
+   * that can take it.
+   *
+   * The active account being free is the common case, and needs nothing. When
+   * it's still spent and rotation is on, switch to one that isn't — the same
+   * rails as any other switch: never while another session is mid-turn. When
+   * every account is still spent (a reset time moved, or the usage we planned
+   * from was stale), hand back a fresh plan instead of burning an attempt.
+   *
+   * Without usage data (from the usage keys or cswap's own listing) there's
+   * nothing to check against, so just try: the turn failing again is what
+   * reschedules it.
+   */
+  async prepareResume(model: string | null): Promise<ResumeReadiness> {
+    let accounts: Account[];
+    try {
+      accounts = (await this.mergedAccounts()).accounts;
+    } catch (err) {
+      logger.warn("resume check could not read accounts; trying anyway", { err: String(err) });
+      return { proceed: true };
+    }
+    const now = Date.now();
+    const active = accounts.find((a) => a.active);
+    const activeFree = active ? accountFreeAt(active, model, now) : null;
+    if (!active || !activeFree || activeFree.at <= now) return { proceed: true };
+
+    if (this.enabled) {
+      const free = accounts.filter((a) => !a.active && accountFreeAt(a, model, now)?.at === now);
+      const target = free.find((a) => a.email.toLowerCase() === this.preferredEmail) ?? free[0];
+      if (target) {
+        if (this.anyBusy()) {
+          return { proceed: false, plan: { at: now + 60_000, reason: "Waiting for another session's turn to finish before switching account." } };
+        }
+        try {
+          await this.cswap.switchTo(target.number);
+          this.onSwitched?.();
+          this.lastSwitchAt = now;
+          logger.info("switched account for a scheduled resume", { to: target.email });
+          return { proceed: true, note: `Switched to ${target.email}.` };
+        } catch (err) {
+          logger.warn("switch for a scheduled resume failed; trying on the current account", { err: String(err) });
+          return { proceed: true };
+        }
+      }
+    }
+    return { proceed: false, plan: planResume({ accounts, rotationEnabled: this.enabled, model, hit: null, attempt: 0, now }) };
   }
 
   /**
@@ -265,6 +344,7 @@ export class AccountRotator {
       lastSwitchAt: this.lastSwitchAt,
       lastHoldReason: this.lastHoldReason,
       preferredEmail: this.preferredEmail,
+      autoResume: this.autoResume,
     };
   }
 

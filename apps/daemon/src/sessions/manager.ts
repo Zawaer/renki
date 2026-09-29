@@ -8,7 +8,8 @@ import type {
   SessionPurpose,
   SessionStatus,
 } from "@renki/protocol";
-import { desc, eq, ne } from "drizzle-orm";
+import { desc, eq, isNotNull, ne } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { mkdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Config } from "../config.js";
@@ -21,7 +22,8 @@ import { logger } from "../logger.js";
 import { findRepo } from "../repos.js";
 import { hasCapabilities, setCapabilities } from "../claude/capabilities.js";
 import { LiveClaudeSession } from "../claude/liveSession.js";
-import type { PermissionResolver } from "../claude/runner.js";
+import type { ResumePlan, ResumeReadiness } from "../accounts/resumePlan.js";
+import type { PermissionResolver, RateLimitHit, RunTurnResult } from "../claude/runner.js";
 import { derivePlaceholderTitle, generateSessionTitle } from "../claude/titler.js";
 import { SessionError } from "./errors.js";
 import { dueForPurge, purgeAtFor } from "./trash.js";
@@ -37,12 +39,51 @@ import { dueForPurge, purgeAtFor } from "./trash.js";
  * It is transport-agnostic: it knows nothing about WebSockets or HTTP. Step 2's
  * server is a thin adapter that calls these methods and forwards events.
  */
-/** Injected by the rotator so a rate-limited turn can switch account + retry. */
+/** Injected by the rotator so a rate-limited turn can switch account + retry, or wait for a reset. */
 export type RateLimitAutoSwitch = {
   autoRetryEnabled: boolean;
   /** `reason` explains a `switched: false` outcome; it goes straight into the transcript. */
   rateLimitSwitch: () => Promise<{ switched: boolean; active: number | null; reason?: string }>;
+  autoResumeEnabled: boolean;
+  planResume: (input: { model: string | null; hit: RateLimitHit | null; attempt: number }) => Promise<ResumePlan>;
+  prepareResume: (model: string | null) => Promise<ResumeReadiness>;
 };
+
+/**
+ * What a waiting resume will send, persisted as JSON in `sessions.resume_state`.
+ * The permission resolver can't be stored, and doesn't need to be: it's per
+ * session, so the one in effect when the resume runs is rebuilt then.
+ */
+type ResumeState = {
+  reason: string;
+  attempt: number;
+  prompt: {
+    deviceId: string;
+    text: string;
+    attachments?: Attachment[];
+    model?: string;
+    maxThinkingTokens?: number | null;
+    permissionMode?: PermissionMode;
+  };
+};
+
+/**
+ * Give up waiting after this many resumed attempts also hit a limit. Each wait
+ * is until an actual reset, so this is days of trying, not a tight loop — the
+ * cap is for a limit that genuinely never clears (a plan with no allowance for
+ * the model, say), which would otherwise be retried forever.
+ */
+export const MAX_RESUME_ATTEMPTS = 8;
+
+/**
+ * Sent instead of the original prompt when the turn got partway before the
+ * limit stopped it. The transcript already has the prompt and the work done
+ * so far; sending the prompt again would read as a new request to start over.
+ */
+export const RESUME_CONTINUE_TEXT = "Your usage limit has reset. Continue where you left off.";
+
+/** Timers are re-armed in steps no longer than this, well inside setTimeout's ~24.8-day ceiling. */
+const MAX_TIMER_STEP_MS = 6 * 60 * 60_000;
 
 /** Cap on how many prompts can pile up behind a busy session before we push back. */
 export const MAX_QUEUED_PROMPTS = 20;
@@ -60,6 +101,8 @@ export type SubmitPromptInput = {
   model?: string;
   maxThinkingTokens?: number | null;
   permissionMode?: PermissionMode;
+  /** Set on a prompt the daemon re-sent after a limit reset: how many waits came before it. */
+  resumeAttempt?: number;
 };
 
 export type SessionBroadcast = {
@@ -93,6 +136,14 @@ export class SessionManager {
    * agent finishing) must not flip such a session's status underneath it.
    */
   private readonly promptedTurns = new Set<string>();
+  /** sessionId -> the timer that will run its scheduled resume (see scheduleResume). */
+  private readonly resumeTimers = new Map<string, NodeJS.Timeout>();
+  /** Builds the permission resolver for a resumed turn — the broker's, wired in at startup. */
+  private resolverFor: ((sessionId: string) => PermissionResolver) | null = null;
+  /** Set by closeAll: a shutting-down daemon must not start resumed turns. */
+  private stopping = false;
+  /** Sessions inside runResume's readiness check, so the timer and "Continue now" can't both start the turn. */
+  private readonly resuming = new Set<string>();
 
   constructor(
     private readonly config: Config,
@@ -178,6 +229,11 @@ export class SessionManager {
   /** Wire the account rotator in (set once at startup; avoids a ctor cycle). */
   setAutoSwitch(autoSwitch: RateLimitAutoSwitch): void {
     this.autoSwitch = autoSwitch;
+  }
+
+  /** Wire in how resumed turns ask for permissions (set once at startup; the broker lives in the server layer). */
+  setPermissionResolverFactory(fn: (sessionId: string) => PermissionResolver): void {
+    this.resolverFor = fn;
   }
 
   /** Wire the fleet-wide WS broadcaster in (set once at startup; avoids a ctor cycle). */
@@ -300,6 +356,8 @@ export class SessionManager {
       composerModel: composer?.model ?? null,
       composerEffortKey: composer?.effortKey ?? null,
       composerPermissionMode: composer?.permissionMode ?? null,
+      resumeAt: null,
+      resumeState: null,
     };
     this.db.insert(sessions).values(row).run();
 
@@ -341,6 +399,7 @@ export class SessionManager {
 
   async archiveSession(id: string): Promise<Session> {
     this.closeLive(id, "archived");
+    this.clearResume(id);
     await this.cleanUpWorkdir(this.getSession(id)).catch((err) =>
       logger.warn("workdir cleanup failed during archive", { id, err: String(err) }),
     );
@@ -396,6 +455,7 @@ export class SessionManager {
     if (session.status === "trashed") return session;
 
     this.closeLive(id, "trashed");
+    this.clearResume(id);
     // Already archived means the workdir went at archive time.
     if (session.status !== "archived") {
       await this.cleanUpWorkdir(session).catch((err) =>
@@ -453,6 +513,7 @@ export class SessionManager {
   async purgeSession(id: string): Promise<void> {
     const session = this.getSession(id);
     this.closeLive(id, "deleted");
+    this.clearResume(id);
     // Archived and trashed sessions already had their worktree torn down.
     if (session.status !== "archived" && session.status !== "trashed") {
       await this.cleanUpWorkdir(session).catch((err) =>
@@ -470,6 +531,8 @@ export class SessionManager {
         titleSource: null,
         hasPendingPermission: false,
         worktreePath: "",
+        resumeAt: null,
+        resumeState: null,
         trashedAt: null,
         trashedFrom: null,
         updatedAt: Date.now(),
@@ -594,6 +657,14 @@ export class SessionManager {
     if (!input.text.trim() && !input.attachments?.length)
       throw new SessionError("invalid_request", "Prompt text or at least one attachment is required.");
 
+    // A new message takes over from a waiting resume: whatever it asks for is
+    // what the user wants next, and it hits the same limit (and schedules its
+    // own wait) if the limit is still in force.
+    if (session.resume) {
+      this.clearResume(input.sessionId);
+      this.events.append(input.sessionId, { kind: "notice", text: "Automatic resume cancelled — you sent a new message.", level: "info" });
+    }
+
     if (session.status === "busy") {
       const live = this.live.get(input.sessionId);
       if (live && live.busy && !live.isClosed) {
@@ -623,15 +694,25 @@ export class SessionManager {
       return;
     }
 
-    let next: SubmitPromptInput | undefined = input;
+    await this.runTurns(input);
+  }
+
+  /**
+   * Run a turn, then everything queued behind it. Stops early when a turn
+   * pauses on a usage limit: the prompts behind it would only hit the same
+   * limit, so they stay queued and run after the resumed turn instead.
+   */
+  private async runTurns(first: SubmitPromptInput): Promise<void> {
+    let next: SubmitPromptInput | undefined = first;
     while (next) {
-      await this.runOneTurn(next);
+      const { paused } = await this.runOneTurn(next);
+      if (paused) return;
       next = this.queues.get(next.sessionId)?.shift();
     }
   }
 
-  /** Runs exactly one Claude turn for an already-idle session. */
-  private async runOneTurn(input: SubmitPromptInput): Promise<void> {
+  /** Runs exactly one Claude turn for an already-idle session. `paused` means it stopped on a limit and a resume is scheduled. */
+  private async runOneTurn(input: SubmitPromptInput): Promise<{ paused: boolean }> {
     const session = this.getSession(input.sessionId);
 
     // Mark a model switch BEFORE the prompt it applies to, so the transcript
@@ -717,9 +798,14 @@ export class SessionManager {
     this.promptedTurns.delete(input.sessionId);
     // The session may have been archived/deleted while the turn ran (which
     // closed the process and failed the turn) — don't resurrect it as idle.
-    if (this.isRetired(input.sessionId)) return;
+    if (this.isRetired(input.sessionId)) return { paused: false };
 
-    const nextStatus: SessionStatus = result.ok ? "idle" : "error";
+    // Still limited after any account switch: wait for a reset instead of
+    // leaving the turn dead. Idle rather than error while it waits — the
+    // failure is handled, and the session list shows the pause instead.
+    const paused = !result.ok && result.rateLimited && !result.interrupted && (await this.scheduleResume(input, result));
+
+    const nextStatus: SessionStatus = result.ok || paused ? "idle" : "error";
     this.patch(input.sessionId, {
       status: nextStatus,
       claudeSessionId: resumeId,
@@ -741,6 +827,250 @@ export class SessionManager {
         this.tryUpgradeTitle(input.sessionId, session.worktreePath);
       }
     }
+    return { paused };
+  }
+
+  // ── Resuming after a usage limit ────────────────────────────────────────────
+
+  /**
+   * Arrange for a turn that stopped on a usage limit to be continued once a
+   * limit resets. Returns false when it won't be: auto-resume is off, or it has
+   * already been retried MAX_RESUME_ATTEMPTS times.
+   *
+   * The rotator decides when (see planResume): the earliest reset across every
+   * account when rotation is on, the active account's otherwise. At that
+   * moment it switches to whichever account is free (prepareResume), and the
+   * turn runs as if the user had sent it.
+   */
+  private async scheduleResume(input: SubmitPromptInput, result: RunTurnResult): Promise<boolean> {
+    const auto = this.autoSwitch;
+    if (!auto?.autoResumeEnabled) return false;
+    const attempt = input.resumeAttempt ?? 0;
+    if (attempt >= MAX_RESUME_ATTEMPTS) {
+      this.events.append(input.sessionId, {
+        kind: "notice",
+        text: `Still limited after ${attempt} automatic attempts, so Renki has stopped retrying this turn. Send a message to continue.`,
+        level: "warn",
+      });
+      return false;
+    }
+
+    let plan: ResumePlan;
+    try {
+      plan = await auto.planResume({ model: input.model ?? null, hit: result.rateLimit ?? null, attempt });
+    } catch (err) {
+      logger.warn("could not plan a resume", { sessionId: input.sessionId, err: String(err) });
+      return false;
+    }
+    if (this.isRetired(input.sessionId)) return false;
+
+    const continuation = this.turnMadeProgress(input.sessionId, input.promptId);
+    const state: ResumeState = {
+      reason: plan.reason,
+      attempt,
+      prompt: {
+        deviceId: input.deviceId,
+        text: continuation ? RESUME_CONTINUE_TEXT : input.text,
+        attachments: continuation ? undefined : input.attachments,
+        model: input.model,
+        maxThinkingTokens: input.maxThinkingTokens,
+        permissionMode: input.permissionMode,
+      },
+    };
+    this.patch(input.sessionId, { resumeAt: plan.at, resumeState: JSON.stringify(state) });
+    this.events.append(input.sessionId, {
+      kind: "notice",
+      text: `Paused on a usage limit. ${plan.reason} The turn will continue automatically then.`,
+      level: "warn",
+    });
+    this.armResume(input.sessionId, plan.at);
+    logger.info("resume scheduled", { sessionId: input.sessionId, at: new Date(plan.at).toISOString(), attempt, continuation });
+    return true;
+  }
+
+  /** Did the turn answering `promptId` get anywhere (text or tool calls) before it failed? */
+  private turnMadeProgress(sessionId: string, promptId: string): boolean {
+    let inTurn = false;
+    for (const e of this.events.read(sessionId)) {
+      if (e.kind === "prompt_submitted" && e.promptId === promptId) inTurn = true;
+      else if (!inTurn) continue;
+      else if (e.kind === "turn_result" && e.promptId === promptId) return false;
+      else if (e.kind === "tool_result") return true;
+      else if (e.kind === "assistant_block" && e.blockKind !== "thinking" && !e.parentToolUseId) return true;
+    }
+    return false;
+  }
+
+  private armResume(sessionId: string, at: number): void {
+    const existing = this.resumeTimers.get(sessionId);
+    if (existing) clearTimeout(existing);
+    const delay = Math.max(0, at - Date.now());
+    const timer = setTimeout(() => {
+      this.resumeTimers.delete(sessionId);
+      if (at - Date.now() > 1_000) this.armResume(sessionId, at);
+      else void this.runResume(sessionId, false);
+    }, Math.min(delay, MAX_TIMER_STEP_MS));
+    timer.unref();
+    this.resumeTimers.set(sessionId, timer);
+  }
+
+  /** Drop a session's scheduled resume, if it has one. */
+  private clearResume(sessionId: string): void {
+    const timer = this.resumeTimers.get(sessionId);
+    if (timer) clearTimeout(timer);
+    this.resumeTimers.delete(sessionId);
+    const row = this.db.select({ resumeAt: sessions.resumeAt }).from(sessions).where(eq(sessions.id, sessionId)).get();
+    if (row?.resumeAt != null) this.patch(sessionId, { resumeAt: null, resumeState: null });
+  }
+
+  private readResume(sessionId: string): { at: number; state: ResumeState } | null {
+    const row = this.db
+      .select({ resumeAt: sessions.resumeAt, resumeState: sessions.resumeState })
+      .from(sessions)
+      .where(eq(sessions.id, sessionId))
+      .get();
+    if (row?.resumeAt == null || !row.resumeState) return null;
+    try {
+      return { at: row.resumeAt, state: JSON.parse(row.resumeState) as ResumeState };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * A resume came due (or the user asked for it now). Check an account can
+   * take it — switching if one can and the active one can't — then run it as
+   * an ordinary turn, which reschedules itself if it hits a limit again.
+   *
+   * `force` is the "Continue now" button: the user may know something the
+   * usage numbers don't (extra usage just bought, say), so it tries even when
+   * every account still looks spent.
+   */
+  private async runResume(sessionId: string, force: boolean): Promise<void> {
+    if (this.stopping || this.resuming.has(sessionId)) return;
+    this.resuming.add(sessionId);
+    try {
+      await this.tryResume(sessionId, force);
+    } finally {
+      this.resuming.delete(sessionId);
+    }
+  }
+
+  private async tryResume(sessionId: string, force: boolean): Promise<void> {
+    const pending = this.readResume(sessionId);
+    if (!pending) return;
+    if (this.isRetired(sessionId)) return this.clearResume(sessionId);
+
+    // Something is running (a background agent's follow-up, say): give it a minute.
+    if (this.getSession(sessionId).status === "busy") return this.reschedule(sessionId, pending.state, Date.now() + 60_000, null);
+
+    const { state } = pending;
+    let ready: ResumeReadiness = { proceed: true };
+    try {
+      ready = (await this.autoSwitch?.prepareResume(state.prompt.model ?? null)) ?? { proceed: true };
+    } catch (err) {
+      logger.warn("resume readiness check failed; trying anyway", { sessionId, err: String(err) });
+    }
+    // The world may have moved during that await: a new prompt, a cancel, an archive.
+    const current = this.readResume(sessionId);
+    if (!current || current.at !== pending.at || this.isRetired(sessionId)) return;
+    if (this.getSession(sessionId).status === "busy") return this.reschedule(sessionId, state, Date.now() + 60_000, null);
+
+    if (!ready.proceed && !force) return this.reschedule(sessionId, state, ready.plan.at, ready.plan.reason);
+
+    this.clearResume(sessionId);
+    if (ready.proceed && ready.note) this.events.append(sessionId, { kind: "notice", text: ready.note, level: "info" });
+    this.events.append(sessionId, {
+      kind: "notice",
+      text: force ? "Continuing now, as requested." : "Usage limit reset — continuing.",
+      level: "info",
+    });
+    logger.info("running scheduled resume", { sessionId, attempt: state.attempt + 1, force });
+
+    const resolvePermission = this.resolverFor?.(sessionId);
+    if (!resolvePermission) {
+      logger.error("no permission resolver wired; cannot run a resumed turn", { sessionId });
+      return;
+    }
+    // Hand the turn off without awaiting it: it can run for many minutes, and
+    // the `resuming` guard only needs to cover the check above — once the
+    // session is busy, a second trigger finds nothing waiting.
+    void this.runResumedTurn(sessionId, state, resolvePermission);
+  }
+
+  private async runResumedTurn(sessionId: string, state: ResumeState, resolvePermission: PermissionResolver): Promise<void> {
+    try {
+      await this.runTurns({
+        sessionId,
+        deviceId: state.prompt.deviceId,
+        promptId: `resume_${randomUUID()}`,
+        text: state.prompt.text,
+        attachments: state.prompt.attachments,
+        model: state.prompt.model,
+        maxThinkingTokens: state.prompt.maxThinkingTokens,
+        permissionMode: state.prompt.permissionMode,
+        resolvePermission,
+        resumeAttempt: state.attempt + 1,
+      });
+    } catch (err) {
+      logger.warn("resumed turn failed to start", { sessionId, err: String(err) });
+      this.events.append(sessionId, { kind: "error", message: err instanceof Error ? err.message : String(err), code: null });
+    }
+  }
+
+  /** Move a waiting resume to a new time, and say so when the reason changed. */
+  private reschedule(sessionId: string, state: ResumeState, at: number, reason: string | null): void {
+    const next: ResumeState = reason ? { ...state, reason } : state;
+    this.patch(sessionId, { resumeAt: at, resumeState: JSON.stringify(next) });
+    if (reason && reason !== state.reason) {
+      this.events.append(sessionId, { kind: "notice", text: `Still at the limit. ${reason}`, level: "warn" });
+    }
+    this.armResume(sessionId, at);
+  }
+
+  /**
+   * Re-arm every resume that was waiting when the daemon last stopped. Call
+   * once at boot, after the rotator and permission broker are wired in. One
+   * that came due while the daemon was down runs shortly after startup, a few
+   * seconds apart so a batch of them doesn't all spawn at once.
+   */
+  restoreScheduledResumes(): void {
+    const rows = this.db.select({ id: sessions.id, resumeAt: sessions.resumeAt }).from(sessions).where(isNotNull(sessions.resumeAt)).all();
+    let stagger = 0;
+    for (const row of rows) {
+      if (row.resumeAt == null) continue;
+      if (this.isRetired(row.id)) {
+        this.clearResume(row.id);
+        continue;
+      }
+      const at = row.resumeAt > Date.now() ? row.resumeAt : Date.now() + 10_000 + stagger++ * 5_000;
+      this.armResume(row.id, at);
+    }
+    if (rows.length > 0) logger.info("restored scheduled resumes", { count: rows.length });
+  }
+
+  /**
+   * The paused banner's buttons. Allowed for the controller, or for anyone
+   * while nobody holds the lock: a resume is usually acted on hours later,
+   * after the idle sweep has released it, and making someone take control
+   * just to cancel would be ceremony.
+   */
+  resumeAction(id: string, deviceId: string, action: "cancel" | "now"): void {
+    const session = this.getSession(id);
+    if (session.controller && session.controller !== deviceId)
+      throw new SessionError("not_controller", "Another device is in control of this session.");
+    if (!session.resume) throw new SessionError("no_resume", "Nothing is waiting to resume.");
+    if (action === "cancel") {
+      this.clearResume(id);
+      this.events.append(id, { kind: "notice", text: "Automatic resume cancelled.", level: "info" });
+      logger.info("resume cancelled", { id, deviceId });
+      // Prompts held behind the paused turn were waiting on it, not on the
+      // resume — with it gone, they're next.
+      this.drainQueue(id);
+      return;
+    }
+    if (session.status === "busy") throw new SessionError("session_busy", "A turn is already running.");
+    void this.runResume(id, true);
   }
 
   /** Raw title bookkeeping columns — internal only, not part of the public `Session` type. */
@@ -841,6 +1171,10 @@ export class SessionManager {
 
   /** Tear down every live process (daemon shutdown / CLI exit). Idle sessions resume transparently on their next prompt. */
   closeAll(reason = "The daemon restarted while this turn was running — send the prompt again."): void {
+    // Scheduled resumes stay on their rows and are re-armed at the next boot.
+    this.stopping = true;
+    for (const timer of this.resumeTimers.values()) clearTimeout(timer);
+    this.resumeTimers.clear();
     for (const id of [...this.live.keys()]) this.closeLive(id, reason);
     if (this.reaper) {
       clearInterval(this.reaper);
@@ -1032,5 +1366,17 @@ function rowToSession(row: typeof sessions.$inferSelect, retentionMs: number): S
     },
     purpose: row.purpose as SessionPurpose,
     mergeMeta: row.mergeMeta ? (JSON.parse(row.mergeMeta) as MergeConflictMeta) : null,
+    resume: resumeOf(row),
   };
+}
+
+/** The public view of a waiting resume — when and why, not the prompt it will send. */
+function resumeOf(row: typeof sessions.$inferSelect): Session["resume"] {
+  if (row.resumeAt == null || !row.resumeState) return null;
+  try {
+    const state = JSON.parse(row.resumeState) as ResumeState;
+    return { at: row.resumeAt, reason: state.reason, attempt: state.attempt };
+  } catch {
+    return null;
+  }
 }

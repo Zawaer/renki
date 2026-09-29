@@ -418,7 +418,7 @@ describe("AccountRotator settings persistence", () => {
     expect(status.threshold).toBe(75);
 
     const persisted = JSON.parse(readFileSync(config.rotationConfigPath, "utf8"));
-    expect(persisted).toEqual({ enabled: true, threshold: 75, preferredEmail: null });
+    expect(persisted).toEqual({ enabled: true, threshold: 75, preferredEmail: null, autoResume: true });
 
     // A fresh instance pointed at the same path picks up the persisted override.
     const reloaded = new AccountRotator(config, fakeManager(false), fakeUsage());
@@ -509,5 +509,80 @@ describe("preferred account", () => {
     expect(switchTo).not.toHaveBeenCalled();
     expect(switchAny).not.toHaveBeenCalled();
     expect(rotator.updateSettings({}).lastHoldReason).toBe("all accounts at limit");
+  });
+});
+
+describe("AccountRotator.prepareResume", () => {
+  const future = new Date(Date.now() + 3_600_000).toISOString();
+  const spent = { fiveHour: { pct: 100, resetsAt: future }, sevenDay: { pct: 50, resetsAt: null }, limits: [], extra: null };
+  const roomy = { fiveHour: { pct: 20, resetsAt: null }, sevenDay: { pct: 20, resetsAt: null }, limits: [], extra: null };
+
+  /** prepareResume only trusts real usage numbers, so connect every account's. */
+  function connected(rotator: AccountRotator, accounts: Account[]) {
+    (rotator as any).usage = {
+      configured: true,
+      usageByEmail: async () => new Map(accounts.map((a) => [a.email.toLowerCase(), a.usage])),
+      connectedEmails: () => accounts.map((a) => a.email.toLowerCase()),
+      errorFor: () => null,
+    };
+  }
+
+  it("proceeds when the active account is free again", async () => {
+    const accounts = [account({ number: 1, active: true, usage: roomy })];
+    const { rotator, cswap } = setup({ accounts, activeAccountNumber: 1 });
+    connected(rotator, accounts);
+    expect(await rotator.prepareResume("opus")).toEqual({ proceed: true });
+    expect(cswap.switchTo).not.toHaveBeenCalled();
+  });
+
+  it("switches to a free account when the active one is still spent", async () => {
+    const accounts = [
+      account({ number: 1, email: "a@example.com", active: true, usage: spent }),
+      account({ number: 2, email: "b@example.com", usage: roomy }),
+    ];
+    const { rotator, cswap } = setup({ accounts, activeAccountNumber: 1 });
+    connected(rotator, accounts);
+    const onSwitched = vi.fn();
+    rotator.setOnSwitched(onSwitched);
+    expect(await rotator.prepareResume("opus")).toEqual({ proceed: true, note: "Switched to b@example.com." });
+    expect(cswap.switchTo).toHaveBeenCalledWith(2);
+    expect(onSwitched).toHaveBeenCalled();
+  });
+
+  it("never switches while another session is mid-turn", async () => {
+    const accounts = [
+      account({ number: 1, active: true, usage: spent }),
+      account({ number: 2, email: "b@example.com", usage: roomy }),
+    ];
+    const { rotator, cswap } = setup({ accounts, activeAccountNumber: 1, busy: true });
+    connected(rotator, accounts);
+    const ready = await rotator.prepareResume("opus");
+    expect(ready.proceed).toBe(false);
+    expect(cswap.switchTo).not.toHaveBeenCalled();
+  });
+
+  it("hands back a new plan when every account is still spent", async () => {
+    const accounts = [
+      account({ number: 1, email: "a@example.com", active: true, usage: spent }),
+      account({ number: 2, email: "b@example.com", usage: spent }),
+    ];
+    const { rotator } = setup({ accounts, activeAccountNumber: 1 });
+    connected(rotator, accounts);
+    const ready = await rotator.prepareResume("opus");
+    expect(ready).toMatchObject({ proceed: false, plan: { reason: expect.stringContaining("5-hour limit") } });
+  });
+
+  it("just tries when there's no usage to check", async () => {
+    const { rotator } = setup({ accounts: [account({ active: true, usageStatus: "unavailable", usage: null })], activeAccountNumber: 1 });
+    expect(await rotator.prepareResume("opus")).toEqual({ proceed: true });
+  });
+
+  it("persists the auto-resume setting", () => {
+    const { rotator, config } = setup({ accounts: [] });
+    expect(rotator.autoResumeEnabled).toBe(true);
+    rotator.updateSettings({ autoResume: false });
+    expect(JSON.parse(readFileSync(config.rotationConfigPath, "utf8")).autoResume).toBe(false);
+    const reloaded = new AccountRotator(config, fakeManager(false), fakeUsage());
+    expect(reloaded.autoResumeEnabled).toBe(false);
   });
 });

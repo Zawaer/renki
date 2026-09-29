@@ -1,4 +1,4 @@
-import { activeSessions, displayBranch, formatPurgeCountdown, groupByRepo, trashedSessions } from "@renki/client-core";
+import { activeSessions, displayBranch, formatPurgeCountdown, formatResumeAt, groupByRepo, trashedSessions } from "@renki/client-core";
 import type { Repo, Session } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
@@ -263,13 +263,22 @@ function Row({
     if (trimmed && trimmed !== session.title) onRename(trimmed);
   }
 
+  /** Waiting on a usage limit to reset — see Session.resume. */
+  const paused = !!session.resume && session.status !== "busy";
+
   return (
     <>
       <TouchableOpacity style={styles.row} activeOpacity={0.7} onPress={onSelect}>
         <View
           style={[
             styles.dot,
-            { backgroundColor: session.hasPendingPermission ? colors.danger : statusColor[session.status] ?? colors.faint },
+            {
+              backgroundColor: session.hasPendingPermission
+                ? colors.danger
+                : paused
+                  ? colors.busy
+                  : (statusColor[session.status] ?? colors.faint),
+            },
           ]}
         />
         <View style={styles.rowText}>
@@ -281,7 +290,9 @@ function Row({
               ? countdown
               : session.hasPendingPermission
                 ? "Needs your approval"
-                : STATUS_LABEL[session.status] ?? session.status}
+                : paused
+                  ? `Paused · ${formatResumeAt(session.resume!.at)}`
+                  : (STATUS_LABEL[session.status] ?? session.status)}
             {branch ? ` · ${branch}` : ""}
           </Text>
         </View>

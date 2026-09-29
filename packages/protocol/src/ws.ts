@@ -105,6 +105,18 @@ export const ClientMessage = z.discriminatedUnion("type", [
     mode: z.enum(["default", "acceptEdits", "plan", "auto"]),
   }),
 
+  /**
+   * Act on a session's scheduled resume (see Session.resume): "cancel" drops
+   * it, "now" tries straight away instead of waiting for the reset. Honored
+   * from the controller, or from anyone while nobody holds the lock — a resume
+   * is often acted on hours later, after the lock has been auto-released.
+   */
+  z.object({
+    type: z.literal("resume_action"),
+    sessionId: z.string(),
+    action: z.enum(["cancel", "now"]),
+  }),
+
   z.object({ type: z.literal("ping") }),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessage>;
@@ -178,5 +190,7 @@ export const WsErrorCode = {
   QueueFull: "queue_full",
   /** `interrupt` sent while no turn was running for this session. */
   NotBusy: "not_busy",
+  /** `resume_action` sent for a session with no resume scheduled. */
+  NoResume: "no_resume",
 } as const;
 export type WsErrorCode = (typeof WsErrorCode)[keyof typeof WsErrorCode];

@@ -28,8 +28,11 @@ import {
   type TimelineItem,
   type TodoItemView,
   type TurnView,
+  formatResumeAt,
+  modelFullName,
+  modelMenuLabel,
 } from "@renki/client-core";
-import type { CapabilitiesResponse } from "@renki/protocol";
+import type { CapabilitiesResponse, SessionResume } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { Fragment, useEffect, useRef, useState } from "react";
 import {
@@ -180,6 +183,22 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const status = conv.status ?? "idle";
   const canSend = isController && status !== "busy";
 
+  /** A turn paused on a usage limit — only on the session snapshot, not in the event log. */
+  const [resume, setResume] = useState<SessionResume | null>(null);
+  useEffect(() => {
+    setResume(null);
+    return realtime.onSessionChanged((s) => {
+      if (s.id === sessionId) setResume(s.resume ?? null);
+    });
+  }, [realtime, sessionId]);
+  // Re-render every 30s so "today 15:31" turns into "shortly" on time.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!resume) return;
+    const t = setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => clearInterval(t);
+  }, [resume]);
+
   function onTimelineScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
     const stick = contentSize.height - contentOffset.y - layoutMeasurement.height <= 24;
@@ -263,7 +282,8 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
     setText(`/${name} `);
   }
 
-  const modelLabel = capabilities.models.find((m) => m.value === model)?.displayName ?? "Default";
+  const selectedModel = capabilities.models.find((m) => m.value === model);
+  const modelLabel = selectedModel ? modelFullName(selectedModel) : "Default";
 
   return (
     <KeyboardAvoidingView
@@ -354,6 +374,30 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
           styles={styles}
         />
       ))}
+
+      {resume && status !== "busy" && (
+        <View style={styles.resumeWrap}>
+          <Ionicons name="pause-circle" size={20} color={colors.busy} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.resumeTitle}>Paused · {formatResumeAt(resume.at)}</Text>
+            <Text style={styles.resumeReason} numberOfLines={2}>
+              {resume.reason}
+              {resume.attempt > 0 ? ` Attempt ${resume.attempt + 1}.` : ""}
+            </Text>
+          </View>
+          {/* Anyone may act once the lock has lapsed — see the daemon's resumeAction. */}
+          {(isController || !conv.controller) && (
+            <View style={styles.resumeActions}>
+              <TouchableOpacity onPress={() => realtime.resumeAction(sessionId, "cancel")} hitSlop={8}>
+                <Text style={styles.resumeCancel}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.resumeNowBtn} onPress={() => realtime.resumeAction(sessionId, "now")}>
+                <Text style={styles.resumeNowText}>Now</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      )}
 
       {/* Queued prompts — kept out of the timeline so a fast follow-up can't
           render ahead of the turn it's replying to; shown here as "up next". */}
@@ -471,7 +515,10 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
         visible={modelSheetOpen}
         onClose={() => setModelSheetOpen(false)}
         title="Select model"
-        options={capabilities.models.map((m) => ({ key: m.value, label: m.displayName, description: m.description }))}
+        options={capabilities.models.map((m) => {
+          const { title, subtitle } = modelMenuLabel(m);
+          return { key: m.value, label: title, description: subtitle };
+        })}
         selectedKey={model}
         onSelect={setModel}
         colors={colors}
@@ -1467,6 +1514,23 @@ const makeStyles = (colors: ThemeColors) =>
       gap: 2,
     },
     queueLabel: { color: colors.faint, fontSize: 11 },
+    resumeWrap: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      backgroundColor: colors.panel,
+      borderRadius: radius.md,
+      marginHorizontal: 14,
+      marginBottom: 8,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+    },
+    resumeTitle: { color: colors.text, fontSize: 13, fontWeight: "600" },
+    resumeReason: { color: colors.dim, fontSize: 12, marginTop: 1 },
+    resumeActions: { flexDirection: "row", alignItems: "center", gap: 12 },
+    resumeCancel: { color: colors.dim, fontSize: 13, fontWeight: "600" },
+    resumeNowBtn: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 6 },
+    resumeNowText: { color: colors.accentFg, fontSize: 13, fontWeight: "700" },
     queueItem: { color: colors.faint, fontSize: 12 },
     allowBtn: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: 20, paddingVertical: 10 },
     allowText: { color: colors.accentFg, fontWeight: "700" },

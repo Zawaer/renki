@@ -205,6 +205,11 @@ export class RealtimeClient {
     this.send({ type: "interrupt", sessionId });
   }
 
+  /** Cancel a session's scheduled resume, or run it now instead of waiting for the reset. */
+  resumeAction(sessionId: string, action: "cancel" | "now"): void {
+    this.send({ type: "resume_action", sessionId, action });
+  }
+
   /**
    * Push a live permission-mode change to the turn currently running for
    * this session, if any (a no-op daemon-side when idle — the next

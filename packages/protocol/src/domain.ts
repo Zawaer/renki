@@ -95,6 +95,22 @@ export const SessionComposerPatch = z.object({
 export type SessionComposerPatch = z.infer<typeof SessionComposerPatch>;
 
 /**
+ * A turn that stopped on a usage limit and will be continued automatically
+ * once a limit resets — see the daemon's ResumeScheduler. Lives on the session
+ * rather than only in the transcript so every device's session list can show
+ * "paused until 14:05" live, and so it survives a daemon restart.
+ */
+export const SessionResume = z.object({
+  /** When the daemon will try again (epoch ms). */
+  at: z.number().int(),
+  /** What it's waiting for, as a sentence — "Waiting for the 5-hour limit on you@example.com to reset." */
+  reason: z.string(),
+  /** How many automatic attempts have already failed on a limit (0 for the first wait). */
+  attempt: z.number().int().nonnegative(),
+});
+export type SessionResume = z.infer<typeof SessionResume>;
+
+/**
  * A single Claude Code session, pinned to a dedicated git worktree so parallel
  * sessions on the same repo never collide on file state. A session can also
  * be created with no repo at all (`repoId`/`baseBranch`/`branch` all null) —
@@ -145,6 +161,8 @@ export const Session = z.object({
   /** Optional/absent means "normal" — kept optional so older events/fixtures without it still parse. */
   purpose: SessionPurpose.optional(),
   mergeMeta: MergeConflictMeta.nullable().optional(),
+  /** Set while a rate-limited turn is waiting to be continued; absent/null otherwise. */
+  resume: SessionResume.nullable().optional(),
 });
 export type Session = z.infer<typeof Session>;
 

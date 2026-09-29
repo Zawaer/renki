@@ -117,6 +117,13 @@ export const RotationStatus = z.object({
    * chatting elsewhere.
    */
   preferredEmail: z.string().nullable().default(null),
+  /**
+   * When a turn stops on a usage limit and no account can take it right now,
+   * wait for the earliest limit to reset and continue the turn then. With
+   * rotation on, that's the earliest reset across every account; with it off,
+   * only the active one's.
+   */
+  autoResume: z.boolean().default(true),
 });
 export type RotationStatus = z.infer<typeof RotationStatus>;
 
@@ -150,6 +157,7 @@ export const UpdateRotationRequest = z.object({
   threshold: z.number().min(1).max(100).optional(),
   /** An account's email to prefer, or null to clear the preference. Omit to leave it alone. */
   preferredEmail: z.string().nullable().optional(),
+  autoResume: z.boolean().optional(),
 });
 export type UpdateRotationRequest = z.infer<typeof UpdateRotationRequest>;
 

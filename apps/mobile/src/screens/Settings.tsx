@@ -405,6 +405,7 @@ function AccountsSection({ styles }: { styles: Styles }) {
       )}
 
       {data && data.accounts.length > 1 && <RotationSettings rotation={data.rotation} onChanged={refresh} colors={colors} styles={styles} />}
+      {data && <ResumeSettings rotation={data.rotation} onChanged={refresh} styles={styles} />}
 
       <View style={styles.divider}>
         <TouchableOpacity onPress={() => setConnecting(true)}>
@@ -486,6 +487,35 @@ function RotationSettings({
         )}
       </View>
       {rotation.enabled && rotation.lastHoldReason && <Text style={styles.faintNote}>holding: {rotation.lastHoldReason}</Text>}
+    </View>
+  );
+}
+
+/** Continue a turn that stopped on a usage limit once a limit resets — the daemon's ResumeScheduler. */
+function ResumeSettings({ rotation, onChanged, styles }: { rotation: RotationStatus; onChanged: () => void; styles: Styles }) {
+  const { rest } = useClient();
+  const [busy, setBusy] = useState(false);
+
+  async function toggle(next: boolean) {
+    setBusy(true);
+    try {
+      await rest.updateRotation({ autoResume: next });
+    } finally {
+      setBusy(false);
+      onChanged();
+    }
+  }
+
+  return (
+    <View style={styles.rotation}>
+      <View style={styles.row}>
+        <Switch value={rotation.autoResume} disabled={busy} onValueChange={toggle} />
+        <Text style={[styles.muted, styles.flex1]}>
+          {rotation.enabled
+            ? "When every account is out of usage, continue the turn as soon as any one resets"
+            : "When a turn hits a usage limit, continue it automatically once the limit resets"}
+        </Text>
+      </View>
     </View>
   );
 }

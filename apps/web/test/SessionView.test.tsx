@@ -1,6 +1,7 @@
 import { applyEvents, initialConversation, RealtimeClient, RestClient, THINKING_VERBS } from "@renki/client-core";
 import type { CapabilitiesResponse, SessionEvent } from "@renki/protocol";
 import { fireEvent, screen } from "@testing-library/react";
+import { flushSync } from "react-dom";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { SessionView } from "../src/components/SessionView.js";
 import { ClientContext } from "../src/lib/client.js";
@@ -465,5 +466,50 @@ describe("long content", () => {
     // Nothing is hidden when the layout can't be measured: the code is there.
     expect(screen.getByText(/line one/)).toBeInTheDocument();
     expect(screen.getByText("Plain paragraph.")).toBeInTheDocument();
+  });
+});
+
+describe("SessionView resume banner", () => {
+  const session = (resume: unknown) => ({
+    id: "s1",
+    repoId: null,
+    repoName: "No repo",
+    baseBranch: null,
+    branch: null,
+    worktreePath: "/tmp/s1",
+    status: "idle",
+    hasPendingPermission: false,
+    controller: null,
+    claudeSessionId: null,
+    title: null,
+    createdAt: 0,
+    updatedAt: 0,
+    lastActivityAt: 0,
+    resume,
+  });
+
+  /** Pushes a session snapshot the way the daemon's `session` message would. */
+  function push(realtime: RealtimeClient, s: unknown) {
+    flushSync(() => (realtime as unknown as { onMessage(raw: string): void }).onMessage(JSON.stringify({ type: "session", session: s })));
+  }
+
+  it("shows when a paused turn will continue, and sends the buttons' actions", () => {
+    const { realtime } = renderSession("s1", [ev("s1", { kind: "status_changed", status: "idle" })]);
+    const sent: unknown[] = [];
+    realtime.resumeAction = (sid, action) => void sent.push({ sid, action });
+
+    push(realtime, session({ at: Date.now() + 3_600_000, reason: "Waiting for the 5-hour limit to reset.", attempt: 0 }));
+
+    expect(screen.getByText(/Paused on a usage limit · Continues/)).toBeInTheDocument();
+    expect(screen.getByText("Waiting for the 5-hour limit to reset.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Continue now" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(sent).toEqual([
+      { sid: "s1", action: "now" },
+      { sid: "s1", action: "cancel" },
+    ]);
+
+    push(realtime, session(null));
+    expect(screen.queryByText(/Paused on a usage limit/)).not.toBeInTheDocument();
   });
 });

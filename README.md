@@ -91,6 +91,9 @@ never touching tokens itself). See [SETUP.md](./SETUP.md).
   failure, switches which Claude account the CLI uses next via
   [`cswap`](https://github.com/realiti4/claude-swap) — with a preferred account
   it returns to as soon as that one has headroom again.
+- **Picks up where a usage limit stopped it** — a turn that hits a limit is
+  paused, then continued automatically once the earliest limit resets, on
+  whichever account freed up.
 - **A trash, not a cliff** — deleting a session keeps its transcript
   recoverable for 30 days.
 - **Preview what a session builds** — a dev server started inside a session is

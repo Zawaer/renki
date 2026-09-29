@@ -34,7 +34,9 @@ async function main() {
   notifier.attach();
   const usageReader = new UsageReader(config.usageConfigPath, config.usageBaseUrl);
   const accounts = new AccountRotator(config, manager, usageReader);
-  manager.setAutoSwitch(accounts); // lets a rate-limited turn switch + retry
+  manager.setAutoSwitch(accounts); // lets a rate-limited turn switch + retry, or wait for a reset
+  manager.setPermissionResolverFactory((sessionId) => broker.resolverFor(sessionId));
+  manager.restoreScheduledResumes();
   accounts.setOnSwitched(() => manager.recycleIdleLiveSessions()); // idle processes may cache the old account's creds
   accounts.start();
 

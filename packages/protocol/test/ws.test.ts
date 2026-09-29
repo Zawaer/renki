@@ -8,7 +8,7 @@ describe("ClientMessage: submit_prompt", () => {
   });
 
   it("validates with a model override and no thinking budget", () => {
-    const msg = { type: "submit_prompt", sessionId: "s1", promptId: "p1", text: "hi", model: "claude-opus-4-8" };
+    const msg = { type: "submit_prompt", sessionId: "s1", promptId: "p1", text: "hi", model: "claude-opus-5-5" };
     expect(ClientMessage.safeParse(msg).success).toBe(true);
   });
 

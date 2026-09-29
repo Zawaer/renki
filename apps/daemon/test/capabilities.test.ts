@@ -19,7 +19,7 @@ describe("claude/capabilities cache", () => {
 
   it("setCapabilities makes hasCapabilities true and getCapabilities return exactly what was set", () => {
     const caps = {
-      models: [{ value: "claude-opus-4-8", displayName: "Opus", description: "Most capable" }],
+      models: [{ value: "claude-opus-5-5", displayName: "Opus", description: "Most capable" }],
       commands: [{ name: "compact", description: "Summarize the conversation", argumentHint: "" }],
     };
     setCapabilities(caps);
@@ -31,9 +31,9 @@ describe("claude/capabilities cache", () => {
 
 describe("withExtraModels", () => {
   const sdk = [
-    { value: "default", displayName: "Default (recommended)", description: "Sonnet 5" },
-    { value: "claude-sonnet-5", displayName: "Sonnet", description: "" },
-    { value: "claude-opus-5", displayName: "Opus", description: "" },
+    { value: "default", displayName: "Default (recommended)", description: "Sonnet 5.5" },
+    { value: "claude-sonnet-5-5", displayName: "Sonnet", description: "" },
+    { value: "claude-opus-5-5", displayName: "Opus", description: "" },
     { value: "claude-haiku-4-5-20251001", displayName: "Haiku", description: "" },
   ];
 

@@ -285,7 +285,7 @@ describe("SessionView", () => {
       ev(sessionId, { kind: "control_changed", controller: "d1", controllerName: "Web" }),
     ];
     const capabilities = {
-      models: [{ value: "claude-opus-4-8", displayName: "Opus", description: "Most capable" }],
+      models: [{ value: "claude-opus-5-5", displayName: "Opus", description: "Most capable" }],
       commands: [],
     };
 
@@ -308,7 +308,7 @@ describe("SessionView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     expect(calls).toEqual([
-      { sid: sessionId, text: "hello", opts: { model: "claude-opus-4-8", maxThinkingTokens: 32_000, permissionMode: "default" } },
+      { sid: sessionId, text: "hello", opts: { model: "claude-opus-5-5", maxThinkingTokens: 32_000, permissionMode: "default" } },
     ]);
   });
 
@@ -327,7 +327,7 @@ describe("SessionView", () => {
       ev(sessionId, { kind: "control_changed", controller: "d1", controllerName: "Web" }),
     ];
     const capabilities = {
-      models: [{ value: "claude-opus-4-8", displayName: "Opus", description: "Most capable" }],
+      models: [{ value: "claude-opus-5-5", displayName: "Opus", description: "Most capable" }],
       commands: [],
     };
 

@@ -40,7 +40,7 @@ describe("Home", () => {
         daily,
         monthly: [],
         byRepo: [],
-        byModel: [day("claude-sonnet-5", 4)],
+        byModel: [day("claude-sonnet-5-5", 4)],
         byClientType: [],
         lifetime: { key: "lifetime", costUsd: 2, inputTokens: 40_000_000, outputTokens: 4_300_000, durationMs: 240_000, turnCount: 4, okCount: 4 },
         firstTurnAt: Date.now(),
@@ -57,7 +57,7 @@ describe("Home", () => {
     expect(screen.getByLabelText("Activity over the last six months")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Models"));
-    expect(screen.getByText("claude-sonnet-5")).toBeInTheDocument();
+    expect(screen.getByText("claude-sonnet-5-5")).toBeInTheDocument();
   });
 
   it("explains itself when there is no activity yet", async () => {

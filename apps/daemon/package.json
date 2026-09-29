@@ -16,10 +16,10 @@
     "dev": "tsx watch src/index.ts"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.217",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.285",
+    "@fastify/websocket": "^11.0.2",
     "@renki/client-core": "workspace:*",
     "@renki/protocol": "workspace:*",
-    "@fastify/websocket": "^11.0.2",
     "better-sqlite3": "^11.7.0",
     "drizzle-orm": "^0.38.3",
     "fastify": "^5.2.0",

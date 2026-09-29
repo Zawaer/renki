@@ -160,21 +160,21 @@ describe("statsSummary", () => {
         ...overrides,
       });
 
-    turn({ model: "claude-opus-4-8", clientType: "web" });
-    turn({ model: "claude-opus-4-8", clientType: "phone" });
+    turn({ model: "claude-opus-5-5", clientType: "web" });
+    turn({ model: "claude-opus-5-5", clientType: "phone" });
     turn({ model: null, clientType: "vscode" }); // ran the SDK's own default
     turn({}); // pre-feature event: neither field present at all
 
     const stats = log.statsSummary();
 
     const models = Object.fromEntries(stats.byModel.map((b) => [b.key, b.turnCount]));
-    expect(models).toEqual({ "claude-opus-4-8": 2, default: 2 });
+    expect(models).toEqual({ "claude-opus-5-5": 2, default: 2 });
 
     const clients = Object.fromEntries(stats.byClientType.map((b) => [b.key, b.turnCount]));
     expect(clients).toEqual({ web: 1, phone: 1, vscode: 1, unknown: 1 });
 
     // Sorted descending by cost, same as byRepo.
-    expect(stats.byModel[0]?.key).toBe("claude-opus-4-8");
+    expect(stats.byModel[0]?.key).toBe("claude-opus-5-5");
     expect(stats.byModel[0]?.costUsd).toBeCloseTo(2);
   });
 });

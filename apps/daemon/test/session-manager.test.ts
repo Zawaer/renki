@@ -152,9 +152,9 @@ describe("session composer", () => {
     const s = await manager.createSession({
       repoId,
       baseBranch: "main",
-      composer: { model: "claude-opus-5", effortKey: "high", permissionMode: "acceptEdits" },
+      composer: { model: "claude-opus-5-5", effortKey: "high", permissionMode: "acceptEdits" },
     });
-    expect(s.composer).toEqual({ model: "claude-opus-5", effortKey: "high", permissionMode: "acceptEdits" });
+    expect(s.composer).toEqual({ model: "claude-opus-5-5", effortKey: "high", permissionMode: "acceptEdits" });
     // And it's persisted, not just echoed back from the insert.
     expect(manager.getSession(s.id).composer).toEqual(s.composer);
   });
@@ -170,16 +170,16 @@ describe("session composer", () => {
     const s = await manager.createSession({
       repoId,
       baseBranch: "main",
-      composer: { model: "claude-opus-5", effortKey: "high", permissionMode: "acceptEdits" },
+      composer: { model: "claude-opus-5-5", effortKey: "high", permissionMode: "acceptEdits" },
     });
 
     const after = manager.setSessionComposer(s.id, { effortKey: "low" });
-    expect(after.composer).toEqual({ model: "claude-opus-5", effortKey: "low", permissionMode: "acceptEdits" });
+    expect(after.composer).toEqual({ model: "claude-opus-5-5", effortKey: "low", permissionMode: "acceptEdits" });
   });
 
   it("clears a field when explicitly set to null", async () => {
     const { manager, repoId } = setup();
-    const s = await manager.createSession({ repoId, baseBranch: "main", composer: { model: "claude-opus-5" } });
+    const s = await manager.createSession({ repoId, baseBranch: "main", composer: { model: "claude-opus-5-5" } });
     expect(manager.setSessionComposer(s.id, { model: null }).composer?.model).toBeNull();
   });
 
@@ -195,8 +195,8 @@ describe("session composer", () => {
       onSessionRemoved: () => {},
     });
 
-    manager.setSessionComposer(s.id, { model: "claude-sonnet-5" });
-    expect(seen).toEqual(["claude-sonnet-5"]);
+    manager.setSessionComposer(s.id, { model: "claude-sonnet-5-5" });
+    expect(seen).toEqual(["claude-sonnet-5-5"]);
   });
 
   it("is a no-op that still reads back cleanly when given an empty patch", async () => {
@@ -695,7 +695,7 @@ describe("model changes", () => {
     const s = await newSession(manager, repoId);
     manager.takeControl(s.id, "d1");
 
-    await prompt(manager, s.id, "p1", "claude-opus-5");
+    await prompt(manager, s.id, "p1", "claude-opus-5-5");
 
     expect(kinds(manager, s.id)).not.toContain("model_changed");
   });
@@ -704,13 +704,13 @@ describe("model changes", () => {
     const { manager, repoId } = setup();
     const s = await newSession(manager, repoId);
     manager.takeControl(s.id, "d1");
-    await prompt(manager, s.id, "p1", "claude-opus-5");
+    await prompt(manager, s.id, "p1", "claude-opus-5-5");
 
     await prompt(manager, s.id, "p2", "claude-fable-5-1");
 
     const log = manager.events.read(s.id);
     const marker = log.find((e) => e.kind === "model_changed");
-    expect(marker).toMatchObject({ model: "claude-fable-5-1", previousModel: "claude-opus-5" });
+    expect(marker).toMatchObject({ model: "claude-fable-5-1", previousModel: "claude-opus-5-5" });
     // The reader has to see WHY the next reply sounds different before reading it.
     const secondPrompt = log.findIndex((e) => e.kind === "prompt_submitted" && e.promptId === "p2");
     expect(log.indexOf(marker!)).toBeLessThan(secondPrompt);
@@ -720,9 +720,9 @@ describe("model changes", () => {
     const { manager, repoId } = setup();
     const s = await newSession(manager, repoId);
     manager.takeControl(s.id, "d1");
-    await prompt(manager, s.id, "p1", "claude-opus-5");
-    await prompt(manager, s.id, "p2", "claude-opus-5");
-    await prompt(manager, s.id, "p3", "claude-opus-5");
+    await prompt(manager, s.id, "p1", "claude-opus-5-5");
+    await prompt(manager, s.id, "p2", "claude-opus-5-5");
+    await prompt(manager, s.id, "p3", "claude-opus-5-5");
 
     expect(kinds(manager, s.id).filter((k) => k === "model_changed")).toEqual([]);
   });
@@ -732,13 +732,13 @@ describe("model changes", () => {
     const { manager, repoId } = setup();
     const s = await newSession(manager, repoId);
     manager.takeControl(s.id, "d1");
-    await prompt(manager, s.id, "p1", "claude-opus-5");
+    await prompt(manager, s.id, "p1", "claude-opus-5-5");
 
     await prompt(manager, s.id, "p2");
 
     expect(manager.events.read(s.id).find((e) => e.kind === "model_changed")).toMatchObject({
       model: null,
-      previousModel: "claude-opus-5",
+      previousModel: "claude-opus-5-5",
     });
   });
 
@@ -746,13 +746,13 @@ describe("model changes", () => {
     const { manager, repoId } = setup();
     const s = await newSession(manager, repoId);
     manager.takeControl(s.id, "d1");
-    await prompt(manager, s.id, "p1", "claude-opus-5");
+    await prompt(manager, s.id, "p1", "claude-opus-5-5");
     // Whatever the process knew is gone; only the session row remembers.
     // (recycleIdleLiveSessions is the real path this happens by — an account
     // switch, or the idle reaper closing a quiet process.)
     manager.recycleIdleLiveSessions("test recycle");
 
-    await prompt(manager, s.id, "p2", "claude-opus-5");
+    await prompt(manager, s.id, "p2", "claude-opus-5-5");
 
     expect(kinds(manager, s.id)).not.toContain("model_changed");
   });

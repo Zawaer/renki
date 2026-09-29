@@ -22,11 +22,11 @@ describe("device composer defaults", () => {
   it("round-trips each field, including a custom model id that's in no list", () => {
     rememberDeviceDefaults({ permissionMode: "acceptEdits" });
     rememberDeviceDefaults({ effortKey: "high" });
-    rememberDeviceDefaults({ model: "claude-opus-4-8" });
+    rememberDeviceDefaults({ model: "claude-opus-5-5" });
     expect(loadDeviceDefaults()).toEqual({
       permissionMode: "acceptEdits",
       effortKey: "high",
-      model: "claude-opus-4-8",
+      model: "claude-opus-5-5",
     });
   });
 

@@ -199,11 +199,11 @@ describe("REST: sessions CRUD", () => {
         body: JSON.stringify({
           repoId,
           baseBranch: "main",
-          composer: { model: "claude-opus-5", effortKey: "high", permissionMode: "acceptEdits" },
+          composer: { model: "claude-opus-5-5", effortKey: "high", permissionMode: "acceptEdits" },
         }),
       })
     ).json();
-    expect(session.composer).toEqual({ model: "claude-opus-5", effortKey: "high", permissionMode: "acceptEdits" });
+    expect(session.composer).toEqual({ model: "claude-opus-5-5", effortKey: "high", permissionMode: "acceptEdits" });
 
     const res = await authed(`/sessions/${session.id}/composer`, {
       method: "POST",
@@ -213,7 +213,7 @@ describe("REST: sessions CRUD", () => {
     expect(res.status).toBe(200);
     // Only the field that was sent moved.
     expect((await res.json()).session.composer).toEqual({
-      model: "claude-opus-5",
+      model: "claude-opus-5-5",
       effortKey: "low",
       permissionMode: "acceptEdits",
     });

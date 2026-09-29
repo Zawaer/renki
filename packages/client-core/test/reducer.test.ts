@@ -321,11 +321,11 @@ describe("per-event folding", () => {
     const s = fold(stream(
       { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "first" },
       { kind: "turn_result", turnId: "t_1", promptId: "p1", ok: true, costUsd: 0.01, durationMs: 10, errorMessage: null, inputTokens: 1, outputTokens: 1 },
-      { kind: "model_changed", model: "claude-fable-5-1", previousModel: "claude-opus-5" },
+      { kind: "model_changed", model: "claude-fable-5-1", previousModel: "claude-opus-5-5" },
       { kind: "prompt_submitted", promptId: "p2", deviceId: "d1", text: "second" },
     ));
     expect(s.timeline.map((it) => it.type)).toEqual(["prompt", "turn", "model_change", "prompt"]);
-    expect(s.timeline[2]).toEqual({ type: "model_change", model: "claude-fable-5-1", previousModel: "claude-opus-5" });
+    expect(s.timeline[2]).toEqual({ type: "model_change", model: "claude-fable-5-1", previousModel: "claude-opus-5-5" });
     // What the session is running NOW — separate from any device's picker.
     expect(s.model).toBe("claude-fable-5-1");
   });
@@ -333,9 +333,9 @@ describe("per-event folding", () => {
   it("tracks the model from a turn's own result, for transcripts recorded before model_changed existed", () => {
     const s = fold(stream(
       { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "go" },
-      { kind: "turn_result", turnId: "t_1", promptId: "p1", ok: true, costUsd: 0.01, durationMs: 10, errorMessage: null, inputTokens: 1, outputTokens: 1, model: "claude-opus-5" },
+      { kind: "turn_result", turnId: "t_1", promptId: "p1", ok: true, costUsd: 0.01, durationMs: 10, errorMessage: null, inputTokens: 1, outputTokens: 1, model: "claude-opus-5-5" },
     ));
-    expect(s.model).toBe("claude-opus-5");
+    expect(s.model).toBe("claude-opus-5-5");
     expect(s.timeline.some((it) => it.type === "model_change")).toBe(false);
   });
 

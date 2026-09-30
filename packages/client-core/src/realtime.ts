@@ -172,6 +172,11 @@ export class RealtimeClient {
     if (!this.stopped) this.open();
   }
 
+  /** Try to connect again right now, skipping any backoff wait — a "Try again" button. */
+  reconnect(): void {
+    if (!this.stopped) this.reconnectNow();
+  }
+
   /**
    * Make sure the connection is really alive — call when the app comes back
    * to the foreground, the tab becomes visible, or the network returns. A

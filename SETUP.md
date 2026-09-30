@@ -759,7 +759,8 @@ they open, and **refuses to build** rather than fall back to the debug key: a
 phone with the release build installed rejects a debug-signed one as an
 update. It also clears the Android project's cached native-module paths when
 the repo has moved, which otherwise fails the build with "No variants
-exist". Pass `--device <id>` when more than one adb device is connected.
+exist". It installs on the one phone connected over adb (USB or wireless),
+ignoring emulators; with several connected, choose with `ANDROID_SERIAL=<serial>`.
 
 Keep the keystore **outside** the repo and backed up: `expo prebuild --clean`
 deletes everything under `apps/mobile/android/`, and losing the key means no

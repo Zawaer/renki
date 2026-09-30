@@ -2,8 +2,8 @@
 # Build the phone app for release and install it on the connected device,
 # always signed with your release key.
 #
-#   pnpm android:release            # build + install on the one adb device
-#   pnpm android:release --device X # pick a device when several are attached
+#   pnpm android:release                      # build + install on the connected phone
+#   ANDROID_SERIAL=<serial> pnpm android:release  # choose, when several are attached
 #
 # Why a script: without the four RENKI_ANDROID_* variables the release build
 # quietly signs with the debug key, and a phone that has the release build
@@ -51,5 +51,26 @@ fi
 # Firebase config is what lets the phone receive pushes (see SETUP.md).
 [[ -f "$mobile/google-services.json" ]] || echo "! No apps/mobile/google-services.json — this build won't receive push notifications."
 
-cd "$repo"
-exec pnpm --filter @renki/mobile exec expo run:android --variant release --no-bundler "$@"
+# The phone to install on. Emulators are left out: `expo run:android` once
+# quietly installed onto a running emulator instead of the phone plugged in.
+serial="${ANDROID_SERIAL:-}"
+if [[ -z "$serial" ]]; then
+  phones=()
+  while read -r id state; do
+    [[ "$state" == "device" && "$id" != emulator-* ]] && phones+=("$id")
+  done < <(adb devices | tail -n +2)
+  if [[ ${#phones[@]} -eq 0 ]]; then
+    fail "No phone connected over adb (emulators are ignored; set ANDROID_SERIAL to install on one)."
+  elif [[ ${#phones[@]} -gt 1 ]]; then
+    fail "More than one phone connected (${phones[*]}); choose with ANDROID_SERIAL=<serial>."
+  fi
+  serial="${phones[0]}"
+fi
+echo "✓ Installing on $(adb -s "$serial" shell getprop ro.product.model | tr -d '\r') ($serial)"
+
+# Gradle's release build bundles the JavaScript itself.
+(cd "$mobile/android" && ./gradlew app:assembleRelease -x lint -x test --build-cache)
+apk="$mobile/android/app/build/outputs/apk/release/app-release.apk"
+adb -s "$serial" install -r "$apk"
+adb -s "$serial" shell monkey -p com.zawaer.renki -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1 || true
+echo "✓ Installed and opened on $serial"

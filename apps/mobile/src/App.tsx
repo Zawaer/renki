@@ -9,6 +9,7 @@ import { loadHosts, saveHosts } from "./lib/hosts";
 import { loadPalette } from "./lib/composerPrefs";
 import { migrateLegacyStorage } from "./lib/storageMigration";
 import { ClientProvider } from "./lib/client";
+import { ConnectionBanner } from "./components/ConnectionBanner";
 import { Screen } from "./components/Motion";
 import { answerFromNotification, registerForPush } from "./lib/push";
 import { Setup } from "./screens/Setup";
@@ -266,9 +267,12 @@ function Main({
   }, [depth]);
 
   return (
-    <Screen key={screenKey} direction={screenKey === "list" && lastDepth.current === 0 ? "push" : direction}>
-      {renderScreen()}
-    </Screen>
+    <>
+      <Screen key={screenKey} direction={screenKey === "list" && lastDepth.current === 0 ? "push" : direction}>
+        {renderScreen()}
+      </Screen>
+      <ConnectionBanner />
+    </>
   );
 
   function renderScreen() {

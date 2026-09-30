@@ -4,6 +4,7 @@ import { BrowserRouter, MemoryRouter, Route, Routes, useLocation, useNavigate } 
 import { ClientProvider, useClient, useStoreValue } from "./lib/client.js";
 import { type AppConfig, getOrCreateDeviceId } from "./lib/config.js";
 import { loadHosts, saveHosts } from "./lib/hosts.js";
+import { ConnectionBanner } from "./components/ConnectionBanner.js";
 import { HostSwitcher } from "./components/HostSwitcher.js";
 import { RenkiMark } from "./components/ui.js";
 import { AccountsBar } from "./components/AccountsBar.js";
@@ -350,6 +351,7 @@ function MainColumn({
   const location = useLocation();
   return (
     <main className="flex min-h-0 flex-col overflow-hidden bg-(--renki-bg)">
+      <ConnectionBanner />
       {lastError && (
         <div className="flex items-center gap-1.5 border-b border-(--renki-danger)/30 bg-(--renki-danger)/10 px-4 py-1.5 text-xs text-(--renki-danger)">
           <span className="codicon codicon-error" />

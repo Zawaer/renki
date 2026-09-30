@@ -24,7 +24,18 @@ function hostKey(baseUrl: string): string {
 
 export function fileConversationCache(baseUrl: string): ConversationCache | undefined {
   if (!FileSystem.cacheDirectory) return undefined;
-  const dir = `${FileSystem.cacheDirectory}conversations/v${CONVERSATION_CACHE_VERSION}/${hostKey(baseUrl)}/`;
+  const root = `${FileSystem.cacheDirectory}conversations/`;
+  const dir = `${root}v${CONVERSATION_CACHE_VERSION}/${hostKey(baseUrl)}/`;
+  // Copies from an older version are never read again; free the space.
+  void FileSystem.readDirectoryAsync(root)
+    .then((names) =>
+      Promise.all(
+        names
+          .filter((n) => n !== `v${CONVERSATION_CACHE_VERSION}`)
+          .map((n) => FileSystem.deleteAsync(`${root}${n}`, { idempotent: true })),
+      ),
+    )
+    .catch(() => {});
   const fileOf = (sessionId: string) => `${dir}${encodeURIComponent(sessionId)}.json`;
   let ready: Promise<void> | null = null;
   const ensureDir = () =>

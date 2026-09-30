@@ -189,7 +189,9 @@ export function restoreBlockGaps(state: ConversationState): ConversationState {
  * keys the cache by this, so bump it whenever applyEvent changes what it
  * produces — otherwise a cached copy would keep the old folding forever.
  */
-export const CONVERSATION_CACHE_VERSION = 1;
+// 2: copies cached by v1 could hold a gap — a catch-up that failed to fold
+// was skipped while later live events still applied — so they're dropped.
+export const CONVERSATION_CACHE_VERSION = 2;
 
 export function initialConversation(sessionId: string): ConversationState {
   return {

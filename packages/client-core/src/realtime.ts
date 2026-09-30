@@ -50,6 +50,18 @@ export type RealtimeOptions = {
   cache?: ConversationCache;
 };
 
+/** How often to ping the daemon; each answer (or any other message) proves the socket is alive. */
+const PING_EVERY_MS = 15_000;
+/**
+ * Silence longer than this means the socket is dead even if it still says
+ * it's open. On a phone that's routine: backgrounding, a switch from Wi-Fi
+ * to mobile data or a tailnet reconnect can drop the connection without the
+ * app ever hearing about it, and it then sits showing whatever it last got.
+ */
+const DEAD_AFTER_MS = 40_000;
+/** How long checkConnection waits for any answer before reconnecting. */
+const CHECK_TIMEOUT_MS = 5_000;
+
 /** How long after a replay lands to write it to the cache — long enough to coalesce a reconnect's burst. */
 const CACHE_SAVE_DELAY_MS = 1_500;
 
@@ -79,6 +91,9 @@ export class RealtimeClient {
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private checkTimer: ReturnType<typeof setTimeout> | null = null;
+  /** When the current socket last delivered anything. */
+  private lastMessageAt = 0;
   private stopped = false;
 
   constructor(private readonly opts: RealtimeOptions) {}
@@ -106,16 +121,28 @@ export class RealtimeClient {
     this.ws = ws;
 
     ws.onopen = () => {
+      if (this.ws !== ws) return;
       this.reconnectAttempts = 0;
+      this.lastMessageAt = Date.now();
       this.status.set("open");
       // Resubscribe everything we were watching, resuming from each lastSeq.
       for (const sessionId of this.watched) if (!this.hydrating.has(sessionId)) this.sendSubscribe(sessionId);
       this.startPing();
     };
 
-    ws.onmessage = (ev) => this.onMessage(typeof ev.data === "string" ? ev.data : String(ev.data));
+    ws.onmessage = (ev) => {
+      if (this.ws !== ws) return;
+      this.lastMessageAt = Date.now();
+      if (this.checkTimer) {
+        clearTimeout(this.checkTimer);
+        this.checkTimer = null;
+      }
+      this.onMessage(typeof ev.data === "string" ? ev.data : String(ev.data));
+    };
 
     ws.onclose = () => {
+      // A socket we already gave up on (see reconnectNow) closing late.
+      if (this.ws !== ws) return;
       this.clearTimers();
       this.status.set("closed");
       if (!this.stopped) this.scheduleReconnect();
@@ -124,6 +151,45 @@ export class RealtimeClient {
     ws.onerror = () => {
       // onclose will follow and drive reconnection; nothing to do here.
     };
+  }
+
+  /**
+   * Abandon the current socket and connect again straight away. The old one
+   * may be half-dead and never report closing, so it's detached rather than
+   * waited on; the resubscribe on open asks for everything since each
+   * session's lastSeq, so nothing that happened meanwhile is missed.
+   */
+  private reconnectNow(): void {
+    const dead = this.ws;
+    this.ws = null;
+    this.clearTimers();
+    try {
+      dead?.close();
+    } catch {
+      // Already gone.
+    }
+    this.reconnectAttempts = 0;
+    if (!this.stopped) this.open();
+  }
+
+  /**
+   * Make sure the connection is really alive — call when the app comes back
+   * to the foreground, the tab becomes visible, or the network returns. A
+   * ping that gets no answer within a few seconds means a dead socket, and
+   * it reconnects rather than leaving the screen frozen on old content.
+   */
+  checkConnection(): void {
+    if (this.stopped) return;
+    if (!this.isOpen()) {
+      if (this.status.get() !== "connecting") this.reconnectNow();
+      return;
+    }
+    if (this.checkTimer) return;
+    this.send({ type: "ping" });
+    this.checkTimer = setTimeout(() => {
+      this.checkTimer = null;
+      this.reconnectNow();
+    }, CHECK_TIMEOUT_MS);
   }
 
   private scheduleReconnect(): void {
@@ -395,14 +461,19 @@ export class RealtimeClient {
   }
 
   private startPing(): void {
-    this.pingTimer = setInterval(() => this.send({ type: "ping" }), 25_000);
+    this.pingTimer = setInterval(() => {
+      if (Date.now() - this.lastMessageAt > DEAD_AFTER_MS) return this.reconnectNow();
+      this.send({ type: "ping" });
+    }, PING_EVERY_MS);
   }
 
   private clearTimers(): void {
     if (this.pingTimer) clearInterval(this.pingTimer);
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.checkTimer) clearTimeout(this.checkTimer);
     this.pingTimer = null;
     this.reconnectTimer = null;
+    this.checkTimer = null;
   }
 
   private clearPendingUnwatches(): void {

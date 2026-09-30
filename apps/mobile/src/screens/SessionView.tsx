@@ -190,6 +190,8 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const isController = conv.controller === config.deviceId;
   const status = conv.status ?? "idle";
   const canSend = isController && status !== "busy";
+  /** Not "open" means what's on screen may be behind; say so rather than pass it off as live. */
+  const connection = useStoreValue(realtime.status);
 
   /** A turn paused on a usage limit — only on the session snapshot, not in the event log. */
   const [resume, setResume] = useState<SessionResume | null>(null);
@@ -322,7 +324,15 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
             {conv.branch ? `:${conv.branch}` : ""}
           </Text>
           <Text style={styles.headerSub}>
-            <View style={[styles.dot, { backgroundColor: statusColor[status] ?? colors.faint }]} /> {status}
+            {connection !== "open" && conv.status !== null ? (
+              <>
+                <View style={[styles.dot, { backgroundColor: colors.faint }]} /> reconnecting…
+              </>
+            ) : (
+              <>
+                <View style={[styles.dot, { backgroundColor: statusColor[status] ?? colors.faint }]} /> {status}
+              </>
+            )}
             {conv.controller ? (isController ? " · you're in control" : ` · ${conv.controllerName ?? "other"}`) : " · unlocked"}
           </Text>
         </View>

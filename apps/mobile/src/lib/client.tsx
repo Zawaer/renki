@@ -34,6 +34,9 @@ export function ClientProvider({ config, children }: { config: AppConfig; childr
     // The app may never come back from the background, so keep what's loaded.
     const sub = AppState.addEventListener("change", (state) => {
       if (state !== "active") bundle.realtime.flushCache();
+      // Back in the foreground: Android may have quietly killed the socket
+      // while we were away, which left chats frozen on what they last got.
+      else bundle.realtime.checkConnection();
     });
     return () => {
       sub.remove();

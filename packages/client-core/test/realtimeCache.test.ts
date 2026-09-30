@@ -123,3 +123,43 @@ describe("RealtimeClient conversation cache", () => {
     expect(subscribes(socket)).toEqual([{ type: "subscribe", sessionId: "s1", lastSeq: -1, lazyAttachments: true }]);
   });
 });
+
+describe("RealtimeClient dead-connection recovery", () => {
+  it("reconnects when the socket goes silent, and asks for what it missed", async () => {
+    vi.useFakeTimers();
+    const { client, socket } = connect();
+    client.watch("s1");
+    socket.receive({ type: "replay", sessionId: "s1", events: history, upToSeq: 1 });
+
+    // Pings go out, nothing comes back: a half-dead socket that never reports closing.
+    await vi.advanceTimersByTimeAsync(60_000);
+    const fresh = FakeSocket.last!;
+    expect(fresh).not.toBe(socket);
+    fresh.open();
+    expect(subscribes(fresh)).toEqual([{ type: "subscribe", sessionId: "s1", lastSeq: 1, lazyAttachments: true }]);
+  });
+
+  it("keeps a socket that keeps answering", async () => {
+    vi.useFakeTimers();
+    const { socket } = connect();
+    for (let i = 0; i < 6; i++) {
+      await vi.advanceTimersByTimeAsync(15_000);
+      socket.receive({ type: "pong" });
+    }
+    expect(FakeSocket.last).toBe(socket);
+  });
+
+  it("checks the connection on demand — coming back to the app — and reconnects if nothing answers", async () => {
+    vi.useFakeTimers();
+    const { client, socket } = connect();
+    client.checkConnection();
+    socket.receive({ type: "pong" });
+    await vi.advanceTimersByTimeAsync(6_000);
+    expect(FakeSocket.last).toBe(socket);
+
+    client.checkConnection();
+    expect(socket.sent.at(-1)).toEqual({ type: "ping" });
+    await vi.advanceTimersByTimeAsync(6_000);
+    expect(FakeSocket.last).not.toBe(socket);
+  });
+});

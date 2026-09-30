@@ -34,7 +34,20 @@ export function ClientProvider({ config, children }: { config: AppConfig; childr
 
   useEffect(() => {
     bundle.realtime.connect();
-    return () => bundle.realtime.close();
+    // A laptop waking from sleep, or a tab left in the background, can hold a
+    // socket that's quietly dead; check it the moment it matters again.
+    const check = () => {
+      if (document.visibilityState === "visible") bundle.realtime.checkConnection();
+    };
+    document.addEventListener("visibilitychange", check);
+    window.addEventListener("online", check);
+    window.addEventListener("focus", check);
+    return () => {
+      document.removeEventListener("visibilitychange", check);
+      window.removeEventListener("online", check);
+      window.removeEventListener("focus", check);
+      bundle.realtime.close();
+    };
   }, [bundle]);
 
   return <ClientContext.Provider value={bundle}>{children}</ClientContext.Provider>;

@@ -141,6 +141,8 @@ export function SessionView({ sessionId }: { sessionId: string }) {
 
   const isController = conv.controller === config.deviceId;
   const status = conv.status ?? "idle";
+  /** Not "open" means what's on screen may be behind the daemon. */
+  const connection = useStoreValue(realtime.status);
 
   /**
    * How many rows the timeline had when it first showed content: rows past
@@ -176,6 +178,11 @@ export function SessionView({ sessionId }: { sessionId: string }) {
               status={status}
               pendingPermission={conv.pending.length > 0}
             />
+            {connection !== "open" && conv.status !== null && (
+              <span className="renki-fade inline-flex items-center gap-1 text-xs text-(--renki-fg-muted)" title="The live connection dropped; catching up">
+                <span className="codicon codicon-loading codicon-modifier-spin text-[11px]" /> Reconnecting…
+              </span>
+            )}
           </div>
           {displayBranch(conv.branch) && (
             <div className="mt-0.5 flex items-center gap-1.5 text-xs text-(--renki-fg-muted)">

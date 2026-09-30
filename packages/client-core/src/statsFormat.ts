@@ -68,9 +68,20 @@ export function lastNDays(n: number, buckets: StatsBucket[]): StatsBucket[] {
   return out;
 }
 
-/** Turns a `byModel` bucket key (a raw model id, or "default" for no per-turn override) into a display label. */
+/**
+ * Turns a `byModel` bucket key (a raw model id, or "default" for no per-turn
+ * override) into a display label: "claude-opus-5-5[1m]" → "Opus 5.5 (1M)",
+ * "sonnet" → "Sonnet". Anything else is shown as it is.
+ */
 export function formatModelLabel(key: string): string {
-  return key === "default" ? "Default" : key;
+  if (key === "default") return "Default";
+  const long = /\[1m\]$/i.test(key);
+  const base = key.replace(/\[1m\]$/i, "");
+  const m = /^(?:claude-)?(opus|sonnet|haiku|fable)(?:-(\d+))?(?:-(\d{1,2}))?(?:-\d{8})?$/i.exec(base);
+  if (!m) return key;
+  const family = m[1]!.charAt(0).toUpperCase() + m[1]!.slice(1).toLowerCase();
+  const version = m[2] ? (m[3] ? `${m[2]}.${m[3]}` : m[2]) : "";
+  return `${family}${version ? ` ${version}` : ""}${long ? " (1M)" : ""}`;
 }
 
 /** Turns a `byClientType` bucket key (a device-id prefix, or "unknown" for pre-feature turns) into a display label. */

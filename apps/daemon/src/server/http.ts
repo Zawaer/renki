@@ -36,6 +36,7 @@ import { findRepo, scanRepos } from "../repos.js";
 import { SessionError } from "../sessions/errors.js";
 import type { SessionManager } from "../sessions/manager.js";
 import { getTailscaleStatus } from "../tailscale.js";
+import type { InsightsCache } from "../stats/insights.js";
 import { tokenMatches } from "./auth.js";
 import { Connection } from "./connection.js";
 import type { PermissionBroker } from "./permissions.js";
@@ -49,6 +50,8 @@ export type ServerDeps = {
   usage: UsageReader;
   /** Optional so tests can build a server without one; the test-push route then says so. */
   notifier?: Notifier;
+  /** The Stats page's insights; optional for the same reason. */
+  insights?: InsightsCache;
 };
 
 /**
@@ -191,6 +194,11 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
 
   // Cost/token/wait-time analytics across every session, for the Stats page.
   app.get("/stats", async () => manager.events.statsSummary());
+  // The rest of the Stats page. `tz` is the viewer's IANA zone, so its days and hours are theirs.
+  app.get<{ Querystring: { tz?: string } }>("/stats/insights", async (req, reply) => {
+    if (!deps.insights) return reply.code(503).send({ error: "insights unavailable" });
+    return deps.insights.get(req.query.tz);
+  });
 
   // Empty until the first turn runs this process's lifetime — only obtainable
   // from a live SDK Query object (see claude/capabilities.ts).

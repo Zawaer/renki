@@ -60,7 +60,7 @@ describe("Home", () => {
     expect(screen.getByLabelText("Activity over the last six months")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Models"));
-    expect(screen.getByText("claude-sonnet-5-5")).toBeInTheDocument();
+    expect(screen.getByText("Sonnet 5.5")).toBeInTheDocument();
   });
 
   it("explains itself when there is no activity yet", async () => {

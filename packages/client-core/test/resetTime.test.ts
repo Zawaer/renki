@@ -19,7 +19,8 @@ describe("formatResetTime", () => {
   });
 
   it("gives a date beyond a week out", () => {
-    expect(formatResetTime(at(2026, 8, 20, 9, 0), NOW)).toMatch(/^Resets \w{3} \d{1,2} 09:00$/);
+    // Month and day in the runtime locale's order: "Sep 20" or "20 Sept".
+    expect(formatResetTime(at(2026, 8, 20, 9, 0), NOW)).toMatch(/^Resets (\w{3,4} \d{1,2}|\d{1,2} \w{3,4}) 09:00$/);
   });
 
   it("collapses an already-passed reset rather than showing a negative", () => {

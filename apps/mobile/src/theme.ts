@@ -47,6 +47,16 @@ const darkColors = {
   danger: "#ea6b62",
   chartInput: "#62aedb",
   chartOutput: "#ec9d53",
+  /**
+   * Categorical series, in this fixed order (never cycled): the web's
+   * --renki-series-* (apps/web/src/index.css), validated there for colour-blind
+   * separation and contrast on these surfaces.
+   */
+  series1: "#3987e5",
+  series2: "#d95926",
+  series3: "#199e70",
+  series4: "#c98500",
+  series5: "#d55181",
 };
 
 const lightColors: typeof darkColors = {
@@ -71,6 +81,11 @@ const lightColors: typeof darkColors = {
   danger: "#c83a37",
   chartInput: "#3077ad",
   chartOutput: "#d27830",
+  series1: "#2a78d6",
+  series2: "#eb6834",
+  series3: "#1baf7a",
+  series4: "#eda100",
+  series5: "#e87ba4",
 };
 
 export type ThemeColors = typeof darkColors;

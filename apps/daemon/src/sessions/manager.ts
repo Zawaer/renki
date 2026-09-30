@@ -14,7 +14,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Config } from "../config.js";
 import type { DB } from "../db/index.js";
-import { sessions } from "../db/schema.js";
+import { compactions, sessions } from "../db/schema.js";
 import { EventLog } from "../events/log.js";
 import { createWorktree, removeWorktree } from "../git/worktrees.js";
 import { newSessionId } from "../ids.js";
@@ -1356,6 +1356,9 @@ export class SessionManager {
       },
       onClosed: () => {
         if (this.live.get(sessionId) === live) this.live.delete(sessionId);
+      },
+      onCompaction: ({ trigger, preTokens }) => {
+        this.db.insert(compactions).values({ sessionId, ts: Date.now(), trigger, preTokens }).run();
       },
     });
     this.live.set(sessionId, live);

@@ -4,6 +4,7 @@ import { hasCapabilities, setCapabilities } from "./claude/capabilities.js";
 import { warmUpCapabilities } from "./claude/runner.js";
 import { loadConfig } from "./config.js";
 import { openDb } from "./db/index.js";
+import { presence } from "./db/schema.js";
 import { migrateSessionIds } from "./db/migrateSessionIds.js";
 import { logger } from "./logger.js";
 import { DeviceRegistry } from "./push/devices.js";
@@ -12,6 +13,7 @@ import { PushTokenStore } from "./push/tokens.js";
 import { shouldReleaseIdleControl } from "./sessions/idleControl.js";
 import { SessionManager } from "./sessions/manager.js";
 import { createServer } from "./server/http.js";
+import { InsightsCache } from "./stats/insights.js";
 import { PermissionBroker } from "./server/permissions.js";
 
 /**
@@ -28,7 +30,12 @@ async function main() {
   // method's own comment for why that otherwise wedges it forever.
   manager.reconcileOrphanedTurns();
   const broker = new PermissionBroker(config.permissionTimeoutMs);
-  const devices = new DeviceRegistry();
+  // Every flip between "nobody connected" and "someone is", for the hands-off stat.
+  const devices = new DeviceRegistry((anyoneOnline) => {
+    db.insert(presence).values({ ts: Date.now(), anyoneOnline }).run();
+  });
+  // Booting, nobody's connected yet.
+  db.insert(presence).values({ ts: Date.now(), anyoneOnline: false }).run();
   const pushTokens = new PushTokenStore(db);
   const notifier = new Notifier(config, manager, devices, pushTokens);
   notifier.attach();
@@ -40,7 +47,7 @@ async function main() {
   accounts.setOnSwitched(() => manager.recycleIdleLiveSessions()); // idle processes may cache the old account's creds
   accounts.start();
 
-  const app = await createServer(config, { manager, broker, pushTokens, devices, accounts, usage: usageReader, notifier });
+  const app = await createServer(config, { manager, broker, pushTokens, devices, accounts, usage: usageReader, notifier, insights: new InsightsCache(db) });
   await app.listen({ host: config.host, port: config.port });
   logger.info("daemon listening", { url: `http://${config.host}:${config.port}`, reposRoot: config.reposRoot });
 

@@ -313,3 +313,147 @@ export const WorkspaceFileResponse = z.object({
   truncated: z.boolean(),
 });
 export type WorkspaceFileResponse = z.infer<typeof WorkspaceFileResponse>;
+
+// ── Insights: the Stats page beyond cost and tokens ──────────────────────────
+
+/** A session a stat points at, so the page can link to it. `title` is null for an untitled or deleted one. */
+export const StatsSessionRef = z.object({
+  sessionId: z.string(),
+  title: z.string().nullable(),
+  repoName: z.string(),
+  /** False once the session is hard-deleted: shown, but not linkable. */
+  exists: z.boolean(),
+});
+export type StatsSessionRef = z.infer<typeof StatsSessionRef>;
+
+/** A record: its value, when it happened, and where. */
+export const StatsRecord = z.object({
+  value: z.number(),
+  ts: z.number().int(),
+  session: StatsSessionRef,
+});
+export type StatsRecord = z.infer<typeof StatsRecord>;
+
+/** A count with a label, for ranked lists. */
+export const StatsCount = z.object({ key: z.string(), count: z.number().int() });
+export type StatsCount = z.infer<typeof StatsCount>;
+
+export const StatsAchievement = z.object({
+  id: z.string(),
+  title: z.string(),
+  description: z.string(),
+  achieved: z.boolean(),
+  /** 0-1 toward it, for one not reached yet; null when it isn't a count. */
+  progress: z.number().nullable(),
+});
+export type StatsAchievement = z.infer<typeof StatsAchievement>;
+
+/**
+ * Everything the Stats page shows beyond StatsResponse's cost and tokens,
+ * computed from the whole event log. Days and hours are in the `tz` the
+ * client asked for (an IANA name; UTC when it's missing or unknown), so the
+ * heatmap's "9am" is the viewer's 9am.
+ */
+export const InsightsResponse = z.object({
+  tz: z.string(),
+  computedAt: z.number().int(),
+
+  // Your work
+  /** [weekday 0=Monday..6][hour 0..23] → turns started then. */
+  heatmap: z.array(z.array(z.number().int())),
+  longestTurn: StatsRecord.nullable(),
+  /** By total turn time. */
+  longestSession: StatsRecord.nullable(),
+  /** Lines Claude's edits added and removed, per local day, ascending. Only days with edits. */
+  linesDaily: z.array(z.object({ day: z.string(), added: z.number().int(), removed: z.number().int() })),
+  topFiles: z.array(z.object({ repoName: z.string(), path: z.string(), edits: z.number().int(), added: z.number().int(), removed: z.number().int() })),
+  /** Distinct files Claude has edited, across every repo. */
+  filesTouched: z.number().int(),
+  /** Consecutive local days with at least one turn. `current` is 0 unless today or yesterday had one. */
+  streak: z.object({ current: z.number().int(), longest: z.number().int(), activeDays: z.number().int() }),
+  repoStreaks: z.array(z.object({ repoName: z.string(), current: z.number().int(), longest: z.number().int(), activeDays: z.number().int() })),
+  prompts: z.object({
+    count: z.number().int(),
+    medianChars: z.number().int(),
+    /** Typed into a turn that was already running. */
+    steered: z.number().int(),
+    queued: z.number().int(),
+  }),
+
+  // Claude's work
+  tools: z.array(z.object({ name: z.string(), count: z.number().int(), failed: z.number().int() })),
+  /** First word of each shell command (two for git, npm and friends: "git commit"). */
+  shellCommands: z.array(StatsCount),
+  agents: z.object({
+    count: z.number().int(),
+    background: z.number().int(),
+    medianDurationMs: z.number().int().nullable(),
+    byType: z.array(StatsCount),
+  }),
+  /**
+   * Turn time while no device was connected: Claude working with nobody
+   * watching. Only measurable from `since` (when the daemon started keeping
+   * track), so `turnMs` is the turn time over the same period.
+   */
+  handsOff: z.object({ since: z.number().int().nullable(), handsOffMs: z.number().int(), turnMs: z.number().int() }),
+  /** Output tokens and the time they took, per model, for tokens a minute. */
+  speed: z.array(z.object({ model: z.string(), outputTokens: z.number().int(), durationMs: z.number().int() })),
+  outcomes: z.object({
+    ok: z.number().int(),
+    stopped: z.number().int(),
+    limited: z.number().int(),
+    restarted: z.number().int(),
+    errored: z.number().int(),
+  }),
+
+  // Together
+  approvals: z.object({
+    count: z.number().int(),
+    allowed: z.number().int(),
+    denied: z.number().int(),
+    /** Answered by nobody: timed out or cancelled. */
+    unanswered: z.number().int(),
+    medianResponseMs: z.number().int().nullable(),
+    byDevice: z.array(z.object({ key: z.string(), count: z.number().int(), medianResponseMs: z.number().int().nullable() })),
+    byTool: z.array(z.object({ tool: z.string(), allowed: z.number().int(), denied: z.number().int() })),
+  }),
+
+  // Money and limits
+  limits: z.object({
+    hits: z.number().int(),
+    pauses: z.number().int(),
+    pausedMs: z.number().int(),
+    switches: z.number().int(),
+    /** Which account each switch moved to ("#2"). */
+    switchesTo: z.array(StatsCount),
+  }),
+  cache: z.object({ inputTokens: z.number().int(), cachedInputTokens: z.number().int() }),
+
+  // Fun
+  records: z.object({
+    mostExpensiveTurn: StatsRecord.nullable(),
+    mostToolsInTurn: StatsRecord.nullable(),
+    mostFilesInSession: StatsRecord.nullable(),
+    busiestDay: z.object({ day: z.string(), turns: z.number().int() }).nullable(),
+    /** Most turns running at the same moment, across sessions. */
+    mostAtOnce: z.object({ count: z.number().int(), ts: z.number().int() }).nullable(),
+  }),
+  rememberWhen: z
+    .object({
+      session: StatsSessionRef,
+      createdAt: z.number().int(),
+      /** How long ago, as the page says it: "a year ago", "6 months ago", "a month ago". */
+      ago: z.string(),
+      firstPrompt: z.string().nullable(),
+    })
+    .nullable(),
+  words: z.object({ yours: z.number().int(), claudes: z.number().int() }),
+  achievements: z.array(StatsAchievement),
+  /** Output tokens per model per local month, ascending: model share over time. */
+  modelMonthly: z.array(z.object({ month: z.string(), byModel: z.record(z.string(), z.number()) })),
+
+  // Git and context
+  git: z.object({ commits: z.number().int(), merges: z.number().int(), pushes: z.number().int(), byRepo: z.array(z.object({ repoName: z.string(), commits: z.number().int() })) }),
+  compactions: z.object({ count: z.number().int(), auto: z.number().int(), avgPreTokens: z.number().int().nullable() }),
+});
+export type InsightsResponse = z.infer<typeof InsightsResponse>;

@@ -25,6 +25,7 @@ import type {
   RestoreSessionResponse,
   RtkGainResponse,
   Session,
+  InsightsResponse,
   StatsResponse,
   SwitchAccountResponse,
   TailscaleStatusResponse,
@@ -234,6 +235,11 @@ export class RestClient {
     return this.get<StatsResponse>("/stats");
   }
 
+  /** The rest of the Stats page (habits, tools, approvals, records), with days and hours in `tz` — the viewer's zone by default. */
+  async getInsights(tz: string = localTimeZone()): Promise<InsightsResponse> {
+    return this.get<InsightsResponse>(`/stats/insights?tz=${encodeURIComponent(tz)}`);
+  }
+
   /**
    * Available models + slash commands, as reported by the Agent SDK. Empty
    * until the first turn has run this daemon process's lifetime — it's only
@@ -273,5 +279,14 @@ export class RestClient {
       throw new RestError(res.status, String(detail.error ?? "http_error"), String(detail.message ?? res.statusText));
     }
     return (await res.json()) as T;
+  }
+}
+
+/** This device's IANA time zone, or UTC where the runtime can't say. */
+export function localTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
   }
 }

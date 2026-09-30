@@ -63,6 +63,18 @@
   --renki-focus: oklch(0.8 0.11 66);
   --renki-chart-input: oklch(0.72 0.1 236);
   --renki-chart-output: oklch(0.76 0.13 62);
+  /*
+   * Categorical series, in this fixed order (never cycled; a sixth folds into
+   * "Other"). The dataviz reference palette, checked against these surfaces
+   * with its validator: colour-blind separation and contrast pass in dark;
+   * in light, slots 3-5 sit under 3:1 on white, so their charts carry labels
+   * and a table view.
+   */
+  --renki-series-1: #3987e5;
+  --renki-series-2: #d95926;
+  --renki-series-3: #199e70;
+  --renki-series-4: #c98500;
+  --renki-series-5: #d55181;
 
   --renki-shadow-xs: 0 1px 2px oklch(0 0 0 / 0.25);
   --renki-shadow-sm: 0 2px 8px oklch(0 0 0 / 0.3);
@@ -103,6 +115,11 @@
     --renki-focus: oklch(0.66 0.14 55);
     --renki-chart-input: oklch(0.55 0.11 245);
     --renki-chart-output: oklch(0.66 0.14 55);
+    --renki-series-1: #2a78d6;
+    --renki-series-2: #eb6834;
+    --renki-series-3: #1baf7a;
+    --renki-series-4: #eda100;
+    --renki-series-5: #e87ba4;
 
     --renki-shadow-xs: 0 1px 2px oklch(0.4 0.03 60 / 0.08);
     --renki-shadow-sm: 0 1px 3px oklch(0.4 0.03 60 / 0.1);
@@ -171,6 +188,11 @@ body.vscode-high-contrast-light {
   --renki-focus: var(--vscode-focusBorder);
   --renki-chart-input: var(--vscode-charts-blue, #3987e5);
   --renki-chart-output: var(--vscode-charts-orange, #d95926);
+  --renki-series-1: var(--vscode-charts-blue, #3987e5);
+  --renki-series-2: var(--vscode-charts-orange, #d95926);
+  --renki-series-3: var(--vscode-charts-green, #199e70);
+  --renki-series-4: var(--vscode-charts-yellow, #c98500);
+  --renki-series-5: var(--vscode-charts-purple, #d55181);
   --renki-shadow-alarm: 0 0 0 1px color-mix(in oklab, var(--renki-danger) 25%, transparent), 0 12px 32px rgba(0, 0, 0, 0.45);
   --renki-font-ui: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif);
   --renki-font-mono: var(--vscode-editor-font-family, ui-monospace, "SF Mono", Menlo, Consolas, monospace);

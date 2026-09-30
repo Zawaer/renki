@@ -68,6 +68,8 @@ export type LiveSessionOptions = {
   maxThinkingTokens?: number | null;
   /** If true, don't load ~/.claude settings so every gated tool asks the controller. */
   forcePermissionPrompts?: boolean;
+  /** The CLI compacted this conversation's context (recorded for the stats). */
+  onCompaction?: (info: { trigger: string | null; preTokens: number | null }) => void;
   /** If true, rewrite Bash commands through RTK (see ./rtk.ts) before they run. */
   enableRtk?: boolean;
   /** `rtk` executable to invoke when enableRtk is set (name on PATH or absolute path). */
@@ -581,6 +583,9 @@ export class LiveClaudeSession {
           });
         } else if (message.subtype === "background_tasks_changed") {
           this.backgroundTasks = new Set(message.tasks.map((t) => t.task_id));
+        } else if (message.subtype === "compact_boundary") {
+          const meta = (message as { compact_metadata?: { trigger?: string; pre_tokens?: number } }).compact_metadata;
+          this.opts.onCompaction?.({ trigger: meta?.trigger ?? null, preTokens: meta?.pre_tokens ?? null });
         }
         break;
       }

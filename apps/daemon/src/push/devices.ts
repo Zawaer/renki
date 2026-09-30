@@ -9,14 +9,20 @@
 export class DeviceRegistry {
   private readonly counts = new Map<string, number>();
 
+  /** `onPresence` hears each flip between "nobody connected" and "someone is" — for the hands-off stat. */
+  constructor(private readonly onPresence?: (anyoneOnline: boolean) => void) {}
+
   connect(deviceId: string): void {
+    const wasEmpty = this.counts.size === 0;
     this.counts.set(deviceId, (this.counts.get(deviceId) ?? 0) + 1);
+    if (wasEmpty) this.onPresence?.(true);
   }
 
   disconnect(deviceId: string): void {
     const n = (this.counts.get(deviceId) ?? 0) - 1;
     if (n <= 0) this.counts.delete(deviceId);
     else this.counts.set(deviceId, n);
+    if (this.counts.size === 0) this.onPresence?.(false);
   }
 
   isOnline(deviceId: string): boolean {

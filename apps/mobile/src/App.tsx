@@ -293,7 +293,8 @@ function Main({
     );
   }
   if (showStats) {
-    return <StatsView onBack={() => setShowStats(false)} />;
+    // A session opened from a stat comes back here: `selected` wins above, and showStats stays set.
+    return <StatsView onBack={() => setShowStats(false)} onOpenSession={setSelected} />;
   }
   return (
     <SessionList

@@ -86,6 +86,24 @@ export const pushTokens = sqliteTable("push_tokens", {
   updatedAt: integer("updated_at").notNull(),
 });
 
+/**
+ * Whether any client was connected, as it changed: one row per flip. What the
+ * stats' "hands-off time" measures — a turn running while nobody's watching.
+ * Only kept from when this table was added; earlier turns have no presence.
+ */
+export const presence = sqliteTable("presence", {
+  ts: integer("ts").notNull(),
+  anyoneOnline: integer("anyone_online", { mode: "boolean" }).notNull(),
+});
+
+/** Each time the CLI compacted a session's context (its compact_boundary message). */
+export const compactions = sqliteTable("compactions", {
+  sessionId: text("session_id").notNull(),
+  ts: integer("ts").notNull(),
+  trigger: text("trigger"),
+  preTokens: integer("pre_tokens"),
+});
+
 export const events = sqliteTable(
   "events",
   {
@@ -139,6 +157,18 @@ export const DDL = `
     kind TEXT NOT NULL,
     data TEXT NOT NULL,
     PRIMARY KEY (session_id, seq)
+  );
+
+  CREATE TABLE IF NOT EXISTS presence (
+    ts INTEGER NOT NULL,
+    anyone_online INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS compactions (
+    session_id TEXT NOT NULL,
+    ts INTEGER NOT NULL,
+    trigger TEXT,
+    pre_tokens INTEGER
   );
 
   CREATE TABLE IF NOT EXISTS push_tokens (

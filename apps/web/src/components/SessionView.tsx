@@ -58,7 +58,7 @@ import { JsonCode, ShellCode } from "./Code.js";
 import { UsageLimits } from "./UsageLimits.js";
 import { WorkspacePanel, type WorkspaceTab } from "./WorkspacePanel.js";
 import { Markdown } from "./Markdown.js";
-import { Button, Collapsible, CopyButton, InfoHint, Skeleton, StatusBadge } from "./ui.js";
+import { Button, Collapsible, CopyButton, InfoHint, Reveal, Skeleton, StatusBadge } from "./ui.js";
 
 export function SessionView({ sessionId }: { sessionId: string }) {
   const { realtime, rest, config } = useClient();
@@ -141,6 +141,14 @@ export function SessionView({ sessionId }: { sessionId: string }) {
 
   const isController = conv.controller === config.deviceId;
   const status = conv.status ?? "idle";
+
+  /**
+   * How many rows the timeline had when it first showed content: rows past
+   * that are new since the chat opened and ease in; the rest just appear.
+   */
+  const settledCount = useRef<number | null>(null);
+  const hadContentAtMount = useRef(conv.timeline.length > 0);
+  if (settledCount.current === null && conv.timeline.length > 0) settledCount.current = conv.timeline.length;
 
   /** The Changes/Files side panel, if open. Remembered per browser, like the sidebar. */
   const [panel, setPanel] = useState<WorkspaceTab | null>(() => loadPanel());
@@ -278,9 +286,15 @@ export function SessionView({ sessionId }: { sessionId: string }) {
               </div>
             </div>
           )}
-          {conv.timeline.map((item, i) => (
-            <TimelineRow key={i} item={item} />
-          ))}
+          {conv.timeline.length > 0 && (
+            // Crossfades in over the skeleton the first time content arrives;
+            // a chat that opened with content already loaded just shows it.
+            <div key="content" className={`space-y-7 ${hadContentAtMount.current ? "" : "renki-fade"}`}>
+              {conv.timeline.map((item, i) => (
+                <TimelineRow key={i} item={item} animate={settledCount.current !== null && i >= settledCount.current} />
+              ))}
+            </div>
+          )}
         </div>
         {!atBottom && conv.timeline.length > 0 && (
           <div className="pointer-events-none sticky bottom-4 flex h-0 items-end justify-center">
@@ -483,10 +497,15 @@ function ResumeBanner({
   );
 }
 
-function TimelineRow({ item }: { item: TimelineItem }) {
+/**
+ * `animate`: this row arrived after the chat opened, so it eases in. The rows
+ * a chat loads with don't — animating a whole transcript at once reads as a
+ * flicker, not as motion.
+ */
+function TimelineRow({ item, animate = false }: { item: TimelineItem; animate?: boolean }) {
   if (item.type === "prompt") {
     return (
-      <div className="renki-enter group flex items-center justify-end gap-1">
+      <div className={`${animate ? "renki-enter " : ""}group flex items-center justify-end gap-1`}>
         {item.text && <CopyButton text={item.text} label="Copy message" />}
         <div className="max-w-[85%] rounded-2xl bg-(--renki-surface) px-4 py-3">
           {/* A pasted brief can be longer than the reply it asks for; clipping
@@ -537,7 +556,7 @@ function TimelineRow({ item }: { item: TimelineItem }) {
   if (item.type === "background_tasks") {
     return <BackgroundTasksRow tasks={item.tasks} />;
   }
-  return <AssistantTurn turn={item.turn} />;
+  return <AssistantTurn turn={item.turn} animate={animate} />;
 }
 
 /**
@@ -571,8 +590,8 @@ function BackgroundTasksRow({ tasks }: { tasks: { summary: string; status: "comp
           <span className={`codicon ${open ? "codicon-chevron-down" : "codicon-chevron-right"} shrink-0 text-[12px]`} />
         )}
       </button>
-      {open && tasks.length > 1 && (
-        <ul className="mt-2 w-full max-w-xl space-y-1 rounded-xl border border-(--renki-border)/70 px-3 py-2 text-xs text-(--renki-fg-muted)">
+      <Reveal open={open && tasks.length > 1} className="w-full max-w-xl">
+        <ul className="mt-2 w-full space-y-1 rounded-xl border border-(--renki-border)/70 px-3 py-2 text-xs text-(--renki-fg-muted)">
           {tasks.map((t, i) => (
             <li key={i} className="flex items-start gap-1.5">
               <span
@@ -588,7 +607,7 @@ function BackgroundTasksRow({ tasks }: { tasks: { summary: string; status: "comp
             </li>
           ))}
         </ul>
-      )}
+      </Reveal>
     </div>
   );
 }
@@ -656,7 +675,7 @@ function ContextMeter({ context }: { context: ContextUsageView }) {
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute top-full right-0 z-20 mt-2 w-80 max-w-[calc(100vw-2rem)] space-y-3 rounded-xl border border-(--renki-border) bg-(--renki-surface) p-3.5 text-xs shadow-(--renki-shadow-md)">
+          <div className="renki-enter absolute top-full right-0 z-20 mt-2 w-80 max-w-[calc(100vw-2rem)] space-y-3 rounded-xl border border-(--renki-border) bg-(--renki-surface) p-3.5 text-xs shadow-(--renki-shadow-md)">
             <div>
               <div className="flex items-baseline justify-between gap-2">
                 <span className="font-medium text-(--renki-fg)">Context window</span>
@@ -729,7 +748,7 @@ function replyTextOf(turn: TurnView): string {
   return turn.blocks.flatMap((blk) => (blk.kind === "text" && blk.text.trim() ? [blk.text.trim()] : [])).join("\n\n");
 }
 
-function AssistantTurn({ turn }: { turn: TurnView }) {
+function AssistantTurn({ turn, animate = false }: { turn: TurnView; animate?: boolean }) {
   const label = turnTriggerLabel(turn);
   const replyText = replyTextOf(turn);
   const steeredAfter = (index: number) =>
@@ -741,7 +760,7 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
   );
   const changes = useMemo(() => (running ? [] : turnFileChanges(turn)), [turn, running]);
   return (
-    <div className="renki-enter group space-y-3">
+    <div className={`${animate ? "renki-enter " : ""}group space-y-3`}>
       {label && (
         <div className="flex items-center gap-1.5 text-[11px] font-medium text-(--renki-fg-muted)">
           <span className="flex h-5 w-5 items-center justify-center rounded-md bg-(--renki-surface) ring-1 ring-(--renki-border) ring-inset">
@@ -1014,7 +1033,7 @@ function ToolStep({
           </span>
         )}
       </button>
-      {open && (
+      <Reveal open={open}>
         <div className="mt-2 space-y-2 rounded-xl border border-(--renki-border)/70 p-3 text-xs">
           <div className="text-[13px] text-(--renki-fg)">{block.toolName}</div>
           {editView ? (
@@ -1061,7 +1080,7 @@ function ToolStep({
               </div>
             )}
         </div>
-      )}
+      </Reveal>
     </div>
   );
 }
@@ -1145,13 +1164,13 @@ function ToolGroup({
           )}
         </span>
       </button>
-      {open && (
+      <Reveal open={open}>
         <div className="mt-1 ml-1 border-l border-(--renki-border)/60 pl-3">
           {items.map((it) => (
             <Block key={it.index} block={it.block} turnRunning={turnRunning} />
           ))}
         </div>
-      )}
+      </Reveal>
     </div>
   );
 }
@@ -1207,12 +1226,13 @@ function FilesChangedCard({ changes }: { changes: FileChange[] }) {
               )}
               <span className={`codicon ${open ? "codicon-chevron-down" : "codicon-chevron-right"} ml-auto shrink-0 text-[12px] text-(--renki-fg-muted)`} />
             </button>
-            {open &&
-              c.views.map((v, i) => (
+            <Reveal open={open}>
+              {c.views.map((v, i) => (
                 <div key={i} className="border-t border-(--renki-border)/60 bg-(--renki-bg-inset)/70">
                   <DiffView view={v} />
                 </div>
               ))}
+            </Reveal>
           </div>
         );
       })}
@@ -1245,7 +1265,7 @@ function BackgroundTasksButton({ timeline }: { timeline: TimelineItem[] }) {
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-20 mt-2 max-h-[70vh] w-96 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-(--renki-border) bg-(--renki-surface) p-1.5 text-xs shadow-(--renki-shadow-md)">
+          <div className="renki-enter absolute right-0 z-20 mt-2 max-h-[70vh] w-96 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-(--renki-border) bg-(--renki-surface) p-1.5 text-xs shadow-(--renki-shadow-md)">
             <div className="px-2.5 pt-1.5 pb-1 text-[11px] font-medium text-(--renki-fg-muted)">Background tasks</div>
             {tasks.map((t) => (
               <BackgroundTaskRow key={t.toolUseId} task={t} />

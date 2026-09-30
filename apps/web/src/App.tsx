@@ -347,6 +347,7 @@ function MainColumn({
   onReset: () => void;
   managed: boolean;
 }) {
+  const location = useLocation();
   return (
     <main className="flex min-h-0 flex-col overflow-hidden bg-(--renki-bg)">
       {lastError && (
@@ -355,7 +356,8 @@ function MainColumn({
           {lastError.code}: {lastError.message}
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-hidden">
+      {/* Keyed by route so each page eases in as you arrive (see .renki-screen). */}
+      <div key={location.pathname} className="renki-screen min-h-0 flex-1 overflow-hidden">
         <Routes>
           <Route path="/stats" element={<StatsView />} />
           <Route path="/settings" element={<Settings onReset={onReset} managed={managed} />} />

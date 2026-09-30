@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { clearComposerPrefs, clearDraft } from "../lib/composerPrefs.js";
 import { useClient } from "../lib/client.js";
 import { NewSessionDialog } from "./NewSessionDialog.js";
-import { Button, Eyebrow, SessionGlyph, Skeleton } from "./ui.js";
+import { Button, Eyebrow, Reveal, SessionGlyph, Skeleton } from "./ui.js";
 
 /**
  * Session list, grouped by repo. Initial load (and an occasional slow
@@ -191,6 +191,8 @@ export function SessionList({
           </div>
         )}
 
+        {/* Crossfades in over the skeleton once the first fetch lands. */}
+        <div key={loaded ? "loaded" : "loading"} className={loaded ? "renki-fade" : ""}>
         {groups.map((g) => {
           const isCollapsed = collapsed.has(g.key);
           return (
@@ -234,16 +236,17 @@ export function SessionList({
                   </button>
                 )}
               </div>
-              {!isCollapsed && (
+              <Reveal open={!isCollapsed}>
                 <div className="space-y-px">
                   {g.sessions.map((s) => (
                     <Row key={s.id} {...rowProps(s)} onArchive={() => archive(s.id)} />
                   ))}
                 </div>
-              )}
+              </Reveal>
             </div>
           );
         })}
+        </div>
 
         {trashed.length > 0 && (
           <div className="mt-4">

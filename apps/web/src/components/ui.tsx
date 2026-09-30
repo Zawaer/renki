@@ -450,3 +450,36 @@ export function RenkiMark({ className = "" }: { className?: string }) {
     </svg>
   );
 }
+
+/** Matches --renki-dur-layout: how long a closing <Reveal> stays mounted. */
+const LAYOUT_MS = 180;
+
+/**
+ * A disclosure's body that opens and closes by height instead of snapping —
+ * the rows below glide rather than jump. Mounts the moment it opens (so its
+ * content exists straight away), and on close stays mounted for the length
+ * of the closing animation before going. Clips only while moving, so focus
+ * rings and wide content are never cut off at rest.
+ */
+export function Reveal({ open, children, className = "" }: { open: boolean; children: React.ReactNode; className?: string }) {
+  const [lingering, setLingering] = useState(false);
+  const [moving, setMoving] = useState(open);
+  const wasOpen = useRef(open);
+  useLayoutEffect(() => {
+    if (wasOpen.current && !open) {
+      setLingering(true);
+      setMoving(true);
+      const t = setTimeout(() => setLingering(false), LAYOUT_MS);
+      wasOpen.current = open;
+      return () => clearTimeout(t);
+    }
+    if (open && !wasOpen.current) setMoving(true);
+    wasOpen.current = open;
+  }, [open]);
+  if (!open && !lingering) return null;
+  return (
+    <div className={open ? "renki-reveal" : "renki-conceal"} onAnimationEnd={() => setMoving(false)}>
+      <div className={`min-h-0 ${moving ? "overflow-hidden" : ""} ${className}`}>{children}</div>
+    </div>
+  );
+}

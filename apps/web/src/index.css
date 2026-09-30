@@ -290,6 +290,21 @@ input:focus-visible {
   animation: renki-shimmer 1.8s ease-in-out infinite;
 }
 
+/*
+ * THE MOTION SYSTEM — one vocabulary for the whole app, matching the phone's
+ * (apps/mobile/src/components/Motion.tsx): the same curve, and durations by
+ * what's moving. Opacity and transform only, so nothing re-lays-out per frame.
+ */
+:root {
+  --renki-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* Things appearing: rows, banners, menus, content replacing a skeleton. */
+  --renki-dur-enter: 220ms;
+  /* A page or panel arriving. */
+  --renki-dur-screen: 260ms;
+  /* A disclosure opening or closing. */
+  --renki-dur-layout: 180ms;
+}
+
 /* Each block of a streaming reply eases in as it lands, rather than popping. */
 @keyframes renki-stream-in {
   from {
@@ -302,7 +317,83 @@ input:focus-visible {
   }
 }
 .renki-stream-in {
-  animation: renki-stream-in 320ms ease-out both;
+  animation: renki-stream-in var(--renki-dur-enter) var(--renki-ease) both;
+}
+
+/* A page arriving: the main pane's content when the route changes. */
+@keyframes renki-screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.renki-screen {
+  animation: renki-screen-in var(--renki-dur-screen) var(--renki-ease) both;
+}
+
+/* A side panel sliding in from the edge it's docked to. */
+@keyframes renki-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.renki-panel {
+  animation: renki-panel-in var(--renki-dur-screen) var(--renki-ease) both;
+}
+
+/* Content taking over from its skeleton: a plain crossfade, nothing moving. */
+@keyframes renki-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.renki-fade {
+  animation: renki-fade-in var(--renki-dur-enter) var(--renki-ease) both;
+}
+
+/*
+ * Disclosures open and close by height without measuring it: a one-row grid
+ * whose row animates between 0fr and 1fr (see <Reveal> in ui.tsx).
+ */
+@keyframes renki-reveal {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+  to {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+}
+@keyframes renki-conceal {
+  from {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+  to {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+.renki-reveal {
+  display: grid;
+  animation: renki-reveal var(--renki-dur-layout) var(--renki-ease) both;
+}
+.renki-conceal {
+  display: grid;
+  animation: renki-conceal var(--renki-dur-layout) var(--renki-ease) both;
 }
 
 /*
@@ -327,7 +418,7 @@ input:focus-visible {
 @keyframes renki-fade-up {
   from {
     opacity: 0;
-    transform: translateY(4px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -335,12 +426,17 @@ input:focus-visible {
   }
 }
 .renki-enter {
-  animation: renki-fade-up 160ms ease-out both;
+  animation: renki-fade-up var(--renki-dur-enter) var(--renki-ease) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .renki-enter,
   .renki-stream-in,
+  .renki-screen,
+  .renki-panel,
+  .renki-fade,
+  .renki-reveal,
+  .renki-conceal,
   .renki-stream-md .renki-word,
   .renki-alarm,
   .renki-skeleton,

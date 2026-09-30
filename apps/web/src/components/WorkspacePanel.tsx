@@ -31,7 +31,7 @@ export function WorkspacePanel({
   return (
     <aside
       aria-label="Session workspace"
-      className="flex min-h-0 flex-col border-l border-(--renki-border) bg-(--renki-bg) max-lg:absolute max-lg:inset-0 max-lg:z-30 lg:w-[45%] lg:max-w-[44rem] lg:shrink-0"
+      className="renki-panel flex min-h-0 flex-col border-l border-(--renki-border) bg-(--renki-bg) max-lg:absolute max-lg:inset-0 max-lg:z-30 lg:w-[45%] lg:max-w-[44rem] lg:shrink-0"
     >
       <div className="flex shrink-0 items-center gap-1 border-b border-(--renki-border) px-3 py-2">
         <PanelTab active={tab === "changes"} onClick={() => onTab("changes")} icon="codicon-diff">

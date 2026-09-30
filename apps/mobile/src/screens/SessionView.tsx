@@ -60,6 +60,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Markdown } from "../components/Markdown";
+import { FadeIn, Skeleton, animateLayout } from "../components/Motion";
 import { Sheet } from "../components/Sheet";
 import { pickDocumentAttachments, pickImageAttachments, type PendingAttachment } from "../lib/attachments";
 import { loadDeviceDefaults, rememberDeviceDefaults } from "../lib/composerPrefs";
@@ -230,6 +231,15 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
     scrollRef.current?.scrollToOffset({ offset: 0, animated: false });
   }, [sessionId]);
 
+  /**
+   * How many items the timeline had when it first showed content. Rows past
+   * that are new since you opened the chat and fade in; the ones it opened
+   * with, or that scroll into view later, just appear.
+   */
+  const settledCount = useRef<number | null>(null);
+  const hadContentAtMount = useRef(conv.timeline.length > 0);
+  if (settledCount.current === null && conv.timeline.length > 0) settledCount.current = conv.timeline.length;
+
   /** Newest first for the inverted list, each with its position in the timeline for a stable key. */
   const entries = useMemo(
     () => conv.timeline.map((item, index): TimelineEntry => ({ item, index })).reverse(),
@@ -345,13 +355,25 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
           either side) is rendered, starting from the newest, so a chat with
           hundreds of turns opens as fast as a short one.
         */}
+        <FadeIn
+          key={conv.timeline.length > 0 ? "content" : "empty"}
+          enabled={conv.timeline.length > 0 && !hadContentAtMount.current}
+          distance={0}
+          style={styles.timeline}
+        >
         <FlatList
           ref={scrollRef}
           inverted
           data={entries}
           keyExtractor={entryKey}
           renderItem={({ item }) => (
-            <TimelineRow item={item.item} colors={colors} styles={styles} onPreview={setPreviewAttachment} />
+            <TimelineRow
+              item={item.item}
+              colors={colors}
+              styles={styles}
+              onPreview={setPreviewAttachment}
+              animate={settledCount.current !== null && item.index >= settledCount.current}
+            />
           )}
           ItemSeparatorComponent={TimelineGap}
           style={styles.timeline}
@@ -363,21 +385,22 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
           maxToRenderPerBatch={6}
           windowSize={9}
         />
+        </FadeIn>
         {conv.timeline.length === 0 && (
           <View style={styles.timelineEmpty} pointerEvents="none">
             {conv.status === null ? (
-              <>
-                <ActivityIndicator color={colors.faint} />
-                <Text style={styles.empty}>Loading conversation…</Text>
-              </>
+              <ConversationSkeleton />
             ) : (
-              <Text style={styles.empty}>No messages yet.</Text>
+              <FadeIn style={{ alignSelf: "center" }}>
+                <Text style={styles.empty}>No messages yet.</Text>
+              </FadeIn>
             )}
           </View>
         )}
         {/* Scrolled up while more arrives below: one tap back to the live end. */}
         {!atBottom && conv.timeline.length > 0 && (
-          <View style={styles.jumpWrap} pointerEvents="box-none">
+          <FadeIn style={styles.jumpWrap} pointerEvents="box-none">
+          <View style={styles.jumpWrapInner} pointerEvents="box-none">
             <TouchableOpacity style={styles.jump} onPress={jumpToLatest} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Jump to latest">
               {status === "busy" ? (
                 <>
@@ -390,11 +413,13 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
               <Ionicons name="arrow-down" size={14} color={colors.text} />
             </TouchableOpacity>
           </View>
+          </FadeIn>
         )}
       </View>
 
       {/* Pending permissions */}
       {conv.pending.map((p) => (
+        <FadeIn key={p.requestId}>
         <PermissionCard
           key={p.requestId}
           perm={p}
@@ -403,9 +428,11 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
           colors={colors}
           styles={styles}
         />
+        </FadeIn>
       ))}
 
       {resume && status !== "busy" && (
+        <FadeIn>
         <View style={styles.resumeWrap}>
           <Ionicons name="pause-circle" size={20} color={colors.busy} />
           <View style={{ flex: 1 }}>
@@ -427,11 +454,13 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
             </View>
           )}
         </View>
+        </FadeIn>
       )}
 
       {/* Queued prompts — kept out of the timeline so a fast follow-up can't
           render ahead of the turn it's replying to; shown here as "up next". */}
       {conv.queuedPrompts.length > 0 && (
+        <FadeIn>
         <View style={styles.queueWrap}>
           <Text style={styles.queueLabel}>
             {conv.queuedPrompts.length === 1 ? "1 message queued" : `${conv.queuedPrompts.length} messages queued`}
@@ -442,10 +471,12 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
             </Text>
           ))}
         </View>
+        </FadeIn>
       )}
 
       {/* Composer */}
       {suggestions.length > 0 && (
+        <FadeIn distance={4}>
         <View style={styles.suggestBox}>
           {suggestions.map((c) => (
             <TouchableOpacity key={c.name} style={styles.suggestRow} onPress={() => pickSuggestion(c.name)}>
@@ -456,6 +487,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
             </TouchableOpacity>
           ))}
         </View>
+        </FadeIn>
       )}
       <ScrollView
         horizontal
@@ -732,6 +764,27 @@ const TimelineRow = memo(function TimelineRow({
   colors,
   styles,
   onPreview,
+  animate = false,
+}: {
+  item: TimelineItem;
+  colors: ThemeColors;
+  styles: Styles;
+  onPreview: (a: Attachment) => void;
+  /** Arrived since the chat opened: ease in rather than pop. */
+  animate?: boolean;
+}) {
+  return (
+    <FadeIn enabled={animate}>
+      <TimelineRowBody item={item} colors={colors} styles={styles} onPreview={onPreview} />
+    </FadeIn>
+  );
+});
+
+function TimelineRowBody({
+  item,
+  colors,
+  styles,
+  onPreview,
 }: {
   item: TimelineItem;
   colors: ThemeColors;
@@ -772,7 +825,36 @@ const TimelineRow = memo(function TimelineRow({
     return <BackgroundTasksRow tasks={item.tasks} styles={styles} />;
   }
   return <AssistantTurn turn={item.turn} colors={colors} styles={styles} />;
-});
+}
+
+/**
+ * The shape of a conversation while it loads — a message on the right, a
+ * reply on the left — so the real one replaces it in place instead of
+ * appearing out of an empty screen.
+ */
+function ConversationSkeleton() {
+  return (
+    <View style={{ alignSelf: "stretch", paddingHorizontal: 14, gap: 22 }} accessibilityLabel="Loading conversation">
+      <View style={{ alignItems: "flex-end" }}>
+        <Skeleton width="62%" height={44} radius={16} />
+      </View>
+      <View style={{ gap: 9 }}>
+        <Skeleton width="38%" height={11} />
+        <Skeleton width="92%" height={13} />
+        <Skeleton width="80%" height={13} />
+        <Skeleton width="86%" height={13} />
+      </View>
+      <View style={{ alignItems: "flex-end" }}>
+        <Skeleton width="44%" height={36} radius={16} />
+      </View>
+      <View style={{ gap: 9 }}>
+        <Skeleton width="30%" height={11} />
+        <Skeleton width="88%" height={13} />
+        <Skeleton width="70%" height={13} />
+      </View>
+    </View>
+  );
+}
 
 /**
  * Background tasks with no tool call in view to attach to, folded into one
@@ -793,7 +875,10 @@ function BackgroundTasksRow({
       : `${tasks.length} background tasks finished${failed > 0 ? ` · ${failed} failed` : ""}${open ? "" : " ›"}`;
   return (
     <View style={styles.noticeWrap}>
-      <TouchableOpacity disabled={tasks.length === 1} onPress={() => setOpen((o) => !o)}>
+      <TouchableOpacity disabled={tasks.length === 1} onPress={() => {
+          animateLayout();
+          setOpen((o) => !o);
+        }}>
         <Text style={[styles.notice, failed > 0 && styles.noticeWarn]}>{label}</Text>
       </TouchableOpacity>
       {open &&
@@ -861,7 +946,10 @@ function ToolGroup({
   const live = summary.running && turnRunning;
   return (
     <View style={styles.toolStep}>
-      <TouchableOpacity style={styles.toolStepHeader} activeOpacity={0.7} onPress={() => setOpen((o) => !o)}>
+      <TouchableOpacity style={styles.toolStepHeader} activeOpacity={0.7} onPress={() => {
+          animateLayout();
+          setOpen((o) => !o);
+        }}>
         <Ionicons name="layers-outline" size={13} color={colors.faint} />
         <Text style={styles.toolStepLabel} numberOfLines={1}>
           {summary.text}
@@ -900,7 +988,10 @@ function FilesChanged({ changes, colors, styles }: { changes: FileChange[]; colo
     <View style={styles.filesCard}>
       {changes.map((c) => (
         <View key={c.filePath}>
-          <TouchableOpacity style={styles.toolStepHeader} onPress={() => setOpenPath(openPath === c.filePath ? null : c.filePath)}>
+          <TouchableOpacity style={styles.toolStepHeader} onPress={() => {
+              animateLayout();
+              setOpenPath(openPath === c.filePath ? null : c.filePath);
+            }}>
             <Ionicons name="document-outline" size={13} color={colors.faint} />
             <Text style={[styles.toolStepLabel, { flex: 1 }]} numberOfLines={1}>
               {c.filePath.split("/").filter(Boolean).slice(-2).join("/")}
@@ -1036,6 +1127,7 @@ function ToolStep({
         activeOpacity={0.7}
         onPress={() => {
           userToggled.current = true;
+          animateLayout();
           setOpen((o) => !o);
         }}
       >
@@ -1090,7 +1182,10 @@ function SubagentActivity({ subagent, colors, styles }: { subagent: SubagentView
 
   return (
     <View style={styles.subagentWrap}>
-      <TouchableOpacity style={styles.subagentHeader} onPress={() => setExpanded((v) => !v)}>
+      <TouchableOpacity style={styles.subagentHeader} onPress={() => {
+          animateLayout();
+          setExpanded((v) => !v);
+        }}>
         {subagent.status === "running" ? (
           <ActivityIndicator size="small" color={colors.busy} />
         ) : (
@@ -1536,6 +1631,7 @@ const makeStyles = (colors: ThemeColors) =>
     timelineContent: { padding: 14 },
     timelineEmpty: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center", gap: 10 },
     jumpWrap: { position: "absolute", left: 0, right: 0, bottom: 12, alignItems: "center" },
+    jumpWrapInner: { alignItems: "center" },
     jump: {
       flexDirection: "row",
       alignItems: "center",

@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, FlatList, Keyboard, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { FadeIn, Skeleton } from "../components/Motion";
 import { Sheet } from "../components/Sheet";
 import { useClient } from "../lib/client";
 import { loadDeviceDefaults } from "../lib/composerPrefs";
@@ -24,12 +25,29 @@ export function SessionList({
   const styles = makeStyles(colors);
   const insets = useSafeAreaInsets();
   const { rest, realtime } = useClient();
-  const [sessions, setSessions] = useState<Session[]>([]);
+  // Seeded from the last list this app run saw, so coming back from a chat
+  // shows it at once instead of blanking and reloading.
+  const [sessions, setSessionsState] = useState<Session[]>(() => lastSessions ?? []);
+  const [loaded, setLoaded] = useState(lastSessions !== null);
+  const [wasLoadedAtMount] = useState(lastSessions !== null);
   const [creating, setCreating] = useState(false);
+  const setSessions = useCallback((next: Session[] | ((prev: Session[]) => Session[])) => {
+    setSessionsState((prev) => {
+      const value = typeof next === "function" ? next(prev) : next;
+      lastSessions = value;
+      return value;
+    });
+  }, []);
 
   const refresh = useCallback(() => {
-    rest.listSessions().then(setSessions).catch(() => {});
-  }, [rest]);
+    rest
+      .listSessions()
+      .then((list) => {
+        setSessions(list);
+        setLoaded(true);
+      })
+      .catch(() => {});
+  }, [rest, setSessions]);
 
   useEffect(() => {
     refresh();
@@ -108,6 +126,10 @@ export function SessionList({
         </View>
       </View>
 
+      {!loaded ? (
+        <ListSkeleton />
+      ) : (
+      <FadeIn enabled={!wasLoadedAtMount} distance={0} style={styles.list}>
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
         {active.length === 0 && <Text style={styles.empty}>No sessions yet.</Text>}
         {groups.map((g) => (
@@ -174,6 +196,8 @@ export function SessionList({
           />
         ))}
       </ScrollView>
+      </FadeIn>
+      )}
 
       <AccountsBar />
 
@@ -620,3 +644,28 @@ const makeStyles = (colors: ThemeColors) =>
     error: { color: colors.danger, fontSize: 13, marginTop: 6 },
     modalActions: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 16, marginTop: 14 },
   });
+
+/** The last session list seen this app run — see SessionList's state seed. */
+let lastSessions: Session[] | null = null;
+
+/** Placeholder rows in the shape of the list, while the first fetch is out. */
+function ListSkeleton() {
+  return (
+    <View style={{ paddingHorizontal: 16, paddingTop: 18, gap: 22 }} accessibilityLabel="Loading sessions">
+      {[0, 1].map((g) => (
+        <View key={g} style={{ gap: 14 }}>
+          <Skeleton width={110} height={11} />
+          {[0, 1, 2].map((r) => (
+            <View key={r} style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+              <Skeleton width={8} height={8} radius={4} />
+              <View style={{ flex: 1, gap: 6 }}>
+                <Skeleton width={r === 1 ? "58%" : "72%"} height={13} />
+                <Skeleton width="36%" height={10} />
+              </View>
+            </View>
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}

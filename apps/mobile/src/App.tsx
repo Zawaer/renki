@@ -9,6 +9,7 @@ import { loadHosts, saveHosts } from "./lib/hosts";
 import { loadPalette } from "./lib/composerPrefs";
 import { migrateLegacyStorage } from "./lib/storageMigration";
 import { ClientProvider } from "./lib/client";
+import { Screen } from "./components/Motion";
 import { registerForPush } from "./lib/push";
 import { Setup } from "./screens/Setup";
 import { Settings } from "./screens/Settings";
@@ -233,6 +234,23 @@ function Main({
     return () => sub.remove();
   }, [config]);
 
+  // Which screen is showing, and whether we got here by going deeper or back —
+  // the entrance slides the matching way (see Screen).
+  const screenKey = selected ? `session:${selected}` : showSettings ? "settings" : showStats ? "stats" : "list";
+  const depth = screenKey === "list" ? 0 : 1;
+  const lastDepth = useRef(depth);
+  const direction: "push" | "pop" = depth >= lastDepth.current ? "push" : "pop";
+  useEffect(() => {
+    lastDepth.current = depth;
+  }, [depth]);
+
+  return (
+    <Screen key={screenKey} direction={screenKey === "list" && lastDepth.current === 0 ? "push" : direction}>
+      {renderScreen()}
+    </Screen>
+  );
+
+  function renderScreen() {
   if (selected) {
     return <SessionView sessionId={selected} onBack={() => setSelected(null)} />;
   }
@@ -259,6 +277,7 @@ function Main({
       onOpenStats={() => setShowStats(true)}
     />
   );
+  }
 }
 
 const makeStyles = (colors: ThemeColors) =>

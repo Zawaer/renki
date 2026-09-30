@@ -219,10 +219,17 @@ function Main({
   // Register for push, and when a notification is tapped, open its session.
   useEffect(() => {
     void registerForPush(config);
-    const sub = Notifications.addNotificationResponseReceivedListener((res) => {
-      const sessionId = res.notification.request.content.data?.sessionId;
+    const open = (res: Notifications.NotificationResponse | null) => {
+      const sessionId = res?.notification.request.content.data?.sessionId;
       if (typeof sessionId === "string") selectedRef.current(sessionId);
+    };
+    // A tap that launched the app from closed lands before this listener
+    // exists, so ask for it once as well — only a recent one, since the last
+    // response can linger and would otherwise reopen that session every launch.
+    void Notifications.getLastNotificationResponseAsync().then((res) => {
+      if (res && Date.now() - res.notification.date < 60_000) open(res);
     });
+    const sub = Notifications.addNotificationResponseReceivedListener(open);
     return () => sub.remove();
   }, [config]);
 

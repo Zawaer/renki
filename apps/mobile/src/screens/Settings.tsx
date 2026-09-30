@@ -16,6 +16,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient, useStoreValue } from "../lib/client";
 import { loadPalette, savePalette } from "../lib/composerPrefs";
+import { type PushStatus, getPushStatus, onPushStatus, registerForPush, sendTestPush } from "../lib/push";
 import { radius, type ThemeColors, useTheme, withAlpha } from "../theme";
 import { UsageLimits } from "../components/UsageLimits";
 import { ConnectUsage } from "./ConnectUsage";
@@ -67,6 +68,7 @@ export function Settings({
         <HostsSection colors={colors} styles={styles} hostsState={hostsState} onHostsChange={onHostsChange} />
         <ThisDeviceSection colors={colors} styles={styles} onSaved={onRenameDevice} />
         <ConnectionSection colors={colors} styles={styles} status={status} />
+        <NotificationsSection colors={colors} styles={styles} />
         <AccountsSection styles={styles} />
         <Section
           title="Pair a device"
@@ -286,6 +288,65 @@ function AppearanceSection({
           );
         })}
       </View>
+    </Section>
+  );
+}
+
+/**
+ * Whether this phone can be reached when a session needs you, and a button to
+ * prove it end to end. Says plainly when the build can't do push at all, which
+ * used to fail without a word.
+ */
+function NotificationsSection({ colors, styles }: { colors: ThemeColors; styles: Styles }) {
+  const { config } = useClient();
+  const [status, setStatus] = useState<PushStatus>(getPushStatus);
+  const [test, setTest] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => onPushStatus(setStatus), []);
+
+  const badge =
+    status.state === "on"
+      ? { color: colors.ok, label: "On" }
+      : status.state === "checking"
+        ? { color: colors.busy, label: "Checking…" }
+        : status.state === "denied"
+          ? { color: colors.danger, label: "Off — not allowed" }
+          : status.state === "not_set_up"
+            ? { color: colors.danger, label: "Not set up in this build" }
+            : { color: colors.danger, label: "Couldn't register" };
+
+  async function sendTest() {
+    setBusy(true);
+    setTest(null);
+    const res = await sendTestPush(config);
+    setTest(res.ok ? "Sent — it should arrive in a few seconds." : (res.error ?? "Didn't send."));
+    setBusy(false);
+  }
+
+  return (
+    <Section
+      title="Notifications"
+      description="A push when a session needs you — a question, an approval, a plan — and when a long turn finishes or pauses on a limit."
+      colors={colors}
+      styles={styles}
+    >
+      <View style={styles.row}>
+        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: badge.color }} />
+        <Text style={[styles.muted, styles.flex1]}>{badge.label}</Text>
+        {status.state === "on" && (
+          <TouchableOpacity style={styles.saveBtn} disabled={busy} onPress={sendTest}>
+            <Text style={styles.saveBtnText}>{busy ? "…" : "Send test"}</Text>
+          </TouchableOpacity>
+        )}
+        {status.state !== "on" && status.state !== "checking" && (
+          <TouchableOpacity style={styles.saveBtn} onPress={() => void registerForPush(config)}>
+            <Text style={styles.saveBtnText}>Retry</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+      {(status.state === "not_set_up" || status.state === "error") && <Text style={styles.faintNote}>{status.detail}</Text>}
+      {status.state === "denied" && <Text style={styles.faintNote}>Allow notifications for Renki in the phone's settings, then tap Retry.</Text>}
+      {test && <Text style={styles.faintNote}>{test}</Text>}
     </Section>
   );
 }

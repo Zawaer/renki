@@ -426,18 +426,35 @@ and your token manually. Either way runs the same connectivity check before
 saving. The phone gets a stable device id, so it keeps its place in the
 take-control lock across restarts.
 
-**Push notifications** (permission requests / turn completion while the app is
-backgrounded) need a few extra one-time steps:
+**Push notifications.** The phone gets a push whenever it isn't open and a
+session needs you: a question from Claude, a command or edit to approve, a
+plan to sign off. It also gets one when a turn longer than a minute finishes
+or fails, and when a turn pauses on a usage limit. Every registered phone
+gets these, whichever device started the session. If you're driving the
+session from a connected laptop, a request waits 15 seconds first, and the
+phone stays quiet if you answer on the laptop. Tapping a notification opens
+that session.
 
-1. `cd apps/mobile && npx eas init` to create an EAS project, then put the
-   printed id in `app.json` under `extra.eas.projectId`.
-2. Remote push requires a **development build** (Expo Go no longer supports it):
-   `npx expo run:android` (with a device/emulator + Android SDK) or
-   `eas build --profile development --platform android`.
-3. Launch that build, grant the notification permission — the app registers its
-   Expo push token with the daemon (`POST /devices/push-token`). Now, when you
-   send a prompt and background the app, you'll get a push if Claude needs a
-   permission decision or the turn finishes. Tapping it opens that session.
+One-time setup (Android needs Firebase to receive any push at all):
+
+1. **EAS project.** `cd apps/mobile && npx eas init` and put the printed id in
+   `app.json` under `extra.eas.projectId` (already done for this repo).
+2. **Firebase.** In the [Firebase console](https://console.firebase.google.com)
+   create a project, add an Android app with package `com.zawaer.renki`, and
+   download its `google-services.json` into `apps/mobile/`. It's gitignored, and
+   `app.config.js` picks it up when it's there.
+3. **Let Expo deliver through it.** In Firebase → Project settings → Service
+   accounts, generate a private key (JSON). Then `npx eas credentials` →
+   Android → production (or development) → Google Service Account → *Manage
+   your FCM V1 service account key* → upload that JSON.
+4. **Build** a development or release build, not Expo Go: `npx expo run:android`
+   locally, or `eas build --profile preview --platform android`. For an EAS
+   build, give it the Firebase file too, since a gitignored file isn't uploaded:
+   `eas env:create --name GOOGLE_SERVICES_JSON --type file --value ./google-services.json`.
+5. **Check it.** Open Settings → Notifications on the phone. It should say
+   **On**; tap **Send test**. If it says *Not set up in this build*, the build
+   didn't include `google-services.json`. If the test says it was rejected,
+   step 3 is missing.
 
 Enable `RENKI_FORCE_PERMISSION_PROMPTS=1` on the daemon so tool permissions
 actually reach your phone instead of being auto-approved by the host's

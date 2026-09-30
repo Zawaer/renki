@@ -37,6 +37,11 @@ describe("classifyRateLimit", () => {
       "You have exceeded your usage",
       "429 Too Many Requests",
       "too many requests",
+      // The CLI's own messages, as a limited turn actually ends.
+      "You've hit your limit · resets 3pm (Europe/Helsinki)",
+      "You've reached your weekly limit",
+      "You're out of usage credits",
+      "You're out of extra usage",
     ];
     for (const text of hits) expect(classifyRateLimit(text), text).toBe(true);
   });

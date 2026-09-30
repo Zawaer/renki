@@ -77,7 +77,9 @@ export function rejectedRateLimit(info: { status?: string; resetsAt?: number; ra
 /** Pure heuristic: does this error text/flag indicate a usage/rate limit? */
 export function classifyRateLimit(text: string | null | undefined): boolean {
   if (!text) return false;
-  return /rate.?limit|usage limit|limit reached|limit exceeded|exceeded your usage|too many requests|429/i.test(text);
+  // The CLI's own wording (the SDK's USAGE_LIMIT_ERROR_PREFIXES) — "You've hit
+  // your limit · resets 3pm", "You're out of usage credits" — plus the API's.
+  return /rate.?limit|usage limit|limit reached|limit exceeded|exceeded your usage|too many requests|429|you've (hit|reached) your|out of (extra )?usage/i.test(text);
 }
 
 /** The non-string half of a user message's `content` — one image/document/text block. */

@@ -40,7 +40,7 @@ async function main() {
   accounts.setOnSwitched(() => manager.recycleIdleLiveSessions()); // idle processes may cache the old account's creds
   accounts.start();
 
-  const app = await createServer(config, { manager, broker, pushTokens, devices, accounts, usage: usageReader });
+  const app = await createServer(config, { manager, broker, pushTokens, devices, accounts, usage: usageReader, notifier });
   await app.listen({ host: config.host, port: config.port });
   logger.info("daemon listening", { url: `http://${config.host}:${config.port}`, reposRoot: config.reposRoot });
 

@@ -24,6 +24,15 @@ export class PushTokenStore {
       .run();
   }
 
+  /** Every registered device. */
+  all(): PushToken[] {
+    return this.db
+      .select()
+      .from(pushTokens)
+      .all()
+      .map((row) => ({ deviceId: row.deviceId, expoToken: row.expoToken, platform: row.platform }));
+  }
+
   get(deviceId: string): PushToken | null {
     const row = this.db.select().from(pushTokens).where(eq(pushTokens.deviceId, deviceId)).get();
     return row ? { deviceId: row.deviceId, expoToken: row.expoToken, platform: row.platform } : null;

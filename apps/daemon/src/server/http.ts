@@ -21,6 +21,7 @@ import { readRtkGain } from "../claude/rtkStats.js";
 import type { Config } from "../config.js";
 import { logger } from "../logger.js";
 import type { DeviceRegistry } from "../push/devices.js";
+import type { Notifier } from "../push/notifier.js";
 import type { PushTokenStore } from "../push/tokens.js";
 import { branchStatus, pullBranch } from "../git/remoteStatus.js";
 import {
@@ -46,6 +47,8 @@ export type ServerDeps = {
   devices: DeviceRegistry;
   accounts: AccountRotator;
   usage: UsageReader;
+  /** Optional so tests can build a server without one; the test-push route then says so. */
+  notifier?: Notifier;
 };
 
 /**
@@ -58,7 +61,7 @@ export type ServerDeps = {
  * is enforced once, in an onRequest hook, so it covers the WS upgrade too.
  */
 export async function createServer(config: Config, deps: ServerDeps): Promise<FastifyInstance> {
-  const { manager, broker, pushTokens, devices, accounts, usage } = deps;
+  const { manager, broker, pushTokens, devices, accounts, usage, notifier } = deps;
   const app = Fastify({ logger: false });
 
   // Every live connection gets every session-roster change, unconditionally —
@@ -331,6 +334,14 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
     pushTokens.set(parsed.data.deviceId, parsed.data.expoToken, parsed.data.platform);
     return { ok: true };
+  });
+
+  /** Send one test notification to a device — the phone's Settings "Send test" button. */
+  app.post("/devices/push-test", async (req, reply) => {
+    const deviceId = (req.body as { deviceId?: unknown } | null)?.deviceId;
+    if (typeof deviceId !== "string" || !deviceId) return reply.code(400).send({ error: "invalid_request" });
+    if (!notifier) return { ok: false, error: "Notifications aren't running on this daemon." };
+    return notifier.sendTest(deviceId);
   });
 
   // Multi-account usage + rotation state.

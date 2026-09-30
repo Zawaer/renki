@@ -291,6 +291,14 @@ input:focus-visible {
 }
 
 /*
+ * Fill mode: entrances use `backwards`, not `both`. An element that keeps a
+ * finished animation's end state applied stays its own stacking context for
+ * good, and anything popping out of it (a row's menu, a tooltip) then gets
+ * painted over by the next element down — it looked see-through. The end
+ * states are the elements' normal styles, so letting go loses nothing.
+ */
+
+/*
  * THE MOTION SYSTEM — one vocabulary for the whole app, matching the phone's
  * (apps/mobile/src/components/Motion.tsx): the same curve, and durations by
  * what's moving. Opacity and transform only, so nothing re-lays-out per frame.
@@ -317,7 +325,7 @@ input:focus-visible {
   }
 }
 .renki-stream-in {
-  animation: renki-stream-in var(--renki-dur-enter) var(--renki-ease) both;
+  animation: renki-stream-in var(--renki-dur-enter) var(--renki-ease) backwards;
 }
 
 /* A page arriving: the main pane's content when the route changes. */
@@ -332,7 +340,7 @@ input:focus-visible {
   }
 }
 .renki-screen {
-  animation: renki-screen-in var(--renki-dur-screen) var(--renki-ease) both;
+  animation: renki-screen-in var(--renki-dur-screen) var(--renki-ease) backwards;
 }
 
 /* A side panel sliding in from the edge it's docked to. */
@@ -347,7 +355,7 @@ input:focus-visible {
   }
 }
 .renki-panel {
-  animation: renki-panel-in var(--renki-dur-screen) var(--renki-ease) both;
+  animation: renki-panel-in var(--renki-dur-screen) var(--renki-ease) backwards;
 }
 
 /* Content taking over from its skeleton: a plain crossfade, nothing moving. */
@@ -360,7 +368,7 @@ input:focus-visible {
   }
 }
 .renki-fade {
-  animation: renki-fade-in var(--renki-dur-enter) var(--renki-ease) both;
+  animation: renki-fade-in var(--renki-dur-enter) var(--renki-ease) backwards;
 }
 
 /*
@@ -389,7 +397,7 @@ input:focus-visible {
 }
 .renki-reveal {
   display: grid;
-  animation: renki-reveal var(--renki-dur-layout) var(--renki-ease) both;
+  animation: renki-reveal var(--renki-dur-layout) var(--renki-ease) backwards;
 }
 .renki-conceal {
   display: grid;
@@ -426,7 +434,7 @@ input:focus-visible {
   }
 }
 .renki-enter {
-  animation: renki-fade-up var(--renki-dur-enter) var(--renki-ease) both;
+  animation: renki-fade-up var(--renki-dur-enter) var(--renki-ease) backwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -453,4 +461,17 @@ input:focus-visible {
 body.renki-resizing {
   cursor: col-resize;
   user-select: none;
+}
+
+/*
+ * A single line that runs out of room fades away instead of ending in "…" —
+ * the sidebar's session titles. The wide variant leaves space at the end for
+ * the ⋮ button that floats over it on hover.
+ */
+.renki-fade-end {
+  mask-image: linear-gradient(to right, #000 calc(100% - 18px), transparent);
+}
+.renki-fade-end-wide,
+.group:hover .group-hover\:renki-fade-end-wide {
+  mask-image: linear-gradient(to right, #000 calc(100% - 44px), transparent calc(100% - 22px));
 }

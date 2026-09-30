@@ -463,7 +463,8 @@ const LAYOUT_MS = 180;
  */
 export function Reveal({ open, children, className = "" }: { open: boolean; children: React.ReactNode; className?: string }) {
   const [lingering, setLingering] = useState(false);
-  const [moving, setMoving] = useState(open);
+  // Only a change animates: something open from the start just renders.
+  const [moving, setMoving] = useState(false);
   const wasOpen = useRef(open);
   useLayoutEffect(() => {
     if (wasOpen.current && !open) {
@@ -477,9 +478,12 @@ export function Reveal({ open, children, className = "" }: { open: boolean; chil
     wasOpen.current = open;
   }, [open]);
   if (!open && !lingering) return null;
+  // At rest it's a plain block: no grid, no clipping, no animation — nothing
+  // that could trap a menu or tooltip inside it.
+  if (!moving) return <div className={className}>{children}</div>;
   return (
-    <div className={open ? "renki-reveal" : "renki-conceal"} onAnimationEnd={() => setMoving(false)}>
-      <div className={`min-h-0 ${moving ? "overflow-hidden" : ""} ${className}`}>{children}</div>
+    <div className={open ? "renki-reveal" : "renki-conceal"} onAnimationEnd={() => open && setMoving(false)}>
+      <div className={`min-h-0 overflow-hidden ${className}`}>{children}</div>
     </div>
   );
 }

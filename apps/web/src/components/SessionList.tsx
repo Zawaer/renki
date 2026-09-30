@@ -165,7 +165,7 @@ export function SessionList({
         </Button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-2 pb-3">
+      <div className="@container flex-1 overflow-x-hidden overflow-y-auto px-2 pb-3">
         {!loaded && sessions.length === 0 && (
           <div className="space-y-4 px-1 pt-1" aria-busy="true" aria-label="Loading sessions">
             {[3, 2].map((n, g) => (
@@ -387,10 +387,15 @@ function Row({
   }
 
   return (
+    // The title takes whatever width there is and fades out at its edge; the
+    // ⋮ button floats over the row's right end on hover (as in the Claude
+    // app), so a narrow sidebar clips the title, never the button. Dimming for
+    // archived/trashed rows goes on the content only: on the whole row it
+    // dimmed its menu too.
     <div
-      className={`group flex w-full items-center gap-1 rounded-lg py-1 pr-1 pl-2 transition-colors ${
-        selected ? "bg-(--renki-selected) text-(--renki-selected-fg)" : "hover:bg-(--renki-hover)"
-      } ${session.status === "archived" || inTrash ? "opacity-70" : ""}`}
+      className={`group relative flex w-full min-w-0 items-center rounded-lg py-1 pl-2 transition-colors ${
+        selected ? "bg-(--renki-selected) text-(--renki-selected-fg)" : menuOpen ? "bg-(--renki-hover)" : "hover:bg-(--renki-hover)"
+      } ${menuOpen ? "z-30" : ""}`}
     >
       {renaming ? (
         <div className="min-w-0 flex-1 py-px">
@@ -410,32 +415,45 @@ function Row({
       ) : (
         <button
           onClick={onSelect}
-          className="flex h-7 min-w-0 flex-1 items-center gap-2.5 text-left"
-          title={branch ? `${session.repoName} · ${branch}` : session.repoName}
+          className={`flex h-7 min-w-0 flex-1 items-center gap-2.5 pr-1 text-left ${session.status === "archived" || inTrash ? "opacity-70" : ""}`}
+          title={`${session.title || session.repoName}${branch ? ` · ${session.repoName} · ${branch}` : ""}`}
         >
           <SessionGlyph status={session.status} pendingPermission={session.hasPendingPermission} paused={!!session.resume} />
-          <span className="truncate text-[13px] text-(--renki-fg)">{session.title || session.repoName}</span>
+          <span
+            className={`renki-fade-end min-w-0 flex-1 overflow-hidden text-[13px] whitespace-nowrap text-(--renki-fg) ${
+              menuOpen ? "renki-fade-end-wide" : "group-hover:renki-fade-end-wide"
+            }`}
+          >
+            {session.title || session.repoName}
+          </span>
           {/* In the bin, the deadline is the only thing worth the row's spare
               space — the branch is still there, which is the point, but it
               isn't what you came to check. */}
-          {inTrash && countdown ? (
-            <span className="ml-auto shrink-0 text-[10px] text-(--renki-fg-muted)">{countdown}</span>
-          ) : (
-            branch && (
-              <span className="ml-auto max-w-24 shrink-0 truncate font-mono text-[10px] text-(--renki-fg-muted)">{branch}</span>
-            )
-          )}
-          {session.controller && (
-            <span className="codicon codicon-lock-small shrink-0 text-(--renki-fg-muted)" title="A device holds control" />
-          )}
+          {/* Details on the right give way to the ⋮ button on hover, and the
+              branch drops out entirely once the sidebar gets narrow. */}
+          <span className={`flex shrink-0 items-center gap-1.5 transition-opacity ${menuOpen ? "opacity-0" : "group-hover:opacity-0"}`}>
+            {inTrash && countdown ? (
+              <span className="text-[10px] text-(--renki-fg-muted)">{countdown}</span>
+            ) : (
+              branch && (
+                <span className="hidden max-w-24 truncate font-mono text-[10px] text-(--renki-fg-muted) @min-[15rem]:inline">{branch}</span>
+              )
+            )}
+            {session.controller && (
+              <span className="codicon codicon-lock-small text-(--renki-fg-muted)" title="A device holds control" />
+            )}
+          </span>
         </button>
       )}
 
-      <div className="relative shrink-0">
+      {/* Above the rows after it while its menu is open (z-30 on the row):
+          every row is positioned, and later ones would otherwise paint over it. */}
+      <div className="absolute inset-y-0 right-1 flex items-center">
         <button
           onClick={() => setMenuOpen((v) => !v)}
           title="Session actions"
-          className={`flex h-6 w-6 items-center justify-center rounded-md text-(--renki-fg-muted) hover:bg-(--renki-bg-inset) hover:text-(--renki-fg) ${
+          aria-label="Session actions"
+          className={`flex h-6 w-6 items-center justify-center rounded-md text-(--renki-fg-muted) transition-opacity hover:bg-(--renki-bg-inset) hover:text-(--renki-fg) ${
             menuOpen ? "bg-(--renki-bg-inset) text-(--renki-fg)" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
           }`}
         >

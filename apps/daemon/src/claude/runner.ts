@@ -249,12 +249,16 @@ export function handleAssistantMessage(
   subagentCtx: SubagentContext,
   emit: (p: EventPayload) => void,
   startedAt?: Map<number, number>,
-): void {
+): number {
   const content = (message as { content?: unknown }).content;
-  if (!Array.isArray(content)) return;
+  if (!Array.isArray(content)) return 0;
 
   const localIndices = [...blockKinds.keys()].sort((a, b) => a - b);
   let cursor = 0;
+  // Blocks with no streamed index to match — every block of a message that
+  // arrives whole, as a subagent's do — number on from the last streamed one.
+  let unstreamed = 0;
+  let consumed = 0;
   const subagentFields = subagentCtx.parentToolUseId
     ? {
         parentToolUseId: subagentCtx.parentToolUseId,
@@ -267,8 +271,9 @@ export function handleAssistantMessage(
     const kind: "text" | "thinking" | "tool_use" =
       block?.type === "thinking" ? "thinking" : block?.type === "tool_use" ? "tool_use" : "text";
     while (cursor < localIndices.length && blockKinds.get(localIndices[cursor]!) !== kind) cursor++;
-    const localIndex = cursor < localIndices.length ? localIndices[cursor]! : localIndices.length;
+    const localIndex = cursor < localIndices.length ? localIndices[cursor]! : (localIndices.at(-1) ?? -1) + 1 + unstreamed++;
     cursor++;
+    consumed = Math.max(consumed, localIndex + 1);
     const blockIndex = globalOffset + localIndex;
     const began = startedAt?.get(localIndex);
     const durationMs = began != null ? Math.max(0, Date.now() - began) : undefined;
@@ -312,6 +317,7 @@ export function handleAssistantMessage(
       });
     }
   });
+  return consumed;
 }
 
 /** A `user` SDK message carries tool_result blocks for tools the SDK ran. */

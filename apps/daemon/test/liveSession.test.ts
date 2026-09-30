@@ -280,6 +280,26 @@ describe("LiveClaudeSession background agents", () => {
     expect(live.busy).toBe(false);
   });
 
+  /**
+   * A subagent's messages arrive whole, never streamed. Numbering only
+   * advanced on streamed blocks, so every one of them was index 0 and each
+   * step overwrote the last — the agent's view showed only its final step.
+   */
+  it("numbers a subagent's whole messages on from each other", async () => {
+    const { live, fake, events } = makeLive();
+    const t = live.runTurn({ prompt: "spawn", promptId: "p1", resolvePermission: allow });
+    await new Promise((r) => setTimeout(r, 0));
+    await fake.emit(assistant("spawning", { toolUseId: "task-1" }));
+    await fake.emit(assistant("step one", { parent: "task-1" }));
+    await fake.emit(assistant("step two", { parent: "task-1", toolUseId: "bash-1" }));
+    await fake.emit(assistant("step three", { parent: "task-1" }));
+    await fake.emit(okResult as never);
+    await t;
+
+    const sub = events.filter((e) => e.kind === "assistant_block" && "parentToolUseId" in e && e.parentToolUseId === "task-1") as { blockIndex: number }[];
+    expect(sub.map((b) => b.blockIndex)).toEqual([0, 1, 2, 3]);
+  });
+
   it("answers a permission request that arrives between turns through the last resolver", async () => {
     const resolver = vi.fn(async () => ({ decision: "deny" as const, byDeviceId: "phone_1" }));
     const { live, fake, events } = makeLive();

@@ -521,7 +521,7 @@ export class LiveClaudeSession {
         if (sdkError) break;
         const turnId = this.turnFor(message.parent_tool_use_id);
         const t = this.trackingFor(message.parent_tool_use_id);
-        handleAssistantMessage(
+        const consumed = handleAssistantMessage(
           message.message,
           turnId,
           t.blockKinds,
@@ -543,9 +543,12 @@ export class LiveClaudeSession {
           }
         }
         // This message is done — its local indices are now spoken for. Shift
-        // the next message FROM THE SAME (sub)agent past them.
+        // the next message FROM THE SAME (sub)agent past them. Counted from
+        // what was emitted, not just what streamed: a subagent's messages
+        // arrive whole, and counting only streamed blocks left every one of
+        // them at index 0, each overwriting the last.
         const maxLocal = t.blockKinds.size > 0 ? Math.max(...t.blockKinds.keys()) : -1;
-        t.globalOffset += maxLocal + 1;
+        t.globalOffset += Math.max(maxLocal + 1, consumed);
         t.blockKinds.clear();
         t.startedAt.clear();
         break;

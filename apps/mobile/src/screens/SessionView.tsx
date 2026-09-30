@@ -29,6 +29,7 @@ import {
   type TodoItemView,
   type TurnView,
   formatResumeAt,
+  isBulkyToolPayload,
   modelFullName,
   modelMenuLabel,
 } from "@renki/client-core";
@@ -719,7 +720,42 @@ function TimelineRow({
       </View>
     );
   }
+  if (item.type === "background_tasks") {
+    return <BackgroundTasksRow tasks={item.tasks} styles={styles} />;
+  }
   return <AssistantTurn turn={item.turn} colors={colors} styles={styles} />;
+}
+
+/**
+ * Background tasks with no tool call in view to attach to, folded into one
+ * tappable line that opens to the list — one row however many land.
+ */
+function BackgroundTasksRow({
+  tasks,
+  styles,
+}: {
+  tasks: { summary: string; status: "completed" | "failed" | "stopped" }[];
+  styles: Styles;
+}) {
+  const [open, setOpen] = useState(false);
+  const failed = tasks.filter((t) => t.status === "failed").length;
+  const label =
+    tasks.length === 1
+      ? `Background task finished: ${tasks[0]!.summary}`
+      : `${tasks.length} background tasks finished${failed > 0 ? ` · ${failed} failed` : ""}${open ? "" : " ›"}`;
+  return (
+    <View style={styles.noticeWrap}>
+      <TouchableOpacity disabled={tasks.length === 1} onPress={() => setOpen((o) => !o)}>
+        <Text style={[styles.notice, failed > 0 && styles.noticeWarn]}>{label}</Text>
+      </TouchableOpacity>
+      {open &&
+        tasks.map((t, i) => (
+          <Text key={i} style={[styles.notice, t.status === "failed" && styles.noticeWarn]}>
+            {t.status === "completed" ? "✓" : t.status === "stopped" ? "■" : "✕"} {t.summary}
+          </Text>
+        ))}
+    </View>
+  );
 }
 
 function AssistantTurn({ turn, colors, styles }: { turn: TurnView; colors: ThemeColors; styles: Styles }) {
@@ -830,15 +866,19 @@ function ToolStep({
   const agentRunning = block.subagent?.status === "running" && !block.backgroundTask;
   const running = !block.result && !block.backgroundTask && turnRunning;
   const richPayload = editView != null || todos != null || plan != null || block.subagent != null;
-  const restingOpen = richPayload && (agentRunning || block.subagent == null);
-  const [open, setOpen] = useState(running || restingOpen);
+  const command = block.toolName === "Bash" ? ((block.toolInput as { command?: string } | null)?.command ?? null) : null;
+  // Whole-file Writes and long scripts stay folded, even while running — see isBulkyToolPayload.
+  const bulky = isBulkyToolPayload(editView, command);
+  const restingOpen = richPayload && !bulky && (agentRunning || block.subagent == null);
+  const [open, setOpen] = useState((running && !bulky) || restingOpen);
   const userToggled = useRef(false);
   const wasRunning = useRef(running || agentRunning);
   useEffect(() => {
     const nowRunning = running || agentRunning;
     if (wasRunning.current && !nowRunning && !userToggled.current) setOpen(restingOpen);
+    if (!wasRunning.current && nowRunning && !userToggled.current) setOpen((running && !bulky) || restingOpen);
     wasRunning.current = nowRunning;
-  }, [running, agentRunning, restingOpen]);
+  }, [running, agentRunning, restingOpen, bulky]);
 
   // One glyph language for every step: check = finished, cross = failed,
   // spinner-ish dot = still going, square = stopped.

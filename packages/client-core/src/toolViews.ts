@@ -247,3 +247,17 @@ export function describeTool(name: string, input: unknown): ToolDescription {
       return { label: name, meta: null };
   }
 }
+
+/** Past this many diff lines, or command lines, a tool call starts folded. */
+const BULKY_DIFF_LINES = 12;
+const BULKY_COMMAND_LINES = 4;
+
+/**
+ * Is this call's payload a wall of code — a whole-file Write, a long script?
+ * Clients keep those folded by default, even while running: the row's own
+ * label says what's happening, and hardly anyone reads the code itself.
+ */
+export function isBulkyToolPayload(editView: EditToolView | null, command: string | null): boolean {
+  if (editView && editView.hunks.reduce((n, h) => n + h.lines.length, 0) > BULKY_DIFF_LINES) return true;
+  return command != null && command.split("\n").length > BULKY_COMMAND_LINES;
+}

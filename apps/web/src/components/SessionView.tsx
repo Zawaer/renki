@@ -32,6 +32,7 @@ import {
   type TodoItemView,
   type TurnView,
   formatResumeAt,
+  isBulkyToolPayload,
   modelFullName,
   modelMenuLabel,
 } from "@renki/client-core";
@@ -451,7 +452,63 @@ function TimelineRow({ item }: { item: TimelineItem }) {
   if (item.type === "model_change") {
     return <ModelChangeMarker model={item.model} />;
   }
+  if (item.type === "background_tasks") {
+    return <BackgroundTasksRow tasks={item.tasks} />;
+  }
   return <AssistantTurn turn={item.turn} />;
+}
+
+/**
+ * Background tasks that finished with no tool call in view to attach to,
+ * folded into one line — "12 background tasks finished" — that opens to the
+ * list. Normally a finished task shows on the call that started it; this is
+ * the fallback, so it should cost one line however many land.
+ */
+function BackgroundTasksRow({ tasks }: { tasks: { summary: string; status: "completed" | "failed" | "stopped" }[] }) {
+  const [open, setOpen] = useState(false);
+  const failed = tasks.filter((t) => t.status === "failed").length;
+  const label =
+    tasks.length === 1
+      ? `Background task finished: ${tasks[0]!.summary}`
+      : `${tasks.length} background tasks finished${failed > 0 ? ` · ${failed} failed` : ""}`;
+  return (
+    <div className="flex flex-col items-center">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        disabled={tasks.length === 1}
+        className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors enabled:hover:text-(--renki-fg) ${
+          failed > 0
+            ? "border-(--renki-warning)/30 bg-(--renki-warning)/10 text-(--renki-warning)"
+            : "border-(--renki-border) bg-(--renki-surface) text-(--renki-fg-muted)"
+        }`}
+      >
+        <span className="codicon codicon-layers shrink-0" />
+        <span className="truncate">{label}</span>
+        {tasks.length > 1 && (
+          <span className={`codicon ${open ? "codicon-chevron-down" : "codicon-chevron-right"} shrink-0 text-[12px]`} />
+        )}
+      </button>
+      {open && tasks.length > 1 && (
+        <ul className="mt-2 w-full max-w-xl space-y-1 rounded-xl border border-(--renki-border)/70 px-3 py-2 text-xs text-(--renki-fg-muted)">
+          {tasks.map((t, i) => (
+            <li key={i} className="flex items-start gap-1.5">
+              <span
+                className={`codicon mt-0.5 shrink-0 ${
+                  t.status === "completed"
+                    ? "codicon-pass-filled text-(--renki-success)"
+                    : t.status === "stopped"
+                      ? "codicon-debug-stop"
+                      : "codicon-error text-(--renki-danger)"
+                }`}
+              />
+              <span>{t.summary}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -726,8 +783,16 @@ function ToolStep({
   const running = !block.result && !block.backgroundTask && turnRunning;
   const richPayload =
     editView != null || todos != null || plan != null || block.subagent != null;
-  const restingOpen = richPayload && (agentRunning || block.subagent == null);
-  const [open, setOpen] = useState(running || restingOpen);
+  const command =
+    block.toolName === "Bash"
+      ? ((block.toolInput as { command?: string } | null)?.command ?? null)
+      : null;
+  // A whole-file Write or a long script is a wall of code nobody reads while
+  // skimming a session. Keep those folded, even while running — the row's
+  // label and spinner say what's happening — and open on click.
+  const bulky = isBulkyToolPayload(editView, command);
+  const restingOpen = richPayload && !bulky && (agentRunning || block.subagent == null);
+  const [open, setOpen] = useState((running && !bulky) || restingOpen);
   const userToggled = useRef(false);
   const wasRunning = useRef(running || agentRunning);
   useEffect(() => {
@@ -735,8 +800,11 @@ function ToolStep({
     const nowRunning = running || agentRunning;
     if (wasRunning.current && !nowRunning && !userToggled.current)
       setOpen(restingOpen);
+    // A call that starts running after mount (streamed in live) opens the same way.
+    if (!wasRunning.current && nowRunning && !userToggled.current)
+      setOpen((running && !bulky) || restingOpen);
     wasRunning.current = nowRunning;
-  }, [running, agentRunning, restingOpen]);
+  }, [running, agentRunning, restingOpen, bulky]);
 
   // One glyph language for every step: check = finished, cross = failed,
   // spinner = still going, square = stopped. No "ok" vs "done" — same thing.
@@ -756,11 +824,6 @@ function ToolStep({
   ) : running ? (
     <Outcome kind="running" />
   ) : null;
-
-  const command =
-    block.toolName === "Bash"
-      ? ((block.toolInput as { command?: string } | null)?.command ?? null)
-      : null;
 
   return (
     <div className="my-1">

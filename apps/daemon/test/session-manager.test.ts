@@ -1233,6 +1233,23 @@ describe("resuming after a usage limit", () => {
     expect(texts()).toEqual(["one", "two"]);
   });
 
+  /** The switch-and-retry path had the same flaw: asking for the whole task again after work was done. */
+  it("retries on the new account with a continue, not the prompt, when the turn got partway", async () => {
+    const sw = autoSwitch({ autoRetryEnabled: true, rateLimitSwitch: vi.fn(async () => ({ switched: true, active: 3 })) });
+    const { manager, repoId } = setup();
+    manager.setAutoSwitch(sw);
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+    runTurn.mockImplementationOnce(async () => {
+      liveInstances.at(-1)!.opts.emit({ kind: "tool_result", turnId: "t1", toolUseId: "tu1", ok: true, summary: "edited" });
+      return limited;
+    });
+    runTurn.mockResolvedValueOnce(okTurn);
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p1", text: "fix the bug", resolvePermission: noopResolve });
+    expect(texts()).toEqual(["fix the bug", RESUME_CONTINUE_TEXT]);
+    expect(manager.getSession(s.id).resume).toBeNull();
+  });
+
   it("isn't scheduled with auto-resume off", async () => {
     const { manager, s } = await pausedSession(autoSwitch({ autoResumeEnabled: false }));
     expect(manager.getSession(s.id).resume).toBeNull();

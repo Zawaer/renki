@@ -523,3 +523,46 @@ describe("SessionView session snapshot", () => {
     expect(screen.queryByText(/Paused on a usage limit/)).not.toBeInTheDocument();
   });
 });
+
+describe("SessionView tidy transcript", () => {
+  const write = (lines: number) =>
+    ev("s1", {
+      kind: "assistant_block",
+      turnId: "t1",
+      blockIndex: 0,
+      blockKind: "tool_use",
+      text: null,
+      toolUseId: "tu_w",
+      toolName: "Write",
+      toolInput: { file_path: "/x/big.py", content: Array.from({ length: lines }, (_, i) => `line_${i}`).join("\n") },
+    });
+  const done = [
+    ev("s1", { kind: "tool_result", turnId: "t1", toolUseId: "tu_w", ok: true, summary: "written" }),
+    ev("s1", { kind: "turn_result", turnId: "t1", promptId: "p1", ok: true, costUsd: 0, durationMs: 1, errorMessage: null, inputTokens: 1, outputTokens: 1 }),
+  ];
+  const start = [ev("s1", { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "go" })];
+
+  it("folds a whole-file write, and opens it on click", () => {
+    renderSession("s1", [...start, write(80), ...done]);
+    expect(screen.queryByText(/line_40/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /big\.py/ }));
+    expect(screen.getByText(/line_40/)).toBeInTheDocument();
+  });
+
+  it("still shows a small edit unprompted", () => {
+    renderSession("s1", [...start, write(3), ...done]);
+    expect(screen.getByText(/line_1/)).toBeInTheDocument();
+  });
+
+  it("gathers loose background tasks into one row that opens to the list", () => {
+    renderSession("s1", [
+      ev("s1", { kind: "background_task", taskId: "a", toolUseId: null, status: "completed", summary: "Load the Stadium homepage" }),
+      ev("s1", { kind: "background_task", taskId: "b", toolUseId: null, status: "failed", summary: "Check the offer list" }),
+      ev("s1", { kind: "background_task", taskId: "c", toolUseId: null, status: "completed", summary: "Run all tests" }),
+    ]);
+    expect(screen.getByText("3 background tasks finished · 1 failed")).toBeInTheDocument();
+    expect(screen.queryByText("Run all tests")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /3 background tasks finished/ }));
+    expect(screen.getByText("Run all tests")).toBeInTheDocument();
+  });
+});

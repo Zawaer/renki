@@ -84,6 +84,13 @@ export type TimelineItem =
   | { type: "prompt"; promptId: string; deviceId: string; text: string; attachments?: Attachment[] }
   | { type: "turn"; turn: TurnView }
   | { type: "notice"; text: string; level: "info" | "warn" }
+  /**
+   * Background tasks that finished without a tool call in the timeline to
+   * attach to (the call that started them was never replayed). Consecutive
+   * ones share one item, so a long unattended run shows one collapsible row
+   * rather than a wall of them.
+   */
+  | { type: "background_tasks"; tasks: { summary: string; status: "completed" | "failed" | "stopped" }[] }
   /** null on either side means the SDK's own default model. */
   | { type: "model_change"; model: string | null; previousModel: string | null };
 
@@ -257,7 +264,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
     }
 
     case "assistant_delta":
-      s.timeline = updateTurn(s.timeline, e.turnId, (turn) => ({
+      s.timeline = updateTurn(s.timeline, subagentTurnId(s.timeline, e.turnId, e.parentToolUseId), (turn) => ({
         ...turn,
         blocks: e.parentToolUseId
           ? updateSubagentBlocks(turn.blocks, e.parentToolUseId, (sub) => applyDelta(sub, e.blockIndex, e.blockKind, e.text, e.ts))
@@ -266,13 +273,13 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       return s;
 
     case "assistant_block":
-      s.timeline = updateTurn(s.timeline, e.turnId, (turn) => ({
+      s.timeline = updateTurn(s.timeline, subagentTurnId(s.timeline, e.turnId, e.parentToolUseId), (turn) => ({
         ...turn,
         blocks: e.parentToolUseId
           ? updateSubagentBlocks(
               turn.blocks,
               e.parentToolUseId,
-              (sub) => applyBlock(sub, e.blockIndex, e.blockKind, e.text, e.toolUseId, e.toolName, e.toolInput, e.durationMs, e.ts),
+              (sub) => applyBlock(sub, subagentSlot(sub, e.blockIndex, e.blockKind, e.toolUseId), e.blockKind, e.text, e.toolUseId, e.toolName, e.toolInput, e.durationMs, e.ts),
               { subagentType: e.subagentType ?? null, taskDescription: e.taskDescription ?? null },
             )
           : applyBlock(turn.blocks, e.blockIndex, e.blockKind, e.text, e.toolUseId, e.toolName, e.toolInput, e.durationMs, e.ts),
@@ -280,7 +287,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       return s;
 
     case "tool_result":
-      s.timeline = updateTurn(s.timeline, e.turnId, (turn) => ({
+      s.timeline = updateTurn(s.timeline, subagentTurnId(s.timeline, e.turnId, e.toolUseId), (turn) => ({
         ...turn,
         blocks: applyToolResult(turn.blocks, e.toolUseId, e.ok, e.summary),
       }));
@@ -319,8 +326,21 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       // time this retry's own turn_result lands, the attempt it replaced is guaranteed
       // to already be sitting in the timeline with status "error" — drop it so its
       // already-streamed (but superseded) answer doesn't render twice.
+      //
+      // Only when it never got as far as a tool call, though. An attempt that
+      // ran tools before hitting the limit isn't superseded — its edits, commits
+      // and background agents happened, and the retry carries on from them.
+      // Dropping one of those erased hours of work from view, and orphaned the
+      // agents it started.
       s.timeline = s.timeline.filter(
-        (it) => !(it.type === "turn" && it.turn.turnId !== e.turnId && it.turn.promptId === e.promptId && it.turn.status === "error"),
+        (it) =>
+          !(
+            it.type === "turn" &&
+            it.turn.turnId !== e.turnId &&
+            it.turn.promptId === e.promptId &&
+            it.turn.status === "error" &&
+            !it.turn.blocks.some((b) => b?.kind === "tool_use")
+          ),
       );
       return s;
 
@@ -346,16 +366,16 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
 
     case "background_task": {
       const found = e.toolUseId ? applyBackgroundTask(s.timeline, e.toolUseId, e.status, e.summary) : null;
-      s.timeline = found
-        ? found
-        : [
-            ...s.timeline,
-            {
-              type: "notice",
-              text: `Background task finished: ${e.summary}`,
-              level: e.status === "completed" ? "info" : "warn",
-            },
-          ];
+      if (found) {
+        s.timeline = found;
+        return s;
+      }
+      const task = { summary: e.summary, status: e.status };
+      const last = s.timeline[s.timeline.length - 1];
+      s.timeline =
+        last?.type === "background_tasks"
+          ? [...s.timeline.slice(0, -1), { type: "background_tasks", tasks: [...last.tasks, task] }]
+          : [...s.timeline, { type: "background_tasks", tasks: [task] }];
       return s;
     }
 
@@ -379,6 +399,53 @@ export function applyEvents(prev: ConversationState, events: SessionEvent[]): Co
  * timeline) the first time we see its events — which, because the log is
  * ordered, is always right after its prompt.
  */
+/**
+ * The turn an event about `toolUseId` belongs in: its own `turnId` when that
+ * turn holds the call, otherwise whichever turn does.
+ *
+ * A background agent outlives the turn that started it. Its steps (and the
+ * results of the commands it runs) can arrive stamped with a later turn — the
+ * daemon's record of which turn owns an agent is in memory, and gone after
+ * the live process is recycled. Routed by turnId alone, those steps found no
+ * parent in the later turn and were dropped, and every background command the
+ * agent ran then surfaced as a loose "finished" row at the bottom.
+ */
+function subagentTurnId(timeline: TimelineItem[], turnId: string, toolUseId: string | null | undefined): string {
+  if (!toolUseId) return turnId;
+  const own = timeline.find((it) => it.type === "turn" && it.turn.turnId === turnId);
+  if (own?.type === "turn" && containsToolUse(own.turn.blocks, toolUseId)) return turnId;
+  for (let i = timeline.length - 1; i >= 0; i--) {
+    const it = timeline[i]!;
+    if (it.type === "turn" && containsToolUse(it.turn.blocks, toolUseId)) return it.turn.turnId;
+  }
+  return turnId;
+}
+
+/**
+ * Where a subagent's block goes. Normally its own index — but older daemons
+ * numbered every whole (non-streamed) subagent message from 0, so each step
+ * landed on the last one's slot and replaced it. A block can only legitimately
+ * update a slot holding the same kind of block (and, for a tool call, the
+ * same call), so anything else is a new step: append it.
+ */
+function subagentSlot(blocks: BlockView[], index: number, kind: string, toolUseId: string | null): number {
+  const existing = blocks[index];
+  if (!existing) return index;
+  const sameKind = existing.kind === (kind === "thinking" ? "thinking" : kind === "tool_use" ? "tool_use" : "text");
+  const sameCall = existing.kind !== "tool_use" || existing.toolUseId === toolUseId;
+  return sameKind && sameCall ? index : blocks.length;
+}
+
+/** Is a tool_use with this id anywhere in these blocks, subagents included? */
+function containsToolUse(blocks: BlockView[], toolUseId: string): boolean {
+  for (const b of blocks) {
+    if (b?.kind !== "tool_use") continue;
+    if (b.toolUseId === toolUseId) return true;
+    if (b.subagent && containsToolUse(b.subagent.blocks, toolUseId)) return true;
+  }
+  return false;
+}
+
 function updateTurn(
   timeline: TimelineItem[],
   turnId: string,

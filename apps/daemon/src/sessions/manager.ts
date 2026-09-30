@@ -80,7 +80,7 @@ export const MAX_RESUME_ATTEMPTS = 8;
  * limit stopped it. The transcript already has the prompt and the work done
  * so far; sending the prompt again would read as a new request to start over.
  */
-export const RESUME_CONTINUE_TEXT = "Your usage limit has reset. Continue where you left off.";
+export const RESUME_CONTINUE_TEXT = "The usage limit is cleared now. Continue where you left off.";
 
 /** Timers are re-armed in steps no longer than this, well inside setTimeout's ~24.8-day ceiling. */
 const MAX_TIMER_STEP_MS = 6 * 60 * 60_000;
@@ -747,10 +747,12 @@ export class SessionManager {
 
     this.promptedTurns.add(input.sessionId);
     let resumeId = session.claudeSessionId;
-    const runOnce = () =>
+    const runOnce = (continuing = false) =>
       this.liveFor(input.sessionId, session.worktreePath, resumeId, input).runTurn({
-        prompt: input.text,
-        attachments: input.attachments,
+        // A retry after the turn got partway carries on from the transcript
+        // rather than asking for the whole thing again — see RESUME_CONTINUE_TEXT.
+        prompt: continuing ? RESUME_CONTINUE_TEXT : input.text,
+        attachments: continuing ? undefined : input.attachments,
         promptId: input.promptId,
         model: input.model,
         clientType: clientTypeFromDeviceId(input.deviceId),
@@ -781,7 +783,7 @@ export class SessionManager {
         // The running process may hold the exhausted account's credentials in
         // memory — start a fresh one that resumes the same transcript.
         this.closeLive(input.sessionId, "account switched");
-        result = await runOnce();
+        result = await runOnce(this.turnMadeProgress(input.sessionId, input.promptId));
         resumeId = result.claudeSessionId ?? resumeId;
       } else {
         // `reason` says which of the several "didn't switch" cases this was, so

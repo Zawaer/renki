@@ -361,9 +361,29 @@ describe("per-event folding", () => {
     expect(laterTurn.blocks.every((b: any) => !("backgroundTask" in b) || b.backgroundTask == null)).toBe(true);
   });
 
-  it("background_task falls back to a plain notice when no matching tool_use block exists", () => {
-    const s = fold(stream({ kind: "background_task", taskId: "task_1", toolUseId: null, status: "failed", summary: "agent crashed" }));
-    expect(s.timeline).toEqual([{ type: "notice", text: "Background task finished: agent crashed", level: "warn" }]);
+  it("background_task with no matching tool call joins one grouped row, not a row each", () => {
+    const s = fold(stream(
+      { kind: "background_task", taskId: "task_1", toolUseId: null, status: "failed", summary: "agent crashed" },
+      { kind: "background_task", taskId: "task_2", toolUseId: "tu_unknown", status: "completed", summary: "tests ran" },
+    ));
+    expect(s.timeline).toEqual([
+      {
+        type: "background_tasks",
+        tasks: [
+          { summary: "agent crashed", status: "failed" },
+          { summary: "tests ran", status: "completed" },
+        ],
+      },
+    ]);
+  });
+
+  it("starts a new group after anything else lands in between", () => {
+    const s = fold(stream(
+      { kind: "background_task", taskId: "task_1", toolUseId: null, status: "completed", summary: "one" },
+      { kind: "notice", text: "hello", level: "info" },
+      { kind: "background_task", taskId: "task_2", toolUseId: null, status: "completed", summary: "two" },
+    ));
+    expect(s.timeline.map((i) => i.type)).toEqual(["background_tasks", "notice", "background_tasks"]);
   });
 
   it("error events fold nothing into the timeline but still advance lastSeq", () => {
@@ -510,6 +530,81 @@ describe("subagent nesting (forwardSubagentText)", () => {
       status: "running",
     });
     expect(task.subagent!.blocks).toEqual([{ kind: "text", text: "Looking around…", startedAtMs: 1002, endedAtMs: 1003 }]);
+  });
+
+  /**
+   * A background agent keeps working after its turn ends, and its steps can
+   * arrive stamped with a later turn. They belong under the agent wherever it
+   * lives — before, they were dropped, and every background command the
+   * agent ran then showed up as a loose "finished" row.
+   */
+  /** Transcripts recorded before the daemon fixed its numbering have every subagent step at index 0. */
+  it("keeps every step of a subagent recorded with colliding indices", () => {
+    const sub = (blockKind: "thinking" | "tool_use" | "text", toolUseId: string | null, text: string | null) => ({
+      kind: "assistant_block" as const,
+      turnId: TURN,
+      blockIndex: 0,
+      blockKind,
+      text,
+      toolUseId,
+      toolName: toolUseId ? "Bash" : null,
+      toolInput: null,
+      parentToolUseId: "tu_agent",
+    });
+    const s = fold(stream(
+      { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "go" },
+      { kind: "assistant_block", turnId: TURN, blockIndex: 0, blockKind: "tool_use", text: null, toolUseId: "tu_agent", toolName: "Agent", toolInput: {} },
+      sub("thinking", null, "hmm"),
+      sub("tool_use", "tu_b1", null),
+      sub("tool_use", "tu_b2", null),
+      { kind: "background_task", taskId: "b1", toolUseId: "tu_b1", status: "completed", summary: "first" },
+    ));
+    const turn = s.timeline.find((i) => i.type === "turn");
+    if (turn?.type !== "turn") throw new Error("no turn");
+    const agent = turn.turn.blocks[0]!;
+    if (agent.kind !== "tool_use") throw new Error("expected tool_use");
+    expect(agent.subagent!.blocks.map((b) => (b.kind === "tool_use" ? b.toolUseId : b.kind))).toEqual(["thinking", "tu_b1", "tu_b2"]);
+    expect(s.timeline.some((i) => i.type === "background_tasks")).toBe(false);
+  });
+
+  /**
+   * The rate-limit retry reruns a prompt under the same promptId. An attempt
+   * that ran tools before the limit isn't a duplicate to hide: its work
+   * happened, and the retry carries on from it.
+   */
+  it("keeps a failed attempt that ran tools when its retry finishes", () => {
+    const s = fold(stream(
+      { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "go" },
+      { kind: "assistant_block", turnId: "t_a", blockIndex: 0, blockKind: "tool_use", text: null, toolUseId: "tu_x", toolName: "Bash", toolInput: {} },
+      { kind: "turn_result", turnId: "t_a", promptId: "p1", ok: false, costUsd: null, durationMs: 1, errorMessage: "limit", inputTokens: null, outputTokens: null },
+      { kind: "assistant_block", turnId: "t_b", blockIndex: 0, blockKind: "text", text: "done", toolUseId: null, toolName: null, toolInput: null },
+      { kind: "turn_result", turnId: "t_b", promptId: "p1", ok: true, costUsd: 0, durationMs: 1, errorMessage: null, inputTokens: 1, outputTokens: 1 },
+    ));
+    expect(s.timeline.filter((i) => i.type === "turn")).toHaveLength(2);
+  });
+
+  it("routes a background agent's later steps to the turn that started it", () => {
+    const LATER = "t_later";
+    const s = fold(stream(
+      { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "research" },
+      { kind: "assistant_block", turnId: TURN, blockIndex: 0, blockKind: "tool_use", text: null, toolUseId: "tu_agent", toolName: "Agent", toolInput: {} },
+      { kind: "turn_result", turnId: TURN, promptId: "p1", ok: true, costUsd: 0, durationMs: 1, errorMessage: null, inputTokens: 1, outputTokens: 1 },
+      { kind: "prompt_submitted", promptId: "p2", deviceId: "d1", text: "meanwhile" },
+      { kind: "assistant_block", turnId: LATER, blockIndex: 0, blockKind: "text", text: "sure", toolUseId: null, toolName: null, toolInput: null },
+      // The agent, still running, starts a background command — stamped with the later turn.
+      { kind: "assistant_block", turnId: LATER, blockIndex: 0, blockKind: "tool_use", text: null, toolUseId: "tu_bash", toolName: "Bash", toolInput: { command: "sleep 1" }, parentToolUseId: "tu_agent" },
+      { kind: "tool_result", turnId: LATER, toolUseId: "tu_bash", ok: true, summary: "started" },
+      { kind: "background_task", taskId: "b1", toolUseId: "tu_bash", status: "completed", summary: "Sleep a second" },
+    ));
+
+    const turns = s.timeline.filter((i) => i.type === "turn").map((i) => (i as Extract<typeof i, { type: "turn" }>).turn);
+    const agent = turns[0]!.blocks[0]!;
+    if (agent.kind !== "tool_use") throw new Error("expected tool_use");
+    const bash = agent.subagent!.blocks[0]!;
+    expect(bash).toMatchObject({ kind: "tool_use", toolUseId: "tu_bash", result: { ok: true, summary: "started" }, backgroundTask: { status: "completed" } });
+    // The later turn keeps only its own text.
+    expect(turns[1]!.blocks).toHaveLength(1);
+    expect(s.timeline.some((i) => i.type === "background_tasks")).toBe(false);
   });
 
   it("marks the subagent done when the Task's own tool_result arrives, and routes a nested tool_result to the right level", () => {

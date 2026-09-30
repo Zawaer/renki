@@ -1,6 +1,7 @@
 import { RealtimeClient, RestClient } from "@renki/client-core";
 import type { Session, StatsResponse } from "@renki/protocol";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import { Home } from "../src/components/Home.js";
 import { ClientContext } from "../src/lib/client.js";
@@ -26,9 +27,11 @@ function renderHome(stats: StatsResponse, sessions: Session[] = []) {
   rest.listSessions = async () => sessions;
   const config = { baseUrl: "http://test.invalid", token: "t", deviceId: "d1", deviceName: "Test" };
   render(
-    <ClientContext.Provider value={{ rest, realtime, config }}>
-      <Home />
-    </ClientContext.Provider>,
+    <MemoryRouter>
+      <ClientContext.Provider value={{ rest, realtime, config }}>
+        <Home />
+      </ClientContext.Provider>
+    </MemoryRouter>,
   );
 }
 
@@ -71,5 +74,20 @@ describe("Home", () => {
       firstTurnAt: null,
     });
     await waitFor(() => expect(screen.getByText("Nothing to show yet")).toBeInTheDocument());
+  });
+
+  it("lists sessions that need you — an approval, a failure, a pause — above the stats", async () => {
+    const empty = { key: "lifetime", costUsd: 0, inputTokens: 0, outputTokens: 0, durationMs: 0, turnCount: 0, okCount: 0 };
+    const base = { repoName: "shopping-tool", status: "idle", hasPendingPermission: false, lastActivityAt: Date.now(), createdAt: Date.now() };
+    renderHome({ daily: [], monthly: [], byRepo: [], byModel: [], byClientType: [], lifetime: empty, firstTurnAt: null }, [
+      { ...base, id: "a", title: "Waiting on approval", status: "busy", hasPendingPermission: true } as Session,
+      { ...base, id: "b", title: "All good" } as Session,
+      { ...base, id: "c", title: "Paused overnight", resume: { at: Date.now() + 3_600_000, reason: "", attempt: 0 } } as Session,
+    ]);
+    await waitFor(() => expect(screen.getByText("Needs your attention")).toBeInTheDocument());
+    expect(screen.getByText("Waiting on approval")).toBeInTheDocument();
+    expect(screen.getByText("Needs approval")).toBeInTheDocument();
+    expect(screen.getByText("Paused overnight")).toBeInTheDocument();
+    expect(screen.queryByText("All good")).not.toBeInTheDocument();
   });
 });

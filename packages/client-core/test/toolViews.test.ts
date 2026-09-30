@@ -110,10 +110,9 @@ describe("parseEditView", () => {
     ).toBeNull();
   });
 
-  it("parses a Write call as a diff against empty content (a leading empty del, then the real additions)", () => {
+  it("parses a Write call as pure additions — no phantom removed line", () => {
     const view = parseEditView("Write", { file_path: "/new.ts", content: "line1\nline2" });
     expect(view?.hunks[0]!.lines).toEqual([
-      { type: "del", text: "" },
       { type: "add", text: "line1" },
       { type: "add", text: "line2" },
     ]);

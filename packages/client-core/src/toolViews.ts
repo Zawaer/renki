@@ -100,7 +100,9 @@ export function parseEditView(toolName: string, toolInput: unknown): EditToolVie
   if (toolName === "Write") {
     const content = input.content;
     if (typeof content !== "string") return null;
-    return { filePath, hunks: [{ lines: diffLines("", content) }] };
+    // All additions. Diffing against "" instead counted the empty file's one
+    // (empty) line as removed, so every Write read "-1".
+    return { filePath, hunks: [{ lines: content.split("\n").map((text) => ({ type: "add" as const, text })) }] };
   }
 
   return null;

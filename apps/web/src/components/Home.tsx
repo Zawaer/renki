@@ -5,14 +5,19 @@ import {
   formatDayLabel,
   formatDuration,
   formatModelLabel,
+  formatAgo,
+  formatResumeAt,
   formatSuccessRate,
   formatTokenCount,
+  sessionsNeedingAttention,
+  type AttentionReason,
   intensity,
   streaks,
   sumRecent,
   tokensInPerspective,
 } from "@renki/client-core";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useClient } from "../lib/client.js";
 import { Skeleton } from "./ui.js";
 
@@ -29,7 +34,8 @@ const HEATMAP_WEEKS = 26;
  * glanceable version, Stats is the deep one.
  */
 export function Home() {
-  const { rest } = useClient();
+  const { rest, realtime } = useClient();
+  const navigate = useNavigate();
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -53,6 +59,20 @@ export function Home() {
     return () => clearInterval(t);
   }, [refresh]);
 
+  // Live, so a session that starts waiting on you shows up here as it happens.
+  useEffect(() => {
+    const offChanged = realtime.onSessionChanged((session) =>
+      setSessions((prev) => (prev ? [session, ...prev.filter((s) => s.id !== session.id)] : prev)),
+    );
+    const offRemoved = realtime.onSessionRemoved((id) => setSessions((prev) => prev?.filter((s) => s.id !== id) ?? prev));
+    return () => {
+      offChanged();
+      offRemoved();
+    };
+  }, [realtime]);
+
+  const attention = useMemo(() => (sessions ? sessionsNeedingAttention(sessions) : []), [sessions]);
+
   const grid = useMemo(() => (stats ? activityGrid(HEATMAP_WEEKS, stats.daily) : []), [stats]);
   const maxDay = useMemo(() => grid.reduce((m, col) => Math.max(m, ...col.map((c) => c.turnCount)), 0), [grid]);
   const streak = useMemo(() => (stats ? streaks(stats.daily) : { current: 0, longest: 0 }), [stats]);
@@ -73,6 +93,28 @@ export function Home() {
           <span className="codicon codicon-sparkle-filled text-[22px] text-(--renki-accent)" />
           {greeting()}
         </h1>
+
+        {attention.length > 0 && (
+          <section className="renki-enter mt-8" aria-label="Needs your attention">
+            <div className="mb-2 text-[13px] font-medium text-(--renki-fg-muted)">Needs your attention</div>
+            <div className="overflow-hidden rounded-2xl bg-(--renki-surface) shadow-(--renki-shadow-sm)">
+              {attention.map(({ session, reason }) => (
+                <button
+                  key={session.id}
+                  type="button"
+                  onClick={() => navigate(`/session/${encodeURIComponent(session.id)}`)}
+                  className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-[13px] transition-colors not-last:border-b not-last:border-(--renki-border)/60 hover:bg-(--renki-hover)"
+                >
+                  <AttentionBadge reason={reason} resumeAt={session.resume?.at ?? null} />
+                  <span className="min-w-0 flex-1 truncate text-(--renki-fg)">{session.title || session.repoName}</span>
+                  <span className="shrink-0 truncate text-xs text-(--renki-fg-muted)">{session.repoName}</span>
+                  <span className="shrink-0 text-xs text-(--renki-fg-muted)">{formatAgo(session.lastActivityAt)}</span>
+                  <span className="codicon codicon-chevron-right shrink-0 text-[12px] text-(--renki-fg-muted)" />
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
 
         {failed && (
           <div className="mt-8 rounded-xl bg-(--renki-surface) p-5 text-sm text-(--renki-fg-muted) shadow-(--renki-shadow-xs)">
@@ -267,4 +309,20 @@ function greeting(): string {
   const h = new Date().getHours();
   const part = h < 5 ? "Up late" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
   return `${part}. What's up next?`;
+}
+
+/** Why a session is on the attention list, in a word or two and a colour. */
+function AttentionBadge({ reason, resumeAt }: { reason: AttentionReason; resumeAt: number | null }) {
+  const { icon, tone, label } =
+    reason === "permission"
+      ? { icon: "codicon-shield", tone: "text-(--renki-danger)", label: "Needs approval" }
+      : reason === "error"
+        ? { icon: "codicon-error", tone: "text-(--renki-danger)", label: "Failed" }
+        : { icon: "codicon-debug-pause", tone: "text-(--renki-warning)", label: resumeAt ? formatResumeAt(resumeAt) : "Paused" };
+  return (
+    <span className={`inline-flex shrink-0 items-center gap-1.5 text-xs font-medium ${tone}`}>
+      <span className={`codicon ${icon} text-[13px]`} />
+      {label}
+    </span>
+  );
 }

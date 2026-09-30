@@ -565,4 +565,53 @@ describe("SessionView tidy transcript", () => {
     fireEvent.click(screen.getByRole("button", { name: /3 background tasks finished/ }));
     expect(screen.getByText("Run all tests")).toBeInTheDocument();
   });
+
+  const finish = () =>
+    ev("s1", { kind: "turn_result", turnId: "t1", promptId: "p1", ok: true, costUsd: 0, durationMs: 1, errorMessage: null, inputTokens: 1, outputTokens: 1 });
+  const bash = (i: number, input: Record<string, unknown>) =>
+    ev("s1", { kind: "assistant_block", turnId: "t1", blockIndex: i, blockKind: "tool_use", text: null, toolUseId: `tu_${i}`, toolName: "Bash", toolInput: input });
+  const result = (i: number) => ev("s1", { kind: "tool_result", turnId: "t1", toolUseId: `tu_${i}`, ok: true, summary: "ok" });
+
+  it("folds a run of commands into one line that opens to the steps", () => {
+    renderSession("s1", [
+      ...start,
+      bash(0, { command: "ls", description: "List the files" }),
+      result(0),
+      bash(1, { command: "npm test", description: "Run the tests" }),
+      result(1),
+      finish(),
+    ]);
+    expect(screen.getByRole("button", { name: /Ran 2 commands/ })).toBeInTheDocument();
+    expect(screen.queryByText("Run the tests")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Ran 2 commands/ }));
+    expect(screen.getByText("Run the tests")).toBeInTheDocument();
+  });
+
+  it("lists the files a finished turn changed, with line counts", () => {
+    renderSession("s1", [
+      ...start,
+      ev("s1", {
+        kind: "assistant_block",
+        turnId: "t1",
+        blockIndex: 0,
+        blockKind: "tool_use",
+        text: null,
+        toolUseId: "tu_e",
+        toolName: "Edit",
+        toolInput: { file_path: "/repo/src/app.ts", old_string: "a", new_string: "b\nc" },
+      }),
+      ev("s1", { kind: "tool_result", turnId: "t1", toolUseId: "tu_e", ok: true, summary: "edited" }),
+      finish(),
+    ]);
+    const row = screen.getByRole("button", { name: /repo\/src\/app\.ts/ });
+    expect(row.textContent).toContain("+2");
+    expect(row.textContent).toContain("−1");
+  });
+
+  it("gathers background work behind a header button", () => {
+    renderSession("s1", [...start, bash(0, { command: "sleep 60", description: "Wait a minute", run_in_background: true }), result(0)]);
+    fireEvent.click(screen.getByRole("button", { name: /1 running/ }));
+    expect(screen.getByText("Background tasks")).toBeInTheDocument();
+    expect(screen.getAllByText("Wait a minute").length).toBeGreaterThan(0);
+  });
 });

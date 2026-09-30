@@ -31,13 +31,19 @@ import {
   type TimelineItem,
   type TodoItemView,
   type TurnView,
+  type BackgroundTaskView,
+  type FileChange,
+  type StepSummary,
+  backgroundTasksOf,
   formatResumeAt,
+  groupTurnBlocks,
   isBulkyToolPayload,
+  turnFileChanges,
   modelFullName,
   modelMenuLabel,
 } from "@renki/client-core";
-import type { CapabilitiesResponse, SessionComposer, SessionResume } from "@renki/protocol";
-import { useEffect, useRef, useState, Fragment } from "react";
+import type { Account, CapabilitiesResponse, SessionComposer, SessionResume } from "@renki/protocol";
+import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { hostOpenFile, isHosted } from "../lib/host.js";
 import {
@@ -48,6 +54,7 @@ import {
   saveDraft,
 } from "../lib/composerPrefs.js";
 import { JsonCode, ShellCode } from "./Code.js";
+import { UsageLimits } from "./UsageLimits.js";
 import { Markdown } from "./Markdown.js";
 import { Button, Collapsible, CopyButton, InfoHint, Skeleton, StatusBadge } from "./ui.js";
 
@@ -157,6 +164,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
           )}
         </div>
         <div className="flex items-center gap-3">
+          <BackgroundTasksButton timeline={conv.timeline} />
           {conv.context && <ContextMeter context={conv.context} />}
           <span
             className={`inline-flex items-center gap-1.5 text-xs font-medium ${
@@ -533,20 +541,80 @@ function ModelChangeMarker({ model }: { model: string | null }) {
  * How full the session's context window is, as the CLI reports it. A quiet
  * bar: it only matters as it approaches full, so it warms up as it fills.
  */
+/**
+ * The context meter in the header, which opens to the fuller picture: how
+ * much of the window this conversation fills, and the active account's usage
+ * limits — the two things that decide whether the next long prompt will run.
+ */
 function ContextMeter({ context }: { context: ContextUsageView }) {
+  const { rest } = useClient();
+  const [open, setOpen] = useState(false);
+  const [account, setAccount] = useState<Account | null | undefined>(undefined);
   const pct = Math.max(0, Math.min(100, Math.round(context.percentage)));
   const tone = pct >= 90 ? "bg-(--renki-danger)" : pct >= 70 ? "bg-(--renki-warning)" : "bg-(--renki-accent)";
+
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    rest
+      .listAccounts()
+      .then((r) => live && setAccount(r.accounts.find((a) => a.active) ?? null))
+      .catch(() => live && setAccount(null));
+    return () => {
+      live = false;
+    };
+  }, [open, rest]);
+
   return (
-    <span
-      className="hidden items-center gap-2 md:inline-flex"
-      title={`Context window: ${formatTokenCount(context.usedTokens)} of ${formatTokenCount(context.maxTokens)} tokens${
-        context.autoCompact ? " · Claude compacts the conversation automatically as this fills" : ""
-      }`}
-    >
-      <span className="block h-1.5 w-16 overflow-hidden rounded-full bg-(--renki-bg-inset)">
-        <span className={`block h-full rounded-full transition-[width] duration-500 ${tone}`} style={{ width: `${pct}%` }} />
-      </span>
-      <span className="text-[11px] tabular-nums text-(--renki-fg-muted)">{pct}%</span>
+    <span className="relative hidden md:inline-flex">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-label={`Context window ${pct}% full`}
+        className="inline-flex items-center gap-2 rounded-md px-1.5 py-0.5 transition-colors hover:bg-(--renki-surface)"
+      >
+        <span className="block h-1.5 w-16 overflow-hidden rounded-full bg-(--renki-bg-inset)">
+          <span className={`block h-full rounded-full transition-[width] duration-500 ${tone}`} style={{ width: `${pct}%` }} />
+        </span>
+        <span className="text-[11px] tabular-nums text-(--renki-fg-muted)">{pct}%</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute top-full right-0 z-20 mt-2 w-80 max-w-[calc(100vw-2rem)] space-y-3 rounded-xl border border-(--renki-border) bg-(--renki-surface) p-3.5 text-xs shadow-(--renki-shadow-md)">
+            <div>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="font-medium text-(--renki-fg)">Context window</span>
+                <span className="tabular-nums text-(--renki-fg-muted)">
+                  {formatTokenCount(context.usedTokens)} / {formatTokenCount(context.maxTokens)} ({pct}%)
+                </span>
+              </div>
+              <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-(--renki-bg-inset)">
+                <span className={`block h-full rounded-full ${tone}`} style={{ width: `${pct}%` }} />
+              </span>
+              {context.autoCompact && (
+                <div className="mt-1.5 text-(--renki-fg-muted)">Claude compacts the conversation automatically as this fills.</div>
+              )}
+            </div>
+            <div className="border-t border-(--renki-border)/60 pt-3">
+              <div className="mb-2 flex items-baseline justify-between gap-2">
+                <span className="font-medium text-(--renki-fg)">Usage limits</span>
+                {account && <span className="truncate text-(--renki-fg-muted)">{account.email}</span>}
+              </div>
+              {account === undefined ? (
+                <Skeleton className="h-10 w-full" />
+              ) : account?.usage ? (
+                <UsageLimits usage={account.usage} />
+              ) : (
+                <div className="text-(--renki-fg-muted)">
+                  {account?.usageError ?? "Usage isn't available — connect it under Settings → Accounts."}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </span>
   );
 }
@@ -592,6 +660,12 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
   const replyText = replyTextOf(turn);
   const steeredAfter = (index: number) =>
     turn.steeredPrompts.filter((p) => p.afterBlockIndex === index);
+  const running = turn.status === "running";
+  const segments = useMemo(
+    () => groupTurnBlocks(turn.blocks, new Set(turn.steeredPrompts.map((p) => p.afterBlockIndex))),
+    [turn.blocks, turn.steeredPrompts],
+  );
+  const changes = useMemo(() => (running ? [] : turnFileChanges(turn)), [turn, running]);
   return (
     <div className="renki-enter group space-y-3">
       {label && (
@@ -605,22 +679,29 @@ function AssistantTurn({ turn }: { turn: TurnView }) {
       {steeredAfter(-1).map((p) => (
         <SteeredPrompt key={p.promptId} prompt={p} />
       ))}
-      {turn.blocks.map((blk, i) => (
-        <Fragment key={i}>
-          {/* While a reply streams, each block eases in as it arrives instead of
-              popping into place. Finished turns render flat — a replayed
-              transcript animating every block at once would just be noise. */}
-          {/* Prose fades word by word inside Markdown, so only non-text blocks
-              (tool rows, diffs) get the block-level fade — otherwise the two
-              animations would stack on the same text. */}
-          <div className={turn.status === "running" && blk.kind === "tool_use" ? "renki-stream-in" : undefined}>
-            <Block block={blk} turnRunning={turn.status === "running"} />
-          </div>
-          {steeredAfter(i).map((p) => (
-            <SteeredPrompt key={p.promptId} prompt={p} />
-          ))}
-        </Fragment>
-      ))}
+      {segments.map((seg) => {
+        const last = seg.kind === "group" ? seg.items[seg.items.length - 1]!.index : seg.index;
+        return (
+          <Fragment key={seg.kind === "group" ? `g${seg.items[0]!.index}` : seg.index}>
+            {/* While a reply streams, each step eases in as it arrives instead of
+                popping into place. Finished turns render flat — a replayed
+                transcript animating every block at once would just be noise.
+                Prose fades word by word inside Markdown, so only tool rows get
+                the block-level fade — otherwise the two would stack. */}
+            <div className={running && (seg.kind === "group" || seg.block.kind === "tool_use") ? "renki-stream-in" : undefined}>
+              {seg.kind === "group" ? (
+                <ToolGroup items={seg.items} summary={seg.summary} turnRunning={running} />
+              ) : (
+                <Block block={seg.block} turnRunning={running} />
+              )}
+            </div>
+            {steeredAfter(last).map((p) => (
+              <SteeredPrompt key={p.promptId} prompt={p} />
+            ))}
+          </Fragment>
+        );
+      })}
+      {changes.length > 0 && <FilesChangedCard changes={changes} />}
       {turn.status === "running" && (
         <div className="flex items-center gap-2 text-xs text-(--renki-fg-muted)">
           <span className="codicon codicon-loading codicon-modifier-spin" />
@@ -920,10 +1001,218 @@ function SubagentActivity({ subagent }: { subagent: SubagentView }) {
           {subagent.subagentType ?? "Subagent"} — {subagent.taskDescription}
         </div>
       )}
-      {subagent.blocks.map((b, i) => (
-        <Block key={i} block={b} turnRunning={subagent.status === "running"} />
-      ))}
+      {groupTurnBlocks(subagent.blocks).map((seg) =>
+        seg.kind === "group" ? (
+          <ToolGroup key={`g${seg.items[0]!.index}`} items={seg.items} summary={seg.summary} turnRunning={subagent.status === "running"} />
+        ) : (
+          <Block key={seg.index} block={seg.block} turnRunning={subagent.status === "running"} />
+        ),
+      )}
     </div>
+  );
+}
+
+/** A picker row's right edge: a check on the current choice, and the number key that picks it. */
+function MenuKey({ n, selected }: { n: number; selected: boolean }) {
+  return (
+    <span className="flex shrink-0 items-center gap-2 text-(--renki-fg-muted)">
+      {selected && <span className="codicon codicon-check text-(--renki-fg)" />}
+      {n >= 1 && n <= 9 && <span className="w-3 text-right font-mono text-[11px]">{n}</span>}
+    </span>
+  );
+}
+
+/** "+40 −3", green and red — how much a set of edits changed. */
+function DiffStat({ added, removed }: { added: number; removed: number }) {
+  if (added === 0 && removed === 0) return null;
+  return (
+    <span className="shrink-0 font-mono text-xs">
+      <span className="text-(--renki-success)">+{added}</span>{" "}
+      <span className="text-(--renki-danger)">−{removed}</span>
+    </span>
+  );
+}
+
+/**
+ * A run of routine tool calls as one line — "Ran 3 commands, edited 2 files
+ * +40 −3 ›" — that opens to the individual steps. A long agentic turn reads as
+ * what it did rather than as every call it made.
+ */
+function ToolGroup({
+  items,
+  summary,
+  turnRunning,
+}: {
+  items: { index: number; block: BlockView }[];
+  summary: StepSummary;
+  turnRunning: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const live = summary.running && turnRunning;
+  return (
+    <div className="my-1">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 py-1 text-left text-[13px] text-(--renki-fg-muted) transition-colors hover:bg-(--renki-surface)/60 hover:text-(--renki-fg)"
+      >
+        <span className="shrink-0 text-(--renki-fg)">{summary.text}</span>
+        <DiffStat added={summary.added} removed={summary.removed} />
+        <span className={`codicon ${open ? "codicon-chevron-down" : "codicon-chevron-right"} shrink-0 text-[12px]`} />
+        {live && summary.current && <span className="min-w-0 truncate text-xs">{summary.current}</span>}
+        <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs">
+          {live ? (
+            <Outcome kind="running" />
+          ) : summary.failed > 0 ? (
+            <Outcome kind="failed" label={`${summary.failed} failed`} />
+          ) : (
+            <Outcome kind="done" />
+          )}
+        </span>
+      </button>
+      {open && (
+        <div className="mt-1 ml-1 border-l border-(--renki-border)/60 pl-3">
+          {items.map((it) => (
+            <Block key={it.index} block={it.block} turnRunning={turnRunning} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Last three path segments — enough to tell files apart without the whole tree. */
+function shortPath(path: string): string {
+  const parts = path.split("/").filter(Boolean);
+  return parts.length > 3 ? `…/${parts.slice(-3).join("/")}` : parts.join("/");
+}
+
+/**
+ * The files a turn changed, at its foot — "HANDOFF.md +261 −0" — each opening
+ * to its diff. The quick answer to "what did it actually touch?" without
+ * scrolling back through every step.
+ */
+function FilesChangedCard({ changes }: { changes: FileChange[] }) {
+  const [openPath, setOpenPath] = useState<string | null>(null);
+  const added = changes.reduce((n, c) => n + c.added, 0);
+  const removed = changes.reduce((n, c) => n + c.removed, 0);
+  return (
+    <div className="overflow-hidden rounded-xl border border-(--renki-border)/70 text-xs">
+      {changes.length > 1 && (
+        <div className="flex items-center gap-2 border-b border-(--renki-border)/60 px-3 py-2 text-(--renki-fg-muted)">
+          <span>{changes.length} files changed</span>
+          <DiffStat added={added} removed={removed} />
+        </div>
+      )}
+      {changes.map((c) => {
+        const open = openPath === c.filePath;
+        return (
+          <div key={c.filePath} className="border-(--renki-border)/60 not-last:border-b">
+            <button
+              type="button"
+              onClick={() => setOpenPath(open ? null : c.filePath)}
+              aria-expanded={open}
+              title={c.filePath}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-(--renki-surface)/60"
+            >
+              <span className="codicon codicon-diff shrink-0 text-(--renki-fg-muted)" />
+              <span className="min-w-0 truncate font-mono text-[12.5px] text-(--renki-fg)">{shortPath(c.filePath)}</span>
+              <DiffStat added={c.added} removed={c.removed} />
+              {isHosted() && (
+                <span
+                  role="link"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    hostOpenFile(c.filePath);
+                  }}
+                  className="text-(--renki-link) hover:underline"
+                >
+                  open
+                </span>
+              )}
+              <span className={`codicon ${open ? "codicon-chevron-down" : "codicon-chevron-right"} ml-auto shrink-0 text-[12px] text-(--renki-fg-muted)`} />
+            </button>
+            {open &&
+              c.views.map((v, i) => (
+                <div key={i} className="border-t border-(--renki-border)/60 bg-(--renki-bg-inset)/70">
+                  <DiffView view={v} />
+                </div>
+              ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The session's background work — agents and backgrounded commands — in one
+ * list behind a header button, instead of scattered through the transcript.
+ * Shows a count of what's still running; hidden when there's nothing.
+ */
+function BackgroundTasksButton({ timeline }: { timeline: TimelineItem[] }) {
+  const [open, setOpen] = useState(false);
+  const tasks = useMemo(() => backgroundTasksOf(timeline), [timeline]);
+  if (tasks.length === 0) return null;
+  const running = tasks.filter((t) => t.status === "running").length;
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        title="Background tasks"
+        className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-(--renki-fg-muted) transition-colors hover:bg-(--renki-surface) hover:text-(--renki-fg)"
+      >
+        <span className={`codicon ${running > 0 ? "codicon-loading codicon-modifier-spin" : "codicon-layers"} text-[13px]`} />
+        {running > 0 ? `${running} running` : `${tasks.length} background`}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 z-20 mt-2 max-h-[70vh] w-96 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-(--renki-border) bg-(--renki-surface) p-1.5 text-xs shadow-(--renki-shadow-md)">
+            <div className="px-2.5 pt-1.5 pb-1 text-[11px] font-medium text-(--renki-fg-muted)">Background tasks</div>
+            {tasks.map((t) => (
+              <BackgroundTaskRow key={t.toolUseId} task={t} />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function BackgroundTaskRow({ task }: { task: BackgroundTaskView }) {
+  const [open, setOpen] = useState(false);
+  const icon =
+    task.status === "running"
+      ? "codicon-loading codicon-modifier-spin text-(--renki-fg-muted)"
+      : task.status === "completed"
+        ? "codicon-pass-filled text-(--renki-success)"
+        : task.status === "stopped"
+          ? "codicon-debug-stop text-(--renki-fg-muted)"
+          : "codicon-error text-(--renki-danger)";
+  return (
+    <button
+      type="button"
+      onClick={() => setOpen((o) => !o)}
+      disabled={!task.summary}
+      className="flex w-full items-start gap-2 rounded-lg px-2.5 py-1.5 text-left enabled:hover:bg-(--renki-hover)"
+    >
+      <span className={`codicon mt-0.5 shrink-0 ${icon}`} />
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5">
+          <span className={`${open ? "" : "truncate"} text-(--renki-fg)`}>{task.label}</span>
+          <span className="shrink-0 text-[10.5px] text-(--renki-fg-muted)">{task.kind === "agent" ? "agent" : "command"}</span>
+        </span>
+        {task.status === "running" ? (
+          <span className="block text-(--renki-fg-muted)">No result yet</span>
+        ) : (
+          task.summary && <span className={`block text-(--renki-fg-muted) ${open ? "whitespace-pre-wrap" : "truncate"}`}>{task.summary}</span>
+        )}
+      </span>
+    </button>
   );
 }
 
@@ -1559,6 +1848,34 @@ function Composer({
   const [openMenu, setOpenMenu] = useState<"model" | "effort" | "mode" | null>(
     null,
   );
+
+  // With a picker open, 1–9 choose its options in order — the menus show the
+  // numbers — and Escape closes it. Ignored while typing in a field (the
+  // custom model ID box) so digits still type.
+  useEffect(() => {
+    if (!openMenu) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") return setOpenMenu(null);
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey || !/^[1-9]$/.test(e.key)) return;
+      const n = Number(e.key) - 1;
+      if (openMenu === "model") {
+        const m = capabilities.models[n];
+        if (m) setModel(m.value);
+      } else if (openMenu === "effort") {
+        const lvl = EFFORT_LEVELS[n];
+        if (lvl) setEffortKey(lvl.key);
+      } else {
+        const mode = PERMISSION_MODES[n];
+        if (mode) setPermissionMode(mode.key);
+      }
+      e.preventDefault();
+      setOpenMenu(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
   const [customModel, setCustomModel] = useState("");
 
   useEffect(() => {
@@ -1780,9 +2097,7 @@ function Composer({
                       </div>
                     )}
                   </div>
-                  {m.value === model && (
-                    <span className="codicon codicon-check shrink-0 text-(--renki-fg)" />
-                  )}
+                  <MenuKey n={capabilities.models.indexOf(m) + 1} selected={m.value === model} />
                 </button>
               )),
               <div
@@ -1826,9 +2141,7 @@ function Composer({
                   className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left hover:bg-(--renki-hover)"
                 >
                   <span className="font-medium text-(--renki-fg)">{e.label}</span>
-                  {e.key === effortKey && (
-                    <span className="codicon codicon-check shrink-0 text-(--renki-fg)" />
-                  )}
+                  <MenuKey n={EFFORT_LEVELS.indexOf(e) + 1} selected={e.key === effortKey} />
                 </button>
               ))
             : PERMISSION_MODES.map((m) => (
@@ -1846,9 +2159,7 @@ function Composer({
                       {m.description}
                     </div>
                   </div>
-                  {m.key === permissionMode && (
-                    <span className="codicon codicon-check shrink-0 text-(--renki-fg)" />
-                  )}
+                  <MenuKey n={PERMISSION_MODES.indexOf(m) + 1} selected={m.key === permissionMode} />
                 </button>
               ))}
       </div>

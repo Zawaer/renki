@@ -28,8 +28,12 @@ import {
   type TimelineItem,
   type TodoItemView,
   type TurnView,
+  type FileChange,
+  type StepSummary,
   formatResumeAt,
+  groupTurnBlocks,
   isBulkyToolPayload,
+  turnFileChanges,
   modelFullName,
   modelMenuLabel,
 } from "@renki/client-core";
@@ -767,14 +771,22 @@ function AssistantTurn({ turn, colors, styles }: { turn: TurnView; colors: Theme
       {steeredAfter(-1).map((p) => (
         <SteeredPrompt key={p.promptId} prompt={p} styles={styles} />
       ))}
-      {turn.blocks.map((b, i) => (
-        <Fragment key={i}>
-          <Block block={b} colors={colors} styles={styles} turnRunning={turn.status === "running"} />
-          {steeredAfter(i).map((p) => (
-            <SteeredPrompt key={p.promptId} prompt={p} styles={styles} />
-          ))}
-        </Fragment>
-      ))}
+      {groupTurnBlocks(turn.blocks, new Set(turn.steeredPrompts.map((p) => p.afterBlockIndex))).map((seg) => {
+        const last = seg.kind === "group" ? seg.items[seg.items.length - 1]!.index : seg.index;
+        return (
+          <Fragment key={seg.kind === "group" ? `g${seg.items[0]!.index}` : seg.index}>
+            {seg.kind === "group" ? (
+              <ToolGroup items={seg.items} summary={seg.summary} colors={colors} styles={styles} turnRunning={turn.status === "running"} />
+            ) : (
+              <Block block={seg.block} colors={colors} styles={styles} turnRunning={turn.status === "running"} />
+            )}
+            {steeredAfter(last).map((p) => (
+              <SteeredPrompt key={p.promptId} prompt={p} styles={styles} />
+            ))}
+          </Fragment>
+        );
+      })}
+      {turn.status !== "running" && <FilesChanged changes={turnFileChanges(turn)} colors={colors} styles={styles} />}
       {turn.status === "running" && <Text style={styles.running}>▍</Text>}
       {turn.status === "done" && <TurnFooter turn={turn} colors={colors} styles={styles} />}
       {turn.status === "error" &&
@@ -783,6 +795,79 @@ function AssistantTurn({ turn, colors, styles }: { turn: TurnView; colors: Theme
         ) : (
           <Text style={styles.errText}>Turn failed: {turn.errorMessage}</Text>
         ))}
+    </View>
+  );
+}
+
+/** A run of routine tool calls as one tappable line — "Ran 3 commands, edited 2 files +40 −3" — opening to the steps. */
+function ToolGroup({
+  items,
+  summary,
+  colors,
+  styles,
+  turnRunning,
+}: {
+  items: { index: number; block: BlockView }[];
+  summary: StepSummary;
+  colors: ThemeColors;
+  styles: Styles;
+  turnRunning: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const live = summary.running && turnRunning;
+  return (
+    <View style={styles.toolStep}>
+      <TouchableOpacity style={styles.toolStepHeader} activeOpacity={0.7} onPress={() => setOpen((o) => !o)}>
+        <Ionicons name="layers-outline" size={13} color={colors.faint} />
+        <Text style={styles.toolStepLabel} numberOfLines={1}>
+          {summary.text}
+        </Text>
+        {summary.added + summary.removed > 0 && (
+          <Text style={styles.toolStepMeta} numberOfLines={1}>
+            <Text style={{ color: colors.ok }}>+{summary.added}</Text> <Text style={{ color: colors.danger }}>−{summary.removed}</Text>
+          </Text>
+        )}
+        {!(summary.added + summary.removed > 0) && <View style={{ flex: 1 }} />}
+        {live ? (
+          <Ionicons name="ellipsis-horizontal" size={13} color={colors.faint} />
+        ) : summary.failed > 0 ? (
+          <Ionicons name="close" size={13} color={colors.danger} />
+        ) : (
+          <Ionicons name="checkmark" size={13} color={colors.ok} />
+        )}
+        <Ionicons name={open ? "chevron-up" : "chevron-down"} size={12} color={colors.faint} />
+      </TouchableOpacity>
+      {open && (
+        <View style={styles.toolStepBody}>
+          {items.map((it) => (
+            <Block key={it.index} block={it.block} colors={colors} styles={styles} turnRunning={turnRunning} />
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+/** The files a finished turn changed, each tappable to its diff. */
+function FilesChanged({ changes, colors, styles }: { changes: FileChange[]; colors: ThemeColors; styles: Styles }) {
+  const [openPath, setOpenPath] = useState<string | null>(null);
+  if (changes.length === 0) return null;
+  return (
+    <View style={styles.filesCard}>
+      {changes.map((c) => (
+        <View key={c.filePath}>
+          <TouchableOpacity style={styles.toolStepHeader} onPress={() => setOpenPath(openPath === c.filePath ? null : c.filePath)}>
+            <Ionicons name="document-outline" size={13} color={colors.faint} />
+            <Text style={[styles.toolStepLabel, { flex: 1 }]} numberOfLines={1}>
+              {c.filePath.split("/").filter(Boolean).slice(-2).join("/")}
+            </Text>
+            <Text style={{ color: colors.ok, fontSize: 11.5 }}>+{c.added}</Text>
+            <Text style={{ color: colors.danger, fontSize: 11.5 }}>−{c.removed}</Text>
+            <Ionicons name={openPath === c.filePath ? "chevron-up" : "chevron-down"} size={12} color={colors.faint} />
+          </TouchableOpacity>
+          {openPath === c.filePath && c.views.map((v, i) => <DiffView key={i} view={v} colors={colors} styles={styles} />)}
+        </View>
+      ))}
     </View>
   );
 }
@@ -977,9 +1062,20 @@ function SubagentActivity({ subagent, colors, styles }: { subagent: SubagentView
       </TouchableOpacity>
       {expanded && (
         <View style={styles.subagentBody}>
-          {subagent.blocks.map((b, i) => (
-            <Block key={i} block={b} colors={colors} styles={styles} turnRunning={subagent.status === "running"} />
-          ))}
+          {groupTurnBlocks(subagent.blocks).map((seg) =>
+            seg.kind === "group" ? (
+              <ToolGroup
+                key={`g${seg.items[0]!.index}`}
+                items={seg.items}
+                summary={seg.summary}
+                colors={colors}
+                styles={styles}
+                turnRunning={subagent.status === "running"}
+              />
+            ) : (
+              <Block key={seg.index} block={seg.block} colors={colors} styles={styles} turnRunning={subagent.status === "running"} />
+            ),
+          )}
         </View>
       )}
     </View>
@@ -1496,6 +1592,7 @@ const makeStyles = (colors: ThemeColors) =>
     errText: { color: colors.danger },
     toolCard: { backgroundColor: colors.panel, borderRadius: radius.md, padding: 12, gap: 6 },
     toolStep: { marginVertical: 2 },
+    filesCard: { backgroundColor: colors.inset, borderRadius: radius.md, paddingHorizontal: 12, paddingVertical: 2, marginTop: 4 },
     toolStepHeader: { flexDirection: "row", alignItems: "center", gap: 7, paddingVertical: 6 },
     toolStepLabel: { color: colors.dim, fontSize: 12.5, flexShrink: 1 },
     toolStepMeta: { color: colors.faint, fontSize: 11.5, fontFamily: undefined, flex: 1 },

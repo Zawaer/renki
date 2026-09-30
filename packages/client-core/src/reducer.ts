@@ -163,6 +163,27 @@ export type ConversationState = {
 };
 
 /**
+ * A turn's `blocks` is indexed by Claude's own block numbers and can have
+ * gaps. JSON has no gaps: saving a conversation writes each one as `null`,
+ * and code that walks blocks expected a gap (skipped) not a null (read). Put
+ * the gaps back on anything restored from storage.
+ */
+export function restoreBlockGaps(state: ConversationState): ConversationState {
+  const fix = (blocks: (BlockView | null)[]): BlockView[] => {
+    const out: BlockView[] = [];
+    blocks.forEach((b, i) => {
+      if (b == null) return;
+      out[i] = b.kind === "tool_use" && b.subagent ? { ...b, subagent: { ...b.subagent, blocks: fix(b.subagent.blocks) } } : b;
+    });
+    return out;
+  };
+  return {
+    ...state,
+    timeline: state.timeline.map((it) => (it.type === "turn" ? { ...it, turn: { ...it.turn, blocks: fix(it.turn.blocks) } } : it)),
+  };
+}
+
+/**
  * Version of the folded ConversationState shape and folding rules. A client
  * that caches folded conversations (see RealtimeClient's ConversationCache)
  * keys the cache by this, so bump it whenever applyEvent changes what it
@@ -548,7 +569,7 @@ function updateSubagentBlocks(
   meta?: { subagentType: string | null; taskDescription: string | null },
 ): BlockView[] {
   return blocks.map((b) => {
-    if (b.kind !== "tool_use") return b;
+    if (b?.kind !== "tool_use") return b;
     if (b.toolUseId === parentToolUseId) {
       const prev = b.subagent ?? { subagentType: null, taskDescription: null, blocks: [], status: "running" as const };
       return {
@@ -577,7 +598,7 @@ function updateSubagentBlocks(
  */
 function applyToolResult(blocks: BlockView[], toolUseId: string, ok: boolean, summary: string): BlockView[] {
   return blocks.map((b) => {
-    if (b.kind !== "tool_use") return b;
+    if (b?.kind !== "tool_use") return b;
     if (b.toolUseId === toolUseId) {
       return { ...b, result: { ok, summary }, subagent: b.subagent ? { ...b.subagent, status: "done" as const } : b.subagent };
     }
@@ -605,7 +626,7 @@ function applyBackgroundTask(
   let found = false;
   function patch(blocks: BlockView[]): BlockView[] {
     return blocks.map((b) => {
-      if (b.kind !== "tool_use") return b;
+      if (b?.kind !== "tool_use") return b;
       if (b.toolUseId === toolUseId) {
         found = true;
         return { ...b, backgroundTask: { status, summary } };

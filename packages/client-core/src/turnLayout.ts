@@ -162,7 +162,7 @@ export function summarizeSteps(blocks: BlockView[]): StepSummary {
   let current: string | null = null;
 
   for (const b of blocks) {
-    if (b.kind !== "tool_use") continue;
+    if (b?.kind !== "tool_use") continue;
     const cat = categoryOf(b.toolName);
     if (!counts.has(cat)) order.push(cat);
     const path = filePathOf(b.toolInput);

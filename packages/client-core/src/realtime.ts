@@ -8,7 +8,7 @@ import {
   ServerMessage as ServerMessageSchema,
 } from "@renki/protocol";
 import type { PermissionModeKey } from "./permissionMode.js";
-import { type ConversationState, applyEvent, applyEvents, initialConversation } from "./reducer.js";
+import { type ConversationState, applyEvent, applyEvents, initialConversation, restoreBlockGaps } from "./reducer.js";
 import { Store } from "./store.js";
 
 /**
@@ -351,6 +351,30 @@ export class RealtimeClient {
 
   // ── internals ──────────────────────────────────────────────────────────────
 
+  /**
+   * Fold events into a conversation, and never let a failure freeze it.
+   *
+   * A throw here used to leave the store where it was — and because the next
+   * subscribe asked for the same events after the same lastSeq, it threw
+   * again every time: the chat sat stuck for good. That happened for real,
+   * from a cached copy the reducer tripped over. Now the local copy (and its
+   * cache) is dropped and the whole history fetched again, which the reducer
+   * has always handled.
+   */
+  private fold(sessionId: string, store: Store<ConversationState>, fn: (s: ConversationState) => ConversationState): boolean {
+    try {
+      store.update(fn);
+      return true;
+    } catch (err) {
+      console.warn("[renki] couldn't apply events; reloading the conversation", sessionId, err);
+      store.set(initialConversation(sessionId));
+      this.unsaved.delete(sessionId);
+      void this.opts.cache?.remove(sessionId).catch(() => {});
+      if (this.watched.has(sessionId) && this.isOpen()) this.sendSubscribe(sessionId);
+      return false;
+    }
+  }
+
   private hydrate(sessionId: string, store: Store<ConversationState>): void {
     this.hydrating.add(sessionId);
     this.opts
@@ -358,7 +382,13 @@ export class RealtimeClient {
       .catch(() => null)
       .then((cached) => {
         // Anything folded meanwhile wins; a cached copy is only a head start.
-        if (cached && cached.sessionId === sessionId && cached.lastSeq > store.get().lastSeq) store.set(cached);
+        if (!cached || cached.sessionId !== sessionId || cached.lastSeq <= store.get().lastSeq) return;
+        try {
+          store.set(restoreBlockGaps(cached));
+        } catch {
+          // Unreadable (an older shape, a damaged file): fetch the whole history instead.
+          void this.opts.cache?.remove(sessionId).catch(() => {});
+        }
       })
       .finally(() => {
         this.hydrating.delete(sessionId);
@@ -411,13 +441,13 @@ export class RealtimeClient {
     switch (msg.type) {
       case "replay": {
         const store = this.conversation(msg.sessionId);
-        store.update((s) => applyEvents(s, msg.events));
+        if (!this.fold(msg.sessionId, store, (s) => applyEvents(s, msg.events))) return;
         if (msg.events.length > 0) this.scheduleSave(msg.sessionId);
         return;
       }
       case "event": {
         const store = this.conversation(msg.event.sessionId);
-        store.update((s) => applyEvent(s, msg.event));
+        if (!this.fold(msg.event.sessionId, store, (s) => applyEvent(s, msg.event))) return;
         // Marked, not saved: writing a long transcript on every streamed token
         // would stutter the reply. It's written on leaving or backgrounding.
         if (this.opts.cache) this.unsaved.add(msg.event.sessionId);

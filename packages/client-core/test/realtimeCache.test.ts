@@ -163,3 +163,66 @@ describe("RealtimeClient dead-connection recovery", () => {
     expect(FakeSocket.last).not.toBe(socket);
   });
 });
+
+describe("RealtimeClient with a cached copy that went through JSON", () => {
+  /** A turn whose blocks have a gap — normal, since they're indexed by Claude's own block numbers. */
+  const withGap = [
+    ev(0, { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "go" }),
+    ev(1, { kind: "assistant_block", turnId: "t1", blockIndex: 0, blockKind: "text", text: "hi", toolUseId: null, toolName: null, toolInput: null }),
+    ev(2, { kind: "assistant_block", turnId: "t1", blockIndex: 2, blockKind: "tool_use", text: null, toolUseId: "tu_bg", toolName: "Bash", toolInput: { run_in_background: true } }),
+  ];
+
+  /**
+   * The real bug: saving to the cache turned the gap into null, and the next
+   * background_task tripped over it, which aborted every catch-up after it —
+   * the chat stayed frozen on the cached copy for good.
+   */
+  it("catches up after restoring a copy whose gaps became nulls", async () => {
+    const cachedJson = JSON.parse(JSON.stringify(applyEvents(initialConversation("s1"), withGap)));
+    expect(cachedJson.timeline[1].turn.blocks[1]).toBeNull();
+    const { cache } = memoryCache(cachedJson);
+    const { client, socket } = connect(cache);
+    const store = client.watch("s1");
+    await vi.waitFor(() => expect(subscribes(socket)).toHaveLength(1));
+
+    socket.receive({
+      type: "replay",
+      sessionId: "s1",
+      events: [
+        ev(3, { kind: "background_task", taskId: "b1", toolUseId: "tu_bg", status: "completed", summary: "done" }),
+        ev(4, { kind: "prompt_submitted", promptId: "p2", deviceId: "d1", text: "next" }),
+      ],
+      upToSeq: 4,
+    });
+    expect(store.get().lastSeq).toBe(4);
+    expect(store.get().timeline.at(-1)).toMatchObject({ type: "prompt", text: "next" });
+  });
+
+  it("discards a cached copy it can't read, and loads the whole history", async () => {
+    const unreadable = { ...initialConversation("s1"), lastSeq: 9, timeline: "not a list" };
+    const { cache } = memoryCache(unreadable as unknown as ConversationState);
+    const { client, socket } = connect(cache);
+    client.watch("s1");
+    await vi.waitFor(() => expect(subscribes(socket)).toHaveLength(1));
+    expect(subscribes(socket)[0]).toMatchObject({ lastSeq: -1 });
+    expect(cache.remove).toHaveBeenCalledWith("s1");
+  });
+
+  it("reloads a conversation from scratch rather than stay stuck when folding fails", async () => {
+    const { cache } = memoryCache();
+    const { client, socket } = connect(cache);
+    // A state the reducer trips over: a turn with no body.
+    client.conversation("s1").set({ ...applyEvents(initialConversation("s1"), withGap), timeline: [{ type: "turn", turn: null }] } as unknown as ConversationState);
+    const store = client.watch("s1");
+
+    socket.receive({
+      type: "replay",
+      sessionId: "s1",
+      events: [ev(3, { kind: "background_task", taskId: "b1", toolUseId: "tu_bg", status: "completed", summary: "done" })],
+      upToSeq: 3,
+    });
+    expect(cache.remove).toHaveBeenCalledWith("s1");
+    expect(subscribes(socket).at(-1)).toMatchObject({ lastSeq: -1 });
+    expect(store.get().lastSeq).toBe(-1);
+  });
+});

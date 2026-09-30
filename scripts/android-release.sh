@@ -61,10 +61,16 @@ if [[ -z "$serial" ]]; then
   done < <(adb devices | tail -n +2)
   if [[ ${#phones[@]} -eq 0 ]]; then
     fail "No phone connected over adb (emulators are ignored; set ANDROID_SERIAL to install on one)."
-  elif [[ ${#phones[@]} -gt 1 ]]; then
-    fail "More than one phone connected (${phones[*]}); choose with ANDROID_SERIAL=<serial>."
   fi
+  # The same phone over USB and wireless debugging at once is two entries
+  # but one device: compare hardware serials, and prefer the USB one.
+  first_hw="$(adb -s "${phones[0]}" shell getprop ro.serialno | tr -d '\r')"
   serial="${phones[0]}"
+  for id in "${phones[@]}"; do
+    [[ "$(adb -s "$id" shell getprop ro.serialno | tr -d '\r')" == "$first_hw" ]] \
+      || fail "More than one phone connected (${phones[*]}); choose with ANDROID_SERIAL=<serial>."
+    [[ "$id" != *:* ]] && serial="$id"
+  done
 fi
 echo "✓ Installing on $(adb -s "$serial" shell getprop ro.product.model | tr -d '\r') ($serial)"
 

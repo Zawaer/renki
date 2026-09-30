@@ -13,7 +13,9 @@ import { SessionError } from "../src/sessions/errors.js";
 import {
   MAX_QUEUED_PROMPTS,
   MAX_RESUME_ATTEMPTS,
+  RESTART_INTERRUPTED_MESSAGE,
   RESUME_CONTINUE_TEXT,
+  restartContinueText,
   SessionManager,
   TITLE_UPGRADE_ATTEMPT_CAP,
 } from "../src/sessions/manager.js";
@@ -429,9 +431,12 @@ describe("reconcileOrphanedTurns", () => {
     const restarted = new SessionManager(config, db);
     restarted.reconcileOrphanedTurns();
 
+    // Idle with its continuation scheduled — the prompt again, since the
+    // turn hadn't finished a single block — rather than dead with a "resend".
     const after = restarted.getSession(s.id);
-    expect(after.status).toBe("error");
+    expect(after.status).toBe("idle");
     expect(after.hasPendingPermission).toBe(false);
+    expect(after.resume).toMatchObject({ reason: "Renki restarted while this was running." });
 
     const events = restarted.events.read(s.id);
     const turnResult = events.find((e) => e.kind === "turn_result");
@@ -457,9 +462,9 @@ describe("reconcileOrphanedTurns", () => {
     const restarted = new SessionManager(config, db);
     restarted.reconcileOrphanedTurns();
 
-    expect(restarted.getSession(s.id).status).toBe("error");
+    expect(restarted.getSession(s.id).status).toBe("idle");
     const turnResult = restarted.events.read(s.id).find((e) => e.kind === "turn_result");
-    expect(turnResult).toMatchObject({ promptId: "p1", ok: false });
+    expect(turnResult).toMatchObject({ promptId: "p1", ok: false, errorMessage: RESTART_INTERRUPTED_MESSAGE });
     expect((turnResult as { turnId: string }).turnId).toMatch(/^orphan-/);
   });
 
@@ -1280,5 +1285,119 @@ describe("resuming after a usage limit", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("restarting without losing work", () => {
+  beforeEach(() => {
+    runTurn.mockReset();
+    vi.mocked(generateSessionTitle).mockReset().mockResolvedValue(null);
+  });
+
+  const texts = () => runTurn.mock.calls.map((c) => (c[0] as { prompt: string }).prompt);
+
+  /** Start a turn that never finishes on its own, so a shutdown catches it mid-flight. */
+  async function midTurn(opts: { progress?: boolean; queue?: string[] } = {}) {
+    const ctx = setup();
+    ctx.manager.setPermissionResolverFactory(() => noopResolve);
+    const s = await newSession(ctx.manager, ctx.repoId);
+    ctx.manager.takeControl(s.id, "d1");
+    runTurn.mockImplementationOnce(async () => {
+      if (opts.progress) liveInstances.at(-1)!.opts.emit({ kind: "tool_result", turnId: "t1", toolUseId: "tu1", ok: true, summary: "edited" });
+      return new Promise<RunTurnResult>(() => {});
+    });
+    void ctx.manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p1", text: "build it", model: "opus", resolvePermission: noopResolve });
+    await vi.waitFor(() => expect(runTurn).toHaveBeenCalledTimes(1));
+    for (const [i, text] of (opts.queue ?? []).entries()) {
+      await ctx.manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: `q${i}`, text, resolvePermission: noopResolve });
+    }
+    return { ...ctx, s };
+  }
+
+  /** What the next boot does: a new manager over the same database, wired and restored. */
+  function reboot(ctx: { config: Config; db: DB }) {
+    const next = new SessionManager(ctx.config, ctx.db);
+    next.reconcileOrphanedTurns();
+    next.setPermissionResolverFactory(() => noopResolve);
+    next.restoreScheduledResumes();
+    return next;
+  }
+
+  it("notes a running turn at shutdown and continues it after the restart, with its settings", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"], shouldAdvanceTime: true });
+    try {
+      const ctx = await midTurn({ progress: true });
+      expect(ctx.manager.prepareForRestart()).toBe(1);
+      ctx.manager.closeAll();
+
+      runTurn.mockResolvedValue(okTurn);
+      const next = reboot(ctx);
+      await vi.advanceTimersByTimeAsync(15_000);
+      await vi.waitFor(() => expect(runTurn).toHaveBeenCalledTimes(2));
+      expect(texts()[1]).toBe(restartContinueText(false));
+      expect(runTurn.mock.calls[1]![0]).toMatchObject({ model: "opus" });
+      await vi.waitFor(() => expect(next.getSession(ctx.s.id).resume).toBeNull());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("sends the prompt again when the turn hadn't got going", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"], shouldAdvanceTime: true });
+    try {
+      const ctx = await midTurn();
+      ctx.manager.prepareForRestart();
+      ctx.manager.closeAll();
+      runTurn.mockResolvedValue(okTurn);
+      reboot(ctx);
+      await vi.advanceTimersByTimeAsync(15_000);
+      await vi.waitFor(() => expect(runTurn).toHaveBeenCalledTimes(2));
+      expect(texts()[1]).toBe("build it");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps prompts queued behind the turn, and runs them after it", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"], shouldAdvanceTime: true });
+    try {
+      const ctx = await midTurn({ queue: ["then this", "and this"] });
+      ctx.manager.prepareForRestart();
+      ctx.manager.closeAll();
+      runTurn.mockResolvedValue(okTurn);
+      reboot(ctx);
+      await vi.advanceTimersByTimeAsync(15_000);
+      await vi.waitFor(() => expect(runTurn).toHaveBeenCalledTimes(4));
+      expect(texts().slice(1)).toEqual(["build it", "then this", "and this"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("notes a session whose background agents are still working, and asks to relaunch them", async () => {
+    const ctx = setup();
+    const s = await newSession(ctx.manager, ctx.repoId);
+    ctx.manager.takeControl(s.id, "d1");
+    runTurn.mockResolvedValueOnce(okTurn);
+    await ctx.manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p1", text: "spawn agents", resolvePermission: noopResolve });
+    liveInstances.at(-1)!.backgroundTaskCount = 2;
+
+    expect(ctx.manager.prepareForRestart()).toBe(1);
+    const row = ctx.db.select().from(sessions).where(eq(sessions.id, s.id)).get()!;
+    expect(JSON.parse(row.resumeState!).prompt.text).toBe(restartContinueText(true));
+  });
+
+  it("leaves quiet sessions alone", async () => {
+    const ctx = setup();
+    const s = await newSession(ctx.manager, ctx.repoId);
+    expect(ctx.manager.prepareForRestart()).toBe(0);
+    expect(ctx.manager.getSession(s.id).resume).toBeNull();
+  });
+
+  it("never starts queued prompts once shutting down", async () => {
+    const ctx = await midTurn({ queue: ["later"] });
+    ctx.manager.closeAll();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(runTurn).toHaveBeenCalledTimes(1);
   });
 });

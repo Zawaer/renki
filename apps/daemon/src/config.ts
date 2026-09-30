@@ -43,11 +43,13 @@ const Env = z.object({
   RENKI_TRASH_RETENTION_DAYS: z.coerce.number().min(0).default(30),
   /**
    * Seconds a shutdown (SIGTERM/SIGINT — a deploy, `docker compose up`, pm2
-   * restart) waits for in-flight turns to finish before closing their
-   * processes. 0 = close immediately. Your process manager's kill timeout
-   * must be longer than this or the drain is cut short.
+   * restart) lets in-flight turns finish before closing their processes.
+   * Short on purpose: a turn still running after it isn't lost — it's noted
+   * and continued automatically once the daemon is back (see
+   * SessionManager.prepareForRestart). 0 = close immediately. Your process
+   * manager's kill timeout must be longer than this.
    */
-  RENKI_SHUTDOWN_GRACE_SECONDS: z.coerce.number().min(0).default(600),
+  RENKI_SHUTDOWN_GRACE_SECONDS: z.coerce.number().min(0).default(20),
   /** Seconds a pending permission request waits for the controller before denying. */
   RENKI_PERMISSION_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(300),
   /** Port the HTTP+WS server listens on. */

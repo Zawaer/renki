@@ -51,6 +51,7 @@ async function startServer() {
     base: `http://127.0.0.1:${address.port}`,
     wsBase: `ws://127.0.0.1:${address.port}`,
     manager,
+    broker,
     config,
     repoId,
   };
@@ -526,5 +527,38 @@ describe("WebSocket: lazy attachments", () => {
     const replay = await subscribe(ws, bus, s.id);
     expect(replay.events.find((x: { kind: string }) => x.kind === "prompt_submitted").attachments[0].data).toBe(png);
     ws.close();
+  });
+});
+
+describe("REST: answering a permission from a notification", () => {
+  it("takes control for the device and answers the request, once", async () => {
+    const { base, config, manager, broker } = await startServer();
+    const authed = authedFetch(base, config.authToken);
+    const s = await manager.createSession({});
+    manager.takeControl(s.id, "web_laptop");
+    const decided = broker.resolverFor(s.id)({ requestId: "r1", toolName: "Bash", toolInput: { command: "ls" } } as never);
+
+    const post = (path: string, body: unknown) =>
+      authed(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const res = await post(`/sessions/${s.id}/permissions/r1`, { decision: "allow", deviceId: "phone_1" });
+    expect(await res.json()).toEqual({ ok: true });
+    expect(await decided).toMatchObject({ decision: "allow", byDeviceId: "phone_1" });
+    expect(manager.getSession(s.id).controller).toBe("phone_1");
+
+    expect((await post(`/sessions/${s.id}/permissions/r1`, { decision: "deny", deviceId: "phone_1" })).status).toBe(409);
+    expect((await post(`/sessions/${s.id}/permissions/r1`, { decision: "maybe", deviceId: "phone_1" })).status).toBe(400);
+  });
+
+  it("won't answer a request that belongs to another session", async () => {
+    const { base, config, manager, broker } = await startServer();
+    const a = await manager.createSession({});
+    const b = await manager.createSession({});
+    void broker.resolverFor(a.id)({ requestId: "r2", toolName: "Bash", toolInput: {} } as never);
+    const res = await authedFetch(base, config.authToken)(`/sessions/${b.id}/permissions/r2`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ decision: "allow", deviceId: "phone_1" }),
+    });
+    expect(res.status).toBe(409);
   });
 });

@@ -20,7 +20,8 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "dev": "turbo run dev",
-    "postinstall": "node scripts/dedupe-react-for-tests.mjs"
+    "postinstall": "node scripts/dedupe-react-for-tests.mjs",
+    "android:release": "bash scripts/android-release.sh"
   },
   "devDependencies": {
     "turbo": "^2.3.3",

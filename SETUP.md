@@ -140,6 +140,24 @@ step. Only `daemon` is required if you'd rather just run
 `pnpm --filter @renki/web dev` locally instead — comment out the `web` service
 in `docker-compose.yml` if you don't want to build/run it at all.
 
+### Restarting and redeploying
+
+A restart doesn't cost anyone their work, so you can redeploy while a session
+is busy. On shutdown the daemon gives running turns 20 seconds to finish
+(`RENKI_SHUTDOWN_GRACE_SECONDS`). Whatever is still going after that is noted,
+and continued automatically about ten seconds after the daemon is back:
+
+- A turn that had started is asked to carry on where it left off. One that
+  hadn't got going gets its prompt again, with the same model and settings.
+- Background agents can't survive the restart (they run inside the daemon's
+  `claude` processes), so the continuation asks Claude to relaunch any that
+  hadn't finished.
+- Prompts queued behind the turn run after it, in order.
+
+The same happens after a crash: on boot, a turn that was cut off is continued
+the same way (without its queue, which only lived in memory). The session
+shows "Paused · continuing shortly" in the meantime.
+
 ### Without Docker (pm2)
 
 pm2 is a solid fit for keeping this running in the background on a homelab
@@ -433,7 +451,10 @@ or fails, and when a turn pauses on a usage limit. Every registered phone
 gets these, whichever device started the session. If you're driving the
 session from a connected laptop, a request waits 15 seconds first, and the
 phone stays quiet if you answer on the laptop. Tapping a notification opens
-that session.
+that session. A command, edit or plan also has **Allow** and **Deny** buttons:
+they answer it straight away (taking control of the session for the phone,
+since only the controller can answer) and open the session so you see what
+happened. Questions don't, since they need an answer picked.
 
 One-time setup (Android needs Firebase to receive any push at all):
 
@@ -727,14 +748,18 @@ install to be uninstalled before it can update.
 ```bash
 keytool -genkeypair -v -keystore ~/.renki/renki-release.keystore \
   -alias renki -keyalg RSA -keysize 4096 -validity 10950
+printf '%s' 'your-keystore-password' > ~/.renki/keystore-password.txt && chmod 600 ~/.renki/keystore-password.txt
 
-export RENKI_ANDROID_KEYSTORE=$HOME/.renki/renki-release.keystore
-export RENKI_ANDROID_KEYSTORE_PASSWORD=...
-export RENKI_ANDROID_KEY_ALIAS=renki
-export RENKI_ANDROID_KEY_PASSWORD=...
-
-pnpm --filter @renki/mobile exec expo run:android --variant release
+pnpm android:release    # build, sign with that key, install on the adb device
 ```
+
+`pnpm android:release` (scripts/android-release.sh) finds the keystore and its
+password in `~/.renki/` (or the `RENKI_ANDROID_*` variables, if set), checks
+they open, and **refuses to build** rather than fall back to the debug key: a
+phone with the release build installed rejects a debug-signed one as an
+update. It also clears the Android project's cached native-module paths when
+the repo has moved, which otherwise fails the build with "No variants
+exist". Pass `--device <id>` when more than one adb device is connected.
 
 Keep the keystore **outside** the repo and backed up: `expo prebuild --clean`
 deletes everything under `apps/mobile/android/`, and losing the key means no

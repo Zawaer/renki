@@ -60,6 +60,47 @@ async function createChannels(): Promise<void> {
 }
 
 /**
+ * The Allow / Deny buttons on an approval notification (the daemon sends
+ * categoryId "approval" for commands, edits and plans; questions don't get
+ * them, since they need an answer picked). Both open the app: a tap on a
+ * button of a closed app would otherwise wait until the next launch to be
+ * delivered, and an approval that quietly doesn't happen is worse than one
+ * that opens the session it was for.
+ */
+async function registerCategories(): Promise<void> {
+  await Notifications.setNotificationCategoryAsync("approval", [
+    { identifier: "allow", buttonTitle: "Allow", options: { opensAppToForeground: true } },
+    { identifier: "deny", buttonTitle: "Deny", options: { opensAppToForeground: true, isDestructive: true } },
+  ]);
+}
+
+/**
+ * Answer a permission request from its notification. The daemon takes control
+ * of the session for this device first, as answering needs it.
+ */
+export async function answerFromNotification(
+  config: AppConfig,
+  sessionId: string,
+  requestId: string,
+  decision: "allow" | "deny",
+): Promise<"done" | "already_answered" | "failed"> {
+  try {
+    const res = await fetch(
+      `${config.baseUrl}/sessions/${encodeURIComponent(sessionId)}/permissions/${encodeURIComponent(requestId)}`,
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${config.token}`, "content-type": "application/json" },
+        body: JSON.stringify({ decision, deviceId: config.deviceId }),
+      },
+    );
+    if (res.status === 409) return "already_answered";
+    return res.ok ? "done" : "failed";
+  } catch {
+    return "failed";
+  }
+}
+
+/**
  * Register this device for push and hand the Expo token to the daemon, so it
  * can reach you about sessions that need you while the app is closed. Never
  * throws: the outcome lands in getPushStatus() for Settings to show.
@@ -68,6 +109,7 @@ export async function registerForPush(config: AppConfig): Promise<void> {
   setStatus({ state: "checking" });
   try {
     await createChannels();
+    await registerCategories().catch(() => {});
 
     const current = await Notifications.getPermissionsAsync();
     const granted = current.granted || (await Notifications.requestPermissionsAsync()).status === "granted";

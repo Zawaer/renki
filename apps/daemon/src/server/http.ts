@@ -361,6 +361,29 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
     return { ok: true };
   });
 
+  /**
+   * Answer a permission request from outside a live connection — the Allow and
+   * Deny buttons on a phone notification. Only the controller may answer, so
+   * the device takes control first, the same as tapping "Take control" and
+   * then answering. 409 when the request is no longer waiting (answered
+   * elsewhere, or timed out).
+   */
+  app.post<{ Params: { id: string; requestId: string } }>("/sessions/:id/permissions/:requestId", async (req, reply) => {
+    const body = (req.body ?? {}) as { decision?: unknown; deviceId?: unknown };
+    if ((body.decision !== "allow" && body.decision !== "deny") || typeof body.deviceId !== "string" || !body.deviceId) {
+      return reply.code(400).send({ error: "invalid_request" });
+    }
+    if (broker.sessionOf(req.params.requestId) !== req.params.id) return reply.code(409).send({ error: "not_pending" });
+    try {
+      const session = manager.getSession(req.params.id);
+      if (session.controller !== body.deviceId) manager.takeControl(req.params.id, body.deviceId);
+    } catch (err) {
+      return sendSessionError(reply, err);
+    }
+    const matched = broker.answer(req.params.requestId, body.decision, body.deviceId);
+    return matched ? { ok: true } : reply.code(409).send({ error: "not_pending" });
+  });
+
   /** Send one test notification to a device — the phone's Settings "Send test" button. */
   app.post("/devices/push-test", async (req, reply) => {
     const deviceId = (req.body as { deviceId?: unknown } | null)?.deviceId;

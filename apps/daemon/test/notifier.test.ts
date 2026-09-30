@@ -2,7 +2,7 @@ import type { Session, SessionEvent } from "@renki/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DeviceRegistry } from "../src/push/devices.js";
 import { LONG_TURN_MS, NEEDS_INPUT_GRACE_MS, Notifier, composePush } from "../src/push/notifier.js";
-import type { SessionManager } from "../src/sessions/manager.js";
+import { RESTART_INTERRUPTED_MESSAGE, type SessionManager } from "../src/sessions/manager.js";
 import type { PushTokenStore } from "../src/push/tokens.js";
 import { makeTestConfig } from "./helpers.js";
 
@@ -27,6 +27,15 @@ describe("composePush", () => {
     expect(composePush(request("Bash", { command: "rm -rf build" }), session)?.body).toBe("rm -rf build");
   });
 
+  it("puts Allow/Deny on approvals, but not on questions, which need an answer picked", () => {
+    expect(composePush(request("Bash", { command: "ls" }), session)?.category).toBe("approval");
+    expect(composePush(request("ExitPlanMode", { plan: "x" }), session)?.category).toBe("approval");
+    expect(
+      composePush(request("AskUserQuestion", { questions: [{ question: "Size?", header: "S", options: [{ label: "M", description: "" }], multiSelect: false }] }), session)
+        ?.category,
+    ).toBeUndefined();
+  });
+
   it("names the plan and edit approvals", () => {
     expect(composePush(request("ExitPlanMode", { plan: "x" }), session)?.title).toBe("Plan ready · Shopping backlog");
     expect(composePush(request("Edit", { file_path: "/w/src/app.ts" }), session)?.title).toBe("Approve an edit? · Shopping backlog");
@@ -48,6 +57,10 @@ describe("composePush", () => {
       body: "Waiting for the 5-hour limit to reset. The turn will continue automatically then.",
     });
     expect(composePush(result({ ok: false, errorMessage: "spawn ENOENT" }), session)?.title).toBe("Turn failed · Shopping backlog");
+  });
+
+  it("stays quiet about a turn a restart cut off — it continues by itself", () => {
+    expect(composePush(result({ ok: false, errorMessage: RESTART_INTERRUPTED_MESSAGE, durationMs: LONG_TURN_MS }), session)).toBeNull();
   });
 
   it("stays quiet for a stopped turn and ordinary notices", () => {

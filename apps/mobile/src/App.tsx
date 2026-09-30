@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, BackHandler, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, BackHandler, Platform, StyleSheet, Text, ToastAndroid, View } from "react-native";
 import { addHost, DEFAULT_PALETTE, emptyHostsState, removeHost, updateHost, type HostsState, type PaletteKey } from "@renki/client-core";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -10,7 +10,7 @@ import { loadPalette } from "./lib/composerPrefs";
 import { migrateLegacyStorage } from "./lib/storageMigration";
 import { ClientProvider } from "./lib/client";
 import { Screen } from "./components/Motion";
-import { registerForPush } from "./lib/push";
+import { answerFromNotification, registerForPush } from "./lib/push";
 import { Setup } from "./screens/Setup";
 import { Settings } from "./screens/Settings";
 import { SessionList } from "./screens/SessionList";
@@ -220,9 +220,30 @@ function Main({
   // Register for push, and when a notification is tapped, open its session.
   useEffect(() => {
     void registerForPush(config);
+    // A response can reach both the launch check and the listener; act once.
+    const handled = new Set<string>();
     const open = (res: Notifications.NotificationResponse | null) => {
-      const sessionId = res?.notification.request.content.data?.sessionId;
-      if (typeof sessionId === "string") selectedRef.current(sessionId);
+      if (!res) return;
+      const key = `${res.notification.request.identifier}:${res.actionIdentifier}`;
+      if (handled.has(key)) return;
+      handled.add(key);
+      const data = res.notification.request.content.data ?? {};
+      const sessionId = data.sessionId;
+      if (typeof sessionId !== "string") return;
+      const action = res.actionIdentifier;
+      if ((action === "allow" || action === "deny") && typeof data.requestId === "string") {
+        void answerFromNotification(config, sessionId, data.requestId, action).then((outcome) => {
+          const message =
+            outcome === "done"
+              ? action === "allow" ? "Allowed" : "Denied"
+              : outcome === "already_answered"
+                ? "Already answered"
+                : "Couldn't answer — open the session to try again";
+          if (Platform.OS === "android") ToastAndroid.show(message, ToastAndroid.SHORT);
+        });
+        void Notifications.dismissNotificationAsync(res.notification.request.identifier).catch(() => {});
+      }
+      selectedRef.current(sessionId);
     };
     // A tap that launched the app from closed lands before this listener
     // exists, so ask for it once as well — only a recent one, since the last

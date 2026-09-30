@@ -1,7 +1,8 @@
 services:
   daemon:
-    # Give the daemon time to let running turns finish before a restart kills
-    # them (RENKI_SHUTDOWN_GRACE_SECONDS, default 600) — a little longer than the grace itself.
+    # Longer than the daemon's own shutdown grace (RENKI_SHUTDOWN_GRACE_SECONDS,
+    # default 20), so it always gets to note unfinished turns — they continue
+    # after the restart — before it's killed. Generous in case the grace is raised.
     stop_grace_period: 11m
     build: .
     container_name: renki-daemon

@@ -25,6 +25,7 @@ import { LiveClaudeSession } from "../claude/liveSession.js";
 import type { ResumePlan, ResumeReadiness } from "../accounts/resumePlan.js";
 import type { PermissionResolver, RateLimitHit, RunTurnResult } from "../claude/runner.js";
 import { derivePlaceholderTitle, generateSessionTitle } from "../claude/titler.js";
+import { EFFORT_LEVELS } from "@renki/client-core";
 import { SessionError } from "./errors.js";
 import { dueForPurge, purgeAtFor } from "./trash.js";
 
@@ -57,15 +58,34 @@ export type RateLimitAutoSwitch = {
 type ResumeState = {
   reason: string;
   attempt: number;
-  prompt: {
-    deviceId: string;
-    text: string;
-    attachments?: Attachment[];
-    model?: string;
-    maxThinkingTokens?: number | null;
-    permissionMode?: PermissionMode;
-  };
+  /** "limit" (the default, for states written before restarts existed) waits for a reset; "restart" continues a turn a restart cut off. */
+  kind?: "limit" | "restart";
+  prompt: ResumePrompt;
+  /** Prompts that were queued behind the turn, run after it — kept across a restart. */
+  queued?: (ResumePrompt & { promptId: string })[];
 };
+
+type ResumePrompt = {
+  deviceId: string;
+  text: string;
+  attachments?: Attachment[];
+  model?: string;
+  maxThinkingTokens?: number | null;
+  permissionMode?: PermissionMode;
+};
+
+/**
+ * The failure a turn cut off by a restart ends with. The notifier recognises
+ * it and stays quiet: the turn continues by itself once the daemon is back.
+ */
+export const RESTART_INTERRUPTED_MESSAGE = "Interrupted by a Renki restart — it continues automatically once the daemon is back.";
+
+/** How a restart asks Claude to carry on, when the turn had already started. */
+export function restartContinueText(hadBackgroundAgents: boolean): string {
+  return hadBackgroundAgents
+    ? "Renki restarted while you were working, which stopped this turn and any background agents that were still running. Continue where you left off, and relaunch any background agents that hadn't finished."
+    : "Renki restarted while you were working, which stopped this turn. Continue where you left off.";
+}
 
 /**
  * Give up waiting after this many resumed attempts also hit a limit. Each wait
@@ -140,6 +160,8 @@ export class SessionManager {
   private readonly resumeTimers = new Map<string, NodeJS.Timeout>();
   /** Builds the permission resolver for a resumed turn — the broker's, wired in at startup. */
   private resolverFor: ((sessionId: string) => PermissionResolver) | null = null;
+  /** sessionId -> the prompted turn running now, so a restart can continue it with the same settings. */
+  private readonly inflight = new Map<string, SubmitPromptInput>();
   /** Set by closeAll: a shutting-down daemon must not start resumed turns. */
   private stopping = false;
   /** Sessions inside runResume's readiness check, so the timer and "Continue now" can't both start the turn. */
@@ -193,6 +215,12 @@ export class SessionManager {
         }
       }
 
+      // A clean shutdown noted this session already (prepareForRestart). A
+      // crash didn't: note it now, from what the log says it was doing.
+      if (!row.resumeAt) {
+        const prompt = orphanPromptId ? this.promptOf(id, orphanPromptId) : null;
+        this.writeRestartPlan(id, row, prompt ? { ...prompt, promptId: orphanPromptId! } : null, false, []);
+      }
       if (orphanPromptId) {
         this.events.append(id, {
           kind: "turn_result",
@@ -201,12 +229,12 @@ export class SessionManager {
           ok: false,
           costUsd: null,
           durationMs: null,
-          errorMessage: "Daemon restarted while this turn was running — resend the prompt.",
+          errorMessage: RESTART_INTERRUPTED_MESSAGE,
           inputTokens: null,
           outputTokens: null,
           interrupted: false,
         });
-        logger.warn("reconciled orphaned turn on boot", { id, promptId: orphanPromptId });
+        logger.warn("reconciled orphaned turn on boot; it will continue", { id, promptId: orphanPromptId });
       }
 
       // Any permission request left unresolved would keep hasPendingPermission
@@ -221,9 +249,91 @@ export class SessionManager {
         this.events.append(id, { kind: "permission_resolved", requestId, decision: "deny", byDeviceId: null });
       }
 
-      this.patch(id, { status: "error", hasPendingPermission: false });
-      this.events.append(id, { kind: "status_changed", status: "error" });
+      // Idle, not error: the turn's continuation is already scheduled.
+      this.patch(id, { status: "idle", hasPendingPermission: false });
+      this.events.append(id, { kind: "status_changed", status: "idle" });
     }
+  }
+
+  /**
+   * Note, before the daemon stops, everything that would otherwise be lost:
+   * turns still running, sessions whose background agents are still working,
+   * and prompts queued behind them. Each becomes a scheduled resume due at
+   * once, so the next boot continues it (restoreScheduledResumes). Call after
+   * the shutdown grace and before closeAll. Returns how many were noted.
+   */
+  prepareForRestart(): number {
+    let noted = 0;
+    for (const row of this.db.select().from(sessions).all()) {
+      if (row.status === "archived" || row.status === "trashed" || row.status === "deleted") continue;
+      const live = this.live.get(row.id);
+      const running = row.status === "busy" || live?.busy === true;
+      const agents = (live?.backgroundTaskCount ?? 0) > 0;
+      const queued = (this.queues.get(row.id) ?? []).map(toResumePrompt);
+
+      const existing = this.readResume(row.id);
+      if (existing) {
+        // Already waiting (on a limit): just keep its queue with it.
+        if (queued.length > 0) {
+          this.patch(row.id, { resumeState: JSON.stringify({ ...existing.state, queued: [...(existing.state.queued ?? []), ...queued] }) });
+        }
+        continue;
+      }
+      if (!running && !agents && queued.length === 0) continue;
+
+      const input = this.inflight.get(row.id);
+      this.writeRestartPlan(row.id, row, input ? toResumePrompt(input) : null, agents, queued);
+      this.events.append(row.id, {
+        kind: "notice",
+        text: "Renki is restarting. This will continue automatically once it's back.",
+        level: "info",
+      });
+      noted++;
+    }
+    if (noted > 0) logger.info("noted unfinished work to continue after the restart", { sessions: noted });
+    return noted;
+  }
+
+  /**
+   * Schedule the continuation of a session a restart interrupted: the prompt
+   * again if the turn never got going, otherwise a request to carry on.
+   * Without the original prompt (a background turn, or a crash that left no
+   * record), it's always the request to carry on, under the session's own
+   * pinned settings.
+   */
+  private writeRestartPlan(
+    id: string,
+    row: typeof sessions.$inferSelect,
+    prompt: (ResumePrompt & { promptId: string }) | null,
+    hadAgents: boolean,
+    queued: (ResumePrompt & { promptId: string })[],
+  ): void {
+    const pinned = pinnedPrompt(row);
+    const carryOn = restartContinueText(hadAgents);
+    const next: ResumePrompt = prompt
+      ? this.turnMadeProgress(id, prompt.promptId)
+        ? { ...prompt, text: carryOn, attachments: undefined }
+        : prompt
+      : { ...pinned, text: carryOn };
+    const state: ResumeState = {
+      reason: "Renki restarted while this was running.",
+      attempt: 0,
+      kind: "restart",
+      prompt: next,
+      queued: queued.length > 0 ? queued : undefined,
+    };
+    this.patch(id, { resumeAt: Date.now(), resumeState: JSON.stringify(state) });
+  }
+
+  /** A prompt's text and attachments, as the log recorded them. */
+  private promptOf(sessionId: string, promptId: string): ResumePrompt | null {
+    const row = this.db.select().from(sessions).where(eq(sessions.id, sessionId)).get();
+    for (const e of this.events.read(sessionId)) {
+      if (e.kind === "prompt_submitted" && e.promptId === promptId) {
+        return { ...(row ? pinnedPrompt(row) : { deviceId: e.deviceId, text: "" }), deviceId: e.deviceId, text: e.text, attachments: e.attachments };
+      }
+    }
+    return null;
   }
 
   /** Wire the account rotator in (set once at startup; avoids a ctor cycle). */
@@ -706,7 +816,8 @@ export class SessionManager {
     let next: SubmitPromptInput | undefined = first;
     while (next) {
       const { paused } = await this.runOneTurn(next);
-      if (paused) return;
+      // Shutting down: what's queued was noted by prepareForRestart and runs after it.
+      if (paused || this.stopping) return;
       next = this.queues.get(next.sessionId)?.shift();
     }
   }
@@ -746,6 +857,7 @@ export class SessionManager {
     }
 
     this.promptedTurns.add(input.sessionId);
+    this.inflight.set(input.sessionId, input);
     let resumeId = session.claudeSessionId;
     const runOnce = (continuing = false) =>
       this.liveFor(input.sessionId, session.worktreePath, resumeId, input).runTurn({
@@ -798,6 +910,7 @@ export class SessionManager {
     }
 
     this.promptedTurns.delete(input.sessionId);
+    this.inflight.delete(input.sessionId);
     // The session may have been archived/deleted while the turn ran (which
     // closed the process and failed the turn) — don't resurrect it as idle.
     if (this.isRetired(input.sessionId)) return { paused: false };
@@ -984,7 +1097,7 @@ export class SessionManager {
     if (ready.proceed && ready.note) this.events.append(sessionId, { kind: "notice", text: ready.note, level: "info" });
     this.events.append(sessionId, {
       kind: "notice",
-      text: force ? "Continuing now, as requested." : "Usage limit reset — continuing.",
+      text: force ? "Continuing now, as requested." : state.kind === "restart" ? "Renki is back — continuing." : "Usage limit reset — continuing.",
       level: "info",
     });
     logger.info("running scheduled resume", { sessionId, attempt: state.attempt + 1, force });
@@ -1001,6 +1114,11 @@ export class SessionManager {
   }
 
   private async runResumedTurn(sessionId: string, state: ResumeState, resolvePermission: PermissionResolver): Promise<void> {
+    // Prompts that were queued behind it before a restart line up again, first.
+    if (state.queued?.length) {
+      const restored = state.queued.map((q) => ({ ...q, sessionId, resolvePermission }));
+      this.queues.set(sessionId, [...restored, ...(this.queues.get(sessionId) ?? [])]);
+    }
     try {
       await this.runTurns({
         sessionId,
@@ -1012,7 +1130,8 @@ export class SessionManager {
         maxThinkingTokens: state.prompt.maxThinkingTokens,
         permissionMode: state.prompt.permissionMode,
         resolvePermission,
-        resumeAttempt: state.attempt + 1,
+        // A restart's continuation isn't a retry on a limit; if it hits one, that wait starts from the beginning.
+        resumeAttempt: state.kind === "restart" ? undefined : state.attempt + 1,
       });
     } catch (err) {
       logger.warn("resumed turn failed to start", { sessionId, err: String(err) });
@@ -1172,7 +1291,7 @@ export class SessionManager {
   }
 
   /** Tear down every live process (daemon shutdown / CLI exit). Idle sessions resume transparently on their next prompt. */
-  closeAll(reason = "The daemon restarted while this turn was running — send the prompt again."): void {
+  closeAll(reason = RESTART_INTERRUPTED_MESSAGE): void {
     // Scheduled resumes stay on their rows and are re-armed at the next boot.
     this.stopping = true;
     for (const timer of this.resumeTimers.values()) clearTimeout(timer);
@@ -1381,4 +1500,33 @@ function resumeOf(row: typeof sessions.$inferSelect): Session["resume"] {
   } catch {
     return null;
   }
+}
+
+/** The part of a submitted prompt a resume needs to send it again. */
+function toResumePrompt(input: SubmitPromptInput): ResumePrompt & { promptId: string } {
+  return {
+    promptId: input.promptId,
+    deviceId: input.deviceId,
+    text: input.text,
+    attachments: input.attachments,
+    model: input.model,
+    maxThinkingTokens: input.maxThinkingTokens,
+    permissionMode: input.permissionMode,
+  };
+}
+
+const PERMISSION_MODES_ACCEPTED = new Set(["default", "acceptEdits", "plan", "auto"]);
+
+/** The settings pinned to a session, as a prompt would carry them — for a continuation with no original to copy. */
+function pinnedPrompt(row: typeof sessions.$inferSelect): ResumePrompt {
+  const effort = EFFORT_LEVELS.find((e) => e.key === row.composerEffortKey);
+  return {
+    deviceId: row.controller ?? "daemon_restart",
+    text: "",
+    model: row.composerModel ?? undefined,
+    maxThinkingTokens: effort ? effort.maxThinkingTokens : undefined,
+    permissionMode: row.composerPermissionMode && PERMISSION_MODES_ACCEPTED.has(row.composerPermissionMode)
+      ? (row.composerPermissionMode as PermissionMode)
+      : undefined,
+  };
 }

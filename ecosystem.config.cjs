@@ -18,7 +18,7 @@ module.exports = {
   apps: [
     {
       name: "renki-daemon",
-      // Let a restart drain running turns (RENKI_SHUTDOWN_GRACE_SECONDS, default 600) before SIGKILL.
+      // Outlasts the daemon's shutdown grace (RENKI_SHUTDOWN_GRACE_SECONDS, default 20) so it can note unfinished turns — they continue after the restart.
       kill_timeout: 660_000,
       script: "apps/daemon/dist/index.js",
       cwd: __dirname,

@@ -3,7 +3,7 @@ import { describeTool, parseAskUserQuestion } from "@renki/client-core";
 import type { Session, SessionEvent } from "@renki/protocol";
 import type { Config } from "../config.js";
 import { logger } from "../logger.js";
-import type { SessionManager } from "../sessions/manager.js";
+import { RESTART_INTERRUPTED_MESSAGE, type SessionManager } from "../sessions/manager.js";
 import type { DeviceRegistry } from "./devices.js";
 import type { PushTokenStore } from "./tokens.js";
 
@@ -22,6 +22,13 @@ export type PushMessage = {
   needsInput: boolean;
   /** Set for a permission request, so a push can be cancelled if it's answered first. */
   requestId?: string;
+  /**
+   * The phone's notification category — "approval" gets Allow/Deny buttons
+   * (registered by the app, see apps/mobile's push.ts) that answer the
+   * request without opening it first. Questions don't: they need an answer
+   * picked, not a yes.
+   */
+  category?: "approval";
 };
 
 /** A turn shorter than this was probably watched as it ran; its "done" isn't worth a buzz. */
@@ -59,6 +66,7 @@ export function composePush(event: SessionEvent, session: Session, replyExcerpt:
   switch (event.kind) {
     case "permission_request": {
       const base = { channel: "input" as const, needsInput: true, requestId: event.requestId };
+      const approval = { ...base, category: "approval" as const };
       if (event.toolName === "AskUserQuestion") {
         const q = parseAskUserQuestion(event.toolName, event.toolInput);
         const first = q?.questions[0]?.question;
@@ -66,18 +74,18 @@ export function composePush(event: SessionEvent, session: Session, replyExcerpt:
         return { ...base, title: `Question · ${name}`, body: first ? clip(first, 160) + more : "Claude has a question for you." };
       }
       if (event.toolName === "ExitPlanMode") {
-        return { ...base, title: `Plan ready · ${name}`, body: "Claude has a plan and wants your go-ahead." };
+        return { ...base, category: "approval", title: `Plan ready · ${name}`, body: "Claude has a plan and wants your go-ahead." };
       }
       const { label, meta } = describeTool(event.toolName, event.toolInput);
       if (event.toolName === "Bash") {
         const command = (event.toolInput as { command?: unknown } | null)?.command;
         const detail = meta ?? (typeof command === "string" ? command : label);
-        return { ...base, title: `Approve a command? · ${name}`, body: clip(label === "Ran a command" ? detail : label, 160) };
+        return { ...approval, title: `Approve a command? · ${name}`, body: clip(label === "Ran a command" ? detail : label, 160) };
       }
       if (["Edit", "MultiEdit", "Write", "NotebookEdit"].includes(event.toolName)) {
-        return { ...base, title: `Approve an edit? · ${name}`, body: clip(`${label} ${meta ?? ""}`, 160) };
+        return { ...approval, title: `Approve an edit? · ${name}`, body: clip(`${label} ${meta ?? ""}`, 160) };
       }
-      return { ...base, title: `Permission needed · ${name}`, body: clip(meta ? `${label}: ${meta}` : `Claude wants to use ${event.toolName}`, 160) };
+      return { ...approval, title: `Permission needed · ${name}`, body: clip(meta ? `${label}: ${meta}` : `Claude wants to use ${event.toolName}`, 160) };
     }
 
     case "turn_result": {
@@ -87,8 +95,10 @@ export function composePush(event: SessionEvent, session: Session, replyExcerpt:
         return { title: `Done · ${name}`, body: replyExcerpt ? clip(replyExcerpt, 180) : "Claude finished.", channel: "updates", needsInput: false };
       }
       // A usage limit is followed by a pause notice (or a "stopped retrying"
-      // one); that's the push worth sending, not this.
+      // one); that's the push worth sending, not this. A restart's cut-off
+      // turn continues by itself once the daemon's back.
       if (classifyRateLimit(event.errorMessage)) return null;
+      if (event.errorMessage === RESTART_INTERRUPTED_MESSAGE) return null;
       return { title: `Turn failed · ${name}`, body: clip(event.errorMessage ?? "The turn errored.", 180), channel: "updates", needsInput: false };
     }
 
@@ -159,13 +169,13 @@ export class Notifier {
       const requestId = message.requestId;
       const timer = setTimeout(() => {
         this.pending.delete(requestId);
-        void this.deliver(message, event.sessionId);
+        void this.deliver(message, event.sessionId, requestId);
       }, NEEDS_INPUT_GRACE_MS);
       timer.unref();
       this.pending.set(requestId, timer);
       return;
     }
-    void this.deliver(message, event.sessionId);
+    void this.deliver(message, event.sessionId, message.requestId);
   }
 
   /** The start of a turn's last text block — what a "done" push shows. */
@@ -179,10 +189,10 @@ export class Notifier {
   }
 
   /** Send to every registered device that isn't connected. */
-  private async deliver(message: PushMessage, sessionId: string): Promise<void> {
+  private async deliver(message: PushMessage, sessionId: string, requestId?: string): Promise<void> {
     const targets = this.tokens.all().filter((t) => !this.devices.isOnline(t.deviceId));
     if (targets.length === 0) return;
-    await this.send(targets, message, { sessionId });
+    await this.send(targets, message, requestId ? { sessionId, requestId } : { sessionId });
   }
 
   /** A test push to one device, so Settings can show the whole path works. */
@@ -206,6 +216,7 @@ export class Notifier {
       priority: m.needsInput ? "high" : "normal",
       channelId: m.channel,
       sound: m.needsInput ? "default" : undefined,
+      ...(m.category ? { categoryId: m.category } : {}),
     }));
     try {
       const res = await fetch(this.config.expoPushUrl, {

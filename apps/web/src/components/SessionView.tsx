@@ -55,6 +55,7 @@ import {
 } from "../lib/composerPrefs.js";
 import { JsonCode, ShellCode } from "./Code.js";
 import { UsageLimits } from "./UsageLimits.js";
+import { WorkspacePanel, type WorkspaceTab } from "./WorkspacePanel.js";
 import { Markdown } from "./Markdown.js";
 import { Button, Collapsible, CopyButton, InfoHint, Skeleton, StatusBadge } from "./ui.js";
 
@@ -140,8 +141,21 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   const isController = conv.controller === config.deviceId;
   const status = conv.status ?? "idle";
 
+  /** The Changes/Files side panel, if open. Remembered per browser, like the sidebar. */
+  const [panel, setPanel] = useState<WorkspaceTab | null>(() => loadPanel());
+  const togglePanel = (tab: WorkspaceTab) =>
+    setPanel((cur) => {
+      const next = cur === tab ? null : tab;
+      savePanel(next);
+      return next;
+    });
+  const hasTree = !!conv.branch && status !== "archived" && status !== "trashed";
+  // Bumped each time a turn settles, so an open Changes list follows the work.
+  const settledTurns = conv.timeline.filter((i) => i.type === "turn" && i.turn.status !== "running").length;
+
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full">
+    <div className="flex min-w-0 flex-1 flex-col">
       {/* Header */}
       <div className="flex shrink-0 items-center justify-between gap-3 px-6 py-3">
         <div className="min-w-0">
@@ -165,6 +179,12 @@ export function SessionView({ sessionId }: { sessionId: string }) {
         </div>
         <div className="flex items-center gap-3">
           <BackgroundTasksButton timeline={conv.timeline} />
+          {hasTree && (
+            <span className="flex items-center gap-0.5">
+              <HeaderIconButton icon="codicon-diff" label="Changes" active={panel === "changes"} onClick={() => togglePanel("changes")} />
+              <HeaderIconButton icon="codicon-files" label="Files" active={panel === "files"} onClick={() => togglePanel("files")} />
+            </span>
+          )}
           {conv.context && <ContextMeter context={conv.context} />}
           <span
             className={`inline-flex items-center gap-1.5 text-xs font-medium ${
@@ -357,6 +377,59 @@ export function SessionView({ sessionId }: { sessionId: string }) {
         onStop={() => realtime.interrupt(sessionId)}
       />
     </div>
+      {panel && hasTree && (
+        <WorkspacePanel
+          sessionId={sessionId}
+          tab={panel}
+          onTab={(t) => {
+            setPanel(t);
+            savePanel(t);
+          }}
+          onClose={() => {
+            setPanel(null);
+            savePanel(null);
+          }}
+          refreshKey={settledTurns}
+        />
+      )}
+    </div>
+  );
+}
+
+const PANEL_KEY = "renki.session.panel";
+
+function loadPanel(): WorkspaceTab | null {
+  try {
+    const v = localStorage.getItem(PANEL_KEY);
+    return v === "changes" || v === "files" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+function savePanel(tab: WorkspaceTab | null): void {
+  try {
+    if (tab) localStorage.setItem(PANEL_KEY, tab);
+    else localStorage.removeItem(PANEL_KEY);
+  } catch {
+    // Private windows can refuse storage; the panel just won't be remembered.
+  }
+}
+
+function HeaderIconButton({ icon, label, active, onClick }: { icon: string; label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      aria-pressed={active}
+      className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
+        active ? "bg-(--renki-surface) text-(--renki-fg)" : "text-(--renki-fg-muted) hover:bg-(--renki-surface) hover:text-(--renki-fg)"
+      }`}
+    >
+      <span className={`codicon ${icon} text-[14px]`} />
+    </button>
   );
 }
 

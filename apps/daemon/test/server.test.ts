@@ -451,3 +451,36 @@ describe("WebSocket: subscribe -> replay -> live", () => {
     ws2.close();
   });
 });
+
+describe("REST: session workspace", () => {
+  it("serves a session's changes, a file's diff, its directories and files — and refuses paths out of the tree", async () => {
+    const { base, config, repoId, manager } = await startServer();
+    const authed = authedFetch(base, config.authToken);
+    const s = await manager.createSession({ repoId, baseBranch: "main" });
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(`${s.worktreePath}/README.md`, "# demo\nedited\n");
+
+    const changes = await (await authed(`/sessions/${s.id}/changes`)).json();
+    expect(changes).toMatchObject({ available: true, base: "main", files: [{ path: "README.md", status: "M", added: 1, removed: 0 }] });
+
+    const diff = await (await authed(`/sessions/${s.id}/changes/file?path=README.md`)).json();
+    expect(diff.patch).toContain("+edited");
+
+    const dir = await (await authed(`/sessions/${s.id}/files?path=`)).json();
+    expect(dir.entries.map((e: { name: string }) => e.name)).toContain("README.md");
+
+    const file = await (await authed(`/sessions/${s.id}/file?path=README.md`)).json();
+    expect(file.content).toBe("# demo\nedited\n");
+
+    expect((await authed(`/sessions/${s.id}/file?path=${encodeURIComponent("../../etc/passwd")}`)).status).toBe(400);
+    expect((await authed(`/sessions/${s.id}/file?path=missing.txt`)).status).toBe(404);
+  });
+
+  it("answers not available for a session without a worktree", async () => {
+    const { base, config, manager } = await startServer();
+    const s = await manager.createSession({});
+    await manager.archiveSession(s.id);
+    const changes = await (await authedFetch(base, config.authToken)(`/sessions/${s.id}/changes`)).json();
+    expect(changes.available).toBe(false);
+  });
+});

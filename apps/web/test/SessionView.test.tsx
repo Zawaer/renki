@@ -615,3 +615,56 @@ describe("SessionView tidy transcript", () => {
     expect(screen.getAllByText("Wait a minute").length).toBeGreaterThan(0);
   });
 });
+
+describe("SessionView workspace panel", () => {
+  const repoSession = () => [
+    ev("s1", { kind: "session_created", repoId: "r", repoName: "shopping-tool", baseBranch: "main", branch: "renki/abc", worktreePath: "/w" }),
+    ev("s1", { kind: "status_changed", status: "idle" }),
+  ];
+
+  it("shows what the session changed against its base, each file opening to its diff", async () => {
+    try {
+      localStorage.removeItem("renki.session.panel");
+    } catch {}
+    const { rest } = renderSession("s1", repoSession());
+    rest.getWorkspaceChanges = async () => ({
+      available: true,
+      base: "main",
+      branch: "renki/abc",
+      ahead: 2,
+      files: [{ path: "src/app.ts", status: "M", added: 3, removed: 1 }],
+    });
+    rest.getWorkspaceFileDiff = async () => ({ path: "src/app.ts", patch: "diff --git a/x b/x\n@@ -1 +1 @@\n-old line\n+new line\n", truncated: false });
+
+    fireEvent.click(screen.getByRole("button", { name: "Changes" }));
+    const row = await screen.findByRole("button", { name: /src\/app\.ts/ });
+    expect(screen.getByText("2 commits", { exact: false })).toBeInTheDocument();
+    fireEvent.click(row);
+    expect(await screen.findByText("+new line")).toBeInTheDocument();
+    expect(screen.queryByText(/diff --git/)).not.toBeInTheDocument();
+  });
+
+  it("renders a markdown file from the Files tab", async () => {
+    const { rest } = renderSession("s1", repoSession());
+    rest.listWorkspaceDir = async () => ({ path: "", entries: [{ name: "HANDOFF.md", type: "file", size: 2048 }] });
+    rest.readWorkspaceFile = async () => ({ path: "HANDOFF.md", size: 2048, content: "# Handoff\n\nRead this first.", binary: false, truncated: false });
+
+    fireEvent.click(screen.getByRole("button", { name: "Files" }));
+    fireEvent.click(await screen.findByRole("button", { name: /HANDOFF\.md/ }));
+    expect(await screen.findByRole("heading", { name: "Handoff" })).toBeInTheDocument();
+  });
+
+  it("says a newer daemon is needed when the endpoints aren't there yet", async () => {
+    try {
+      localStorage.removeItem("renki.session.panel");
+    } catch {}
+    const { rest } = renderSession("s1", repoSession());
+    const { RestError } = await import("@renki/client-core");
+    rest.getWorkspaceChanges = async () => {
+      throw new RestError(404, "Not Found", "Route GET:/sessions/s1/changes not found");
+    };
+    fireEvent.click(screen.getByRole("button", { name: "Changes" }));
+    expect(await screen.findByText(/needs a newer daemon/)).toBeInTheDocument();
+  });
+});
+

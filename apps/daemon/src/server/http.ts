@@ -1,4 +1,5 @@
 import websocketPlugin from "@fastify/websocket";
+import { existsSync } from "node:fs";
 import {
   AddSetupTokenRequest,
   CloneRepoRequest,
@@ -22,6 +23,13 @@ import { logger } from "../logger.js";
 import type { DeviceRegistry } from "../push/devices.js";
 import type { PushTokenStore } from "../push/tokens.js";
 import { branchStatus, pullBranch } from "../git/remoteStatus.js";
+import {
+  WorkspacePathError,
+  listWorkspaceDir,
+  readWorkspaceFile,
+  workspaceChanges,
+  workspaceFileDiff,
+} from "../git/workspace.js";
 import { cloneGithubRepo, githubStatus, listGithubRepos } from "../github.js";
 import { findRepo, scanRepos } from "../repos.js";
 import { SessionError } from "../sessions/errors.js";
@@ -208,6 +216,52 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
       return { session, events: manager.events.read(req.params.id) };
     } catch (err) {
       return sendSessionError(reply, err);
+    }
+  });
+
+  // ── The session's workspace: the Changes and Files panels ──
+  // Read-only. Archived and trashed sessions have no worktree left, so they
+  // answer "not available" rather than an error.
+
+  app.get<{ Params: { id: string } }>("/sessions/:id/changes", async (req, reply) => {
+    try {
+      const s = manager.getSession(req.params.id);
+      if (!hasWorktree(s)) return { available: false, base: null, branch: null, ahead: 0, files: [] };
+      return await workspaceChanges(s.worktreePath, s.baseBranch, s.branch);
+    } catch (err) {
+      return sendWorkspaceError(reply, err);
+    }
+  });
+
+  app.get<{ Params: { id: string }; Querystring: { path?: string } }>("/sessions/:id/changes/file", async (req, reply) => {
+    try {
+      const s = manager.getSession(req.params.id);
+      if (!hasWorktree(s)) return reply.code(404).send({ error: "no_worktree" });
+      if (!req.query.path) return reply.code(400).send({ error: "invalid_request", detail: "path is required" });
+      return await workspaceFileDiff(s.worktreePath, s.baseBranch, req.query.path);
+    } catch (err) {
+      return sendWorkspaceError(reply, err);
+    }
+  });
+
+  app.get<{ Params: { id: string }; Querystring: { path?: string } }>("/sessions/:id/files", async (req, reply) => {
+    try {
+      const s = manager.getSession(req.params.id);
+      if (!hasWorktree(s)) return reply.code(404).send({ error: "no_worktree" });
+      return await listWorkspaceDir(s.worktreePath, req.query.path ?? "");
+    } catch (err) {
+      return sendWorkspaceError(reply, err);
+    }
+  });
+
+  app.get<{ Params: { id: string }; Querystring: { path?: string } }>("/sessions/:id/file", async (req, reply) => {
+    try {
+      const s = manager.getSession(req.params.id);
+      if (!hasWorktree(s)) return reply.code(404).send({ error: "no_worktree" });
+      if (!req.query.path) return reply.code(400).send({ error: "invalid_request", detail: "path is required" });
+      return await readWorkspaceFile(s.worktreePath, req.query.path);
+    } catch (err) {
+      return sendWorkspaceError(reply, err);
     }
   });
 
@@ -414,4 +468,16 @@ function sendSessionError(reply: FastifyReply, err: unknown) {
   }
   logger.error("request failed", { err: err instanceof Error ? err.stack : String(err) });
   return reply.code(500).send({ error: "internal" });
+}
+
+/** Archived, trashed and deleted sessions had their working directory torn down. */
+function hasWorktree(s: { status: string; worktreePath: string }): boolean {
+  return s.status !== "archived" && s.status !== "trashed" && s.status !== "deleted" && existsSync(s.worktreePath);
+}
+
+/** Map a workspace read's failure: a bad path is the client's (400), a missing file 404, the rest as session errors. */
+function sendWorkspaceError(reply: FastifyReply, err: unknown) {
+  if (err instanceof WorkspacePathError) return reply.code(400).send({ error: "invalid_path", detail: err.message });
+  if ((err as NodeJS.ErrnoException)?.code === "ENOENT") return reply.code(404).send({ error: "not_found" });
+  return sendSessionError(reply, err);
 }

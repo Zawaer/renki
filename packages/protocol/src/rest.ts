@@ -248,3 +248,68 @@ export const TailscaleStatusResponse = z.object({
   servePort: z.number().nullable(),
 });
 export type TailscaleStatusResponse = z.infer<typeof TailscaleStatusResponse>;
+
+// ── A session's workspace: its changes and its files ─────────────────────────
+
+/**
+ * One file that differs between the session's base and its working tree.
+ * `status`: A added, M modified, D deleted, T type change, "?" untracked.
+ * Line counts are null for a binary file.
+ */
+export const WorkspaceFileChange = z.object({
+  path: z.string(),
+  status: z.enum(["A", "M", "D", "T", "?"]),
+  added: z.number().int().nullable(),
+  removed: z.number().int().nullable(),
+});
+export type WorkspaceFileChange = z.infer<typeof WorkspaceFileChange>;
+
+/**
+ * Everything the session has changed relative to where it branched from —
+ * commits on its branch plus uncommitted and untracked work, as one diff.
+ * `available:false` for a session with no git working tree (a plain chat).
+ */
+export const WorkspaceChangesResponse = z.object({
+  available: z.boolean(),
+  /** The branch it's compared against, e.g. "main". */
+  base: z.string().nullable(),
+  /** The session's own branch. */
+  branch: z.string().nullable(),
+  /** Commits on the branch since it left the base. */
+  ahead: z.number().int(),
+  files: z.array(WorkspaceFileChange),
+});
+export type WorkspaceChangesResponse = z.infer<typeof WorkspaceChangesResponse>;
+
+/** One file's unified diff against the base. `truncated` when it was cut to keep the response small. */
+export const WorkspaceFileDiffResponse = z.object({
+  path: z.string(),
+  patch: z.string(),
+  truncated: z.boolean(),
+});
+export type WorkspaceFileDiffResponse = z.infer<typeof WorkspaceFileDiffResponse>;
+
+export const WorkspaceEntry = z.object({
+  name: z.string(),
+  type: z.enum(["file", "dir"]),
+  /** Bytes, for files. */
+  size: z.number().int().nullable(),
+});
+export type WorkspaceEntry = z.infer<typeof WorkspaceEntry>;
+
+/** A directory of the session's working tree, directories first. `path` is relative to the tree's root ("" for the root). */
+export const WorkspaceDirResponse = z.object({
+  path: z.string(),
+  entries: z.array(WorkspaceEntry),
+});
+export type WorkspaceDirResponse = z.infer<typeof WorkspaceDirResponse>;
+
+/** A file from the working tree. `content` is null for a binary file; `truncated` when it was cut at the size cap. */
+export const WorkspaceFileResponse = z.object({
+  path: z.string(),
+  size: z.number().int(),
+  content: z.string().nullable(),
+  binary: z.boolean(),
+  truncated: z.boolean(),
+});
+export type WorkspaceFileResponse = z.infer<typeof WorkspaceFileResponse>;

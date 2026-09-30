@@ -11,6 +11,10 @@ import type {
   DisconnectUsageKeyResponse,
   EmptyTrashResponse,
   GetTranscriptResponse,
+  WorkspaceChangesResponse,
+  WorkspaceDirResponse,
+  WorkspaceFileDiffResponse,
+  WorkspaceFileResponse,
   GithubReposResponse,
   ListReposResponse,
   ListSessionsResponse,
@@ -90,6 +94,28 @@ export class RestClient {
 
   async getTranscript(sessionId: string): Promise<GetTranscriptResponse> {
     return this.get<GetTranscriptResponse>(`/sessions/${encodeURIComponent(sessionId)}/transcript`);
+  }
+
+  /** What the session changed relative to its base branch — commits plus uncommitted work. */
+  async getWorkspaceChanges(sessionId: string): Promise<WorkspaceChangesResponse> {
+    return this.get<WorkspaceChangesResponse>(`/sessions/${encodeURIComponent(sessionId)}/changes`);
+  }
+
+  /** One changed file's unified diff against the base. */
+  async getWorkspaceFileDiff(sessionId: string, path: string): Promise<WorkspaceFileDiffResponse> {
+    return this.get<WorkspaceFileDiffResponse>(
+      `/sessions/${encodeURIComponent(sessionId)}/changes/file?path=${encodeURIComponent(path)}`,
+    );
+  }
+
+  /** A directory of the session's working tree ("" for its root). */
+  async listWorkspaceDir(sessionId: string, path = ""): Promise<WorkspaceDirResponse> {
+    return this.get<WorkspaceDirResponse>(`/sessions/${encodeURIComponent(sessionId)}/files?path=${encodeURIComponent(path)}`);
+  }
+
+  /** One file from the session's working tree. */
+  async readWorkspaceFile(sessionId: string, path: string): Promise<WorkspaceFileResponse> {
+    return this.get<WorkspaceFileResponse>(`/sessions/${encodeURIComponent(sessionId)}/file?path=${encodeURIComponent(path)}`);
   }
 
   async archiveSession(sessionId: string): Promise<Session> {

@@ -59,7 +59,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Markdown } from "../components/Markdown";
+import { Markdown, StreamingMarkdown } from "../components/Markdown";
 import { FadeIn, Skeleton, animateLayout } from "../components/Motion";
 import { Sheet } from "../components/Sheet";
 import { pickDocumentAttachments, pickImageAttachments, type PendingAttachment } from "../lib/attachments";
@@ -1063,7 +1063,7 @@ function Block({
   if (block.kind === "thinking") {
     return <ThinkingBlock block={block} live={turnRunning && block.endedAtMs == null} colors={colors} styles={styles} />;
   }
-  return <Markdown content={block.text} />;
+  return <StreamingMarkdown content={block.text} streaming={turnRunning && block.endedAtMs == null} />;
 }
 
 /**

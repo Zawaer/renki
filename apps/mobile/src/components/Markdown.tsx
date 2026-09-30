@@ -1,7 +1,8 @@
-import { memo, type ReactElement, type ReactNode, useMemo } from "react";
+import { memo, type ReactElement, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Platform, StyleSheet, type TextStyle, type ViewStyle } from "react-native";
 import MarkdownDisplay from "react-native-markdown-display";
 import { radius, type ThemeColors, useTheme } from "../theme";
+import { FadeIn } from "./Motion";
 
 // The lib's bundled types trip TS2786 under @types/react 18 (its ComponentClass
 // instance type predates the `refs` change), so it isn't seen as a valid JSX
@@ -75,3 +76,81 @@ export const Markdown = memo(function Markdown({ content, muted: isMuted = false
   }, [colors, isMuted]);
   return <MD style={style}>{content}</MD>;
 });
+
+/** Split markdown into blocks at blank lines — but never inside a ``` fence, which would break the code block apart. */
+function splitBlocks(text: string): string[] {
+  const out: string[] = [];
+  let current: string[] = [];
+  let inFence = false;
+  let blank = false;
+  for (const line of text.split("\n")) {
+    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
+    if (!inFence && line.trim() === "") {
+      blank = true;
+      continue;
+    }
+    if (blank && current.length > 0 && !inFence) {
+      out.push(current.join("\n"));
+      current = [];
+    }
+    blank = false;
+    current.push(line);
+  }
+  if (current.length > 0) out.push(current.join("\n"));
+  return out;
+}
+
+/**
+ * How much of a streaming reply to show: it catches up with what's arrived
+ * over ~200 ms, a word at a time, so text flows in steadily instead of
+ * landing in the chunks the stream happens to deliver.
+ */
+function useSmoothReveal(content: string, streaming: boolean): string {
+  const [shown, setShown] = useState(streaming ? "" : content);
+  const target = useRef(content);
+  target.current = content;
+  // Keep going until caught up — also just after the stream ends, so the
+  // last words flow in like the rest instead of landing all at once.
+  const catchingUp = shown !== content;
+  useEffect(() => {
+    if (!catchingUp) return;
+    const t = setInterval(() => {
+      setShown((prev) => {
+        const full = target.current;
+        if (!full.startsWith(prev)) return full; // edited, not appended: jump
+        if (prev.length >= full.length) return prev;
+        const step = Math.max(4, Math.ceil((full.length - prev.length) / 6));
+        let end = Math.min(full.length, prev.length + step);
+        const space = full.indexOf(" ", end);
+        if (space !== -1 && space - end < 12) end = space; // finish the word
+        return full.slice(0, end);
+      });
+    }, 33);
+    return () => clearInterval(t);
+  }, [catchingUp]);
+  return shown;
+}
+
+/**
+ * Assistant prose that eases in as it streams, the phone's version of the
+ * web's word-by-word fade: text flows in steadily, and each new paragraph
+ * fades in as it starts. Finished paragraphs are separate memoized blocks,
+ * so a new token only re-renders the one being written. A reply that was
+ * never seen streaming renders as one block, as before.
+ */
+export function StreamingMarkdown({ content, streaming, muted }: { content: string; streaming: boolean; muted?: boolean }) {
+  const everStreamed = useRef(streaming);
+  if (streaming) everStreamed.current = true;
+  const shown = useSmoothReveal(content, streaming);
+  if (!everStreamed.current) return <Markdown content={content} muted={muted} />;
+  const blocks = splitBlocks(shown);
+  return (
+    <>
+      {blocks.map((b, i) => (
+        <FadeIn key={i} distance={3}>
+          <Markdown content={b} muted={muted} />
+        </FadeIn>
+      ))}
+    </>
+  );
+}

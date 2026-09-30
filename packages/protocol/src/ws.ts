@@ -27,6 +27,12 @@ export const ClientMessage = z.discriminatedUnion("type", [
     type: z.literal("subscribe"),
     sessionId: z.string(),
     lastSeq: z.number().int().min(-1),
+    /**
+     * Replay attachments as references (AttachmentView.ref) rather than their
+     * bytes; the client fetches each one when it's shown. Optional, so older
+     * clients keep getting the data inline and older daemons ignore it.
+     */
+    lazyAttachments: z.boolean().optional(),
   }),
 
   z.object({

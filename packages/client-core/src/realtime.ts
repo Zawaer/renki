@@ -27,12 +27,31 @@ export type ConnectionStatus = "connecting" | "open" | "closed";
 
 export type WsError = { code: string; message: string; ref: string | null };
 
+/**
+ * Somewhere to keep conversations between visits, so opening a long chat
+ * shows it straight away and only the events since are fetched — instead of
+ * the whole history, which for a long session is many megabytes. Optional;
+ * each client supplies its own storage (the phone uses its file system).
+ *
+ * Holds folded state, so the key must change whenever folding does — see
+ * CONVERSATION_CACHE_VERSION.
+ */
+export type ConversationCache = {
+  load(sessionId: string): Promise<ConversationState | null>;
+  save(sessionId: string, state: ConversationState): Promise<void>;
+  remove(sessionId: string): Promise<void>;
+};
+
 export type RealtimeOptions = {
   baseUrl: string; // http(s)://host:port
   token: string;
   deviceId: string;
   deviceName?: string;
+  cache?: ConversationCache;
 };
+
+/** How long after a replay lands to write it to the cache — long enough to coalesce a reconnect's burst. */
+const CACHE_SAVE_DELAY_MS = 1_500;
 
 /** Field-wise equality for a session's pinned composer settings. */
 function sameComposer(a: SessionComposer | null, b: SessionComposer | null): boolean {
@@ -52,6 +71,11 @@ export class RealtimeClient {
   private readonly sessionListeners = new Set<(session: Session) => void>();
   private readonly sessionRemovedListeners = new Set<(sessionId: string) => void>();
   private readonly pendingUnwatch = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Sessions whose cached state is still being read; their subscribe waits for it. */
+  private readonly hydrating = new Set<string>();
+  /** Sessions with state the cache hasn't seen yet. */
+  private readonly unsaved = new Set<string>();
+  private readonly saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
@@ -85,7 +109,7 @@ export class RealtimeClient {
       this.reconnectAttempts = 0;
       this.status.set("open");
       // Resubscribe everything we were watching, resuming from each lastSeq.
-      for (const sessionId of this.watched) this.sendSubscribe(sessionId);
+      for (const sessionId of this.watched) if (!this.hydrating.has(sessionId)) this.sendSubscribe(sessionId);
       this.startPing();
     };
 
@@ -146,7 +170,14 @@ export class RealtimeClient {
     }
     const alreadyWatching = this.watched.has(sessionId);
     this.watched.add(sessionId);
-    if (!alreadyWatching && this.isOpen()) this.sendSubscribe(sessionId);
+    if (alreadyWatching) return store;
+    // Never loaded this run: show the cached copy first, then ask only for
+    // what came after it. The subscribe waits, or it would ask for everything.
+    if (this.opts.cache && store.get().lastSeq < 0 && !this.hydrating.has(sessionId)) {
+      this.hydrate(sessionId, store);
+      return store;
+    }
+    if (this.isOpen()) this.sendSubscribe(sessionId);
     return store;
   }
 
@@ -158,6 +189,7 @@ export class RealtimeClient {
       this.pendingUnwatch.delete(sessionId);
       this.watched.delete(sessionId);
       if (this.isOpen()) this.send({ type: "unsubscribe", sessionId });
+      this.saveNow(sessionId);
     }, 0);
     this.pendingUnwatch.set(sessionId, timer);
   }
@@ -238,11 +270,58 @@ export class RealtimeClient {
     return () => this.sessionRemovedListeners.delete(cb);
   }
 
+  /**
+   * Write every conversation with unsaved changes to the cache now — call when
+   * the app is about to be backgrounded, since it may never come back.
+   */
+  flushCache(): void {
+    for (const sessionId of [...this.unsaved]) this.saveNow(sessionId);
+  }
+
   // ── internals ──────────────────────────────────────────────────────────────
+
+  private hydrate(sessionId: string, store: Store<ConversationState>): void {
+    this.hydrating.add(sessionId);
+    this.opts
+      .cache!.load(sessionId)
+      .catch(() => null)
+      .then((cached) => {
+        // Anything folded meanwhile wins; a cached copy is only a head start.
+        if (cached && cached.sessionId === sessionId && cached.lastSeq > store.get().lastSeq) store.set(cached);
+      })
+      .finally(() => {
+        this.hydrating.delete(sessionId);
+        if (this.watched.has(sessionId) && this.isOpen()) this.sendSubscribe(sessionId);
+      });
+  }
+
+  /** Save soon — after a replay, when the state has jumped and is worth keeping. */
+  private scheduleSave(sessionId: string): void {
+    if (!this.opts.cache) return;
+    this.unsaved.add(sessionId);
+    const existing = this.saveTimers.get(sessionId);
+    if (existing !== undefined) clearTimeout(existing);
+    this.saveTimers.set(
+      sessionId,
+      setTimeout(() => this.saveNow(sessionId), CACHE_SAVE_DELAY_MS),
+    );
+  }
+
+  private saveNow(sessionId: string): void {
+    const timer = this.saveTimers.get(sessionId);
+    if (timer !== undefined) clearTimeout(timer);
+    this.saveTimers.delete(sessionId);
+    if (!this.opts.cache || !this.unsaved.has(sessionId)) return;
+    this.unsaved.delete(sessionId);
+    const state = this.conversations.get(sessionId)?.get();
+    if (state && state.lastSeq >= 0) void this.opts.cache.save(sessionId, state).catch(() => {});
+  }
 
   private sendSubscribe(sessionId: string): void {
     const lastSeq = this.conversation(sessionId).get().lastSeq;
-    this.send({ type: "subscribe", sessionId, lastSeq });
+    // Screenshots in a long chat's history are most of its size; fetch each
+    // one when it's actually shown instead (see attachmentSource).
+    this.send({ type: "subscribe", sessionId, lastSeq, lazyAttachments: true });
   }
 
   private onMessage(raw: string): void {
@@ -262,11 +341,15 @@ export class RealtimeClient {
       case "replay": {
         const store = this.conversation(msg.sessionId);
         store.update((s) => applyEvents(s, msg.events));
+        if (msg.events.length > 0) this.scheduleSave(msg.sessionId);
         return;
       }
       case "event": {
         const store = this.conversation(msg.event.sessionId);
         store.update((s) => applyEvent(s, msg.event));
+        // Marked, not saved: writing a long transcript on every streamed token
+        // would stutter the reply. It's written on leaving or backgrounding.
+        if (this.opts.cache) this.unsaved.add(msg.event.sessionId);
         return;
       }
       case "error":
@@ -293,6 +376,9 @@ export class RealtimeClient {
       }
       case "session_removed":
         for (const cb of this.sessionRemovedListeners) cb(msg.sessionId);
+        // Purged for good: don't keep its transcript on the device either.
+        this.unsaved.delete(msg.sessionId);
+        void this.opts.cache?.remove(msg.sessionId).catch(() => {});
         return;
       case "subscribed":
       case "pong":

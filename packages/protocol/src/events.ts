@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Attachment } from "./attachments.js";
+import { AttachmentView } from "./attachments.js";
 import { DeviceId, MergeConflictMeta, PermissionDecision, SessionPurpose, SessionStatus } from "./domain.js";
 
 /**
@@ -63,7 +63,7 @@ const payloads = [
     promptId: z.string(),
     deviceId: DeviceId,
     text: z.string(),
-    attachments: z.array(Attachment).optional(),
+    attachments: z.array(AttachmentView).optional(),
     /**
      * True when this prompt was delivered INTO a turn that was already running
      * (the controller typed while Claude was working). The CLI picks it up at

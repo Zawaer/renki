@@ -484,3 +484,47 @@ describe("REST: session workspace", () => {
     expect(changes.available).toBe(false);
   });
 });
+
+describe("WebSocket: lazy attachments", () => {
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]).toString("base64");
+
+  it("replays attachments as references when asked, and serves their bytes", async () => {
+    const { base, wsBase, config, manager } = await startServer();
+    const s = await manager.createSession({});
+    const e = manager.events.append(s.id, {
+      kind: "prompt_submitted",
+      promptId: "p1",
+      deviceId: "d1",
+      text: "look",
+      attachments: [{ name: "shot.png", mediaType: "image/png", data: png }],
+    });
+
+    const { ws, bus } = await connectWs(wsBase, `deviceId=d1&token=${config.authToken}`);
+    ws.send(JSON.stringify({ type: "subscribe", sessionId: s.id, lastSeq: -1, lazyAttachments: true }));
+    const replay = await bus.next((m) => m.type === "replay");
+    const prompt = replay.events.find((x: { kind: string }) => x.kind === "prompt_submitted");
+    expect(prompt.attachments).toEqual([{ name: "shot.png", mediaType: "image/png", data: "", ref: `/sessions/${s.id}/attachments/${e.seq}/0` }]);
+
+    const res = await authedFetch(base, config.authToken)(prompt.attachments[0].ref);
+    expect(res.headers.get("content-type")).toBe("image/png");
+    expect(Buffer.from(await res.arrayBuffer()).toString("base64")).toBe(png);
+    expect((await authedFetch(base, config.authToken)(`/sessions/${s.id}/attachments/${e.seq}/5`)).status).toBe(404);
+    ws.close();
+  });
+
+  it("still sends the bytes inline to a client that didn't ask", async () => {
+    const { wsBase, config, manager } = await startServer();
+    const s = await manager.createSession({});
+    manager.events.append(s.id, {
+      kind: "prompt_submitted",
+      promptId: "p1",
+      deviceId: "d1",
+      text: "look",
+      attachments: [{ name: "shot.png", mediaType: "image/png", data: png }],
+    });
+    const { ws, bus } = await connectWs(wsBase, `deviceId=d1&token=${config.authToken}`);
+    const replay = await subscribe(ws, bus, s.id);
+    expect(replay.events.find((x: { kind: string }) => x.kind === "prompt_submitted").attachments[0].data).toBe(png);
+    ws.close();
+  });
+});

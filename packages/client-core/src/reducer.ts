@@ -162,6 +162,14 @@ export type ConversationState = {
   lastSeq: number;
 };
 
+/**
+ * Version of the folded ConversationState shape and folding rules. A client
+ * that caches folded conversations (see RealtimeClient's ConversationCache)
+ * keys the cache by this, so bump it whenever applyEvent changes what it
+ * produces — otherwise a cached copy would keep the old folding forever.
+ */
+export const CONVERSATION_CACHE_VERSION = 1;
+
 export function initialConversation(sessionId: string): ConversationState {
   return {
     sessionId,

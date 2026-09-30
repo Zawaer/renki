@@ -55,6 +55,16 @@ export class EventLog {
     return rows.map(rowToEvent);
   }
 
+  /** One event by its seq, or null — how a lazily replayed attachment is fetched back. */
+  get(sessionId: string, seq: number): SessionEvent | null {
+    const row = this.db
+      .select()
+      .from(events)
+      .where(and(eq(events.sessionId, sessionId), eq(events.seq, seq)))
+      .get();
+    return row ? rowToEvent(row) : null;
+  }
+
   /** Current log head for a session (-1 if it has no events yet). */
   head(sessionId: string): number {
     return this.nextSeq(sessionId, /* peek */ true) - 1;

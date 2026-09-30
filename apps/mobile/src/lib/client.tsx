@@ -1,6 +1,8 @@
 import { RealtimeClient, RestClient, type Store } from "@renki/client-core";
 import { createContext, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
+import { AppState } from "react-native";
 import type { AppConfig } from "./config";
+import { fileConversationCache } from "./conversationCache";
 
 /**
  * React Native glue around client-core — the mirror of the web app's client.tsx.
@@ -20,6 +22,7 @@ export function ClientProvider({ config, children }: { config: AppConfig; childr
         token: config.token,
         deviceId: config.deviceId,
         deviceName: config.deviceName,
+        cache: fileConversationCache(config.baseUrl),
       }),
       config,
     }),
@@ -28,7 +31,15 @@ export function ClientProvider({ config, children }: { config: AppConfig; childr
 
   useEffect(() => {
     bundle.realtime.connect();
-    return () => bundle.realtime.close();
+    // The app may never come back from the background, so keep what's loaded.
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state !== "active") bundle.realtime.flushCache();
+    });
+    return () => {
+      sub.remove();
+      bundle.realtime.flushCache();
+      bundle.realtime.close();
+    };
   }, [bundle]);
 
   return <Ctx.Provider value={bundle}>{children}</Ctx.Provider>;

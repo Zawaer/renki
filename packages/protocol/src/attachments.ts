@@ -28,3 +28,17 @@ export const Attachment = z.object({
   data: z.string().min(1).max(MAX_ATTACHMENT_BASE64_LENGTH),
 });
 export type Attachment = z.infer<typeof Attachment>;
+
+/**
+ * An attachment as the event log hands it back. On a replay to a client that
+ * asked for `lazyAttachments`, `data` is empty and `ref` is the REST path the
+ * bytes are served from, so a long chat's history doesn't carry every
+ * screenshot ever sent in it — for a real session that was 8 of its 13 MB.
+ * Everywhere else (a live event, an older client) `data` is filled as before.
+ */
+export const AttachmentView = Attachment.extend({
+  data: z.string().max(MAX_ATTACHMENT_BASE64_LENGTH),
+  /** e.g. "/sessions/s_1/attachments/42/0" — relative to the daemon's base URL. */
+  ref: z.string().optional(),
+});
+export type AttachmentView = z.infer<typeof AttachmentView>;

@@ -67,3 +67,28 @@ export function classifyAttachment(file: { name: string; type: string }): Attach
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
   return TEXT_EXTENSIONS.has(ext) ? "text/plain" : null;
 }
+
+type AttachmentLike = { mediaType: string; data: string; ref?: string };
+
+/**
+ * Where to load an attachment's bytes from: inline base64 when the event
+ * carried it, otherwise the daemon path a lazy replay referenced (see
+ * AttachmentView). Headers for clients that can send them (React Native's
+ * Image); `urlWithToken` for ones that can't (a browser <img>), which the
+ * daemon accepts as `?token=` like any other request.
+ */
+export function attachmentSource(
+  a: AttachmentLike,
+  auth: { baseUrl: string; token: string },
+): { uri: string; headers?: Record<string, string>; urlWithToken: string } {
+  if (a.data || !a.ref) {
+    const uri = `data:${a.mediaType};base64,${a.data}`;
+    return { uri, urlWithToken: uri };
+  }
+  const uri = `${auth.baseUrl}${a.ref}`;
+  return {
+    uri,
+    headers: { authorization: `Bearer ${auth.token}` },
+    urlWithToken: `${uri}${uri.includes("?") ? "&" : "?"}token=${encodeURIComponent(auth.token)}`,
+  };
+}

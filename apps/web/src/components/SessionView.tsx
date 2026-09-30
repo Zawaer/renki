@@ -32,6 +32,7 @@ import {
   type TodoItemView,
   type TurnView,
   type BackgroundTaskView,
+  attachmentSource,
   type FileChange,
   type StepSummary,
   backgroundTasksOf,
@@ -1769,6 +1770,7 @@ function AttachmentChip({
   attachment: Attachment;
   onRemove?: () => void;
 }) {
+  const { config } = useClient();
   const isImage = attachment.mediaType.startsWith("image/");
   const [previewing, setPreviewing] = useState(false);
   return (
@@ -1779,7 +1781,7 @@ function AttachmentChip({
       >
         {isImage ? (
           <img
-            src={`data:${attachment.mediaType};base64,${attachment.data}`}
+            src={attachmentSource(attachment, config).urlWithToken}
             alt={attachment.name}
             className="h-6 w-6 rounded-sm object-cover"
           />
@@ -1823,6 +1825,7 @@ function ImagePreviewDialog({
   attachment: Attachment;
   onClose: () => void;
 }) {
+  const { config } = useClient();
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -1844,7 +1847,7 @@ function ImagePreviewDialog({
         <span className="codicon codicon-close text-2xl" />
       </button>
       <img
-        src={`data:${attachment.mediaType};base64,${attachment.data}`}
+        src={attachmentSource(attachment, config).urlWithToken}
         alt={attachment.name}
         className="max-h-full max-w-full rounded-sm object-contain"
         onClick={(e) => e.stopPropagation()}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyAttachment } from "../src/attachments.js";
+import { attachmentSource, classifyAttachment } from "../src/attachments.js";
 
 describe("classifyAttachment", () => {
   it("recognizes each supported image MIME type", () => {
@@ -53,5 +53,20 @@ describe("classifyAttachment", () => {
 
   it("rejects a filename ending in a bare dot (empty extension)", () => {
     expect(classifyAttachment({ name: "file.", type: "" })).toBeNull();
+  });
+});
+
+describe("attachmentSource", () => {
+  const auth = { baseUrl: "http://host:4517", token: "tok" };
+  it("uses the inline data when the event carried it", () => {
+    expect(attachmentSource({ mediaType: "image/png", data: "AAAA" }, auth).uri).toBe("data:image/png;base64,AAAA");
+  });
+  it("fetches a lazily replayed one from the daemon, with the token either way", () => {
+    const src = attachmentSource({ mediaType: "image/png", data: "", ref: "/sessions/s1/attachments/4/0" }, auth);
+    expect(src).toEqual({
+      uri: "http://host:4517/sessions/s1/attachments/4/0",
+      headers: { authorization: "Bearer tok" },
+      urlWithToken: "http://host:4517/sessions/s1/attachments/4/0?token=tok",
+    });
   });
 });

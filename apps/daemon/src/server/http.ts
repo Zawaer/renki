@@ -85,7 +85,9 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
   // including this plugin's — never run, that flag never gets set, and the
   // socket leaks forever. Registering it first means its hook always runs
   // regardless of what auth decides.
-  await app.register(websocketPlugin);
+  // Compress larger messages: a long session's replay is megabytes of JSON,
+  // which deflates about 4x; tiny streaming deltas aren't worth the CPU.
+  await app.register(websocketPlugin, { options: { perMessageDeflate: { threshold: 1024 } } });
 
   // Permissive CORS: single-user tool behind a token + tailnet, so we don't
   // need per-origin rules — the web/VS Code clients just need to reach it.
@@ -225,6 +227,29 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
   // ── The session's workspace: the Changes and Files panels ──
   // Read-only. Archived and trashed sessions have no worktree left, so they
   // answer "not available" rather than an error.
+
+  /**
+   * One attachment's bytes, for a replay that sent it as a reference (see
+   * AttachmentView). Immutable — an event never changes — so it can be cached
+   * for good. The session must still exist; a purged one took its log along.
+   */
+  app.get<{ Params: { id: string; seq: string; index: string } }>(
+    "/sessions/:id/attachments/:seq/:index",
+    async (req, reply) => {
+      try {
+        manager.getSession(req.params.id);
+      } catch (err) {
+        return sendSessionError(reply, err);
+      }
+      const e = manager.events.get(req.params.id, Number(req.params.seq));
+      const a = e?.kind === "prompt_submitted" ? e.attachments?.[Number(req.params.index)] : undefined;
+      if (!a?.data) return reply.code(404).send({ error: "not_found" });
+      return reply
+        .header("content-type", a.mediaType)
+        .header("cache-control", "private, max-age=31536000, immutable")
+        .send(Buffer.from(a.data, "base64"));
+    },
+  );
 
   app.get<{ Params: { id: string } }>("/sessions/:id/changes", async (req, reply) => {
     try {

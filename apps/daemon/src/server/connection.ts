@@ -89,7 +89,7 @@ export class Connection {
         return this.send({ type: "pong" });
 
       case "subscribe":
-        return this.subscribe(msg.sessionId, msg.lastSeq);
+        return this.subscribe(msg.sessionId, msg.lastSeq, msg.lazyAttachments ?? false);
 
       case "unsubscribe":
         return this.unsubscribe(msg.sessionId);
@@ -166,7 +166,7 @@ export class Connection {
    * Because append + subscribe are synchronous, nothing can be lost or doubled
    * between "caught up" and "streaming live".
    */
-  private subscribe(sessionId: string, lastSeq: number): void {
+  private subscribe(sessionId: string, lastSeq: number, lazyAttachments: boolean): void {
     const session = this.manager.getSession(sessionId); // throws SessionError if unknown
     this.unsubscribe(sessionId); // idempotent re-subscribe
 
@@ -187,7 +187,7 @@ export class Connection {
     const upTo = replay.length > 0 ? replay[replay.length - 1]!.seq : lastSeq;
 
     this.send({ type: "subscribed", sessionId, currentSeq: upTo });
-    this.send({ type: "replay", sessionId, events: replay, upToSeq: upTo });
+    this.send({ type: "replay", sessionId, events: lazyAttachments ? replay.map(withAttachmentRefs) : replay, upToSeq: upTo });
 
     const buffered = buffer;
     buffer = null; // switch to live pass-through
@@ -216,4 +216,22 @@ export class Connection {
     // reopen, and approve.
     logger.info("connection closed", { deviceId: this.deviceId });
   }
+}
+
+/**
+ * A replayed prompt's attachments as references to fetch rather than their
+ * bytes (see AttachmentView). Live events keep their data: they're one prompt,
+ * and the sender wants to see it at once.
+ */
+export function withAttachmentRefs(e: SessionEvent): SessionEvent {
+  if (e.kind !== "prompt_submitted" || !e.attachments?.length) return e;
+  return {
+    ...e,
+    attachments: e.attachments.map((a, i) => ({
+      name: a.name,
+      mediaType: a.mediaType,
+      data: "",
+      ref: `/sessions/${encodeURIComponent(e.sessionId)}/attachments/${e.seq}/${i}`,
+    })),
+  };
 }

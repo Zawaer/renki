@@ -29,6 +29,7 @@ import {
   type TodoItemView,
   type TurnView,
   type FileChange,
+  attachmentSource,
   type StepSummary,
   formatResumeAt,
   groupTurnBlocks,
@@ -39,10 +40,11 @@ import {
 } from "@renki/client-core";
 import type { CapabilitiesResponse, SessionResume } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
+  FlatList,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -73,7 +75,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const { realtime, rest, config } = useClient();
   const store = realtime.conversation(sessionId);
   const conv = useStoreValue(store);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<FlatList<TimelineEntry>>(null);
   /*
    * Follow the newest output ONLY while the reader is already at the bottom
    * (same rule as the web client). Scrolling up is a deliberate act — reading
@@ -204,32 +206,35 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
     return () => clearInterval(t);
   }, [resume]);
 
+  // The list is inverted — newest at offset 0, the bottom — so "at the
+  // bottom" is just a small offset, and new output stays in view by itself
+  // without scrolling after every change.
   function onTimelineScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
-    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-    const stick = contentSize.height - contentOffset.y - layoutMeasurement.height <= 24;
+    const stick = e.nativeEvent.contentOffset.y <= 24;
     if (!stick && Date.now() < jumpingUntil.current) return;
     stickToBottom.current = stick;
     setAtBottom((was) => (was === stick ? was : stick));
-  }
-
-  /** Content grew or the viewport changed (keyboard): keep the bottom pinned only if we were there. */
-  function followBottom() {
-    if (stickToBottom.current) scrollRef.current?.scrollToEnd({ animated: false });
   }
 
   function jumpToLatest() {
     jumpingUntil.current = Date.now() + 600;
     stickToBottom.current = true;
     setAtBottom(true);
-    scrollRef.current?.scrollToEnd({ animated: true });
+    scrollRef.current?.scrollToOffset({ offset: 0, animated: true });
   }
 
   // Opening a different session always starts at its newest output.
   useEffect(() => {
     stickToBottom.current = true;
     setAtBottom(true);
-    scrollRef.current?.scrollToEnd({ animated: false });
+    scrollRef.current?.scrollToOffset({ offset: 0, animated: false });
   }, [sessionId]);
+
+  /** Newest first for the inverted list, each with its position in the timeline for a stable key. */
+  const entries = useMemo(
+    () => conv.timeline.map((item, index): TimelineEntry => ({ item, index })).reverse(),
+    [conv.timeline],
+  );
 
   // Pop the keyboard to the composer as soon as this device gains control
   // (whether by taking it explicitly or via auto-claim on session creation).
@@ -335,21 +340,41 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
         actually work on.
       */}
       <View style={styles.timelineWrap}>
-        <ScrollView
+        {/*
+          Virtualised and inverted: only what's on screen (plus a little
+          either side) is rendered, starting from the newest, so a chat with
+          hundreds of turns opens as fast as a short one.
+        */}
+        <FlatList
           ref={scrollRef}
+          inverted
+          data={entries}
+          keyExtractor={entryKey}
+          renderItem={({ item }) => (
+            <TimelineRow item={item.item} colors={colors} styles={styles} onPreview={setPreviewAttachment} />
+          )}
+          ItemSeparatorComponent={TimelineGap}
           style={styles.timeline}
           contentContainerStyle={styles.timelineContent}
-          onContentSizeChange={followBottom}
-          onLayout={followBottom}
           onScroll={onTimelineScroll}
           scrollEventThrottle={32}
           keyboardShouldPersistTaps="handled"
-        >
-          {conv.timeline.length === 0 && <Text style={styles.empty}>No messages yet.</Text>}
-          {conv.timeline.map((item, i) => (
-            <TimelineRow key={i} item={item} colors={colors} styles={styles} onPreview={setPreviewAttachment} />
-          ))}
-        </ScrollView>
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          windowSize={9}
+        />
+        {conv.timeline.length === 0 && (
+          <View style={styles.timelineEmpty} pointerEvents="none">
+            {conv.status === null ? (
+              <>
+                <ActivityIndicator color={colors.faint} />
+                <Text style={styles.empty}>Loading conversation…</Text>
+              </>
+            ) : (
+              <Text style={styles.empty}>No messages yet.</Text>
+            )}
+          </View>
+        )}
         {/* Scrolled up while more arrives below: one tap back to the live end. */}
         {!atBottom && conv.timeline.length > 0 && (
           <View style={styles.jumpWrap} pointerEvents="box-none">
@@ -616,6 +641,7 @@ function AttachmentChip({
   onRemove?: () => void;
   onPreview?: (a: Attachment) => void;
 }) {
+  const { config } = useClient();
   const isImage = attachment.mediaType.startsWith("image/");
   return (
     <TouchableOpacity
@@ -625,7 +651,7 @@ function AttachmentChip({
       onPress={isImage ? () => onPreview?.(attachment) : undefined}
     >
       {isImage ? (
-        <Image source={{ uri: `data:${attachment.mediaType};base64,${attachment.data}` }} style={styles.attachThumb} />
+        <Image source={attachmentSource(attachment, config)} style={styles.attachThumb} />
       ) : (
         <Ionicons name="document-outline" size={14} color={colors.faint} />
       )}
@@ -643,12 +669,13 @@ function AttachmentChip({
 
 /** Full-screen preview of an attached image, dismissed by backdrop or the close button. */
 function ImagePreviewModal({ attachment, onClose }: { attachment: Attachment | null; onClose: () => void }) {
+  const { config } = useClient();
   return (
     <Modal transparent visible={attachment != null} animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={previewStyles.backdrop} activeOpacity={1} onPress={onClose}>
         {attachment && (
           <Image
-            source={{ uri: `data:${attachment.mediaType};base64,${attachment.data}` }}
+            source={attachmentSource(attachment, config)}
             style={previewStyles.image}
             resizeMode="contain"
           />
@@ -683,7 +710,24 @@ const previewStyles = StyleSheet.create({
   close: { position: "absolute", top: 48, right: 20 },
 });
 
-function TimelineRow({
+type TimelineEntry = { item: TimelineItem; index: number };
+
+/** Turns and prompts keep their own ids; anything else keys on its place in the timeline. */
+function entryKey(e: TimelineEntry): string {
+  if (e.item.type === "turn") return `t:${e.item.turn.turnId}`;
+  if (e.item.type === "prompt") return `p:${e.item.promptId}:${e.index}`;
+  return `${e.item.type}:${e.index}`;
+}
+
+function TimelineGap() {
+  return <View style={{ height: 14 }} />;
+}
+
+/**
+ * Memoised: the reducer replaces only what changed, so while one turn streams
+ * every other row gets the same object back and skips re-rendering.
+ */
+const TimelineRow = memo(function TimelineRow({
   item,
   colors,
   styles,
@@ -728,7 +772,7 @@ function TimelineRow({
     return <BackgroundTasksRow tasks={item.tasks} styles={styles} />;
   }
   return <AssistantTurn turn={item.turn} colors={colors} styles={styles} />;
-}
+});
 
 /**
  * Background tasks with no tool call in view to attach to, folded into one
@@ -1489,7 +1533,8 @@ const makeStyles = (colors: ThemeColors) =>
     ctrlBtnText: { color: colors.accentFg, fontSize: 13, fontWeight: "700" },
     timelineWrap: { flex: 1 },
     timeline: { flex: 1 },
-    timelineContent: { padding: 14, gap: 14 },
+    timelineContent: { padding: 14 },
+    timelineEmpty: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center", gap: 10 },
     jumpWrap: { position: "absolute", left: 0, right: 0, bottom: 12, alignItems: "center" },
     jump: {
       flexDirection: "row",

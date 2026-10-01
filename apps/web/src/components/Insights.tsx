@@ -929,7 +929,7 @@ function AchievementsSection({ data }: { data: InsightsResponse }) {
         {data.achievements.map((a) => (
           <div
             key={a.id}
-            className={`rounded-xl p-3 shadow-(--renki-shadow-xs) ${a.achieved ? "bg-(--renki-surface)" : "bg-(--renki-bg-inset)"}`}
+            className={`relative rounded-xl p-3 shadow-(--renki-shadow-xs) ${a.achieved ? "bg-(--renki-surface)" : "bg-(--renki-bg-inset)"}`}
             title={a.description}
           >
             <div className="flex items-center gap-1.5">

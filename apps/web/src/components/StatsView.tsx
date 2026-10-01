@@ -55,7 +55,7 @@ export function StatsView() {
   }
   if (!data) {
     return (
-      <div className="h-full overflow-y-auto px-8 py-8" aria-busy="true" aria-label="Loading stats">
+      <div className="relative h-full overflow-y-auto px-8 py-8" aria-busy="true" aria-label="Loading stats">
         <h1 className="mb-5 text-lg font-semibold tracking-tight text-(--renki-fg)">Stats</h1>
         <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {Array.from({ length: 6 }, (_, i) => (
@@ -91,7 +91,7 @@ export function StatsView() {
   }
   if (data.lifetime.turnCount === 0) {
     return (
-      <div className="h-full overflow-y-auto px-8 py-8">
+      <div className="relative h-full overflow-y-auto px-8 py-8">
         <h1 className="mb-5 text-lg font-semibold tracking-tight text-(--renki-fg)">Stats</h1>
         <CenteredNote
           fill={false}
@@ -107,7 +107,7 @@ export function StatsView() {
   const days = lastNDays(DAY_WINDOW, data.daily);
 
   return (
-    <div className="h-full overflow-y-auto px-8 py-8">
+    <div className="relative h-full overflow-y-auto px-8 py-8">
       <h1 className="mb-5 text-lg font-semibold tracking-tight text-(--renki-fg)">Stats</h1>
 
       <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">

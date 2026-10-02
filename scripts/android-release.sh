@@ -48,6 +48,11 @@ if [[ -d "$mobile/android" ]]; then
   fi
 fi
 
+# Bring app.json into the native project: android/ is generated, so settings
+# like the over-the-air update URL and runtime version only reach the build
+# through prebuild. Without --clean it keeps the existing project.
+(cd "$mobile" && CI=1 npx expo prebuild --platform android --no-install)
+
 # Firebase config is what lets the phone receive pushes (see SETUP.md).
 [[ -f "$mobile/google-services.json" ]] || echo "! No apps/mobile/google-services.json — this build won't receive push notifications."
 

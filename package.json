@@ -21,7 +21,8 @@
     "test": "turbo run test",
     "dev": "turbo run dev",
     "postinstall": "node scripts/dedupe-react-for-tests.mjs",
-    "android:release": "bash scripts/android-release.sh"
+    "android:release": "bash scripts/android-release.sh",
+    "android:update": "bash scripts/android-update.sh"
   },
   "devDependencies": {
     "turbo": "^2.3.3",

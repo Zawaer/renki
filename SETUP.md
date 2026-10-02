@@ -769,6 +769,27 @@ itself is applied by `plugins/withReleaseSigning.js` (a config plugin, so it
 survives prebuild regenerating the native project) and it throws rather than
 quietly falling back if a future Expo template stops matching.
 
+### Updating the installed app over the air
+
+Most phone changes touch only the app's JavaScript, and those don't need a
+new APK. Publish them with EAS Update:
+
+```bash
+npx -y eas-cli login    # once, as the account that owns the project (app.json → owner)
+pnpm android:update     # or: pnpm android:update "What changed"
+```
+
+The phone checks when the app opens, downloads the update in the background,
+and runs it the next time you open the app (swipe it away and reopen).
+
+An update only reaches builds with the same **runtime version**, a
+fingerprint of the native side (`runtimeVersion` in `app.json`). After a native
+change, such as a new native module, a config plugin, or new permissions,
+build and install a new APK with `pnpm android:release`. Older builds skip
+updates they can't run, rather than crashing on them. Every build made from
+here on looks for updates on the `production` channel, local ones included
+(`updates.requestHeaders` in `app.json`).
+
 ## Previewing what a session builds (optional)
 
 Sessions run inside the daemon container, so a dev server they start is

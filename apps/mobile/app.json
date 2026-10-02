@@ -4,6 +4,9 @@
     "slug": "renki",
     "scheme": "renki",
     "version": "0.0.1",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
@@ -56,6 +59,12 @@
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#16100b"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/56903ad1-4135-4e58-93fa-c7e2b1354aad",
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      }
     }
   }
 }

@@ -189,7 +189,8 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
 
   const isController = conv.controller === config.deviceId;
   const status = conv.status ?? "idle";
-  const canSend = isController && status !== "busy";
+  // Sending mid-turn queues the prompt on the daemon, same as Enter on the web.
+  const canSend = isController;
   /** Not "open" means what's on screen may be behind; say so rather than pass it off as live. */
   const connection = useStoreValue(realtime.status);
 
@@ -545,11 +546,13 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
             onChangeText={setText}
             multiline
             placeholder={
-              !isController ? "Take control to send prompts" : status === "busy" ? "Claude is working…" : "Chat with Claude…"
+              !isController ? "Take control to send prompts" : status === "busy" ? "Add to what Claude is doing…" : "Chat with Claude…"
             }
             placeholderTextColor={colors.faint}
           />
-          {isController && status === "busy" ? (
+          {/* Mid-turn, Stop only while the composer is empty — once there's
+              something to send, the button queues it instead. */}
+          {isController && status === "busy" && !text.trim() && attachments.length === 0 ? (
             <TouchableOpacity style={styles.stopBtn} onPress={() => realtime.interrupt(sessionId)}>
               <Ionicons name="stop" size={15} color={colors.accentFg} />
             </TouchableOpacity>

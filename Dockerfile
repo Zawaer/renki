@@ -129,7 +129,14 @@ RUN git config --system credential."https://github.com".helper '!gh auth git-cre
 WORKDIR /app
 COPY --from=builder /app/deploy .
 
+# The daemon's own copy of node. Sessions run as root in this container, so one
+# that installs another Node (n, nvm, a NodeSource package) overwrites
+# /usr/local/bin/node — and better-sqlite3 is compiled for this exact version,
+# so the next restart of the same container crash-loops. Sessions keep the
+# `node` on PATH to do as they like with; the daemon never looks there.
+RUN install -D -m 0555 "$(command -v node)" /opt/renki/node
+
 ENV NODE_ENV=production
 EXPOSE 4517
 
-CMD ["node", "dist/index.js"]
+CMD ["/opt/renki/node", "dist/index.js"]

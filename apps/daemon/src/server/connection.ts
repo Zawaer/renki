@@ -115,6 +115,7 @@ export class Connection {
             model: msg.model,
             maxThinkingTokens: msg.maxThinkingTokens,
             permissionMode: msg.permissionMode,
+            timeZone: msg.timeZone,
             resolvePermission: this.broker.resolverFor(msg.sessionId),
           })
           .catch((err) => {

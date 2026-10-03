@@ -27,6 +27,7 @@ import type { PermissionResolver, RateLimitHit, RunTurnResult } from "../claude/
 import { derivePlaceholderTitle, generateSessionTitle } from "../claude/titler.js";
 import { EFFORT_LEVELS } from "@renki/client-core";
 import { SessionError } from "./errors.js";
+import { hostTimeZone, timeZoneNote } from "./timeZoneNote.js";
 import { dueForPurge, purgeAtFor } from "./trash.js";
 
 /**
@@ -72,6 +73,7 @@ type ResumePrompt = {
   model?: string;
   maxThinkingTokens?: number | null;
   permissionMode?: PermissionMode;
+  timeZone?: string;
 };
 
 /**
@@ -121,6 +123,8 @@ export type SubmitPromptInput = {
   model?: string;
   maxThinkingTokens?: number | null;
   permissionMode?: PermissionMode;
+  /** The sending device's IANA zone — see timeZoneNote. */
+  timeZone?: string;
   /** Set on a prompt the daemon re-sent after a limit reset: how many waits came before it. */
   resumeAttempt?: number;
 };
@@ -162,6 +166,8 @@ export class SessionManager {
   private resolverFor: ((sessionId: string) => PermissionResolver) | null = null;
   /** sessionId -> the prompted turn running now, so a restart can continue it with the same settings. */
   private readonly inflight = new Map<string, SubmitPromptInput>();
+  /** sessionId -> the user's zone Claude was last told about. In memory: after a restart Claude just hears it once more. */
+  private readonly toldTimeZone = new Map<string, string>();
   /** Set by closeAll: a shutting-down daemon must not start resumed turns. */
   private stopping = false;
   /** Sessions inside runResume's readiness check, so the timer and "Continue now" can't both start the turn. */
@@ -583,6 +589,7 @@ export class SessionManager {
     if (session.controller) this.events.append(id, { kind: "control_changed", controller: null, controllerName: null });
     this.pendingPermissions.delete(id);
     this.queues.delete(id);
+    this.toldTimeZone.delete(id);
     const trashed = this.getSession(id);
     logger.info("session trashed", { id, purgeAt: trashed.purgeAt });
     return trashed;
@@ -778,7 +785,7 @@ export class SessionManager {
     if (session.status === "busy") {
       const live = this.live.get(input.sessionId);
       if (live && live.busy && !live.isClosed) {
-        live.steer({ prompt: input.text, attachments: input.attachments, promptId: input.promptId });
+        live.steer({ prompt: this.timeZonePrefix(input) + input.text, attachments: input.attachments, promptId: input.promptId });
         this.events.append(input.sessionId, {
           kind: "prompt_submitted",
           promptId: input.promptId,
@@ -822,6 +829,13 @@ export class SessionManager {
     }
   }
 
+  /** A note on the user's time zone to put before this prompt, when Claude hasn't heard it yet — empty otherwise. */
+  private timeZonePrefix(input: SubmitPromptInput): string {
+    const { note, told } = timeZoneNote(input.timeZone, hostTimeZone(), this.toldTimeZone.get(input.sessionId));
+    if (told) this.toldTimeZone.set(input.sessionId, told);
+    return note ?? "";
+  }
+
   /** Runs exactly one Claude turn for an already-idle session. `paused` means it stopped on a limit and a resume is scheduled. */
   private async runOneTurn(input: SubmitPromptInput): Promise<{ paused: boolean }> {
     const session = this.getSession(input.sessionId);
@@ -859,11 +873,12 @@ export class SessionManager {
     this.promptedTurns.add(input.sessionId);
     this.inflight.set(input.sessionId, input);
     let resumeId = session.claudeSessionId;
+    const prompt = this.timeZonePrefix(input) + input.text;
     const runOnce = (continuing = false) =>
       this.liveFor(input.sessionId, session.worktreePath, resumeId, input).runTurn({
         // A retry after the turn got partway carries on from the transcript
         // rather than asking for the whole thing again — see RESUME_CONTINUE_TEXT.
-        prompt: continuing ? RESUME_CONTINUE_TEXT : input.text,
+        prompt: continuing ? RESUME_CONTINUE_TEXT : prompt,
         attachments: continuing ? undefined : input.attachments,
         promptId: input.promptId,
         model: input.model,
@@ -1129,6 +1144,7 @@ export class SessionManager {
         model: state.prompt.model,
         maxThinkingTokens: state.prompt.maxThinkingTokens,
         permissionMode: state.prompt.permissionMode,
+        timeZone: state.prompt.timeZone,
         resolvePermission,
         // A restart's continuation isn't a retry on a limit; if it hits one, that wait starts from the beginning.
         resumeAttempt: state.kind === "restart" ? undefined : state.attempt + 1,
@@ -1515,6 +1531,7 @@ function toResumePrompt(input: SubmitPromptInput): ResumePrompt & { promptId: st
     model: input.model,
     maxThinkingTokens: input.maxThinkingTokens,
     permissionMode: input.permissionMode,
+    timeZone: input.timeZone,
   };
 }
 

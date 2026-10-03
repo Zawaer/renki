@@ -8,6 +8,7 @@ import {
   ServerMessage as ServerMessageSchema,
 } from "@renki/protocol";
 import type { PermissionModeKey } from "./permissionMode.js";
+import { localTimeZone } from "./rest.js";
 import { type ConversationState, applyEvent, applyEvents, initialConversation, restoreBlockGaps } from "./reducer.js";
 import { Store } from "./store.js";
 
@@ -278,6 +279,7 @@ export class RealtimeClient {
    * options existed. `attachments` travel inline as base64 (see
    * `@renki/protocol`'s `Attachment`) and become real image/document content
    * blocks for the model — `text` may be empty if at least one is present.
+   * This device's time zone rides along on every prompt.
    */
   submitPrompt(
     sessionId: string,
@@ -290,7 +292,7 @@ export class RealtimeClient {
     },
   ): string {
     const promptId = genId("p");
-    this.send({ type: "submit_prompt", sessionId, promptId, text, ...opts });
+    this.send({ type: "submit_prompt", sessionId, promptId, text, ...opts, timeZone: localTimeZone() });
     return promptId;
   }
 

@@ -59,7 +59,9 @@ export const ClientMessage = z.discriminatedUnion("type", [
    * carries at least one file (SessionManager enforces this — not expressible
    * as a plain discriminated-union member's schema); `attachments` travel
    * inline as base64 and become real image/document content blocks for the
-   * model, not a message about a file path.
+   * model, not a message about a file path. `timeZone` is the sending
+   * device's IANA zone, so Claude can give times in the user's clock rather
+   * than the host's.
    */
   z.object({
     type: z.literal("submit_prompt"),
@@ -70,6 +72,7 @@ export const ClientMessage = z.discriminatedUnion("type", [
     model: z.string().optional(),
     maxThinkingTokens: z.number().int().nullable().optional(),
     permissionMode: z.enum(["default", "acceptEdits", "plan", "auto"]).optional(),
+    timeZone: z.string().max(64).optional(),
   }),
 
   /** Answer a pending permission request. Only honored from the controller. */

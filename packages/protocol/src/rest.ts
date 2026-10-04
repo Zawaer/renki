@@ -184,6 +184,12 @@ export const StatsBucket = z.object({
   key: z.string(),
   costUsd: z.number(),
   inputTokens: z.number(),
+  /**
+   * Prompt-cache reads, kept apart from inputTokens: a turn with several tool
+   * round-trips re-reads the same context each time, so this dwarfs the rest.
+   * Optional so clients still read stats from a daemon that predates it.
+   */
+  cachedInputTokens: z.number().optional(),
   outputTokens: z.number(),
   durationMs: z.number(),
   turnCount: z.number().int(),
@@ -198,6 +204,7 @@ export const RepoStatsBucket = z.object({
   repoName: z.string(),
   costUsd: z.number(),
   inputTokens: z.number(),
+  cachedInputTokens: z.number().optional(),
   outputTokens: z.number(),
   durationMs: z.number(),
   turnCount: z.number().int(),

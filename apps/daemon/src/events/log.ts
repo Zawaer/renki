@@ -224,7 +224,7 @@ function rowToEvent(row: {
 }
 
 function emptyBucket(key: string): StatsBucket {
-  return { key, costUsd: 0, inputTokens: 0, outputTokens: 0, durationMs: 0, turnCount: 0, okCount: 0 };
+  return { key, costUsd: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, durationMs: 0, turnCount: 0, okCount: 0 };
 }
 
 function bucketFor(map: Map<string, StatsBucket>, key: string): StatsBucket {
@@ -244,6 +244,7 @@ function repoBucketFor(map: Map<string, RepoStatsBucket>, repo: { repoId: string
       repoName: repo.repoName,
       costUsd: 0,
       inputTokens: 0,
+      cachedInputTokens: 0,
       outputTokens: 0,
       durationMs: 0,
       turnCount: 0,
@@ -258,6 +259,7 @@ function repoBucketFor(map: Map<string, RepoStatsBucket>, repo: { repoId: string
 type Accumulable = {
   costUsd: number;
   inputTokens: number;
+  cachedInputTokens?: number;
   outputTokens: number;
   durationMs: number;
   turnCount: number;
@@ -267,6 +269,7 @@ type Accumulable = {
 function accumulate(bucket: Accumulable, payload: Extract<EventPayload, { kind: "turn_result" }>): void {
   bucket.costUsd += payload.costUsd ?? 0;
   bucket.inputTokens += payload.inputTokens ?? 0;
+  bucket.cachedInputTokens = (bucket.cachedInputTokens ?? 0) + (payload.cachedInputTokens ?? 0);
   bucket.outputTokens += payload.outputTokens ?? 0;
   bucket.durationMs += payload.durationMs ?? 0;
   bucket.turnCount += 1;

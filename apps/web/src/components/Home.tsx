@@ -15,13 +15,14 @@ import {
   streaks,
   sumRecent,
   tokensInPerspective,
+  totalTokens,
 } from "@renki/client-core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useClient } from "../lib/client.js";
 import { Skeleton } from "./ui.js";
 
-type Range = "all" | "30d" | "7d";
+type Range = "all" | "30d" | "7d" | "1d";
 type Tab = "overview" | "models";
 
 const HEATMAP_WEEKS = 26;
@@ -77,7 +78,7 @@ export function Home() {
   const maxDay = useMemo(() => grid.reduce((m, col) => Math.max(m, ...col.map((c) => c.turnCount)), 0), [grid]);
   const streak = useMemo(() => (stats ? streaks(stats.daily) : { current: 0, longest: 0 }), [stats]);
 
-  const rangeDays = range === "7d" ? 7 : range === "30d" ? 30 : null;
+  const rangeDays = range === "1d" ? 1 : range === "7d" ? 7 : range === "30d" ? 30 : null;
   const bucket: StatsBucket | null = stats ? (rangeDays ? sumRecent(rangeDays, stats.daily) : stats.lifetime) : null;
   const activeDays = stats
     ? stats.daily.filter((d) => d.turnCount > 0 && (!rangeDays || withinDays(d.key, rangeDays))).length
@@ -174,7 +175,7 @@ export function Home() {
               </div>
               {tab === "overview" && (
                 <div className="flex items-center gap-0.5 text-xs">
-                  {(["all", "30d", "7d"] as Range[]).map((r) => (
+                  {(["all", "30d", "7d", "1d"] as Range[]).map((r) => (
                     <button
                       key={r}
                       onClick={() => setRange(r)}
@@ -196,7 +197,11 @@ export function Home() {
                 <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
                   <Tile label="Sessions" value={sessionCount == null ? "…" : String(sessionCount)} />
                   <Tile label="Replies" value={String(bucket.turnCount)} />
-                  <Tile label="Total tokens" value={formatTokenCount(bucket.inputTokens + bucket.outputTokens)} />
+                  <Tile
+                    label="Total tokens"
+                    value={formatTokenCount(totalTokens(bucket))}
+                    detail={`${formatTokenCount(bucket.inputTokens + bucket.outputTokens)} new · ${formatTokenCount(bucket.cachedInputTokens ?? 0)} cached`}
+                  />
                   <Tile label="Spend" value={formatCost(bucket.costUsd)} />
                   <Tile label="Active days" value={String(activeDays)} />
                   <Tile label="Current streak" value={`${streak.current}d`} />
@@ -225,7 +230,7 @@ export function Home() {
                 </div>
 
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs text-(--renki-fg-muted)">
-                  <span>{tokensInPerspective(stats.lifetime.inputTokens + stats.lifetime.outputTokens)}</span>
+                  <span>{tokensInPerspective(totalTokens(stats.lifetime))}</span>
                   <span className="whitespace-nowrap">{formatDuration(stats.lifetime.durationMs)} spent waiting on Claude</span>
                 </div>
               </>
@@ -249,7 +254,7 @@ function ModelsTab({ models }: { models: StatsBucket[] }) {
           <div className="flex items-center justify-between gap-3 text-sm">
             <span className="truncate font-medium text-(--renki-fg)">{formatModelLabel(m.key)}</span>
             <span className="shrink-0 text-xs text-(--renki-fg-muted)">
-              {m.turnCount} repl{m.turnCount === 1 ? "y" : "ies"} · {formatTokenCount(m.inputTokens + m.outputTokens)} tokens ·{" "}
+              {m.turnCount} repl{m.turnCount === 1 ? "y" : "ies"} · {formatTokenCount(totalTokens(m))} tokens ·{" "}
               <span className="text-(--renki-fg)">{formatCost(m.costUsd)}</span>
             </span>
           </div>
@@ -262,11 +267,12 @@ function ModelsTab({ models }: { models: StatsBucket[] }) {
   );
 }
 
-function Tile({ label, value }: { label: string; value: string }) {
+function Tile({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
     <div className="rounded-xl bg-(--renki-bg) px-3 py-2.5">
       <div className="text-[11px] font-medium text-(--renki-fg-muted)">{label}</div>
       <div className="mt-0.5 text-base font-semibold tracking-tight text-(--renki-fg)">{value}</div>
+      {detail && <div className="mt-0.5 text-[11px] text-(--renki-fg-muted)">{detail}</div>}
     </div>
   );
 }

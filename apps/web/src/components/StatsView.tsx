@@ -9,6 +9,7 @@ import {
   formatSuccessRate,
   formatTokenCount,
   lastNDays,
+  totalTokens,
 } from "@renki/client-core";
 import { useCallback, useEffect, useState } from "react";
 import { useClient } from "../lib/client.js";
@@ -356,7 +357,7 @@ function EarlyMonthNote({ monthly }: { monthly: StatsBucket[] }) {
       {current && (
         <p className="mt-2 text-(--renki-fg)">
           {formatMonthLabel(current.key)} so far: {formatCost(current.costUsd)} ·{" "}
-          {formatTokenCount(current.inputTokens + current.outputTokens)} tokens · {formatDuration(current.durationMs)} waited
+          {formatTokenCount(totalTokens(current))} tokens · {formatDuration(current.durationMs)} waited
         </p>
       )}
     </div>
@@ -371,7 +372,7 @@ function EarlyMonthNote({ monthly }: { monthly: StatsBucket[] }) {
  * the identity channel re-encoding what bar length already shows.
  */
 function RepoBars({ repos, metric }: { repos: RepoStatsBucket[]; metric: "cost" | "tokens" }) {
-  const totalFor = (r: RepoStatsBucket) => (metric === "cost" ? r.costUsd : r.inputTokens + r.outputTokens);
+  const totalFor = (r: RepoStatsBucket) => (metric === "cost" ? r.costUsd : totalTokens(r));
   const max = Math.max(1, ...repos.map(totalFor));
   return (
     <div className="space-y-2">
@@ -409,7 +410,7 @@ function RepoBars({ repos, metric }: { repos: RepoStatsBucket[]; metric: "cost" 
  * and single-hue rule as `RepoBars`.
  */
 function CategoryBars({ buckets, metric, labelFor }: { buckets: StatsBucket[]; metric: "cost" | "tokens"; labelFor: (key: string) => string }) {
-  const totalFor = (b: StatsBucket) => (metric === "cost" ? b.costUsd : b.inputTokens + b.outputTokens);
+  const totalFor = (b: StatsBucket) => (metric === "cost" ? b.costUsd : totalTokens(b));
   const max = Math.max(1, ...buckets.map(totalFor));
   return (
     <div className="space-y-2">

@@ -9,6 +9,7 @@ import {
   formatSuccessRate,
   formatTokenCount,
   lastNDays,
+  totalTokens,
 } from "@renki/client-core";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
@@ -428,7 +429,7 @@ function EarlyMonthNote({ monthly, colors, styles }: { monthly: StatsBucket[]; c
       {current && (
         <Text style={[styles.muted, { color: colors.text, marginTop: 6 }]}>
           {formatMonthLabel(current.key)} so far: {formatCost(current.costUsd)} ·{" "}
-          {formatTokenCount(current.inputTokens + current.outputTokens)} tokens · {formatDuration(current.durationMs)} waited
+          {formatTokenCount(totalTokens(current))} tokens · {formatDuration(current.durationMs)} waited
         </Text>
       )}
     </View>
@@ -437,7 +438,7 @@ function EarlyMonthNote({ monthly, colors, styles }: { monthly: StatsBucket[]; c
 
 /** Ranked horizontal bar list, one row per repo (already cost-sorted by the daemon). */
 function RepoBars({ repos, metric, colors, styles }: { repos: RepoStatsBucket[]; metric: "cost" | "tokens"; colors: ThemeColors; styles: Styles }) {
-  const totalFor = (r: RepoStatsBucket) => (metric === "cost" ? r.costUsd : r.inputTokens + r.outputTokens);
+  const totalFor = (r: RepoStatsBucket) => (metric === "cost" ? r.costUsd : totalTokens(r));
   const max = Math.max(1, ...repos.map(totalFor));
   return (
     <View style={{ gap: 8 }}>
@@ -485,7 +486,7 @@ function CategoryBars({
   colors: ThemeColors;
   styles: Styles;
 }) {
-  const totalFor = (b: StatsBucket) => (metric === "cost" ? b.costUsd : b.inputTokens + b.outputTokens);
+  const totalFor = (b: StatsBucket) => (metric === "cost" ? b.costUsd : totalTokens(b));
   const max = Math.max(1, ...buckets.map(totalFor));
   return (
     <View style={{ gap: 8 }}>

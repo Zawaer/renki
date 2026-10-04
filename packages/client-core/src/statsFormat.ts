@@ -2,6 +2,15 @@ import type { StatsBucket } from "@renki/protocol";
 
 /** Shared formatting/data-shaping helpers for the web and mobile Stats screens — kept identical so the two never drift. */
 
+/**
+ * Every token a bucket's turns went through: fresh input, cache reads and
+ * output. Cache reads are most of it — each tool round-trip re-reads the
+ * conversation — and they're what other usage trackers count too.
+ */
+export function totalTokens(bucket: { inputTokens: number; cachedInputTokens?: number; outputTokens: number }): number {
+  return bucket.inputTokens + (bucket.cachedInputTokens ?? 0) + bucket.outputTokens;
+}
+
 export function formatSuccessRate(bucket: { turnCount: number; okCount: number }): string {
   if (bucket.turnCount === 0) return "—";
   return `${Math.round((bucket.okCount / bucket.turnCount) * 100)}%`;
@@ -63,7 +72,7 @@ export function lastNDays(n: number, buckets: StatsBucket[]): StatsBucket[] {
   for (let i = n - 1; i >= 0; i--) {
     const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
     const key = d.toISOString().slice(0, 10);
-    out.push(byKey.get(key) ?? { key, costUsd: 0, inputTokens: 0, outputTokens: 0, durationMs: 0, turnCount: 0, okCount: 0 });
+    out.push(byKey.get(key) ?? { key, costUsd: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, durationMs: 0, turnCount: 0, okCount: 0 });
   }
   return out;
 }

@@ -59,6 +59,11 @@ describe("sumRecent", () => {
     expect(total.turnCount).toBe(3);
     expect(total.inputTokens).toBe(300);
   });
+
+  it("carries cache reads through, even from buckets that lack the field", () => {
+    const total = sumRecent(7, [day("2026-09-04", 1, { cachedInputTokens: 900 }), day("2026-09-03", 1)], NOW);
+    expect(total.cachedInputTokens).toBe(900);
+  });
 });
 
 describe("tokensInPerspective", () => {

@@ -14,6 +14,7 @@ const day = (key: string, turnCount: number): StatsResponse["daily"][number] => 
   key,
   costUsd: turnCount * 0.5,
   inputTokens: turnCount * 10_000,
+  cachedInputTokens: turnCount * 500_000,
   outputTokens: turnCount * 2_000,
   durationMs: turnCount * 60_000,
   turnCount,
@@ -45,7 +46,7 @@ describe("Home", () => {
         byRepo: [],
         byModel: [day("claude-sonnet-5-5", 4)],
         byClientType: [],
-        lifetime: { key: "lifetime", costUsd: 2, inputTokens: 40_000_000, outputTokens: 4_300_000, durationMs: 240_000, turnCount: 4, okCount: 4 },
+        lifetime: { key: "lifetime", costUsd: 2, inputTokens: 40_000_000, cachedInputTokens: 600_000_000, outputTokens: 4_300_000, durationMs: 240_000, turnCount: 4, okCount: 4 },
         firstTurnAt: Date.now(),
       },
       [{ id: "s1", createdAt: Date.now() } as Session, { id: "s2", createdAt: Date.now() } as Session],
@@ -56,6 +57,9 @@ describe("Home", () => {
     expect(screen.getByText("Sessions").nextSibling?.textContent).toBe("2");
     expect(screen.getByText("Current streak").nextSibling?.textContent).toBe("1d");
     expect(screen.getByText("Active days").nextSibling?.textContent).toBe("1");
+    // Cache reads count toward the headline, with the split underneath.
+    expect(screen.getByText("Total tokens").nextSibling?.textContent).toBe("644M");
+    expect(screen.getByText("44M new · 600M cached")).toBeInTheDocument();
     expect(screen.getByText(/more tokens than The Lord of the Rings/)).toBeInTheDocument();
     expect(screen.getByLabelText("Activity over the last six months")).toBeInTheDocument();
 

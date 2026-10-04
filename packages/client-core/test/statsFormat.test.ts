@@ -5,6 +5,7 @@ import {
   formatSuccessRate,
   lastNDays,
   tickIndices,
+  totalTokens,
 } from "../src/statsFormat.js";
 
 describe("formatSuccessRate", () => {
@@ -98,5 +99,15 @@ describe("tickIndices", () => {
   it("respects a smaller maxTicks (mobile's narrower default)", () => {
     const ticks = tickIndices(14, 5);
     expect(ticks.size).toBeLessThanOrEqual(5);
+  });
+});
+
+describe("totalTokens", () => {
+  it("counts fresh input, cache reads and output", () => {
+    expect(totalTokens({ inputTokens: 10, cachedInputTokens: 1_000, outputTokens: 5 })).toBe(1_015);
+  });
+
+  it("treats a missing cache count (an older daemon) as zero", () => {
+    expect(totalTokens({ inputTokens: 10, outputTokens: 5 })).toBe(15);
   });
 });

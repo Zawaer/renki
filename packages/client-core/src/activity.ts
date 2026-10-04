@@ -104,11 +104,12 @@ export function sumRecent(days: number, buckets: StatsBucket[], now = new Date()
   const start = new Date(today);
   start.setUTCDate(today.getUTCDate() - days + 1);
   const startKey = utcDayKey(start);
-  const total: StatsBucket = { key: `${days}d`, costUsd: 0, inputTokens: 0, outputTokens: 0, durationMs: 0, turnCount: 0, okCount: 0 };
+  const total: StatsBucket = { key: `${days}d`, costUsd: 0, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, durationMs: 0, turnCount: 0, okCount: 0 };
   for (const b of buckets) {
     if (b.key < startKey) continue;
     total.costUsd += b.costUsd;
     total.inputTokens += b.inputTokens;
+    total.cachedInputTokens = (total.cachedInputTokens ?? 0) + (b.cachedInputTokens ?? 0);
     total.outputTokens += b.outputTokens;
     total.durationMs += b.durationMs;
     total.turnCount += b.turnCount;

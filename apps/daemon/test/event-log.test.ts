@@ -177,6 +177,17 @@ describe("statsSummary", () => {
     expect(stats.byModel[0]?.key).toBe("claude-opus-5-5");
     expect(stats.byModel[0]?.costUsd).toBeCloseTo(2);
   });
+
+  it("sums cache reads separately from fresh input, treating a missing field as zero", () => {
+    const log = new EventLog(makeTestDb());
+    const base = { kind: "turn_result", turnId: "t", promptId: "p", ok: true, costUsd: 1, durationMs: 100, errorMessage: null, outputTokens: 5 } as const;
+    log.append("s1", { ...base, inputTokens: 10, cachedInputTokens: 1_000 });
+    log.append("s1", { ...base, inputTokens: 20 }); // recorded before cache reads were tracked
+
+    const { lifetime } = log.statsSummary();
+    expect(lifetime.inputTokens).toBe(30);
+    expect(lifetime.cachedInputTokens).toBe(1_000);
+  });
 });
 
 describe("restart", () => {

@@ -42,8 +42,9 @@ import {
   turnFileChanges,
   modelFullName,
   modelMenuLabel,
+  segmentImages,
 } from "@renki/client-core";
-import type { Account, CapabilitiesResponse, SessionComposer, SessionResume } from "@renki/protocol";
+import type { Account, AttachmentView, CapabilitiesResponse, SessionComposer, SessionResume } from "@renki/protocol";
 import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { hostOpenFile, isHosted } from "../lib/host.js";
@@ -56,7 +57,8 @@ import {
 } from "../lib/composerPrefs.js";
 import { JsonCode, ShellCode } from "./Code.js";
 import { UsageLimits } from "./UsageLimits.js";
-import { WorkspacePanel, type WorkspaceTab } from "./WorkspacePanel.js";
+import { WorkspacePanel, type FileOpenRequest, type WorkspaceTab } from "./WorkspacePanel.js";
+import { FileLinkContext, type FileLinkTarget } from "../lib/fileLinks.js";
 import { Markdown } from "./Markdown.js";
 import { Button, Collapsible, CopyButton, InfoHint, Reveal, Skeleton, StatusBadge } from "./ui.js";
 
@@ -81,22 +83,37 @@ export function SessionView({ sessionId }: { sessionId: string }) {
   /** A turn paused on a usage limit, waiting to continue — also only on the snapshot. */
   const [resume, setResume] = useState<SessionResume | null>(null);
   const [title, setTitle] = useState<string | null>(null);
+  /** The worktree's absolute path, so a reply's absolute file links can be mapped into it. */
+  const [worktreePath, setWorktreePath] = useState<string | null>(null);
+  /**
+   * Repo and branch as the session's row has them now. The log's
+   * session_created only knows where the session started, and a session can
+   * be moved into a repo after the fact; the sidebar already groups by the
+   * row, so the header follows it too. Falls back to the log until it lands.
+   */
+  const [place, setPlace] = useState<{ repoName: string; branch: string | null } | null>(null);
   useEffect(() => {
     setPurgeAt(null);
     setResume(null);
     setTitle(null);
+    setWorktreePath(null);
+    setPlace(null);
     return realtime.onSessionChanged((s) => {
       if (s.id !== sessionId) return;
       setPurgeAt(s.purgeAt ?? null);
       setResume(s.resume ?? null);
       setTitle(s.title);
+      setWorktreePath(s.worktreePath);
+      setPlace({ repoName: s.repoName, branch: s.branch });
     });
   }, [realtime, sessionId]);
 
   // Name the browser tab after the open session, the same way the session
   // list does (title, else repo), so a row of Renki tabs can be told apart.
   // Follows the auto-titler's upgrades live; back to plain "Renki" on leave.
-  const tabName = title || conv.repoName;
+  const repoName = place?.repoName ?? conv.repoName;
+  const branch = place ? place.branch : conv.branch;
+  const tabName = title || repoName;
   useEffect(() => {
     document.title = tabName ? `${tabName} · Renki` : "Renki";
   }, [tabName]);
@@ -160,11 +177,34 @@ export function SessionView({ sessionId }: { sessionId: string }) {
       savePanel(next);
       return next;
     });
-  const hasTree = !!conv.branch && status !== "archived" && status !== "trashed";
+  const hasTree = !!branch && status !== "archived" && status !== "trashed";
   // Bumped each time a turn settles, so an open Changes list follows the work.
   const settledTurns = conv.timeline.filter((i) => i.type === "turn" && i.turn.status !== "running").length;
 
+  /**
+   * A file a reply linked to, waiting for the Files tab to show it. Links in
+   * the transcript only become clickable when there's a working tree to open
+   * them from; otherwise they render as inert text (see Markdown's MarkdownLink).
+   */
+  const [fileRequest, setFileRequest] = useState<FileOpenRequest | null>(null);
+  useEffect(() => setFileRequest(null), [sessionId]);
+  const fileLinks = useMemo<FileLinkTarget | null>(
+    () =>
+      hasTree
+        ? {
+            worktreePath,
+            onOpenFile: (path, line) => {
+              setFileRequest((prev) => ({ path, line, nonce: (prev?.nonce ?? 0) + 1 }));
+              setPanel("files");
+              savePanel("files");
+            },
+          }
+        : null,
+    [hasTree, worktreePath],
+  );
+
   return (
+    <FileLinkContext.Provider value={fileLinks}>
     <div className="relative flex h-full">
     <div className="flex min-w-0 flex-1 flex-col">
       {/* Header */}
@@ -172,7 +212,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
         <div className="min-w-0">
           <div className="flex items-center gap-2.5">
             <span className="truncate text-[15px] font-medium tracking-tight text-(--renki-fg)">
-              {conv.repoName ?? "…"}
+              {repoName ?? "…"}
             </span>
             <StatusBadge
               status={status}
@@ -184,11 +224,11 @@ export function SessionView({ sessionId }: { sessionId: string }) {
               </span>
             )}
           </div>
-          {displayBranch(conv.branch) && (
+          {displayBranch(branch) && (
             <div className="mt-0.5 flex items-center gap-1.5 text-xs text-(--renki-fg-muted)">
               <span className="codicon codicon-git-branch text-[11px]" />
               <span className="truncate font-mono">
-                {displayBranch(conv.branch)}
+                {displayBranch(branch)}
               </span>
             </div>
           )}
@@ -412,9 +452,11 @@ export function SessionView({ sessionId }: { sessionId: string }) {
             savePanel(null);
           }}
           refreshKey={settledTurns}
+          openRequest={fileRequest}
         />
       )}
     </div>
+    </FileLinkContext.Provider>
   );
 }
 
@@ -795,6 +837,7 @@ function AssistantTurn({ turn, animate = false }: { turn: TurnView; animate?: bo
                 <Block block={seg.block} turnRunning={running} />
               )}
             </div>
+            <ToolImages images={segmentImages(seg)} />
             {steeredAfter(last).map((p) => (
               <SteeredPrompt key={p.promptId} prompt={p} />
             ))}
@@ -1101,14 +1144,49 @@ function SubagentActivity({ subagent }: { subagent: SubagentView }) {
           {subagent.subagentType ?? "Subagent"} — {subagent.taskDescription}
         </div>
       )}
-      {groupTurnBlocks(subagent.blocks).map((seg) =>
-        seg.kind === "group" ? (
-          <ToolGroup key={`g${seg.items[0]!.index}`} items={seg.items} summary={seg.summary} turnRunning={subagent.status === "running"} />
-        ) : (
-          <Block key={seg.index} block={seg.block} turnRunning={subagent.status === "running"} />
-        ),
-      )}
+      {groupTurnBlocks(subagent.blocks).map((seg) => (
+        <Fragment key={seg.kind === "group" ? `g${seg.items[0]!.index}` : seg.index}>
+          {seg.kind === "group" ? (
+            <ToolGroup items={seg.items} summary={seg.summary} turnRunning={subagent.status === "running"} />
+          ) : (
+            <Block block={seg.block} turnRunning={subagent.status === "running"} />
+          )}
+          <ToolImages images={segmentImages(seg)} />
+        </Fragment>
+      ))}
     </div>
+  );
+}
+
+/**
+ * Images a tool handed back to Claude (a screenshot it took, a PNG it Read),
+ * shown under the step outside its fold so progress is visible at a glance.
+ */
+function ToolImages({ images }: { images: AttachmentView[] }) {
+  const { config } = useClient();
+  const [previewing, setPreviewing] = useState<AttachmentView | null>(null);
+  if (images.length === 0) return null;
+  return (
+    <>
+      <div className="flex flex-wrap gap-2">
+        {images.map((img, i) => (
+          <button
+            key={i}
+            onClick={() => setPreviewing(img)}
+            className="overflow-hidden rounded-lg border border-(--renki-border) bg-(--renki-surface) transition-opacity hover:opacity-90"
+            title={img.name}
+          >
+            <img
+              src={attachmentSource(img, config).urlWithToken}
+              alt={img.name}
+              loading="lazy"
+              className="block max-h-[180px] max-w-full object-contain"
+            />
+          </button>
+        ))}
+      </div>
+      {previewing && <ImagePreviewDialog attachment={previewing} onClose={() => setPreviewing(null)} />}
+    </>
   );
 }
 

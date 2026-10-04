@@ -1,4 +1,5 @@
 import {
+  type AttachmentView,
   type ClientMessage,
   ClientMessage as ClientMessageSchema,
   type SessionEvent,
@@ -177,10 +178,15 @@ export class Connection {
     // already handles, so opening a session cold looks like any other update.
     this.send({ type: "session", session });
 
+    // A tool's screenshots go by reference even live: a turn that checks its
+    // work after every edit would otherwise push each one down the socket,
+    // and into the phone's on-disk cache, as base64. A prompt's attachments
+    // stay inline — the sender wants to see what they just sent at once.
+    const live = (evt: SessionEvent) => (lazyAttachments && evt.kind === "tool_result" ? withAttachmentRefs(evt) : evt);
     let buffer: SessionEvent[] | null = [];
     const off = this.manager.events.subscribe(sessionId, (evt) => {
       if (buffer) buffer.push(evt);
-      else this.send({ type: "event", event: evt });
+      else this.send({ type: "event", event: live(evt) });
     });
     this.subs.set(sessionId, off);
 
@@ -192,7 +198,7 @@ export class Connection {
 
     const buffered = buffer;
     buffer = null; // switch to live pass-through
-    for (const evt of buffered) if (evt.seq > upTo) this.send({ type: "event", event: evt });
+    for (const evt of buffered) if (evt.seq > upTo) this.send({ type: "event", event: live(evt) });
   }
 
   private unsubscribe(sessionId: string): void {
@@ -225,14 +231,16 @@ export class Connection {
  * and the sender wants to see it at once.
  */
 export function withAttachmentRefs(e: SessionEvent): SessionEvent {
-  if (e.kind !== "prompt_submitted" || !e.attachments?.length) return e;
-  return {
-    ...e,
-    attachments: e.attachments.map((a, i) => ({
+  const refs = (list: AttachmentView[]) =>
+    list.map((a, i) => ({
       name: a.name,
       mediaType: a.mediaType,
       data: "",
       ref: `/sessions/${encodeURIComponent(e.sessionId)}/attachments/${e.seq}/${i}`,
-    })),
-  };
+    }));
+  if (e.kind === "prompt_submitted" && e.attachments?.length) return { ...e, attachments: refs(e.attachments) };
+  // A tool's images too: a session that screenshots its work as it goes
+  // would otherwise replay every one of them.
+  if (e.kind === "tool_result" && e.images?.length) return { ...e, images: refs(e.images) };
+  return e;
 }

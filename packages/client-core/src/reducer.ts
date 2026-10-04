@@ -1,4 +1,4 @@
-import type { Attachment, SessionComposer, SessionEvent, SessionStatus } from "@renki/protocol";
+import type { Attachment, AttachmentView, SessionComposer, SessionEvent, SessionStatus } from "@renki/protocol";
 
 /**
  * The event-log → view-state reducer. This is the piece that makes every client
@@ -32,7 +32,8 @@ export type BlockView =
       toolUseId: string;
       toolName: string;
       toolInput: unknown;
-      result: { ok: boolean; summary: string } | null;
+      /** `images`: what the tool showed Claude — a screenshot, an image it Read. */
+      result: { ok: boolean; summary: string; images?: AttachmentView[] } | null;
       /** Present only for a Task call once its subagent starts forwarding activity. */
       subagent?: SubagentView;
       /**
@@ -191,7 +192,8 @@ export function restoreBlockGaps(state: ConversationState): ConversationState {
  */
 // 2: copies cached by v1 could hold a gap — a catch-up that failed to fold
 // was skipped while later live events still applied — so they're dropped.
-export const CONVERSATION_CACHE_VERSION = 2;
+// 3: tool results carry their images; older copies folded them away.
+export const CONVERSATION_CACHE_VERSION = 3;
 
 export function initialConversation(sessionId: string): ConversationState {
   return {
@@ -320,7 +322,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
     case "tool_result":
       s.timeline = updateTurn(s.timeline, subagentTurnId(s.timeline, e.turnId, e.toolUseId), (turn) => ({
         ...turn,
-        blocks: applyToolResult(turn.blocks, e.toolUseId, e.ok, e.summary),
+        blocks: applyToolResult(turn.blocks, e.toolUseId, { ok: e.ok, summary: e.summary, ...(e.images?.length ? { images: e.images } : {}) }),
       }));
       return s;
 
@@ -598,14 +600,16 @@ function updateSubagentBlocks(
  * Task's own subagent "done" too: its tool_result arriving means the
  * subagent has nothing left to forward.
  */
-function applyToolResult(blocks: BlockView[], toolUseId: string, ok: boolean, summary: string): BlockView[] {
+type ToolResultView = NonNullable<Extract<BlockView, { kind: "tool_use" }>["result"]>;
+
+function applyToolResult(blocks: BlockView[], toolUseId: string, result: ToolResultView): BlockView[] {
   return blocks.map((b) => {
     if (b?.kind !== "tool_use") return b;
     if (b.toolUseId === toolUseId) {
-      return { ...b, result: { ok, summary }, subagent: b.subagent ? { ...b.subagent, status: "done" as const } : b.subagent };
+      return { ...b, result, subagent: b.subagent ? { ...b.subagent, status: "done" as const } : b.subagent };
     }
     if (b.subagent) {
-      return { ...b, subagent: { ...b.subagent, blocks: applyToolResult(b.subagent.blocks, toolUseId, ok, summary) } };
+      return { ...b, subagent: { ...b.subagent, blocks: applyToolResult(b.subagent.blocks, toolUseId, result) } };
     }
     return b;
   });

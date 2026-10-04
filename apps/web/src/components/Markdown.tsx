@@ -1,7 +1,9 @@
-import { memo } from "react";
+import { type ComponentProps, memo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Collapsible } from "./ui.js";
+import { parseFileLink } from "@renki/client-core";
+import { useFileLinkTarget } from "../lib/fileLinks.js";
 
 /**
  * Renders assistant text as GitHub-flavored Markdown, themed to match the dark
@@ -59,6 +61,42 @@ function hastText(node: unknown): string {
   return (n.children ?? []).map(hastText).join("");
 }
 
+/**
+ * Every link in rendered Markdown goes through here — the one place to
+ * intercept particular hrefs (say, local file paths) before they fall through
+ * to opening in a new tab.
+ */
+function MarkdownLink(p: ComponentProps<"a">) {
+  const fileTarget = useFileLinkTarget();
+  // A link to a file in the session's working tree (`[notes.md](notes.md)`,
+  // `src/foo.ts#L42`, an absolute path inside the worktree) opens in the Files
+  // panel. Without a panel to open it in, it stays inert text — following it
+  // would only load a broken page relative to the web app's own URL.
+  const file = parseFileLink(p.href, fileTarget?.worktreePath ?? null, fileTarget?.fromDir);
+  if (file && fileTarget) {
+    const { onOpenFile } = fileTarget;
+    return (
+      <a
+        {...p}
+        className="cursor-pointer text-(--renki-link) underline underline-offset-2 hover:opacity-80"
+        title={file.line ? `Open ${file.path} at line ${file.line}` : `Open ${file.path}`}
+        onClick={(e) => {
+          e.preventDefault();
+          onOpenFile(file.path, file.line);
+        }}
+        // Middle-click would open the raw relative href in a new tab — a broken page.
+        onAuxClick={(e) => e.preventDefault()}
+      />
+    );
+  }
+  const href = p.href ?? "";
+  const isUrl = /^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("#") || href.startsWith("//");
+  if (file || (href && !isUrl)) {
+    return <span title={href}>{p.children}</span>;
+  }
+  return <a className="text-(--renki-link) underline underline-offset-2 hover:opacity-80" target="_blank" rel="noreferrer" {...p} />;
+}
+
 const components: Components = {
   h1: ({ node, ...p }) => <h1 className="text-base font-semibold text-(--renki-fg)" {...p} />,
   h2: ({ node, ...p }) => <h2 className="text-sm font-semibold text-(--renki-fg)" {...p} />,
@@ -68,9 +106,7 @@ const components: Components = {
   ul: ({ node, ...p }) => <ul className="list-disc space-y-1 pl-5 marker:text-(--renki-fg-muted)" {...p} />,
   ol: ({ node, ...p }) => <ol className="list-decimal space-y-1 pl-5 marker:text-(--renki-fg-muted)" {...p} />,
   li: ({ node, ...p }) => <li className="leading-relaxed [&>ul]:mt-1 [&>ol]:mt-1" {...p} />,
-  a: ({ node, ...p }) => (
-    <a className="text-(--renki-link) underline underline-offset-2 hover:opacity-80" target="_blank" rel="noreferrer" {...p} />
-  ),
+  a: ({ node, ...p }) => <MarkdownLink {...p} />,
   strong: ({ node, ...p }) => <strong className="font-semibold text-(--renki-fg)" {...p} />,
   em: ({ node, ...p }) => <em className="italic" {...p} />,
   del: ({ node, ...p }) => <del className="text-(--renki-fg-muted) line-through" {...p} />,
@@ -90,13 +126,17 @@ const components: Components = {
       />
     </Collapsible>
   ),
+  // Tables like the Claude app's: a rounded frame, a semibold header, only
+  // horizontal rules between rows (each body cell's top border), body-size
+  // text. The frame scrolls sideways rather than crushing columns: cells keep
+  // a minimum width, so a wide table overflows instead of wrapping to slivers.
   table: ({ node, ...p }) => (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-xs" {...p} />
+    <div className="overflow-x-auto rounded-[10px] border border-(--renki-border)">
+      <table className="w-full border-collapse text-left" {...p} />
     </div>
   ),
-  th: ({ node, ...p }) => <th className="border border-(--renki-border) px-2 py-1 text-left font-semibold text-(--renki-fg)" {...p} />,
-  td: ({ node, ...p }) => <td className="border border-(--renki-border) px-2 py-1 align-top" {...p} />,
+  th: ({ node, ...p }) => <th className="min-w-28 px-3 py-2 text-left align-top font-semibold text-(--renki-fg)" {...p} />,
+  td: ({ node, ...p }) => <td className="min-w-28 border-t border-(--renki-border) px-3 py-2 align-top" {...p} />,
 };
 
 export const Markdown = memo(function Markdown({

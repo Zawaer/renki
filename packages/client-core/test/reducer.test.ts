@@ -205,6 +205,16 @@ describe("per-event folding", () => {
     });
   });
 
+  it("a tool_result's images land on the block's result", () => {
+    const shot = { name: "image-1.png", mediaType: "image/png" as const, data: "", ref: "/sessions/s_test/attachments/1/0" };
+    const s = fold(stream(
+      { kind: "assistant_block", turnId: TURN, blockIndex: 0, blockKind: "tool_use", text: null, toolUseId: "tu_1", toolName: "mcp__browser__screenshot", toolInput: {} },
+      { kind: "tool_result", turnId: TURN, toolUseId: "tu_1", ok: true, summary: "", images: [shot] },
+    ));
+    const turn = (s.timeline[0] as any).turn;
+    expect(turn.blocks[0].result).toEqual({ ok: true, summary: "", images: [shot] });
+  });
+
   it("a tool_result for an unknown toolUseId attaches to nothing", () => {
     const s = fold(stream(
       { kind: "assistant_block", turnId: TURN, blockIndex: 0, blockKind: "tool_use", text: null, toolUseId: "tu_1", toolName: "Bash", toolInput: {} },

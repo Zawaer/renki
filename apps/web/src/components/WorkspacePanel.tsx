@@ -1,11 +1,19 @@
 import { RestError } from "@renki/client-core";
 import type { WorkspaceChangesResponse, WorkspaceDirResponse, WorkspaceFileChange, WorkspaceFileResponse } from "@renki/protocol";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useClient } from "../lib/client.js";
+import { FileLinkContext } from "../lib/fileLinks.js";
 import { Markdown } from "./Markdown.js";
 import { Skeleton } from "./ui.js";
 
 export type WorkspaceTab = "changes" | "files";
+
+/**
+ * Ask the Files tab to show one file (say, one a reply linked to), optionally
+ * scrolled to a line. `nonce` makes clicking the same link twice open it again
+ * after the reader has navigated away.
+ */
+export type FileOpenRequest = { path: string; line?: number; nonce: number };
 
 /**
  * The side panel beside a session: what it has changed relative to its base
@@ -21,12 +29,15 @@ export function WorkspacePanel({
   onTab,
   onClose,
   refreshKey,
+  openRequest = null,
 }: {
   sessionId: string;
   tab: WorkspaceTab;
   onTab: (tab: WorkspaceTab) => void;
   onClose: () => void;
   refreshKey: unknown;
+  /** A file to open in the Files tab, e.g. from a link in the transcript. */
+  openRequest?: FileOpenRequest | null;
 }) {
   return (
     <aside
@@ -50,7 +61,7 @@ export function WorkspacePanel({
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {tab === "changes" ? <ChangesTab sessionId={sessionId} refreshKey={refreshKey} /> : <FilesTab sessionId={sessionId} />}
+        {tab === "changes" ? <ChangesTab sessionId={sessionId} refreshKey={refreshKey} /> : <FilesTab sessionId={sessionId} openRequest={openRequest} />}
       </div>
     </aside>
   );
@@ -262,13 +273,30 @@ function UnifiedDiff({ patch, truncated }: { patch: string; truncated: boolean }
   );
 }
 
-function FilesTab({ sessionId }: { sessionId: string }) {
+function FilesTab({ sessionId, openRequest }: { sessionId: string; openRequest: FileOpenRequest | null }) {
   const { rest } = useClient();
-  const [dir, setDir] = useState("");
+  const [dir, setDir] = useState(() => (openRequest ? dirOf(openRequest.path) : ""));
   const [listing, setListing] = useState<WorkspaceDirResponse | null>(null);
   const [file, setFile] = useState<WorkspaceFileResponse | null>(null);
-  const [openFile, setOpenFile] = useState<string | null>(null);
+  const [openFile, setOpenFile] = useState<string | null>(openRequest?.path ?? null);
+  /** The line to scroll to and highlight in the open file, if it was opened at one. */
+  const [line, setLine] = useState<number | undefined>(openRequest?.line);
   const [error, setError] = useState<string | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+
+  const open = useCallback((path: string, at?: number) => {
+    setDir(dirOf(path));
+    setOpenFile(path);
+    setLine(at);
+  }, []);
+
+  // A link elsewhere asked for a file: show it (also when it's already open, to re-scroll).
+  const lastNonce = useRef(openRequest?.nonce);
+  useEffect(() => {
+    if (!openRequest || openRequest.nonce === lastNonce.current) return;
+    lastNonce.current = openRequest.nonce;
+    open(openRequest.path, openRequest.line);
+  }, [openRequest, open]);
 
   useEffect(() => {
     let live = true;
@@ -290,10 +318,11 @@ function FilesTab({ sessionId }: { sessionId: string }) {
     if (!openFile) return;
     let live = true;
     setFile(null);
+    setFileError(null);
     rest
       .readWorkspaceFile(sessionId, openFile)
       .then((f) => live && setFile(f))
-      .catch((err) => live && setError(failureText(err)));
+      .catch((err) => live && setFileError(failureText(err)));
     return () => {
       live = false;
     };
@@ -303,7 +332,6 @@ function FilesTab({ sessionId }: { sessionId: string }) {
   const join = (name: string) => (dir ? `${dir}/${name}` : name);
 
   if (openFile) {
-    const isMarkdown = /\.(md|markdown|mdx)$/i.test(openFile);
     return (
       <div className="text-xs">
         <div className="flex items-center gap-2 border-b border-(--renki-border)/60 px-4 py-2.5">
@@ -320,24 +348,19 @@ function FilesTab({ sessionId }: { sessionId: string }) {
           </span>
           {file && <span className="ml-auto shrink-0 text-(--renki-fg-muted)">{formatBytes(file.size)}</span>}
         </div>
-        {error ? (
-          <PanelNote>{error}</PanelNote>
+        {fileError ? (
+          <PanelNote>{fileError}</PanelNote>
         ) : !file ? (
           <PanelSkeleton />
         ) : file.binary ? (
           <PanelNote>Binary file — nothing to show as text.</PanelNote>
-        ) : isMarkdown ? (
-          <div className="px-5 py-4 text-[14px]">
-            <Markdown content={file.content ?? ""} />
-          </div>
         ) : (
-          <pre className="overflow-x-auto px-4 py-3 font-mono text-[12px] leading-5 text-(--renki-fg)">{file.content}</pre>
+          <FileViewer key={openFile} path={openFile} content={file.content ?? ""} line={line} onOpenFile={open} />
         )}
         {file?.truncated && <PanelNote>Only the first 512 KB is shown.</PanelNote>}
       </div>
     );
   }
-
   return (
     <div className="text-xs">
       <div className="flex flex-wrap items-center gap-1 px-4 py-3 font-mono text-[12px] text-(--renki-fg-muted)">
@@ -382,6 +405,96 @@ function FilesTab({ sessionId }: { sessionId: string }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** The worktree-relative folder a path sits in ("" for the root). */
+function dirOf(path: string): string {
+  const slash = path.lastIndexOf("/");
+  return slash === -1 ? "" : path.slice(0, slash);
+}
+
+/**
+ * One file's text. Markdown renders as Markdown, with a toggle to its source
+ * (and its own relative links open their targets here); anything else is
+ * shown with line numbers. Opened at a line, the source view scrolls it into
+ * the middle of the panel and highlights it.
+ */
+function FileViewer({
+  path,
+  content,
+  line,
+  onOpenFile,
+}: {
+  path: string;
+  content: string;
+  line?: number;
+  onOpenFile: (path: string, line?: number) => void;
+}) {
+  const isMarkdown = /\.(md|markdown|mdx)$/i.test(path);
+  // A link to a particular line wants the source, where that line is visible.
+  const [rendered, setRendered] = useState(isMarkdown && !line);
+  useEffect(() => {
+    if (line) setRendered(false);
+  }, [line]);
+  const lineRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (line && !rendered) lineRef.current?.scrollIntoView({ block: "center" });
+  }, [line, rendered, content]);
+
+  const lines = content.endsWith("\n") ? content.slice(0, -1).split("\n") : content.split("\n");
+  const gutter = String(lines.length).length;
+  return (
+    <>
+      {isMarkdown && (
+        <div className="flex justify-end px-4 pt-2.5">
+          <div className="inline-flex rounded-md border border-(--renki-border) p-0.5 text-[11.5px]">
+            {(["Preview", "Source"] as const).map((label) => {
+              const active = (label === "Preview") === rendered;
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setRendered(label === "Preview")}
+                  className={`rounded px-2 py-0.5 ${active ? "bg-(--renki-surface) text-(--renki-fg)" : "text-(--renki-fg-muted) hover:text-(--renki-fg)"}`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {rendered ? (
+        <FileLinkContext.Provider value={{ worktreePath: null, fromDir: dirOf(path), onOpenFile }}>
+          <div className="px-5 py-4 text-[14px]">
+            <Markdown content={content} />
+          </div>
+        </FileLinkContext.Provider>
+      ) : (
+        <div className="overflow-x-auto py-3 font-mono text-[12px] leading-5 text-(--renki-fg)">
+          <div className="min-w-max">
+            {lines.map((text, i) => {
+              const n = i + 1;
+              const hit = n === line;
+              return (
+                <div key={i} ref={hit ? lineRef : undefined} className={`flex ${hit ? "bg-(--renki-warning)/15" : ""}`}>
+                  <span
+                    className={`sticky left-0 shrink-0 select-none bg-(--renki-bg) pr-3 pl-4 text-right ${hit ? "text-(--renki-fg)" : "text-(--renki-fg-muted)/70"}`}
+                    style={{ minWidth: `calc(${gutter}ch + 1.75rem)` }}
+                  >
+                    {n}
+                  </span>
+                  <span className="whitespace-pre pr-4">{text || " "}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

@@ -1,5 +1,6 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { MAX_ATTACHMENT_BYTES } from "@renki/protocol";
 import type { Attachment, CapabilitiesResponse, EventPayload, PermissionDecision } from "@renki/protocol";
 import { logger } from "../logger.js";
 
@@ -335,8 +336,37 @@ export function handleToolResults(message: unknown, turnId: string, emit: (p: Ev
       toolUseId: String(block.tool_use_id ?? ""),
       ok: block.is_error !== true,
       summary: summarizeToolResult(block.content),
+      ...withImages(toolResultImages(block.content)),
     });
   }
+}
+
+const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+const IMAGE_EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" };
+
+/**
+ * The images in a tool result — a screenshot, a PNG Claude Read — as
+ * attachments the clients can show. Both shapes appear: the Messages API's
+ * `{ source: { type: "base64", media_type, data } }`, and an MCP server's own
+ * `{ data, mimeType }` when the SDK passes it through. One too big to ship is
+ * skipped rather than truncated; Claude still has it either way.
+ */
+export function toolResultImages(content: unknown): Attachment[] {
+  if (!Array.isArray(content)) return [];
+  const out: Attachment[] = [];
+  for (const c of content as any[]) {
+    if (c?.type !== "image") continue;
+    const mediaType = c.source?.type === "base64" ? c.source.media_type : c.mimeType;
+    const data = c.source?.type === "base64" ? c.source.data : c.data;
+    if (!IMAGE_TYPES.has(mediaType) || typeof data !== "string" || !data) continue;
+    if (Math.floor((data.length * 3) / 4) > MAX_ATTACHMENT_BYTES) continue;
+    out.push({ name: `image-${out.length + 1}.${IMAGE_EXT[mediaType]}`, mediaType, data });
+  }
+  return out;
+}
+
+function withImages(images: Attachment[]): { images?: Attachment[] } {
+  return images.length > 0 ? { images } : {};
 }
 
 function summarizeToolResult(content: unknown): string {

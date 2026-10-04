@@ -37,8 +37,9 @@ import {
   turnFileChanges,
   modelFullName,
   modelMenuLabel,
+  segmentImages,
 } from "@renki/client-core";
-import type { CapabilitiesResponse, SessionResume } from "@renki/protocol";
+import type { AttachmentView, CapabilitiesResponse, SessionResume } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -62,6 +63,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Markdown, StreamingMarkdown } from "../components/Markdown";
 import { FadeIn, Skeleton, animateLayout } from "../components/Motion";
 import { Sheet } from "../components/Sheet";
+import { FileSheet, type OpenFile } from "../components/FileSheet";
+import { FileLinkContext, type FileLinkTarget } from "../lib/fileLinks";
 import { pickDocumentAttachments, pickImageAttachments, type PendingAttachment } from "../lib/attachments";
 import { loadDeviceDefaults, rememberDeviceDefaults } from "../lib/composerPrefs";
 import { useClient, useStoreValue } from "../lib/client";
@@ -196,12 +199,35 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
 
   /** A turn paused on a usage limit — only on the session snapshot, not in the event log. */
   const [resume, setResume] = useState<SessionResume | null>(null);
+  /** The worktree's absolute path, so a reply's absolute file links can be mapped into it. */
+  const [worktreePath, setWorktreePath] = useState<string | null>(null);
+  /** Repo and branch as the session's row has them now — a session can be moved into a repo after it started (see the web's SessionView). */
+  const [place, setPlace] = useState<{ repoName: string; branch: string | null } | null>(null);
   useEffect(() => {
     setResume(null);
+    setWorktreePath(null);
+    setPlace(null);
     return realtime.onSessionChanged((s) => {
-      if (s.id === sessionId) setResume(s.resume ?? null);
+      if (s.id !== sessionId) return;
+      setResume(s.resume ?? null);
+      setWorktreePath(s.worktreePath);
+      setPlace({ repoName: s.repoName, branch: s.branch });
     });
   }, [realtime, sessionId]);
+  const repoName = place?.repoName ?? conv.repoName;
+  const branch = place ? place.branch : conv.branch;
+
+  /**
+   * A file a reply linked to, shown in a sheet. Links only open files while
+   * the session still has its working tree; otherwise they're inert.
+   */
+  const [openFile, setOpenFile] = useState<OpenFile | null>(null);
+  useEffect(() => setOpenFile(null), [sessionId]);
+  const hasTree = !!branch && conv.status !== "archived" && conv.status !== "trashed";
+  const fileLinks = useMemo<FileLinkTarget | null>(
+    () => (hasTree ? { worktreePath, onOpenFile: (path, line) => setOpenFile({ path, line }) } : null),
+    [hasTree, worktreePath],
+  );
   // Re-render every 30s so "today 15:31" turns into "shortly" on time.
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -309,6 +335,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const modelLabel = selectedModel ? modelFullName(selectedModel) : "Default";
 
   return (
+    <FileLinkContext.Provider value={fileLinks}>
     <KeyboardAvoidingView
       style={[styles.fill, { paddingTop: insets.top + 10 }]}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -321,8 +348,8 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle} numberOfLines={1}>
-            {conv.repoName ?? "…"}
-            {conv.branch ? `:${conv.branch}` : ""}
+            {repoName ?? "…"}
+            {branch ? `:${branch}` : ""}
           </Text>
           <Text style={styles.headerSub}>
             {connection !== "open" && conv.status !== null ? (
@@ -621,7 +648,9 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
       />
 
       <ImagePreviewModal attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} />
+      <FileSheet sessionId={sessionId} file={openFile} onClose={() => setOpenFile(null)} />
     </KeyboardAvoidingView>
+    </FileLinkContext.Provider>
   );
 }
 
@@ -730,6 +759,51 @@ function ImagePreviewModal({ attachment, onClose }: { attachment: Attachment | n
         </TouchableOpacity>
       </TouchableOpacity>
     </Modal>
+  );
+}
+
+/**
+ * Images a tool handed back to Claude (a screenshot it took, a PNG it Read),
+ * shown under the step outside its fold so progress is visible at a glance.
+ */
+function ToolImages({ images, styles }: { images: AttachmentView[]; styles: Styles }) {
+  const [previewing, setPreviewing] = useState<AttachmentView | null>(null);
+  if (images.length === 0) return null;
+  const thumbs = images.map((img, i) => <ToolImageThumb key={i} image={img} styles={styles} onPress={() => setPreviewing(img)} />);
+  return (
+    <>
+      {images.length === 1 ? (
+        <View style={styles.toolImageRow}>{thumbs}</View>
+      ) : (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.toolImageRow}>
+          {thumbs}
+        </ScrollView>
+      )}
+      <ImagePreviewModal attachment={previewing} onClose={() => setPreviewing(null)} />
+    </>
+  );
+}
+
+const TOOL_IMAGE_HEIGHT = 160;
+
+/** One thumbnail, sized to the image's own aspect ratio once it loads. */
+function ToolImageThumb({ image, styles, onPress }: { image: AttachmentView; styles: Styles; onPress: () => void }) {
+  const { config } = useClient();
+  const [aspect, setAspect] = useState(4 / 3);
+  const width = Math.min(TOOL_IMAGE_HEIGHT * aspect, 280);
+  return (
+    <TouchableOpacity activeOpacity={0.8} onPress={onPress} style={styles.toolImageThumb}>
+      <Image
+        source={attachmentSource(image, config)}
+        style={{ width, height: TOOL_IMAGE_HEIGHT }}
+        resizeMode="contain"
+        accessibilityLabel={image.name}
+        onLoad={(e) => {
+          const { width: w, height: h } = e.nativeEvent.source;
+          if (w > 0 && h > 0) setAspect(w / h);
+        }}
+      />
+    </TouchableOpacity>
   );
 }
 
@@ -922,6 +996,7 @@ function AssistantTurn({ turn, colors, styles }: { turn: TurnView; colors: Theme
             ) : (
               <Block block={seg.block} colors={colors} styles={styles} turnRunning={turn.status === "running"} />
             )}
+            <ToolImages images={segmentImages(seg)} styles={styles} />
             {steeredAfter(last).map((p) => (
               <SteeredPrompt key={p.promptId} prompt={p} styles={styles} />
             ))}
@@ -1214,20 +1289,22 @@ function SubagentActivity({ subagent, colors, styles }: { subagent: SubagentView
       </TouchableOpacity>
       {expanded && (
         <View style={styles.subagentBody}>
-          {groupTurnBlocks(subagent.blocks).map((seg) =>
-            seg.kind === "group" ? (
-              <ToolGroup
-                key={`g${seg.items[0]!.index}`}
-                items={seg.items}
-                summary={seg.summary}
-                colors={colors}
-                styles={styles}
-                turnRunning={subagent.status === "running"}
-              />
-            ) : (
-              <Block key={seg.index} block={seg.block} colors={colors} styles={styles} turnRunning={subagent.status === "running"} />
-            ),
-          )}
+          {groupTurnBlocks(subagent.blocks).map((seg) => (
+            <Fragment key={seg.kind === "group" ? `g${seg.items[0]!.index}` : seg.index}>
+              {seg.kind === "group" ? (
+                <ToolGroup
+                  items={seg.items}
+                  summary={seg.summary}
+                  colors={colors}
+                  styles={styles}
+                  turnRunning={subagent.status === "running"}
+                />
+              ) : (
+                <Block block={seg.block} colors={colors} styles={styles} turnRunning={subagent.status === "running"} />
+              )}
+              <ToolImages images={segmentImages(seg)} styles={styles} />
+            </Fragment>
+          ))}
         </View>
       )}
     </View>
@@ -1693,6 +1770,14 @@ const makeStyles = (colors: ThemeColors) =>
       maxWidth: 160,
     },
     attachThumb: { width: 20, height: 20, borderRadius: radius.xs },
+    toolImageRow: { flexDirection: "row", gap: 8 },
+    toolImageThumb: {
+      borderRadius: radius.sm,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      backgroundColor: colors.inset,
+      overflow: "hidden",
+    },
     attachName: { flex: 1, color: colors.text, fontSize: 11 },
     attachError: { color: colors.danger, fontSize: 12, paddingHorizontal: 16, paddingTop: 4 },
     pickerList: { paddingHorizontal: 14, gap: 8, paddingBottom: 8 },

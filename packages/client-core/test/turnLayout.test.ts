@@ -1,7 +1,7 @@
 import type { Session } from "@renki/protocol";
 import { describe, expect, it } from "vitest";
 import type { BlockView, TimelineItem, TurnView } from "../src/reducer.js";
-import { backgroundTasksOf, groupTurnBlocks, sessionsNeedingAttention, summarizeSteps, turnFileChanges } from "../src/turnLayout.js";
+import { backgroundTasksOf, groupTurnBlocks, segmentImages, sessionsNeedingAttention, summarizeSteps, turnFileChanges } from "../src/turnLayout.js";
 
 const tool = (toolName: string, toolInput: unknown, extra: Partial<Extract<BlockView, { kind: "tool_use" }>> = {}): BlockView => ({
   kind: "tool_use",
@@ -129,5 +129,24 @@ describe("sessionsNeedingAttention", () => {
       ["err", "error"],
       ["paused", "paused"],
     ]);
+  });
+});
+
+describe("segmentImages", () => {
+  const shot = (n: number) => ({ name: `image-${n}.png`, mediaType: "image/png" as const, data: "AAAA" });
+
+  it("collects the images of every call in a group, in order", () => {
+    const segs = groupTurnBlocks([
+      tool("Bash", { command: "ls" }),
+      tool("Read", { file_path: "/a.png" }, { result: { ok: true, summary: "", images: [shot(1)] } }),
+      tool("Read", { file_path: "/b.png" }, { result: { ok: true, summary: "", images: [shot(2), shot(3)] } }),
+    ]);
+    expect(segs).toHaveLength(1);
+    expect(segmentImages(segs[0]!).map((i) => i.name)).toEqual(["image-1.png", "image-2.png", "image-3.png"]);
+  });
+
+  it("finds none on text, a call without images, or one still running", () => {
+    const segs = groupTurnBlocks([text("hi"), tool("Bash", { command: "ls" }), text("x"), tool("Bash", { command: "ls" }, { result: null })]);
+    expect(segs.flatMap(segmentImages)).toEqual([]);
   });
 });

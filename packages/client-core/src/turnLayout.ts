@@ -1,4 +1,4 @@
-import type { Session } from "@renki/protocol";
+import type { AttachmentView, Session } from "@renki/protocol";
 import type { BlockView, TimelineItem, TurnView } from "./reducer.js";
 import { type EditToolView, describeTool, parseEditView } from "./toolViews.js";
 
@@ -65,6 +65,16 @@ export function groupTurnBlocks(blocks: BlockView[], breakAfter: ReadonlySet<num
   });
   flush();
   return out;
+}
+
+/**
+ * The images a segment's tools returned — screenshots Claude took to check
+ * its work, images it Read — in order. Clients show them under the segment,
+ * outside a folded group, so the progress is visible without opening it.
+ */
+export function segmentImages(seg: TurnSegment): AttachmentView[] {
+  const blocks = seg.kind === "group" ? seg.items.map((it) => it.block) : [seg.block];
+  return blocks.flatMap((b) => (b.kind === "tool_use" ? (b.result?.images ?? []) : []));
 }
 
 export type StepSummary = {

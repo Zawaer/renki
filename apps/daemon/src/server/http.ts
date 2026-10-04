@@ -237,8 +237,8 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
   // answer "not available" rather than an error.
 
   /**
-   * One attachment's bytes, for a replay that sent it as a reference (see
-   * AttachmentView). Immutable — an event never changes — so it can be cached
+   * One attachment's bytes — a prompt's, or an image a tool returned — for a
+   * replay that sent it as a reference (see AttachmentView). Immutable — an event never changes — so it can be cached
    * for good. The session must still exist; a purged one took its log along.
    */
   app.get<{ Params: { id: string; seq: string; index: string } }>(
@@ -250,7 +250,8 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
         return sendSessionError(reply, err);
       }
       const e = manager.events.get(req.params.id, Number(req.params.seq));
-      const a = e?.kind === "prompt_submitted" ? e.attachments?.[Number(req.params.index)] : undefined;
+      const list = e?.kind === "prompt_submitted" ? e.attachments : e?.kind === "tool_result" ? e.images : undefined;
+      const a = list?.[Number(req.params.index)];
       if (!a?.data) return reply.code(404).send({ error: "not_found" });
       return reply
         .header("content-type", a.mediaType)

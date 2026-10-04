@@ -528,6 +528,30 @@ describe("WebSocket: lazy attachments", () => {
     expect(replay.events.find((x: { kind: string }) => x.kind === "prompt_submitted").attachments[0].data).toBe(png);
     ws.close();
   });
+
+  it("replays a tool result's images as references too, and serves their bytes", async () => {
+    const { base, wsBase, config, manager } = await startServer();
+    const s = await manager.createSession({});
+    const e = manager.events.append(s.id, {
+      kind: "tool_result",
+      turnId: "t1",
+      toolUseId: "tu1",
+      ok: true,
+      summary: "",
+      images: [{ name: "image-1.png", mediaType: "image/png", data: png }],
+    });
+
+    const { ws, bus } = await connectWs(wsBase, `deviceId=d1&token=${config.authToken}`);
+    ws.send(JSON.stringify({ type: "subscribe", sessionId: s.id, lastSeq: -1, lazyAttachments: true }));
+    const replay = await bus.next((m) => m.type === "replay");
+    const result = replay.events.find((x: { kind: string }) => x.kind === "tool_result");
+    expect(result.images).toEqual([{ name: "image-1.png", mediaType: "image/png", data: "", ref: `/sessions/${s.id}/attachments/${e.seq}/0` }]);
+
+    const res = await authedFetch(base, config.authToken)(result.images[0].ref);
+    expect(res.headers.get("content-type")).toBe("image/png");
+    expect(Buffer.from(await res.arrayBuffer()).toString("base64")).toBe(png);
+    ws.close();
+  });
 });
 
 describe("REST: answering a permission from a notification", () => {

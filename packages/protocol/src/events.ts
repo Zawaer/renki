@@ -153,6 +153,13 @@ const payloads = [
     toolUseId: z.string(),
     ok: z.boolean(),
     summary: z.string(),
+    /**
+     * Images the tool handed back to Claude — a screenshot it took, a PNG it
+     * Read — so the user sees what Claude saw. Already in the model's
+     * context, so showing them costs no tokens. Lazy on replay, like a
+     * prompt's attachments (see AttachmentView).
+     */
+    images: z.array(AttachmentView).optional(),
   }),
 
   /**

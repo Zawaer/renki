@@ -6,6 +6,8 @@ import {
   handleStreamEvent,
   singlePromptStream,
   summarizeResultError,
+  handleToolResults,
+  toolResultImages,
 } from "../src/claude/runner.js";
 
 async function firstMessage(text: string, attachments?: Attachment[]) {
@@ -307,5 +309,44 @@ describe("thinking block duration", () => {
     const blockKinds = new Map<number, "text" | "thinking" | "tool_use">([[0, "thinking"]]);
     handleAssistantMessage({ content: [{ type: "thinking", thinking: "x" }] }, "t1", blockKinds, 0, { parentToolUseId: null }, (p) => events.push(p));
     expect((events[0] as { durationMs?: number }).durationMs).toBeUndefined();
+  });
+});
+
+describe("tool result images", () => {
+  it("reads the Messages API shape and an MCP server's own shape, skipping unsupported types", () => {
+    expect(
+      toolResultImages([
+        { type: "text", text: "here" },
+        { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } },
+        { type: "image", data: "BBBB", mimeType: "image/jpeg" },
+        { type: "image", data: "CCCC", mimeType: "image/svg+xml" },
+        { type: "image", source: { type: "url", url: "https://example.com/x.png" } },
+        { type: "image", source: { type: "base64", media_type: "image/webp", data: "" } },
+      ]),
+    ).toEqual([
+      { name: "image-1.png", mediaType: "image/png", data: "AAAA" },
+      { name: "image-2.jpg", mediaType: "image/jpeg", data: "BBBB" },
+    ]);
+  });
+
+  it("finds none in plain text content", () => {
+    expect(toolResultImages("just text")).toEqual([]);
+    expect(toolResultImages(undefined)).toEqual([]);
+  });
+
+  it("puts them on the tool_result event, and leaves the field off when there are none", () => {
+    const events: EventPayload[] = [];
+    handleToolResults(
+      {
+        content: [
+          { type: "tool_result", tool_use_id: "a", content: [{ type: "image", data: "AAAA", mimeType: "image/png" }] },
+          { type: "tool_result", tool_use_id: "b", content: "ok" },
+        ],
+      },
+      "t1",
+      (p) => events.push(p),
+    );
+    expect(events[0]).toMatchObject({ kind: "tool_result", toolUseId: "a", images: [{ name: "image-1.png", mediaType: "image/png", data: "AAAA" }] });
+    expect(events[1]).not.toHaveProperty("images");
   });
 });

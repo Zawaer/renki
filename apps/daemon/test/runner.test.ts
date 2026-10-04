@@ -1,6 +1,7 @@
 import type { Attachment, EventPayload } from "@renki/protocol";
 import { describe, expect, it } from "vitest";
 import {
+  agentUsageOf,
   classifyRateLimit,
   handleAssistantMessage,
   handleStreamEvent,
@@ -348,5 +349,24 @@ describe("tool result images", () => {
     );
     expect(events[0]).toMatchObject({ kind: "tool_result", toolUseId: "a", images: [{ name: "image-1.png", mediaType: "image/png", data: "AAAA" }] });
     expect(events[1]).not.toHaveProperty("images");
+  });
+});
+
+describe("agentUsageOf", () => {
+  it("reads the usage note closing an agent's result, in either spelling", () => {
+    const content = [
+      { type: "text", text: "The answer." },
+      { type: "text", text: "agentId: a1 (use SendMessage)\n<usage>subagent_tokens: 58843\ntool_uses: 24\nduration_ms: 185983</usage>" },
+    ];
+    expect(agentUsageOf(content)).toEqual({ tokens: 58843, toolUses: 24, durationMs: 185983 });
+    expect(agentUsageOf("x <usage>total_tokens: 10\ntool_uses: 1\nduration_ms: 5</usage>")).toEqual({ tokens: 10, toolUses: 1, durationMs: 5 });
+  });
+
+  it("is null without a note, and the tool_result leaves the field off", () => {
+    expect(agentUsageOf("plain output")).toBeNull();
+    expect(agentUsageOf(undefined)).toBeNull();
+    const events: EventPayload[] = [];
+    handleToolResults({ content: [{ type: "tool_result", tool_use_id: "tu", content: "ok" }] }, "t", (e) => events.push(e));
+    expect(events[0]).not.toHaveProperty("agentUsage");
   });
 });

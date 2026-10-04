@@ -1,7 +1,7 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { MAX_ATTACHMENT_BYTES } from "@renki/protocol";
-import type { Attachment, CapabilitiesResponse, EventPayload, PermissionDecision } from "@renki/protocol";
+import type { AgentUsage, Attachment, CapabilitiesResponse, EventPayload, PermissionDecision } from "@renki/protocol";
 import { logger } from "../logger.js";
 
 /**
@@ -337,8 +337,37 @@ export function handleToolResults(message: unknown, turnId: string, emit: (p: Ev
       ok: block.is_error !== true,
       summary: summarizeToolResult(block.content),
       ...withImages(toolResultImages(block.content)),
+      ...withAgentUsage(agentUsageOf(block.content)),
     });
   }
+}
+
+/**
+ * The usage note Claude Code closes an Agent/Task result with —
+ * `<usage>total_tokens: 58843\ntool_uses: 24\nduration_ms: 185983</usage>`
+ * (`subagent_tokens` in newer CLIs). Read from the whole result before the
+ * summary is cut to length, since the note comes last. Null when absent.
+ */
+export function agentUsageOf(content: unknown): AgentUsage | null {
+  const text =
+    typeof content === "string"
+      ? content
+      : Array.isArray(content)
+        ? content.map((c: any) => (typeof c?.text === "string" ? c.text : "")).join("\n")
+        : "";
+  const note = /<usage>([\s\S]*?)<\/usage>/.exec(text)?.[1];
+  if (!note) return null;
+  const num = (re: RegExp) => {
+    const m = re.exec(note);
+    return m ? Number(m[1]) : null;
+  };
+  const tokens = num(/(?:subagent|total)_tokens:\s*(\d+)/);
+  if (tokens == null) return null;
+  return { tokens, toolUses: num(/tool_uses:\s*(\d+)/) ?? 0, durationMs: num(/duration_ms:\s*(\d+)/) ?? 0 };
+}
+
+function withAgentUsage(usage: AgentUsage | null): { agentUsage?: AgentUsage } {
+  return usage ? { agentUsage: usage } : {};
 }
 
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);

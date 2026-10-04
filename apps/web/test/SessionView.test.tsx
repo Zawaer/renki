@@ -611,8 +611,44 @@ describe("SessionView tidy transcript", () => {
   it("gathers background work behind a header button", () => {
     renderSession("s1", [...start, bash(0, { command: "sleep 60", description: "Wait a minute", run_in_background: true }), result(0)]);
     fireEvent.click(screen.getByRole("button", { name: /1 running/ }));
-    expect(screen.getByText("Background tasks")).toBeInTheDocument();
+    expect(screen.getByText("Background commands")).toBeInTheDocument();
     expect(screen.getAllByText("Wait a minute").length).toBeGreaterThan(0);
+  });
+
+  it("shows a nested agent in the transcript from the agent map, opening its parent", async () => {
+    const agent = (i: number, id: string, description: string, parent?: string) =>
+      ev("s1", {
+        kind: "assistant_block",
+        turnId: "t1",
+        blockIndex: i,
+        blockKind: "tool_use",
+        text: null,
+        toolUseId: id,
+        toolName: "Agent",
+        toolInput: { description, subagent_type: "Explore", prompt: "go" },
+        ...(parent ? { parentToolUseId: parent, subagentType: "Explore", taskDescription: "Outer job" } : {}),
+      });
+    renderSession("s1", [
+      ...start,
+      agent(0, "tu_outer", "Outer job"),
+      agent(0, "tu_inner", "Inner job", "tu_outer"),
+      ev("s1", { kind: "tool_result", turnId: "t1", toolUseId: "tu_inner", ok: true, summary: "inner done" }),
+      ev("s1", { kind: "tool_result", turnId: "t1", toolUseId: "tu_outer", ok: true, summary: "outer done" }),
+      finish(),
+    ]);
+    // A finished agent's row rests shut, so the nested one isn't on screen.
+    expect(document.querySelector('[data-tool-use-id="tu_outer"]')).not.toBeNull();
+    expect(document.querySelector('[data-tool-use-id="tu_inner"]')).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "2 agents" }));
+    fireEvent.click(screen.getByRole("button", { name: /Inner job/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Show in transcript/ }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    await new Promise((r) => setTimeout(r, 100));
+    const inner = document.querySelector('[data-tool-use-id="tu_inner"]');
+    expect(inner).not.toBeNull();
+    expect(inner!.querySelector(":scope > button")!.classList.contains("renki-flash")).toBe(true);
   });
 });
 

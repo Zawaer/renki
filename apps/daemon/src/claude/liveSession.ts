@@ -161,6 +161,9 @@ export class InputChannel implements AsyncIterable<SDKUserMessage> {
 /** Injectable for tests: anything that looks enough like the SDK's `query()` to drive the message loop. */
 export type QueryFactory = (params: { prompt: AsyncIterable<SDKUserMessage>; options: Options }) => Query;
 
+/** How often a running agent's progress is logged at most — often enough that its numbers look alive. */
+const AGENT_PROGRESS_EVERY_MS = 5_000;
+
 export class LiveClaudeSession {
   private readonly channel = new InputChannel();
   private readonly q: Query;
@@ -195,6 +198,8 @@ export class LiveClaudeSession {
   private readonly agentTracking = new Map<string, BlockTracking>();
   /** Live background tasks as last reported by the CLI (REPLACE semantics on background_tasks_changed). */
   private backgroundTasks = new Set<string>();
+  /** tool_use id -> when that agent's progress was last logged, so agent_progress stays a trickle (see AGENT_PROGRESS_EVERY_MS). */
+  private readonly agentProgressAt = new Map<string, number>();
   private lastTurnId: string | null = null;
   /**
    * The SDK's `total_cost_usd` is cumulative for the life of the process, not
@@ -574,13 +579,31 @@ export class LiveClaudeSession {
           // background_task's own doc comment in events.ts for why.
           this.backgroundTasks.delete(message.task_id);
           this.taskFinishedSinceResult = true;
+          const usage = message.usage;
+          if (message.tool_use_id) this.agentProgressAt.delete(message.tool_use_id);
           this.opts.emit({
             kind: "background_task",
             taskId: message.task_id,
             toolUseId: message.tool_use_id ?? null,
             status: message.status,
             summary: message.summary,
+            ...(usage ? { usage: { tokens: usage.total_tokens, toolUses: usage.tool_uses, durationMs: usage.duration_ms } } : {}),
           });
+        } else if (message.subtype === "task_progress") {
+          // A running agent's spend, for the agent map. The CLI reports it
+          // after every step; logging each would bloat a long agent's log for
+          // a number that's superseded seconds later, so keep one in a while.
+          const id = message.tool_use_id;
+          const now = Date.now();
+          if (id && now - (this.agentProgressAt.get(id) ?? 0) >= AGENT_PROGRESS_EVERY_MS) {
+            this.agentProgressAt.set(id, now);
+            const u = message.usage;
+            this.opts.emit({
+              kind: "agent_progress",
+              toolUseId: id,
+              usage: { tokens: u.total_tokens, toolUses: u.tool_uses, durationMs: u.duration_ms },
+            });
+          }
         } else if (message.subtype === "background_tasks_changed") {
           this.backgroundTasks = new Set(message.tasks.map((t) => t.task_id));
         } else if (message.subtype === "compact_boundary") {
@@ -596,7 +619,7 @@ export class LiveClaudeSession {
       }
 
       default:
-        // init, task_started, task_progress, status, compact_boundary, etc. — not modeled.
+        // init, task_started, status, etc. — not modeled.
         break;
     }
   }

@@ -459,6 +459,22 @@ input:focus-visible {
   animation: renki-fade-up var(--renki-dur-enter) var(--renki-ease) backwards;
 }
 
+/* A row the agent map just pointed at, so the eye finds it after the scroll. */
+@keyframes renki-flash {
+  0%,
+  60% {
+    background-color: var(--renki-selected);
+    box-shadow: 0 0 0 1px var(--renki-accent);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 1px transparent;
+  }
+}
+.renki-flash {
+  animation: renki-flash 1.5s var(--renki-ease) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .renki-enter,
   .renki-stream-in,

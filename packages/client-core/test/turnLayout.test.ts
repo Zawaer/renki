@@ -1,7 +1,7 @@
 import type { Session } from "@renki/protocol";
 import { describe, expect, it } from "vitest";
 import type { BlockView, TimelineItem, TurnView } from "../src/reducer.js";
-import { backgroundTasksOf, groupTurnBlocks, segmentImages, sessionsNeedingAttention, summarizeSteps, turnFileChanges } from "../src/turnLayout.js";
+import { agentMapOf, backgroundTasksOf, flattenAgents, groupTurnBlocks, segmentImages, sessionsNeedingAttention, summarizeSteps, turnFileChanges } from "../src/turnLayout.js";
 
 const tool = (toolName: string, toolInput: unknown, extra: Partial<Extract<BlockView, { kind: "tool_use" }>> = {}): BlockView => ({
   kind: "tool_use",
@@ -148,5 +148,42 @@ describe("segmentImages", () => {
   it("finds none on text, a call without images, or one still running", () => {
     const segs = groupTurnBlocks([text("hi"), tool("Bash", { command: "ls" }), text("x"), tool("Bash", { command: "ls" }, { result: null })]);
     expect(segs.flatMap(segmentImages)).toEqual([]);
+  });
+});
+
+describe("agentMapOf", () => {
+  it("nests the agents an agent started, with status, type and a clean answer", () => {
+    const child = tool("Agent", { description: "Check docs", subagent_type: "Explore" }, { toolUseId: "tu_child", result: null });
+    const timeline: TimelineItem[] = [
+      {
+        type: "turn",
+        turn: {
+          status: "done",
+          blocks: [
+            tool("Agent", { description: "Research", subagent_type: "general-purpose" }, {
+              toolUseId: "tu_parent",
+              startedAtMs: 1000,
+              agentUsage: { tokens: 5000, toolUses: 3, durationMs: 2000 },
+              result: { ok: true, summary: "Found it.\nagentId: abc (use SendMessage)\n<usage>total_tokens: 5000\ntool_uses: 3</usage>" },
+              subagent: { subagentType: "general-purpose", taskDescription: "Research", status: "done", blocks: [child, tool("Bash", { command: "ls" })] },
+            }),
+            tool("Bash", { command: "ls" }),
+            tool("Agent", { description: "Watch CI", run_in_background: true }, { toolUseId: "tu_bg", result: { ok: true, summary: "Launched" } }),
+          ],
+        } as TurnView,
+      },
+    ];
+    const map = agentMapOf(timeline);
+    expect(map.map((a) => [a.toolUseId, a.type, a.status, a.background])).toEqual([
+      ["tu_parent", "general-purpose", "done", false],
+      ["tu_bg", "Agent", "running", true],
+    ]);
+    expect(map[0]!.summary).toBe("Found it.");
+    expect(map[0]!.usage?.tokens).toBe(5000);
+    expect(map[0]!.startedAtMs).toBe(1000);
+    // Its turn is over and the child never answered: stopped, not running forever.
+    expect(map[0]!.children.map((c) => [c.label, c.type, c.status])).toEqual([["Check docs", "Explore", "stopped"]]);
+    expect(map[1]!.summary).toBeNull();
+    expect(flattenAgents(map)).toHaveLength(3);
   });
 });

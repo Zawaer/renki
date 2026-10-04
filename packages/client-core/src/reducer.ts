@@ -1,4 +1,4 @@
-import type { Attachment, AttachmentView, SessionComposer, SessionEvent, SessionStatus } from "@renki/protocol";
+import type { AgentUsage, Attachment, AttachmentView, SessionComposer, SessionEvent, SessionStatus } from "@renki/protocol";
 
 /**
  * The event-log → view-state reducer. This is the piece that makes every client
@@ -43,6 +43,10 @@ export type BlockView =
        * often long after this block's own turn has finished.
        */
       backgroundTask?: { status: "completed" | "failed" | "stopped"; summary: string };
+      /** When Claude made the call — the daemon's clock, from the event. */
+      startedAtMs?: number;
+      /** For an Agent/Task call: what the agent has spent, live while it runs and final once it reports. */
+      agentUsage?: AgentUsage;
     };
 
 /** A prompt the controller sent while this turn was already running — answered inside the turn, not by a turn of its own. */
@@ -193,7 +197,8 @@ export function restoreBlockGaps(state: ConversationState): ConversationState {
 // 2: copies cached by v1 could hold a gap — a catch-up that failed to fold
 // was skipped while later live events still applied — so they're dropped.
 // 3: tool results carry their images; older copies folded them away.
-export const CONVERSATION_CACHE_VERSION = 3;
+// 4: tool calls carry their start time and agents their usage (the agent map).
+export const CONVERSATION_CACHE_VERSION = 4;
 
 export function initialConversation(sessionId: string): ConversationState {
   return {
@@ -322,7 +327,12 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
     case "tool_result":
       s.timeline = updateTurn(s.timeline, subagentTurnId(s.timeline, e.turnId, e.toolUseId), (turn) => ({
         ...turn,
-        blocks: applyToolResult(turn.blocks, e.toolUseId, { ok: e.ok, summary: e.summary, ...(e.images?.length ? { images: e.images } : {}) }),
+        blocks: applyToolResult(
+          turn.blocks,
+          e.toolUseId,
+          { ok: e.ok, summary: e.summary, ...(e.images?.length ? { images: e.images } : {}) },
+          e.agentUsage,
+        ),
       }));
       return s;
 
@@ -398,7 +408,10 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       return s;
 
     case "background_task": {
-      const found = e.toolUseId ? applyBackgroundTask(s.timeline, e.toolUseId, e.status, e.summary) : null;
+      const done = { status: e.status, summary: e.summary };
+      const found = e.toolUseId
+        ? patchToolBlock(s.timeline, e.toolUseId, (b) => ({ ...b, backgroundTask: done, ...(e.usage ? { agentUsage: e.usage } : {}) }))
+        : null;
       if (found) {
         s.timeline = found;
         return s;
@@ -409,6 +422,16 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
         last?.type === "background_tasks"
           ? [...s.timeline.slice(0, -1), { type: "background_tasks", tasks: [...last.tasks, task] }]
           : [...s.timeline, { type: "background_tasks", tasks: [task] }];
+      return s;
+    }
+
+    case "agent_progress": {
+      // Never let a late progress report wind back what the agent's own
+      // result already said it spent in all.
+      const found = patchToolBlock(s.timeline, e.toolUseId, (b) =>
+        b.agentUsage && b.agentUsage.tokens >= e.usage.tokens ? b : { ...b, agentUsage: e.usage },
+      );
+      if (found) s.timeline = found;
       return s;
     }
 
@@ -543,7 +566,7 @@ function applyBlock(
   const next = blocks.slice();
   closePreviousBlock(next, blockIndex, ts);
   if (blockKind === "tool_use") {
-    next[blockIndex] = { kind: "tool_use", toolUseId: toolUseId ?? "", toolName: toolName ?? "", toolInput, result: null };
+    next[blockIndex] = { kind: "tool_use", toolUseId: toolUseId ?? "", toolName: toolName ?? "", toolInput, result: null, startedAtMs: ts };
   } else {
     // Canonical final text supersedes the streamed accumulation. Timing comes
     // from the daemon's own measurement when it sent one — the only source
@@ -600,42 +623,39 @@ function updateSubagentBlocks(
  * Task's own subagent "done" too: its tool_result arriving means the
  * subagent has nothing left to forward.
  */
+type ToolUseBlock = Extract<BlockView, { kind: "tool_use" }>;
 type ToolResultView = NonNullable<Extract<BlockView, { kind: "tool_use" }>["result"]>;
 
-function applyToolResult(blocks: BlockView[], toolUseId: string, result: ToolResultView): BlockView[] {
+function applyToolResult(blocks: BlockView[], toolUseId: string, result: ToolResultView, agentUsage?: AgentUsage): BlockView[] {
   return blocks.map((b) => {
     if (b?.kind !== "tool_use") return b;
     if (b.toolUseId === toolUseId) {
-      return { ...b, result, subagent: b.subagent ? { ...b.subagent, status: "done" as const } : b.subagent };
+      return { ...b, result, ...(agentUsage ? { agentUsage } : {}), subagent: b.subagent ? { ...b.subagent, status: "done" as const } : b.subagent };
     }
     if (b.subagent) {
-      return { ...b, subagent: { ...b.subagent, blocks: applyToolResult(b.subagent.blocks, toolUseId, result) } };
+      return { ...b, subagent: { ...b.subagent, blocks: applyToolResult(b.subagent.blocks, toolUseId, result, agentUsage) } };
     }
     return b;
   });
 }
 
 /**
- * Attach a background_task outcome to its Task tool_use block by toolUseId,
- * searching EVERY turn in the timeline (not just one, unlike applyToolResult)
- * — a background task can report back during a turn other than the one that
- * spawned it, so which turn currently holds the matching block isn't known in
- * advance. Returns null (caller falls back to a plain notice) if no block
- * anywhere matches, e.g. the spawning turn's blocks were never replayed.
+ * Update a tool_use block by toolUseId — a background_task outcome, an
+ * agent's progress — searching EVERY turn in the timeline (not just one,
+ * unlike applyToolResult): a background agent can report back during a turn
+ * other than the one that spawned it, so which turn holds the block isn't
+ * known in advance. Returns null if no block anywhere matches, e.g. the
+ * spawning turn's blocks were never replayed (a background_task then falls
+ * back to a plain notice).
  */
-function applyBackgroundTask(
-  timeline: TimelineItem[],
-  toolUseId: string,
-  status: "completed" | "failed" | "stopped",
-  summary: string,
-): TimelineItem[] | null {
+function patchToolBlock(timeline: TimelineItem[], toolUseId: string, fn: (b: ToolUseBlock) => ToolUseBlock): TimelineItem[] | null {
   let found = false;
   function patch(blocks: BlockView[]): BlockView[] {
     return blocks.map((b) => {
       if (b?.kind !== "tool_use") return b;
       if (b.toolUseId === toolUseId) {
         found = true;
-        return { ...b, backgroundTask: { status, summary } };
+        return fn(b);
       }
       if (b.subagent) return { ...b, subagent: { ...b.subagent, blocks: patch(b.subagent.blocks) } };
       return b;

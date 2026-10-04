@@ -1,4 +1,4 @@
-import type { AttachmentView, Session } from "@renki/protocol";
+import type { AgentUsage, AttachmentView, Session } from "@renki/protocol";
 import type { BlockView, TimelineItem, TurnView } from "./reducer.js";
 import { type EditToolView, describeTool, parseEditView } from "./toolViews.js";
 
@@ -269,6 +269,87 @@ function taskView(b: ToolBlock): BackgroundTaskView {
     status: b.backgroundTask?.status ?? "running",
     summary: b.backgroundTask?.summary ?? null,
   };
+}
+
+export type AgentNode = {
+  toolUseId: string;
+  /** The subagent type — "Explore", "general-purpose" — or "Agent" when unnamed. */
+  type: string;
+  /** The task it was given, in a few words. */
+  label: string;
+  /**
+   * "stopped" also covers a foreground agent whose turn ended without its
+   * result (interrupted, or the daemon restarted). A background agent with
+   * no outcome yet stays "running", as in backgroundTasksOf.
+   */
+  status: "running" | "done" | "failed" | "stopped";
+  background: boolean;
+  startedAtMs: number | null;
+  /** Live while it runs, final once it reports; null when the CLI never said. */
+  usage: AgentUsage | null;
+  /** Its answer, without the CLI's bookkeeping lines, once it has one. */
+  summary: string | null;
+  /** Agents it started itself. */
+  children: AgentNode[];
+};
+
+const AGENT_TOOL_NAMES = new Set(["Agent", "Task"]);
+
+/**
+ * Every agent the session started, as a tree — the agents each one started
+ * nested under it — oldest first. What the agent map draws.
+ */
+export function agentMapOf(timeline: TimelineItem[]): AgentNode[] {
+  const walk = (blocks: BlockView[], turnRunning: boolean): AgentNode[] => {
+    const out: AgentNode[] = [];
+    for (const b of blocks) {
+      if (b?.kind !== "tool_use") continue;
+      const nested = b.subagent ? walk(b.subagent.blocks, b.subagent.status === "running") : [];
+      if (!AGENT_TOOL_NAMES.has(b.toolName)) {
+        out.push(...nested);
+        continue;
+      }
+      out.push(agentNode(b, turnRunning, nested));
+    }
+    return out;
+  };
+  return timeline.flatMap((item) => (item.type === "turn" ? walk(item.turn.blocks, item.turn.status === "running") : []));
+}
+
+function agentNode(b: ToolBlock, turnRunning: boolean, children: AgentNode[]): AgentNode {
+  const input = (b.toolInput ?? {}) as { subagent_type?: unknown; description?: unknown; run_in_background?: unknown };
+  const background = input.run_in_background === true || !!b.backgroundTask;
+  let status: AgentNode["status"];
+  if (b.backgroundTask) status = b.backgroundTask.status === "completed" ? "done" : b.backgroundTask.status;
+  else if (background) status = "running";
+  else if (b.result) status = b.result.ok ? "done" : "failed";
+  else status = turnRunning ? "running" : "stopped";
+  // A background agent's own result is only the "launched" acknowledgement.
+  const answer = b.backgroundTask?.summary ?? (background ? null : (b.result?.summary ?? null));
+  return {
+    toolUseId: b.toolUseId,
+    type: typeof input.subagent_type === "string" && input.subagent_type ? input.subagent_type : (b.subagent?.subagentType ?? "Agent"),
+    label: typeof input.description === "string" && input.description ? input.description : describeTool(b.toolName, b.toolInput).label,
+    status,
+    background,
+    startedAtMs: b.startedAtMs ?? null,
+    usage: b.agentUsage ?? null,
+    summary: answer ? stripAgentBookkeeping(answer) || null : null,
+    children,
+  };
+}
+
+/** Drop the lines Claude Code appends to an agent's answer for Claude's sake: its id and usage note. */
+function stripAgentBookkeeping(text: string): string {
+  return text
+    .replace(/<usage>[\s\S]*?(<\/usage>|$)/g, "")
+    .replace(/^agentId: .*$/gm, "")
+    .trim();
+}
+
+/** Every agent in a tree, depth first — for counts. */
+export function flattenAgents(nodes: AgentNode[]): AgentNode[] {
+  return nodes.flatMap((n) => [n, ...flattenAgents(n.children)]);
 }
 
 export type AttentionReason = "permission" | "paused" | "error";

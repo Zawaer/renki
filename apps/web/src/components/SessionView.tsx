@@ -31,11 +31,9 @@ import {
   type TimelineItem,
   type TodoItemView,
   type TurnView,
-  type BackgroundTaskView,
   attachmentSource,
   type FileChange,
   type StepSummary,
-  backgroundTasksOf,
   formatResumeAt,
   groupTurnBlocks,
   isBulkyToolPayload,
@@ -48,6 +46,7 @@ import type { Account, AttachmentView, CapabilitiesResponse, SessionComposer, Se
 import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { hostOpenFile, isHosted } from "../lib/host.js";
+import { revealPending, useToolReveal } from "../lib/toolReveal.js";
 import {
   clearDraft,
   loadDeviceDefaults,
@@ -60,6 +59,7 @@ import { UsageLimits } from "./UsageLimits.js";
 import { WorkspacePanel, type FileOpenRequest, type WorkspaceTab } from "./WorkspacePanel.js";
 import { FileLinkContext, type FileLinkTarget } from "../lib/fileLinks.js";
 import { Markdown } from "./Markdown.js";
+import { AgentMapButton } from "./AgentMap.js";
 import { Button, Collapsible, CopyButton, InfoHint, Reveal, Skeleton, StatusBadge } from "./ui.js";
 
 export function SessionView({ sessionId }: { sessionId: string }) {
@@ -234,7 +234,7 @@ export function SessionView({ sessionId }: { sessionId: string }) {
           )}
         </div>
         <div className="flex items-center gap-3">
-          <BackgroundTasksButton timeline={conv.timeline} />
+          <AgentMapButton timeline={conv.timeline} title={title || repoName || "This session"} model={conv.model} />
           {hasTree && (
             <span className="flex items-center gap-0.5">
               <HeaderIconButton icon="codicon-diff" label="Changes" active={panel === "changes"} onClick={() => togglePanel("changes")} />
@@ -1016,8 +1016,14 @@ function ToolStep({
   // label and spinner say what's happening — and open on click.
   const bulky = isBulkyToolPayload(editView, command);
   const restingOpen = richPayload && !bulky && (agentRunning || block.subagent == null);
-  const [open, setOpen] = useState((running && !bulky) || restingOpen);
-  const userToggled = useRef(false);
+  // Opened from the agent map's "Show in transcript" — mounting because a
+  // parent agent row just opened for it counts too.
+  const [open, setOpen] = useState(() => (running && !bulky) || restingOpen || revealPending(block.toolUseId));
+  const userToggled = useRef(revealPending(block.toolUseId));
+  useToolReveal(block.toolUseId, () => {
+    userToggled.current = true;
+    setOpen(true);
+  });
   const wasRunning = useRef(running || agentRunning);
   useEffect(() => {
     // Auto-collapse a routine call once it settles — unless the user opened it themselves.
@@ -1050,7 +1056,7 @@ function ToolStep({
   ) : null;
 
   return (
-    <div className="my-1">
+    <div className="my-1" data-tool-use-id={block.toolUseId}>
       <button
         type="button"
         onClick={() => {
@@ -1322,76 +1328,6 @@ function FilesChangedCard({ changes }: { changes: FileChange[] }) {
         );
       })}
     </div>
-  );
-}
-
-/**
- * The session's background work — agents and backgrounded commands — in one
- * list behind a header button, instead of scattered through the transcript.
- * Shows a count of what's still running; hidden when there's nothing.
- */
-function BackgroundTasksButton({ timeline }: { timeline: TimelineItem[] }) {
-  const [open, setOpen] = useState(false);
-  const tasks = useMemo(() => backgroundTasksOf(timeline), [timeline]);
-  if (tasks.length === 0) return null;
-  const running = tasks.filter((t) => t.status === "running").length;
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        title="Background tasks"
-        className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs text-(--renki-fg-muted) transition-colors hover:bg-(--renki-surface) hover:text-(--renki-fg)"
-      >
-        <span className={`codicon ${running > 0 ? "codicon-loading codicon-modifier-spin" : "codicon-layers"} text-[13px]`} />
-        {running > 0 ? `${running} running` : `${tasks.length} background`}
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="renki-enter absolute right-0 z-20 mt-2 max-h-[70vh] w-96 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-(--renki-border) bg-(--renki-surface) p-1.5 text-xs shadow-(--renki-shadow-md)">
-            <div className="px-2.5 pt-1.5 pb-1 text-[11px] font-medium text-(--renki-fg-muted)">Background tasks</div>
-            {tasks.map((t) => (
-              <BackgroundTaskRow key={t.toolUseId} task={t} />
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function BackgroundTaskRow({ task }: { task: BackgroundTaskView }) {
-  const [open, setOpen] = useState(false);
-  const icon =
-    task.status === "running"
-      ? "codicon-loading codicon-modifier-spin text-(--renki-fg-muted)"
-      : task.status === "completed"
-        ? "codicon-pass-filled text-(--renki-success)"
-        : task.status === "stopped"
-          ? "codicon-debug-stop text-(--renki-fg-muted)"
-          : "codicon-error text-(--renki-danger)";
-  return (
-    <button
-      type="button"
-      onClick={() => setOpen((o) => !o)}
-      disabled={!task.summary}
-      className="flex w-full items-start gap-2 rounded-lg px-2.5 py-1.5 text-left enabled:hover:bg-(--renki-hover)"
-    >
-      <span className={`codicon mt-0.5 shrink-0 ${icon}`} />
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5">
-          <span className={`${open ? "" : "truncate"} text-(--renki-fg)`}>{task.label}</span>
-          <span className="shrink-0 text-[10.5px] text-(--renki-fg-muted)">{task.kind === "agent" ? "agent" : "command"}</span>
-        </span>
-        {task.status === "running" ? (
-          <span className="block text-(--renki-fg-muted)">No result yet</span>
-        ) : (
-          task.summary && <span className={`block text-(--renki-fg-muted) ${open ? "whitespace-pre-wrap" : "truncate"}`}>{task.summary}</span>
-        )}
-      </span>
-    </button>
   );
 }
 

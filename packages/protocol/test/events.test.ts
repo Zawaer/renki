@@ -33,6 +33,7 @@ const SAMPLES: Record<EventKind, unknown> = {
   model_changed: { kind: "model_changed", model: "claude-fable-5-1", previousModel: "claude-opus-5-5" },
   context_usage: { kind: "context_usage", usedTokens: 42_000, maxTokens: 128_000, percentage: 33, autoCompact: true },
   background_task: { kind: "background_task", taskId: "task1", toolUseId: "tu", status: "completed", summary: "done" },
+  agent_progress: { kind: "agent_progress", toolUseId: "tu", usage: { tokens: 1200, toolUses: 3, durationMs: 4000 } },
 };
 
 describe("EventPayload", () => {

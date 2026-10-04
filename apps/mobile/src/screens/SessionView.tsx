@@ -38,6 +38,7 @@ import {
   modelFullName,
   modelMenuLabel,
   segmentImages,
+  agentMapOf,
 } from "@renki/client-core";
 import type { AttachmentView, CapabilitiesResponse, SessionResume } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
@@ -61,7 +62,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Markdown, StreamingMarkdown } from "../components/Markdown";
-import { FadeIn, Skeleton, animateLayout } from "../components/Motion";
+import { FadeIn, PulseDot, Skeleton, animateLayout } from "../components/Motion";
+import { AgentsButton, AgentsSheet } from "../components/AgentsSheet";
 import { Sheet } from "../components/Sheet";
 import { FileSheet, type OpenFile } from "../components/FileSheet";
 import { FileLinkContext, type FileLinkTarget } from "../lib/fileLinks";
@@ -274,6 +276,9 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
     () => conv.timeline.map((item, index): TimelineEntry => ({ item, index })).reverse(),
     [conv.timeline],
   );
+  /** The session's subagents as a tree — the header's Agents button and sheet. */
+  const agents = useMemo(() => agentMapOf(conv.timeline), [conv.timeline]);
+  const [agentsOpen, setAgentsOpen] = useState(false);
 
   // Pop the keyboard to the composer as soon as this device gains control
   // (whether by taking it explicitly or via auto-claim on session creation).
@@ -364,6 +369,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
             {conv.controller ? (isController ? " · you're in control" : ` · ${conv.controllerName ?? "other"}`) : " · unlocked"}
           </Text>
         </View>
+        <AgentsButton agents={agents} onPress={() => setAgentsOpen(true)} />
         {!isController && (
           <TouchableOpacity style={styles.ctrlBtn} onPress={() => realtime.takeControl(sessionId)}>
             <Text style={styles.ctrlBtnText}>Take control</Text>
@@ -649,6 +655,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
 
       <ImagePreviewModal attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} />
       <FileSheet sessionId={sessionId} file={openFile} onClose={() => setOpenFile(null)} />
+      <AgentsSheet visible={agentsOpen} onClose={() => setAgentsOpen(false)} agents={agents} />
     </KeyboardAvoidingView>
     </FileLinkContext.Provider>
   );
@@ -805,22 +812,6 @@ function ToolImageThumb({ image, styles, onPress }: { image: AttachmentView; sty
       />
     </TouchableOpacity>
   );
-}
-
-/** A softly pulsing status dot — the web pill's `animate-pulse` equivalent. */
-function PulseDot({ color }: { color: string }) {
-  const opacity = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, { toValue: 0.35, duration: 700, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [opacity]);
-  return <Animated.View style={{ width: 7, height: 7, borderRadius: 999, backgroundColor: color, opacity }} />;
 }
 
 const previewStyles = StyleSheet.create({

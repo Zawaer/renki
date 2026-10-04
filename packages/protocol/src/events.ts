@@ -25,6 +25,18 @@ import { DeviceId, MergeConflictMeta, PermissionDecision, SessionPurpose, Sessio
 export const AssistantBlockKind = z.enum(["text", "thinking", "tool_use"]);
 export type AssistantBlockKind = z.infer<typeof AssistantBlockKind>;
 
+/**
+ * What a subagent has spent so far: tokens across its whole run, tool calls,
+ * and wall time. Claude Code reports it while the agent runs (task_progress)
+ * and once more when it finishes, in the result Claude reads.
+ */
+export const AgentUsage = z.object({
+  tokens: z.number().int().nonnegative(),
+  toolUses: z.number().int().nonnegative(),
+  durationMs: z.number().int().nonnegative(),
+});
+export type AgentUsage = z.infer<typeof AgentUsage>;
+
 const payloads = [
   /**
    * Session was created, either against a repo/branch (with a worktree) or,
@@ -160,6 +172,8 @@ const payloads = [
      * prompt's attachments (see AttachmentView).
      */
     images: z.array(AttachmentView).optional(),
+    /** For an Agent/Task call: what the agent spent, from the usage note closing its result. */
+    agentUsage: AgentUsage.optional(),
   }),
 
   /**
@@ -282,6 +296,20 @@ const payloads = [
     toolUseId: z.string().nullable(),
     status: z.enum(["completed", "failed", "stopped"]),
     summary: z.string(),
+    /** What the agent spent in all, when it was an agent and the CLI said. */
+    usage: AgentUsage.optional(),
+  }),
+
+  /**
+   * A running subagent's spend so far, so the agent map can show it live.
+   * Throttled by the daemon — one every several seconds per agent at most —
+   * and, like background_task, matched to its Agent/Task call by toolUseId
+   * alone: a background agent outlives the turn that started it.
+   */
+  z.object({
+    kind: z.literal("agent_progress"),
+    toolUseId: z.string(),
+    usage: AgentUsage,
   }),
 ] as const;
 

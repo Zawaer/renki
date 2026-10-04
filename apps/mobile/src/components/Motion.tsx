@@ -136,3 +136,19 @@ export function Skeleton({ width, height, radius = 8, style }: { width: number |
   const opacity = value.interpolate({ inputRange: [0, 1], outputRange: [0.45, 0.9] });
   return <Animated.View style={[{ width, height, borderRadius: radius, backgroundColor: withAlpha(colors.text, 0.08), opacity }, style]} />;
 }
+
+/** A softly pulsing status dot — the web pill's `animate-pulse` equivalent. */
+export function PulseDot({ color, size = 7 }: { color: string; size?: number }) {
+  const opacity = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.35, duration: 700, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [opacity]);
+  return <Animated.View style={{ width: size, height: size, borderRadius: 999, backgroundColor: color, opacity }} />;
+}

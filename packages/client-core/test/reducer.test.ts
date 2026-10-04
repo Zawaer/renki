@@ -202,6 +202,7 @@ describe("per-event folding", () => {
       toolName: "Bash",
       toolInput: { cmd: "ls" },
       result: { ok: true, summary: "a.ts b.ts" },
+      startedAtMs: expect.any(Number),
     });
   });
 
@@ -369,6 +370,29 @@ describe("per-event folding", () => {
     // The later turn that happened to carry the notification is untouched.
     const laterTurn = turns.find((t) => t.turnId === T1);
     expect(laterTurn.blocks.every((b: any) => !("backgroundTask" in b) || b.backgroundTask == null)).toBe(true);
+  });
+
+  it("tracks an agent's spend: live progress, then its final usage, never winding back", () => {
+    const s = fold(stream(
+      { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "research" },
+      { kind: "assistant_block", turnId: "t_1", blockIndex: 0, blockKind: "tool_use", text: null, toolUseId: "tu_a", toolName: "Agent", toolInput: { run_in_background: true } },
+      { kind: "agent_progress", toolUseId: "tu_a", usage: { tokens: 1000, toolUses: 2, durationMs: 5000 } },
+      { kind: "background_task", taskId: "task_1", toolUseId: "tu_a", status: "completed", summary: "done", usage: { tokens: 9000, toolUses: 7, durationMs: 60000 } },
+      { kind: "agent_progress", toolUseId: "tu_a", usage: { tokens: 8000, toolUses: 6, durationMs: 55000 } },
+    ));
+    const turn = (s.timeline.find((it) => it.type === "turn") as any).turn;
+    expect(turn.blocks[0].agentUsage).toEqual({ tokens: 9000, toolUses: 7, durationMs: 60000 });
+    expect(typeof turn.blocks[0].startedAtMs).toBe("number");
+  });
+
+  it("takes a foreground agent's usage from its tool_result", () => {
+    const s = fold(stream(
+      { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "research" },
+      { kind: "assistant_block", turnId: "t_1", blockIndex: 0, blockKind: "tool_use", text: null, toolUseId: "tu_a", toolName: "Agent", toolInput: {} },
+      { kind: "tool_result", turnId: "t_1", toolUseId: "tu_a", ok: true, summary: "found it", agentUsage: { tokens: 500, toolUses: 1, durationMs: 900 } },
+    ));
+    const turn = (s.timeline.find((it) => it.type === "turn") as any).turn;
+    expect(turn.blocks[0].agentUsage).toEqual({ tokens: 500, toolUses: 1, durationMs: 900 });
   });
 
   it("background_task with no matching tool call joins one grouped row, not a row each", () => {

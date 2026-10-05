@@ -79,9 +79,24 @@ if [[ -z "$serial" ]]; then
 fi
 echo "✓ Installing on $(adb -s "$serial" shell getprop ro.product.model | tr -d '\r') ($serial)"
 
+# expo-updates writes the build's runtime version (the fingerprint) in a Gradle
+# task whose only inputs are paths, so after its first run Gradle calls it up
+# to date forever and every build ships that first fingerprint. Over-the-air
+# updates are published for the current one, so they never reached the phone.
+# Deleting its output makes it run again.
+rm -rf "$mobile/android/app/build/generated/assets/createReleaseUpdatesResources"
+
 # Gradle's release build bundles the JavaScript itself.
 (cd "$mobile/android" && ./gradlew app:assembleRelease -x lint -x test --build-cache)
 apk="$mobile/android/app/build/outputs/apk/release/app-release.apk"
+
+# The fingerprint `pnpm android:update` publishes for, against the one built in.
+expected="$(cd "$mobile" && npx expo-updates runtimeversion:resolve --platform android | node -pe 'JSON.parse(require("fs").readFileSync(0, "utf8")).runtimeVersion')"
+built="$(unzip -p "$apk" assets/fingerprint)"
+[[ "$built" == "$expected" ]] \
+  || fail "This build's runtime version is $built but updates publish for $expected, so it would never take them. Not installing."
+echo "✓ Runtime version $built — takes over-the-air updates"
+
 adb -s "$serial" install -r "$apk"
 adb -s "$serial" shell monkey -p com.zawaer.renki -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1 || true
 echo "✓ Installed and opened on $serial"

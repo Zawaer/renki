@@ -573,7 +573,7 @@ function TimelineRow({ item, animate = false }: { item: TimelineItem; animate?: 
               className={`flex flex-wrap gap-1.5 ${item.text ? "mt-2" : ""}`}
             >
               {item.attachments.map((a, i) => (
-                <AttachmentChip key={i} attachment={a} />
+                <AttachmentChip key={i} attachment={a} siblings={item.attachments} />
               ))}
             </div>
           )}
@@ -909,7 +909,7 @@ function SteeredPrompt({ prompt }: { prompt: SteeredPromptView }) {
             className={`flex flex-wrap gap-1.5 ${prompt.text ? "mt-2" : ""}`}
           >
             {prompt.attachments.map((a, i) => (
-              <AttachmentChip key={i} attachment={a} />
+              <AttachmentChip key={i} attachment={a} siblings={prompt.attachments} />
             ))}
           </div>
         )}
@@ -1170,7 +1170,7 @@ function SubagentActivity({ subagent }: { subagent: SubagentView }) {
  */
 function ToolImages({ images }: { images: AttachmentView[] }) {
   const { config } = useClient();
-  const [previewing, setPreviewing] = useState<AttachmentView | null>(null);
+  const [previewing, setPreviewing] = useState<number | null>(null);
   if (images.length === 0) return null;
   return (
     <>
@@ -1178,7 +1178,7 @@ function ToolImages({ images }: { images: AttachmentView[] }) {
         {images.map((img, i) => (
           <button
             key={i}
-            onClick={() => setPreviewing(img)}
+            onClick={() => setPreviewing(i)}
             className="overflow-hidden rounded-lg border border-(--renki-border) bg-(--renki-surface) transition-opacity hover:opacity-90"
             title={img.name}
           >
@@ -1191,7 +1191,9 @@ function ToolImages({ images }: { images: AttachmentView[] }) {
           </button>
         ))}
       </div>
-      {previewing && <ImagePreviewDialog attachment={previewing} onClose={() => setPreviewing(null)} />}
+      {previewing !== null && (
+        <ImagePreviewDialog images={images} startIndex={previewing} onClose={() => setPreviewing(null)} />
+      )}
     </>
   );
 }
@@ -1803,17 +1805,24 @@ function readFileAsAttachment(
   });
 }
 
-/** One attached file: a thumbnail for images, a file chip otherwise. `onRemove` omitted renders it read-only (timeline history). */
+/**
+ * One attached file: a thumbnail for images, a file chip otherwise. `onRemove`
+ * omitted renders it read-only (timeline history). `siblings` is the whole
+ * prompt's attachments, so the preview can step through its other images.
+ */
 function AttachmentChip({
   attachment,
+  siblings,
   onRemove,
 }: {
   attachment: Attachment;
+  siblings?: Attachment[];
   onRemove?: () => void;
 }) {
   const { config } = useClient();
   const isImage = attachment.mediaType.startsWith("image/");
   const [previewing, setPreviewing] = useState(false);
+  const gallery = (siblings ?? [attachment]).filter((a) => a.mediaType.startsWith("image/"));
   return (
     <>
       <div
@@ -1850,7 +1859,8 @@ function AttachmentChip({
       </div>
       {previewing && (
         <ImagePreviewDialog
-          attachment={attachment}
+          images={gallery}
+          startIndex={Math.max(0, gallery.indexOf(attachment))}
           onClose={() => setPreviewing(false)}
         />
       )}
@@ -1858,22 +1868,44 @@ function AttachmentChip({
   );
 }
 
-/** Full-screen preview of an attached image, dismissed by backdrop click, X, or Escape. */
+/**
+ * Full-screen preview of attached images, dismissed by backdrop click, X, or
+ * Escape. With several images (the rest of the same prompt), the arrow keys
+ * or the side buttons step through them.
+ */
 function ImagePreviewDialog({
-  attachment,
+  images,
+  startIndex = 0,
   onClose,
 }: {
-  attachment: Attachment;
+  images: Attachment[];
+  startIndex?: number;
   onClose: () => void;
 }) {
   const { config } = useClient();
+  const [index, setIndex] = useState(startIndex);
+  const current = images[Math.min(index, images.length - 1)];
+  const hasPrev = index > 0;
+  const hasNext = index < images.length - 1;
+
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
+      else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setIndex((i) => Math.max(0, i - 1));
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        setIndex((i) => Math.min(images.length - 1, i + 1));
+      }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [onClose, images.length]);
+
+  if (!current) return null;
+  const navButton =
+    "absolute top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white/80 transition-colors hover:bg-black/70 hover:text-white disabled:pointer-events-none disabled:opacity-0";
 
   return (
     <div
@@ -1888,11 +1920,40 @@ function ImagePreviewDialog({
         <span className="codicon codicon-close text-2xl" />
       </button>
       <img
-        src={attachmentSource(attachment, config).urlWithToken}
-        alt={attachment.name}
+        src={attachmentSource(current, config).urlWithToken}
+        alt={current.name}
         className="max-h-full max-w-full rounded-sm object-contain"
         onClick={(e) => e.stopPropagation()}
       />
+      {images.length > 1 && (
+        <>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setIndex((i) => Math.max(0, i - 1));
+            }}
+            disabled={!hasPrev}
+            className={`${navButton} left-4`}
+            title="Previous (←)"
+          >
+            <span className="codicon codicon-chevron-left text-xl" />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setIndex((i) => Math.min(images.length - 1, i + 1));
+            }}
+            disabled={!hasNext}
+            className={`${navButton} right-4`}
+            title="Next (→)"
+          >
+            <span className="codicon codicon-chevron-right text-xl" />
+          </button>
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/50 px-2.5 py-0.5 text-xs text-white/80 tabular-nums">
+            {index + 1} / {images.length}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -2342,6 +2403,7 @@ function Composer({
                 <AttachmentChip
                   key={a.id}
                   attachment={a}
+                  siblings={attachments}
                   onRemove={() => removeAttachment(a.id)}
                 />
               ))}

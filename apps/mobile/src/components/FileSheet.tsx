@@ -104,7 +104,7 @@ function FileBody({ sessionId, file, colors }: { sessionId: string; file: OpenFi
             return (
               <View style={[styles.lineRow, hit && styles.lineHit]}>
                 <Text style={[styles.lineNo, { width: gutter }, hit && { color: colors.text }]}>{index + 1}</Text>
-                <Text style={styles.lineText}>{item || " "}</Text>
+                <Text selectable style={styles.lineText}>{item || " "}</Text>
               </View>
             );
           }}

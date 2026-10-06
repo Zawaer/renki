@@ -1,5 +1,5 @@
 import { memo, type ReactElement, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Platform, ScrollView, StyleSheet, type TextStyle, View, type ViewStyle } from "react-native";
+import { Platform, ScrollView, StyleSheet, Text, type TextStyle, View, type ViewStyle } from "react-native";
 import MarkdownDisplay, { MarkdownIt } from "react-native-markdown-display";
 import { radius, type ThemeColors, useTheme } from "../theme";
 import { FadeIn } from "./Motion";
@@ -15,7 +15,7 @@ type MdNode = {
   attributes: Record<string, string>;
   children: MdNode[];
 };
-type RenderRule = (node: MdNode, children: ReactNode[], parents: MdNode[], styles: any) => ReactNode;
+type RenderRule = (node: MdNode, children: ReactNode[], parents: MdNode[], styles: any, inheritedStyles?: any) => ReactNode;
 
 /**
  * What a link tap does. Return `true` to have the URL opened in the browser
@@ -130,6 +130,36 @@ function makeTableRules(colors: ThemeColors): Record<string, RenderRule> {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Selectable text
+//
+// Long-press to select and copy, like any web page. `selectable` only takes on
+// the outermost Text of a nested run, so it goes on the lib's outer Text nodes:
+// the textgroup wrapping each paragraph/heading/list item/cell's inline
+// content, and code blocks (which are a single Text). Same output as the lib's
+// defaults otherwise, including trimming the parser's extra trailing newline.
+
+function codeRule(styleKey: "fence" | "code_block"): RenderRule {
+  return (node, _children, _parents, styles, inheritedStyles = {}) => {
+    const content = node.content?.endsWith("\n") ? node.content.slice(0, -1) : node.content;
+    return (
+      <Text key={node.key} selectable style={[inheritedStyles, styles[styleKey]]}>
+        {content}
+      </Text>
+    );
+  };
+}
+
+const selectableRules: Record<string, RenderRule> = {
+  textgroup: (node, children, _parents, styles) => (
+    <Text key={node.key} selectable style={styles.textgroup}>
+      {children}
+    </Text>
+  ),
+  fence: codeRule("fence"),
+  code_block: codeRule("code_block"),
+};
+
 /**
  * Renders assistant text as Markdown, themed to match the dark UI. Mirrors the
  * web app's Markdown component, but React Native can't reuse the DOM version, so
@@ -195,7 +225,7 @@ export const Markdown = memo(function Markdown({
   onLinkPress?: LinkPressHandler;
 }) {
   const colors = useTheme();
-  const rules = useMemo(() => makeTableRules(colors), [colors]);
+  const rules = useMemo(() => ({ ...selectableRules, ...makeTableRules(colors) }), [colors]);
   const fileTarget = useFileLinkTarget();
   // Every tap goes through here: a link to a file in the session's working
   // tree opens in the file sheet; any other local path is inert (the browser

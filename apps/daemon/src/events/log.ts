@@ -3,6 +3,7 @@ import type { EventPayload, RepoStatsBucket, SessionEvent, StatsBucket, StatsRes
 import { and, asc, eq, gt, inArray, max, ne } from "drizzle-orm";
 import type { DB } from "../db/index.js";
 import { events, sessions } from "../db/schema.js";
+import { ChatSearch } from "./search.js";
 
 /**
  * The EventLog is the daemon's single source of truth for session activity.
@@ -23,9 +24,13 @@ export class EventLog {
   private readonly emitter = new EventEmitter();
   /** In-memory head per session, seeded lazily from the DB. */
   private readonly heads = new Map<string, number>();
+  /** Full-text index of the chat text, kept in step with the log below. */
+  readonly search: ChatSearch;
 
   constructor(private readonly db: DB) {
     this.emitter.setMaxListeners(0); // many viewers per session; no cap
+    this.search = new ChatSearch(db);
+    this.search.backfillIfEmpty();
   }
 
   /** Append a new event, stamping it with the next seq + a timestamp. */
@@ -37,6 +42,7 @@ export class EventLog {
       .insert(events)
       .values({ sessionId, seq, ts: event.ts, kind: payload.kind, data: JSON.stringify(payload) })
       .run();
+    this.search.index(sessionId, seq, event.ts, payload);
 
     this.emitter.emit(channel(sessionId), event);
     this.emitter.emit(ANY, event);
@@ -78,6 +84,7 @@ export class EventLog {
    */
   deleteTranscript(sessionId: string): void {
     this.db.delete(events).where(and(eq(events.sessionId, sessionId), ne(events.kind, "turn_result"))).run();
+    this.search.forget(sessionId);
     this.heads.delete(sessionId);
   }
 

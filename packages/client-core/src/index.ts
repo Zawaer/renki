@@ -23,3 +23,4 @@ export * from "./trash.js";
 export * from "./models.js";
 export * from "./turnLayout.js";
 export * from "./fileLinks.js";
+export * from "./search.js";

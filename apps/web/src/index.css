@@ -513,3 +513,18 @@ body.renki-resizing {
 .group:hover .group-hover\:renki-fade-end-wide {
   mask-image: linear-gradient(to right, #000 calc(100% - 44px), transparent calc(100% - 22px));
 }
+
+/* Where a chat search landed: a ring that fades out around the message, and
+   the matched words highlighted (SessionView's flashSearchMatch). */
+.renki-search-flash {
+  border-radius: 1rem;
+  animation: renki-search-flash 2.4s ease-out;
+}
+@keyframes renki-search-flash {
+  0%, 40% { box-shadow: 0 0 0 2px color-mix(in oklab, var(--renki-accent) 70%, transparent); }
+  100% { box-shadow: 0 0 0 2px transparent; }
+}
+::highlight(renki-search) {
+  background-color: color-mix(in oklab, var(--renki-accent) 35%, transparent);
+  color: inherit;
+}

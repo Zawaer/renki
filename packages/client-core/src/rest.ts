@@ -26,6 +26,7 @@ import type {
   RtkGainResponse,
   Session,
   InsightsResponse,
+  SearchResponse,
   StatsResponse,
   SwitchAccountResponse,
   TailscaleStatusResponse,
@@ -231,6 +232,11 @@ export class RestClient {
   }
 
   /** Cost/token/wait-time analytics across every session, for the Stats page. */
+  /** Messages in any chat (prompts and Claude's replies) containing `query`, newest first. */
+  async search(query: string): Promise<SearchResponse> {
+    return this.get<SearchResponse>(`/search?q=${encodeURIComponent(query)}`);
+  }
+
   async getStats(): Promise<StatsResponse> {
     return this.get<StatsResponse>("/stats");
   }

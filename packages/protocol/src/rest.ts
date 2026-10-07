@@ -213,6 +213,43 @@ export const RepoStatsBucket = z.object({
 export type RepoStatsBucket = z.infer<typeof RepoStatsBucket>;
 
 /**
+ * One message that matched a chat search: a prompt you sent, or a block of
+ * Claude's reply. Where it sits in the transcript is given the way the
+ * transcript itself names things — `promptId` for a prompt, `turnId` plus
+ * `blockIndex` for a reply block — so a client can scroll straight to it.
+ * `snippet` is a short window of the message around the first match, with
+ * `matchStart`/`matchLength` marking the match inside it.
+ */
+export const SearchHit = z.object({
+  sessionId: z.string(),
+  sessionTitle: z.string().nullable(),
+  repoName: z.string(),
+  /** Null for a repo-less chat. */
+  repoId: z.string().nullable(),
+  seq: z.number().int(),
+  ts: z.number().int(),
+  role: z.enum(["you", "claude"]),
+  promptId: z.string().nullable(),
+  turnId: z.string().nullable(),
+  blockIndex: z.number().int().nullable(),
+  snippet: z.string(),
+  matchStart: z.number().int(),
+  matchLength: z.number().int(),
+});
+export type SearchHit = z.infer<typeof SearchHit>;
+
+/**
+ * Newest hits first, across every chat that isn't trashed or deleted.
+ * `truncated` means there were more matches than the daemon returns.
+ */
+export const SearchResponse = z.object({
+  query: z.string(),
+  hits: z.array(SearchHit),
+  truncated: z.boolean(),
+});
+export type SearchResponse = z.infer<typeof SearchResponse>;
+
+/**
  * Cost/token/wait-time analytics, built by scanning every stored `turn_result`
  * event. `daily`/`monthly` are sorted ascending by key ("2026-07-22" /
  * "2026-07") and only contain buckets with at least one turn. `byRepo`,

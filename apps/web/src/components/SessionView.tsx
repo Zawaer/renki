@@ -62,7 +62,16 @@ import { Markdown } from "./Markdown.js";
 import { AgentMapButton } from "./AgentMap.js";
 import { Button, Collapsible, CopyButton, InfoHint, Reveal, Skeleton, StatusBadge } from "./ui.js";
 
-export function SessionView({ sessionId }: { sessionId: string }) {
+export function SessionView({
+  sessionId,
+  jumpTo = null,
+  onJumped,
+}: {
+  sessionId: string;
+  /** A message to scroll to once it renders — where a chat search hit landed. */
+  jumpTo?: { anchor: string; query: string } | null;
+  onJumped?: () => void;
+}) {
   const { realtime, rest, config } = useClient();
   const store = realtime.conversation(sessionId);
   const conv = useStoreValue(store);
@@ -155,6 +164,28 @@ export function SessionView({ sessionId }: { sessionId: string }) {
     if (!stickToBottom.current) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [conv]);
+
+  /**
+   * Opened from search: once the message has rendered, scroll it to the
+   * middle and highlight the match, then tell the parent it's done so the
+   * chat behaves normally from then on. A reply block that isn't rendered on
+   * its own (a subagent's text) falls back to its turn.
+   */
+  useEffect(() => {
+    const root = scrollRef.current;
+    if (!jumpTo || !root) return;
+    const { anchor, query } = jumpTo;
+    const turnAnchor = anchor.startsWith("b:") ? `t:${anchor.slice(2, anchor.lastIndexOf(":"))}` : null;
+    const el =
+      root.querySelector<HTMLElement>(`[data-anchor="${CSS.escape(anchor)}"]`) ??
+      (turnAnchor ? root.querySelector<HTMLElement>(`[data-anchor="${CSS.escape(turnAnchor)}"]`) : null);
+    if (!el) return;
+    stickToBottom.current = false;
+    setAtBottom(false);
+    el.scrollIntoView({ block: "center" });
+    flashSearchMatch(el, query);
+    onJumped?.();
+  }, [conv, jumpTo, onJumped]);
 
   const isController = conv.controller === config.deviceId;
   const status = conv.status ?? "idle";
@@ -554,7 +585,7 @@ function ResumeBanner({
 function TimelineRow({ item, animate = false }: { item: TimelineItem; animate?: boolean }) {
   if (item.type === "prompt") {
     return (
-      <div className={`${animate ? "renki-enter " : ""}group flex items-center justify-end gap-1`}>
+      <div className={`${animate ? "renki-enter " : ""}group flex items-center justify-end gap-1`} data-anchor={`p:${item.promptId}`}>
         {item.text && <CopyButton text={item.text} label="Copy message" />}
         <div className="max-w-[85%] rounded-2xl bg-(--renki-surface) px-4 py-3">
           {/* A pasted brief can be longer than the reply it asks for; clipping
@@ -809,7 +840,7 @@ function AssistantTurn({ turn, animate = false }: { turn: TurnView; animate?: bo
   );
   const changes = useMemo(() => (running ? [] : turnFileChanges(turn)), [turn, running]);
   return (
-    <div className={`${animate ? "renki-enter " : ""}group space-y-3`}>
+    <div className={`${animate ? "renki-enter " : ""}group space-y-3`} data-anchor={`t:${turn.turnId}`}>
       {label && (
         <div className="flex items-center gap-1.5 text-[11px] font-medium text-(--renki-fg-muted)">
           <span className="flex h-5 w-5 items-center justify-center rounded-md bg-(--renki-surface) ring-1 ring-(--renki-border) ring-inset">
@@ -830,7 +861,10 @@ function AssistantTurn({ turn, animate = false }: { turn: TurnView; animate?: bo
                 transcript animating every block at once would just be noise.
                 Prose fades word by word inside Markdown, so only tool rows get
                 the block-level fade — otherwise the two would stack. */}
-            <div className={running && (seg.kind === "group" || seg.block.kind === "tool_use") ? "renki-stream-in" : undefined}>
+            <div
+              className={running && (seg.kind === "group" || seg.block.kind === "tool_use") ? "renki-stream-in" : undefined}
+              data-anchor={seg.kind === "group" ? undefined : `b:${turn.turnId}:${seg.index}`}
+            >
               {seg.kind === "group" ? (
                 <ToolGroup items={seg.items} summary={seg.summary} turnRunning={running} />
               ) : (
@@ -896,7 +930,7 @@ function AssistantTurn({ turn, animate = false }: { turn: TurnView; animate?: bo
 /** A prompt the controller sent while this turn was already running — shown inside the turn, where Claude picked it up. */
 function SteeredPrompt({ prompt }: { prompt: SteeredPromptView }) {
   return (
-    <div className="renki-enter group flex items-center justify-end gap-1" data-testid="steered-prompt">
+    <div className="renki-enter group flex items-center justify-end gap-1" data-testid="steered-prompt" data-anchor={`p:${prompt.promptId}`}>
       {prompt.text && <CopyButton text={prompt.text} label="Copy message" />}
       <div className="max-w-[85%] rounded-2xl bg-(--renki-surface) px-4 py-3">
         {prompt.text && (
@@ -2601,3 +2635,32 @@ function extractFilePath(input: unknown): string | null {
   }
   return null;
 }
+
+/**
+ * Mark where a search hit landed: a brief ring around the message, and every
+ * occurrence of the query inside it highlighted for a few seconds. Uses the
+ * CSS Custom Highlight API, so the rendered markdown is never rewritten;
+ * browsers without it still get the ring.
+ */
+function flashSearchMatch(el: HTMLElement, query: string): void {
+  el.classList.remove("renki-search-flash");
+  void el.offsetWidth; // restart the animation if the same message is hit twice
+  el.classList.add("renki-search-flash");
+  const q = query.trim().toLowerCase();
+  if (!q || typeof Highlight === "undefined" || !CSS.highlights) return;
+  const ranges: Range[] = [];
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const text = node.textContent?.toLowerCase() ?? "";
+    for (let at = text.indexOf(q); at !== -1; at = text.indexOf(q, at + q.length)) {
+      const range = document.createRange();
+      range.setStart(node, at);
+      range.setEnd(node, at + q.length);
+      ranges.push(range);
+    }
+  }
+  CSS.highlights.set("renki-search", new Highlight(...ranges));
+  clearTimeout(searchHighlightTimer);
+  searchHighlightTimer = setTimeout(() => CSS.highlights.delete("renki-search"), 4000);
+}
+let searchHighlightTimer: ReturnType<typeof setTimeout> | undefined;

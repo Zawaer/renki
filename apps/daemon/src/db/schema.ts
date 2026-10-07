@@ -171,6 +171,18 @@ export const DDL = `
     pre_tokens INTEGER
   );
 
+  -- Chat text for search (see events/search.ts). Derived from events, so it
+  -- can always be rebuilt; trigram so any substring matches.
+  CREATE VIRTUAL TABLE IF NOT EXISTS chat_text USING fts5(
+    text,
+    session_id UNINDEXED,
+    seq UNINDEXED,
+    ts UNINDEXED,
+    anchor UNINDEXED,
+    role UNINDEXED,
+    tokenize = 'trigram'
+  );
+
   CREATE TABLE IF NOT EXISTS push_tokens (
     device_id TEXT PRIMARY KEY,
     expo_token TEXT NOT NULL,

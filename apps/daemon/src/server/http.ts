@@ -202,6 +202,9 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
 
   // Empty until the first turn runs this process's lifetime — only obtainable
   // from a live SDK Query object (see claude/capabilities.ts).
+  // Search what was said in every chat — prompts and Claude's replies.
+  app.get<{ Querystring: { q?: string } }>("/search", async (req) => manager.events.search.search(req.query.q ?? ""));
+
   app.get("/capabilities", async () => getCapabilities());
 
   // RTK (rtk-ai/rtk) token-savings stats, if RENKI_ENABLE_RTK is on. Self-describing

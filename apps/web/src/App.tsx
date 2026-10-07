@@ -1,5 +1,5 @@
 import { addHost, removeHost, type HostsState } from "@renki/client-core";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { BrowserRouter, MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { ClientProvider, useClient, useStoreValue } from "./lib/client.js";
 import { type AppConfig, getOrCreateDeviceId } from "./lib/config.js";
@@ -10,6 +10,7 @@ import { RenkiMark } from "./components/ui.js";
 import { AccountsBar } from "./components/AccountsBar.js";
 import { Home } from "./components/Home.js";
 import { SessionList } from "./components/SessionList.js";
+import { SearchPalette } from "./components/SearchPalette.js";
 import { SessionView } from "./components/SessionView.js";
 import { Settings } from "./components/Settings.js";
 import { Setup } from "./components/Setup.js";
@@ -166,12 +167,28 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
     />
   );
 
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchPalette = searchOpen && (
+    <SearchPalette
+      onClose={() => setSearchOpen(false)}
+      onOpen={(id, anchor, query) => {
+        setSearchOpen(false);
+        navigate(`/session/${encodeURIComponent(id)}?${new URLSearchParams({ at: anchor, q: query })}`);
+      }}
+    />
+  );
+
   // ⌘B / Ctrl+B toggles the sidebar, as in every editor.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "b") {
         e.preventDefault();
         setSidebarOpen((v) => !v);
+      }
+      // ⌘K / Ctrl+K: search every chat.
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen((v) => !v);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -195,6 +212,7 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
             </span>
           </button>
           <HeaderButton active={false} title="Show sidebar (⌘B)" icon="layout-sidebar-left" onClick={() => setSidebarOpen(true)} />
+          <HeaderButton active={searchOpen} title="Search chats (⌘K)" icon="search" onClick={() => setSearchOpen(true)} />
           <div className="flex-1" />
           {status !== "open" && (
             <span className="mb-1 flex h-8 w-8 items-center justify-center" title={status === "connecting" ? "Connecting…" : "Offline — retrying"}>
@@ -205,6 +223,7 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
           <HeaderButton active={onSettings} title="Settings" icon="gear" onClick={() => navigate(onSettings ? "/" : "/settings")} />
         </aside>
         <MainColumn lastError={lastError} selected={selected} onReset={onReset} managed={managed} />
+        {searchPalette}
       </div>
     );
   }
@@ -229,6 +248,7 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
           ) : (
             <HostSwitcher />
           )}
+          <HeaderButton active={searchOpen} title="Search chats (⌘K)" icon="search" onClick={() => setSearchOpen(true)} />
           <HeaderButton active={false} title="Hide sidebar (⌘B)" icon="layout-sidebar-left-off" onClick={() => setSidebarOpen(false)} />
         </div>
 
@@ -259,6 +279,7 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
       </aside>
 
       <MainColumn lastError={lastError} selected={selected} onReset={onReset} managed={managed} />
+      {searchPalette}
     </div>
   );
 }
@@ -349,6 +370,14 @@ function MainColumn({
   managed: boolean;
 }) {
   const location = useLocation();
+  const navigate = useNavigate();
+  // `?at=<anchor>&q=<query>` on a session URL: a search hit to scroll to.
+  const jumpTo = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    const anchor = params.get("at");
+    return anchor ? { anchor, query: params.get("q") ?? "" } : null;
+  }, [location.search]);
+  const clearJump = useCallback(() => navigate(location.pathname, { replace: true }), [navigate, location.pathname]);
   return (
     <main className="flex min-h-0 flex-col overflow-hidden bg-(--renki-bg)">
       <ConnectionBanner />
@@ -363,7 +392,10 @@ function MainColumn({
         <Routes>
           <Route path="/stats" element={<StatsView />} />
           <Route path="/settings" element={<Settings onReset={onReset} managed={managed} />} />
-          <Route path="/session/:id" element={selected ? <SessionView key={selected} sessionId={selected} /> : null} />
+          <Route
+            path="/session/:id"
+            element={selected ? <SessionView key={selected} sessionId={selected} jumpTo={jumpTo} onJumped={clearJump} /> : null}
+          />
           <Route path="*" element={<Home />}             />
         </Routes>
       </div>

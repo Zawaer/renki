@@ -61,6 +61,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { LongPressToRead } from "../components/TextReader";
 import { Markdown, StreamingMarkdown } from "../components/Markdown";
 import { FadeIn, PulseDot, Skeleton, animateLayout } from "../components/Motion";
 import { AgentsButton, AgentsSheet } from "../components/AgentsSheet";
@@ -871,8 +872,8 @@ function TimelineRowBody({
 }) {
   if (item.type === "prompt") {
     return (
-      <View style={styles.promptWrap}>
-        {item.text.length > 0 && <Text selectable style={styles.promptText}>{item.text}</Text>}
+      <LongPressToRead title="Your message" text={item.text} style={styles.promptWrap}>
+        {item.text.length > 0 && <Text style={styles.promptText}>{item.text}</Text>}
         {item.attachments && item.attachments.length > 0 && (
           <View style={styles.attachRow}>
             {item.attachments.map((a, i) => (
@@ -880,13 +881,13 @@ function TimelineRowBody({
             ))}
           </View>
         )}
-      </View>
+      </LongPressToRead>
     );
   }
   if (item.type === "notice") {
     return (
       <View style={styles.noticeWrap}>
-        <Text selectable style={[styles.notice, item.level === "warn" && styles.noticeWarn]}>{item.text}</Text>
+        <Text style={[styles.notice, item.level === "warn" && styles.noticeWarn]}>{item.text}</Text>
       </View>
     );
   }
@@ -1001,7 +1002,9 @@ function AssistantTurn({ turn, colors, styles }: { turn: TurnView; colors: Theme
         (turn.interrupted ? (
           <Text style={styles.meta}>Stopped</Text>
         ) : (
-          <Text selectable style={styles.errText}>Turn failed: {turn.errorMessage}</Text>
+          <LongPressToRead title="Error" text={`Turn failed: ${turn.errorMessage}`}>
+            <Text style={styles.errText}>Turn failed: {turn.errorMessage}</Text>
+          </LongPressToRead>
         ))}
     </View>
   );
@@ -1089,10 +1092,10 @@ function FilesChanged({ changes, colors, styles }: { changes: FileChange[]; colo
 /** A prompt sent while this turn was already running — shown inside the turn, where Claude picked it up. */
 function SteeredPrompt({ prompt, styles }: { prompt: SteeredPromptView; styles: Styles }) {
   return (
-    <View style={[styles.promptWrap, styles.steeredWrap]}>
-      {prompt.text.length > 0 && <Text selectable style={styles.promptText}>{prompt.text}</Text>}
+    <LongPressToRead title="Your message" text={prompt.text} style={[styles.promptWrap, styles.steeredWrap]}>
+      {prompt.text.length > 0 && <Text style={styles.promptText}>{prompt.text}</Text>}
       <Text style={styles.meta}>Sent while Claude was working · picked up mid-turn</Text>
-    </View>
+    </LongPressToRead>
   );
 }
 
@@ -1132,7 +1135,11 @@ function Block({
   if (block.kind === "thinking") {
     return <ThinkingBlock block={block} live={turnRunning && block.endedAtMs == null} colors={colors} styles={styles} />;
   }
-  return <StreamingMarkdown content={block.text} streaming={turnRunning && block.endedAtMs == null} />;
+  return (
+    <LongPressToRead title="Claude's reply" text={block.text}>
+      <StreamingMarkdown content={block.text} streaming={turnRunning && block.endedAtMs == null} />
+    </LongPressToRead>
+  );
 }
 
 /**
@@ -1231,17 +1238,17 @@ function ToolStep({
           ) : plan ? (
             <Markdown content={plan} />
           ) : (
-            <Text selectable style={styles.toolBody}>{truncate(JSON.stringify(block.toolInput), 300)}</Text>
+            <Text style={styles.toolBody}>{truncate(JSON.stringify(block.toolInput), 300)}</Text>
           )}
           {block.result && (
-            <Text selectable style={[styles.toolBody, !block.result.ok && styles.errText]}>
+            <Text style={[styles.toolBody, !block.result.ok && styles.errText]}>
               {block.result.ok ? "" : "error: "}
               {truncate(block.result.summary, 300)}
             </Text>
           )}
           {block.subagent && <SubagentActivity subagent={block.subagent} colors={colors} styles={styles} />}
           {block.backgroundTask && (
-            <Text selectable style={styles.toolBody}>{truncate(block.backgroundTask.summary, 300)}</Text>
+            <Text style={styles.toolBody}>{truncate(block.backgroundTask.summary, 300)}</Text>
           )}
         </View>
       )}

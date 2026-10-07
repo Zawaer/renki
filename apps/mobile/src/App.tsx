@@ -18,6 +18,7 @@ import { SessionList } from "./screens/SessionList";
 import { SessionView } from "./screens/SessionView";
 import { StatsView } from "./screens/StatsView";
 import { PaletteProvider, type ThemeColors, useTheme } from "./theme";
+import { TextReaderProvider } from "./components/TextReader";
 
 // Show notifications while the app is foregrounded too.
 Notifications.setNotificationHandler({
@@ -277,7 +278,11 @@ function Main({
 
   function renderScreen() {
   if (selected) {
-    return <SessionView sessionId={selected} onBack={() => setSelected(null)} />;
+    return (
+      <TextReaderProvider>
+        <SessionView sessionId={selected} onBack={() => setSelected(null)} />
+      </TextReaderProvider>
+    );
   }
   if (showSettings) {
     return (

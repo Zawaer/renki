@@ -213,6 +213,30 @@ export const RepoStatsBucket = z.object({
 export type RepoStatsBucket = z.infer<typeof RepoStatsBucket>;
 
 /**
+ * What a chat export contains (GET /sessions/:id/export). Timestamps are
+ * always in; the rest is what the export dialog's checkboxes choose.
+ * Markdown comes back as a .md, or a .zip holding the .md and a media/ folder
+ * when media is included and the chat has any.
+ */
+export const ExportFormat = z.enum(["markdown", "pdf"]);
+export type ExportFormat = z.infer<typeof ExportFormat>;
+
+export const ExportOptions = z.object({
+  format: ExportFormat.default("markdown"),
+  /** Images and files you attached, and screenshots Claude saw. */
+  media: z.boolean().default(true),
+  /** Commands Claude ran, files it edited, and their output. */
+  tools: z.boolean().default(true),
+  /** Claude's thinking, where it was shown. */
+  thinking: z.boolean().default(false),
+  /** Each reply's duration, tokens and cost. */
+  stats: z.boolean().default(false),
+  /** IANA zone for the timestamps — the exporting device's. */
+  timeZone: z.string().optional(),
+});
+export type ExportOptions = z.infer<typeof ExportOptions>;
+
+/**
  * One message that matched a chat search: a prompt you sent, or a block of
  * Claude's reply. Where it sits in the transcript is given the way the
  * transcript itself names things — `promptId` for a prompt, `turnId` plus

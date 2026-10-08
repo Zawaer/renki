@@ -7,6 +7,7 @@ import type {
   CloneRepoResponse,
   CreateSessionRequest,
   CreateSessionResponse,
+  ExportOptions,
   DeleteSessionResponse,
   DisconnectUsageKeyResponse,
   EmptyTrashResponse,
@@ -156,6 +157,31 @@ export class RestClient {
    * switched off (RENKI_TRASH_RETENTION_DAYS=0), in which case this really did
    * delete it.
    */
+  /**
+   * One chat as a file: Markdown (a .md, or a .zip holding it and a media/
+   * folder) or PDF. Times in the export use this device's time zone.
+   */
+  async exportSession(
+    sessionId: string,
+    opts: Partial<Omit<ExportOptions, "timeZone">> = {},
+  ): Promise<{ filename: string; contentType: string; data: ArrayBuffer }> {
+    const q = new URLSearchParams({ tz: localTimeZone() });
+    if (opts.format) q.set("format", opts.format);
+    for (const k of ["media", "tools", "thinking", "stats"] as const) {
+      if (opts[k] !== undefined) q.set(k, opts[k] ? "1" : "0");
+    }
+    const res = await fetch(`${this.auth.baseUrl}/sessions/${encodeURIComponent(sessionId)}/export?${q}`, {
+      headers: { authorization: `Bearer ${this.auth.token}` },
+    });
+    if (!res.ok) {
+      const detail = await res.json().catch(() => ({}) as Record<string, unknown>);
+      throw new RestError(res.status, String(detail.error ?? "http_error"), String(detail.message ?? res.statusText));
+    }
+    const disposition = res.headers.get("content-disposition") ?? "";
+    const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `chat.${opts.format === "pdf" ? "pdf" : "md"}`;
+    return { filename, contentType: res.headers.get("content-type") ?? "application/octet-stream", data: await res.arrayBuffer() };
+  }
+
   /** Bring an archived session back to work: its worktree is rebuilt and it takes prompts again. */
   async unarchiveSession(sessionId: string): Promise<Session> {
     return (await this.post<{ session: Session }>(`/sessions/${encodeURIComponent(sessionId)}/unarchive`, {})).session;

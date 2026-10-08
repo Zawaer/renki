@@ -101,13 +101,13 @@ describe("per-event folding", () => {
 
   it("prompt_submitted appends a prompt item", () => {
     const s = fold(stream({ kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "hi" }));
-    expect(s.timeline).toEqual([{ type: "prompt", promptId: "p1", deviceId: "d1", text: "hi" }]);
+    expect(s.timeline).toEqual([{ type: "prompt", promptId: "p1", deviceId: "d1", text: "hi", at: expect.any(Number) }]);
   });
 
   it("prompt_submitted carries attachments through onto the timeline item", () => {
     const attachments = [{ name: "shot.png", mediaType: "image/png" as const, data: "cGFrZQ==" }];
     const s = fold(stream({ kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "what is this?", attachments }));
-    expect(s.timeline).toEqual([{ type: "prompt", promptId: "p1", deviceId: "d1", text: "what is this?", attachments }]);
+    expect(s.timeline).toEqual([{ type: "prompt", promptId: "p1", deviceId: "d1", text: "what is this?", attachments, at: expect.any(Number) }]);
   });
 
   it("prompt_queued lands in queuedPrompts, not timeline", () => {
@@ -122,7 +122,7 @@ describe("per-event folding", () => {
       { kind: "prompt_submitted", promptId: "p2", deviceId: "d1", text: "queued question" },
     ));
     expect(s.queuedPrompts).toEqual([]);
-    expect(s.timeline).toEqual([{ type: "prompt", promptId: "p2", deviceId: "d1", text: "queued question" }]);
+    expect(s.timeline).toEqual([{ type: "prompt", promptId: "p2", deviceId: "d1", text: "queued question", at: expect.any(Number) }]);
   });
 
   it("keeps every prompt/answer pair adjacent in timeline even when a follow-up is queued before the prior turn finishes", () => {
@@ -325,7 +325,7 @@ describe("per-event folding", () => {
 
   it("notice appends an inline timeline notice", () => {
     const s = fold(stream({ kind: "notice", text: "switched account", level: "warn" }));
-    expect(s.timeline).toEqual([{ type: "notice", text: "switched account", level: "warn" }]);
+    expect(s.timeline).toEqual([{ type: "notice", text: "switched account", level: "warn", at: expect.any(Number) }]);
   });
 
   it("model_changed lands in the timeline where it happened, between the turns it separates", () => {
@@ -442,7 +442,7 @@ describe("full scripted turn", () => {
     expect(s.repoName).toBe("acme");
     expect(s.pending).toEqual([]);
     // prompt item, then the turn item.
-    expect(s.timeline[0]).toEqual({ type: "prompt", promptId: "p1", deviceId: "d_phone", text: "fix the bug" });
+    expect(s.timeline[0]).toEqual({ type: "prompt", promptId: "p1", deviceId: "d_phone", text: "fix the bug", at: expect.any(Number) });
     const turn = (s.timeline[1] as any).turn;
     expect(turn.status).toBe("done");
     expect(turn.blocks.map((b: any) => b.kind)).toEqual(["thinking", "text", "tool_use"]);
@@ -715,14 +715,14 @@ describe("steering + turn_started", () => {
     );
     expect(s.timeline.map((it) => it.type)).toEqual(["prompt", "turn"]);
     const turn = (s.timeline[1] as Extract<TimelineItem, { type: "turn" }>).turn;
-    expect(turn.steeredPrompts).toEqual([{ promptId: "p2", deviceId: "d1", text: "also do Y", attachments: undefined, afterBlockIndex: 0 }]);
+    expect(turn.steeredPrompts).toEqual([{ promptId: "p2", deviceId: "d1", text: "also do Y", attachments: undefined, afterBlockIndex: 0, at: expect.any(Number) }]);
     expect(turn.status).toBe("done");
     expect(s.queuedPrompts).toEqual([]);
   });
 
   it("a prompt flagged steered with no running turn to join falls back to an ordinary timeline prompt", () => {
     const s = fold(stream({ kind: "prompt_submitted", promptId: "p2", deviceId: "d1", text: "hi", steered: true }));
-    expect(s.timeline).toEqual([{ type: "prompt", promptId: "p2", deviceId: "d1", text: "hi", attachments: undefined }]);
+    expect(s.timeline).toEqual([{ type: "prompt", promptId: "p2", deviceId: "d1", text: "hi", attachments: undefined, at: expect.any(Number) }]);
   });
 
   it("turnTriggerLabel names unprompted turns and stays silent for prompted/legacy ones", () => {

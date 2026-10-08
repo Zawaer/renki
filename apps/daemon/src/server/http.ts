@@ -5,12 +5,14 @@ import {
   CloneRepoRequest,
   ConnectUsageKeyRequest,
   CreateSessionRequest,
+  ExportOptions,
   RegisterPushTokenRequest,
   RenameSessionRequest,
   UpdateSessionComposerRequest,
   SwitchAccountRequest,
   UpdateRotationRequest,
 } from "@renki/protocol";
+import { ExportError, exportChat } from "../export/index.js";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
 import { loginAndExtractSessionKey, PlaywrightUnavailableError } from "../accounts/login.js";
@@ -310,6 +312,41 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
       return { session: await manager.archiveSession(req.params.id) };
     } catch (err) {
       return sendSessionError(reply, err);
+    }
+  });
+
+  /**
+   * One chat as a file to download: Markdown (a .md, or a .zip with its media)
+   * or PDF. Query: format=markdown|pdf, media/tools/thinking/stats=1|0, tz.
+   */
+  app.get<{ Params: { id: string }; Querystring: Record<string, string | undefined> }>("/sessions/:id/export", async (req, reply) => {
+    const q = req.query;
+    const flag = (v: string | undefined) => (v === undefined ? undefined : v === "1" || v === "true");
+    const parsed = ExportOptions.safeParse({
+      format: q.format,
+      media: flag(q.media),
+      tools: flag(q.tools),
+      thinking: flag(q.thinking),
+      stats: flag(q.stats),
+      timeZone: q.tz,
+    });
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues });
+    let session;
+    try {
+      session = manager.getSession(req.params.id);
+    } catch (err) {
+      return sendSessionError(reply, err);
+    }
+    try {
+      const file = await exportChat(session, manager.events.read(req.params.id), parsed.data);
+      return reply
+        .header("content-type", file.contentType)
+        .header("content-disposition", `attachment; filename="${file.filename}"`)
+        .header("access-control-expose-headers", "content-disposition")
+        .send(file.body);
+    } catch (err) {
+      if (err instanceof ExportError) return reply.code(503).send({ error: err.code, message: err.message });
+      throw err;
     }
   });
 

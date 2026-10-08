@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FadeIn, Skeleton } from "../components/Motion";
 import { Sheet } from "../components/Sheet";
 import { useClient } from "../lib/client";
+import { ExportSheet } from "../components/ExportSheet";
 import { loadDeviceDefaults } from "../lib/composerPrefs";
 import { radius, statusColorFor, type ThemeColors, useTheme, withAlpha } from "../theme";
 import { AccountsBar } from "./AccountsBar";
@@ -272,6 +273,7 @@ function Row({
   onPurge?: () => void;
 }) {
   const [actionsOpen, setActionsOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(session.title ?? session.repoName);
 
@@ -348,6 +350,7 @@ function Row({
         </TouchableOpacity>
       </TouchableOpacity>
 
+      <ExportSheet sessionId={session.id} title={session.title || session.repoName} visible={exportOpen} onClose={() => setExportOpen(false)} colors={colors} />
       <Sheet visible={actionsOpen} onClose={() => setActionsOpen(false)} title={session.title || session.repoName} colors={colors}>
         <View style={styles.sheetBody}>
           {onUnarchive && (
@@ -374,6 +377,16 @@ function Row({
               <Text style={styles.sheetRowText}>Archive</Text>
             </TouchableOpacity>
           )}
+          <TouchableOpacity
+            style={styles.sheetRow}
+            onPress={() => {
+              setActionsOpen(false);
+              setExportOpen(true);
+            }}
+          >
+            <Ionicons name="download-outline" size={18} color={colors.text} />
+            <Text style={styles.sheetRowText}>Export…</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.sheetRow}
             onPress={() => {

@@ -72,6 +72,7 @@ import { FileLinkContext, type FileLinkTarget } from "../lib/fileLinks";
 import { pickDocumentAttachments, pickImageAttachments, type PendingAttachment } from "../lib/attachments";
 import { loadDeviceDefaults, rememberDeviceDefaults } from "../lib/composerPrefs";
 import { useClient, useStoreValue } from "../lib/client";
+import { ExportSheet } from "../components/ExportSheet";
 import { useAndroidKeyboardResizeAnimation } from "../lib/useAndroidKeyboardResizeAnimation";
 import { radius, softShadow, statusColorFor, type ThemeColors, useTheme, withAlpha } from "../theme";
 
@@ -281,6 +282,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   /** The session's subagents as a tree — the header's Agents button and sheet. */
   const agents = useMemo(() => agentMapOf(conv.timeline), [conv.timeline]);
   const [agentsOpen, setAgentsOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   // Pop the keyboard to the composer as soon as this device gains control
   // (whether by taking it explicitly or via auto-claim on session creation).
@@ -371,6 +373,9 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
             {conv.controller ? (isController ? " · you're in control" : ` · ${conv.controllerName ?? "other"}`) : " · unlocked"}
           </Text>
         </View>
+        <TouchableOpacity onPress={() => setExportOpen(true)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Export chat" style={{ paddingHorizontal: 4 }}>
+          <Ionicons name="download-outline" size={20} color={colors.dim} />
+        </TouchableOpacity>
         <AgentsButton agents={agents} onPress={() => setAgentsOpen(true)} />
         {conv.status === "archived" ? (
           // Archived sessions can't be controlled; bringing one back rebuilds its worktree and resumes the chat.
@@ -669,6 +674,8 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
         colors={colors}
         styles={styles}
       />
+
+      <ExportSheet sessionId={sessionId} title={repoName ?? "This chat"} visible={exportOpen} onClose={() => setExportOpen(false)} colors={colors} />
 
       <ImagePreviewModal attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} />
       <FileSheet sessionId={sessionId} file={openFile} onClose={() => setOpenFile(null)} />

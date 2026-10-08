@@ -60,6 +60,7 @@ import { WorkspacePanel, type FileOpenRequest, type WorkspaceTab } from "./Works
 import { FileLinkContext, type FileLinkTarget } from "../lib/fileLinks.js";
 import { Markdown } from "./Markdown.js";
 import { AgentMapButton } from "./AgentMap.js";
+import { ExportDialog } from "./ExportDialog.js";
 import { Button, Collapsible, CopyButton, InfoHint, Reveal, Skeleton, StatusBadge } from "./ui.js";
 
 export function SessionView({
@@ -134,6 +135,7 @@ export function SessionView({
    * streaming reply that yanks you forward makes the transcript unusable. The
    * threshold absorbs sub-pixel rounding, nothing more.
    */
+  const [exporting, setExporting] = useState(false);
   const stickToBottom = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
 
@@ -266,6 +268,8 @@ export function SessionView({
         </div>
         <div className="flex items-center gap-3">
           <AgentMapButton timeline={conv.timeline} title={title || repoName || "This session"} model={conv.model} />
+          <HeaderIconButton icon="codicon-desktop-download" label="Export chat" active={exporting} onClick={() => setExporting(true)} />
+          {exporting && <ExportDialog sessionId={sessionId} title={title || repoName || "This session"} onClose={() => setExporting(false)} />}
           {hasTree && (
             <span className="flex items-center gap-0.5">
               <HeaderIconButton icon="codicon-diff" label="Changes" active={panel === "changes"} onClick={() => togglePanel("changes")} />

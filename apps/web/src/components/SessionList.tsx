@@ -3,6 +3,7 @@ import type { Session } from "@renki/protocol";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { clearComposerPrefs, clearDraft } from "../lib/composerPrefs.js";
 import { useClient } from "../lib/client.js";
+import { ExportDialog } from "./ExportDialog.js";
 import { NewSessionDialog } from "./NewSessionDialog.js";
 import { Button, Eyebrow, Reveal, SessionGlyph, Skeleton } from "./ui.js";
 
@@ -35,6 +36,7 @@ export function SessionList({
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
   const [showArchived, setShowArchived] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
+  const [exporting, setExporting] = useState<Session | null>(null);
 
   const refresh = useCallback(() => {
     rest
@@ -165,6 +167,7 @@ export function SessionList({
     onSelect: () => onSelect(s.id),
     onRename: (title: string) => rename(s.id, title),
     onDelete: () => del(s.id),
+    onExport: () => setExporting(s),
   });
 
   return (
@@ -324,6 +327,10 @@ export function SessionList({
         )}
       </div>
 
+      {exporting && (
+        <ExportDialog sessionId={exporting.id} title={exporting.title || exporting.repoName} onClose={() => setExporting(null)} />
+      )}
+
       {creating && (
         <NewSessionDialog
           initialRepoId={creating.repoId}
@@ -365,6 +372,7 @@ function Row({
   onSelect,
   onArchive,
   onUnarchive,
+  onExport,
   onRename,
   onDelete,
   onRestore,
@@ -375,6 +383,7 @@ function Row({
   onSelect: () => void;
   onArchive?: () => void;
   onUnarchive?: () => void;
+  onExport: () => void;
   onRename: (title: string) => void;
   onDelete: () => void;
   /** Both passed only for a row in the trash, which offers those two instead of archive/delete. */
@@ -513,6 +522,15 @@ function Row({
                   <span className="codicon codicon-archive" /> Archive
                 </button>
               )}
+              <button
+                onClick={() => {
+                  setMenuOpen(false);
+                  onExport();
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-fg) hover:bg-(--renki-hover)"
+              >
+                <span className="codicon codicon-desktop-download" /> Export…
+              </button>
               {!inTrash && (
                 <button
                   onClick={() => {

@@ -129,6 +129,14 @@ RUN git config --system credential."https://github.com".helper '!gh auth git-cre
 WORKDIR /app
 COPY --from=builder /app/deploy .
 
+# Headless Chromium for PDF export (apps/daemon/src/export/pdf.ts), from the
+# daemon's own Playwright so the versions match. Installed outside /root:
+# sessions run as root in this container, and clearing ~/.cache is an ordinary
+# thing for one to do.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+RUN npx --yes playwright install --with-deps --only-shell chromium \
+    && rm -rf /var/lib/apt/lists/*
+
 # The daemon's own copy of node. Sessions run as root in this container, so one
 # that installs another Node (n, nvm, a NodeSource package) overwrites
 # /usr/local/bin/node — and better-sqlite3 is compiled for this exact version,

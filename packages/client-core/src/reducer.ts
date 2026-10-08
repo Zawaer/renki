@@ -56,7 +56,8 @@ export type SteeredPromptView = {
   text: string;
   attachments?: Attachment[];
   /** Index of the last block that existed when it arrived (-1 = before any) — render it right after that block. */
-  afterBlockIndex: number;
+  afterBlockIndex: number;  /** When it was sent. */
+  at?: number;
 };
 
 export type TurnView = {
@@ -86,9 +87,10 @@ export type TurnView = {
 
 /** A prompt the controller sent, an assistant turn, a system notice, or a model switch. */
 export type TimelineItem =
-  | { type: "prompt"; promptId: string; deviceId: string; text: string; attachments?: Attachment[] }
+  /** `at`: when it was sent (the event's time); absent only on items built by hand. */
+  | { type: "prompt"; promptId: string; deviceId: string; text: string; attachments?: Attachment[]; at?: number }
   | { type: "turn"; turn: TurnView }
-  | { type: "notice"; text: string; level: "info" | "warn" }
+  | { type: "notice"; text: string; level: "info" | "warn"; at?: number }
   /**
    * Background tasks that finished without a tool call in the timeline to
    * attach to (the call that started them was never replayed). Consecutive
@@ -282,6 +284,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
             text: e.text,
             attachments: e.attachments,
             afterBlockIndex: item.turn.blocks.length - 1,
+            at: e.ts,
           };
           const next = s.timeline.slice();
           next[idx] = { type: "turn", turn: { ...item.turn, steeredPrompts: [...item.turn.steeredPrompts, steered] } };
@@ -296,7 +299,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       // follow-ups were typed.
       s.timeline = [
         ...s.timeline,
-        { type: "prompt", promptId: e.promptId, deviceId: e.deviceId, text: e.text, attachments: e.attachments },
+        { type: "prompt", promptId: e.promptId, deviceId: e.deviceId, text: e.text, attachments: e.attachments, at: e.ts },
       ];
       return s;
     }
@@ -397,7 +400,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       return s;
 
     case "notice":
-      s.timeline = [...s.timeline, { type: "notice", text: e.text, level: e.level }];
+      s.timeline = [...s.timeline, { type: "notice", text: e.text, level: e.level, at: e.ts }];
       return s;
 
     case "model_changed":

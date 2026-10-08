@@ -325,6 +325,9 @@ export function SessionView({
         </div>
       )}
 
+      {/* Archived: read-only, with the way back to work. */}
+      {status === "archived" && <UnarchiveBar sessionId={sessionId} hasRepo={!!branch} />}
+
       {/* Timeline */}
       <div ref={scrollRef} onScroll={onTranscriptScroll} className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl space-y-7 px-6 py-6">
@@ -460,7 +463,7 @@ export function SessionView({
           status === "trashed"
             ? "In the trash — restore it to keep the transcript"
             : status === "archived"
-              ? "Archived sessions are read-only"
+              ? "Archived — unarchive it to keep going"
               : !isController
                 ? "Take control to send prompts"
                 : ""
@@ -2664,3 +2667,43 @@ function flashSearchMatch(el: HTMLElement, query: string): void {
   searchHighlightTimer = setTimeout(() => CSS.highlights.delete("renki-search"), 4000);
 }
 let searchHighlightTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * The bar on an archived session. Unarchiving rebuilds its working directory
+ * and makes it take prompts again, resuming the same conversation — but the
+ * code doesn't come back with it, which the bar says before you click.
+ */
+function UnarchiveBar({ sessionId, hasRepo }: { sessionId: string; hasRepo: boolean }) {
+  const { rest, realtime } = useClient();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="mx-6 mb-2 flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-(--renki-border) bg-(--renki-bg-inset)/60 px-3.5 py-2.5 text-xs text-(--renki-fg-muted)">
+      <span className="codicon codicon-archive text-[13px]" />
+      <span className="font-medium text-(--renki-fg)">This session is archived</span>
+      <span>
+        · {hasRepo ? "unarchiving gives it a fresh worktree from its base branch" : "unarchiving gives it an empty folder again"}; the conversation carries on
+      </span>
+      {error && <span className="w-full text-(--renki-danger)">{error}</span>}
+      <Button
+        size="sm"
+        className="ml-auto"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          setError(null);
+          rest
+            .unarchiveSession(sessionId)
+            .then(() => {
+              realtime.watch(sessionId);
+              realtime.takeControl(sessionId);
+            })
+            .catch((err) => setError(err instanceof Error ? err.message : "Couldn't unarchive this session."))
+            .finally(() => setBusy(false));
+        }}
+      >
+        <span className="codicon codicon-reply" /> {busy ? "Unarchiving…" : "Unarchive"}
+      </Button>
+    </div>
+  );
+}

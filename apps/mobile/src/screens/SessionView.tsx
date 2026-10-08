@@ -45,6 +45,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   FlatList,
   Image,
@@ -371,10 +372,25 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
           </Text>
         </View>
         <AgentsButton agents={agents} onPress={() => setAgentsOpen(true)} />
-        {!isController && (
-          <TouchableOpacity style={styles.ctrlBtn} onPress={() => realtime.takeControl(sessionId)}>
-            <Text style={styles.ctrlBtnText}>Take control</Text>
+        {conv.status === "archived" ? (
+          // Archived sessions can't be controlled; bringing one back rebuilds its worktree and resumes the chat.
+          <TouchableOpacity
+            style={styles.ctrlBtn}
+            onPress={() =>
+              rest
+                .unarchiveSession(sessionId)
+                .then(() => realtime.takeControl(sessionId))
+                .catch((err) => Alert.alert("Couldn't unarchive", err instanceof Error ? err.message : "Try again in a moment."))
+            }
+          >
+            <Text style={styles.ctrlBtnText}>Unarchive</Text>
           </TouchableOpacity>
+        ) : (
+          !isController && (
+            <TouchableOpacity style={styles.ctrlBtn} onPress={() => realtime.takeControl(sessionId)}>
+              <Text style={styles.ctrlBtnText}>Take control</Text>
+            </TouchableOpacity>
+          )
         )}
       </View>
 

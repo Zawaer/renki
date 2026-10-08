@@ -16,7 +16,7 @@ import type { Config } from "../config.js";
 import type { DB } from "../db/index.js";
 import { compactions, sessions } from "../db/schema.js";
 import { EventLog } from "../events/log.js";
-import { createWorktree, removeWorktree } from "../git/worktrees.js";
+import { createWorktree, removeWorktree, restoreWorktree } from "../git/worktrees.js";
 import { newSessionId } from "../ids.js";
 import { logger } from "../logger.js";
 import { findRepo } from "../repos.js";
@@ -524,6 +524,53 @@ export class SessionManager {
     this.events.append(id, { kind: "control_changed", controller: null, controllerName: null });
     this.pendingPermissions.delete(id);
     logger.info("session archived", { id });
+    return this.getSession(id);
+  }
+
+  /**
+   * Bring an archived session back to work: rebuild its working directory and
+   * make it idle again, so it takes prompts and resumes the same conversation.
+   *
+   * The worktree comes back at the same path, which is what lets Claude resume
+   * its transcript with full context. What doesn't come back is the code:
+   * archiving deleted the branch, so the branch is recreated from the base
+   * branch (unless it survived, in which case it's reused as is). The notice
+   * in the transcript says which.
+   *
+   * A merge-conflict session can't come back — its worktree was a one-off
+   * merge in progress, and a fresh checkout of the target isn't that.
+   */
+  async unarchiveSession(id: string): Promise<Session> {
+    const session = this.getSession(id);
+    if (session.status !== "archived") {
+      throw new SessionError("invalid_request", "Only an archived session can be unarchived.");
+    }
+    if (session.purpose === "merge_conflict") {
+      throw new SessionError("invalid_request", "A merge-conflict session can't be unarchived: its merge is gone. Start the merge again instead.");
+    }
+
+    let note: string;
+    if (session.repoId) {
+      const repo = await findRepo(this.config, session.repoId);
+      if (!repo) throw new SessionError("repo_not_found", `The repo this session was in (${session.repoName}) isn't there anymore.`);
+      if (!session.branch || !session.baseBranch) throw new SessionError("invalid_request", "This session has no branch to bring back.");
+      try {
+        const { reusedBranch } = await restoreWorktree(repo.path, session.worktreePath, session.branch, session.baseBranch);
+        note = reusedBranch
+          ? `Unarchived — back on ${session.branch}, with the commits it had.`
+          : `Unarchived — ${session.branch} starts fresh from ${session.baseBranch}; changes made before archiving aren't back.`;
+      } catch (err) {
+        throw new SessionError("invalid_request", `Couldn't recreate the worktree: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    } else {
+      mkdirSync(session.worktreePath, { recursive: true });
+      note = "Unarchived — files made in this chat's folder before archiving aren't back.";
+    }
+
+    this.patch(id, { status: "idle" });
+    this.events.append(id, { kind: "status_changed", status: "idle" });
+    this.events.append(id, { kind: "notice", text: note, level: "info" });
+    logger.info("session unarchived", { id });
     return this.getSession(id);
   }
 

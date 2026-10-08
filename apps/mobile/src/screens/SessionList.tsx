@@ -96,6 +96,17 @@ export function SessionList({
     refresh();
   }
 
+  /** Archived → idle: its worktree is rebuilt and it takes prompts again. */
+  async function unarchive(id: string) {
+    try {
+      await rest.unarchiveSession(id);
+      onSelect(id);
+    } catch (err) {
+      Alert.alert("Couldn't unarchive", err instanceof Error ? err.message : "Try again in a moment.");
+    }
+    refresh();
+  }
+
   async function purge(id: string) {
     await rest.purgeSession(id);
     refresh();
@@ -175,6 +186,7 @@ export function SessionList({
             styles={styles}
             statusColor={statusColor}
             onSelect={() => onSelect(s.id)}
+            onUnarchive={() => unarchive(s.id)}
             onRename={(title) => rename(s.id, title)}
             onDelete={() => del(s.id)}
           />
@@ -239,6 +251,7 @@ function Row({
   statusColor,
   onSelect,
   onArchive,
+  onUnarchive,
   onRename,
   onDelete,
   onRestore,
@@ -250,6 +263,8 @@ function Row({
   statusColor: Record<string, string>;
   onSelect: () => void;
   onArchive?: () => void;
+  /** Passed only for an archived row. */
+  onUnarchive?: () => void;
   onRename: (title: string) => void;
   onDelete: () => void;
   /** Both passed only for a row in the trash. */
@@ -335,6 +350,18 @@ function Row({
 
       <Sheet visible={actionsOpen} onClose={() => setActionsOpen(false)} title={session.title || session.repoName} colors={colors}>
         <View style={styles.sheetBody}>
+          {onUnarchive && (
+            <TouchableOpacity
+              style={styles.sheetRow}
+              onPress={() => {
+                setActionsOpen(false);
+                onUnarchive();
+              }}
+            >
+              <Ionicons name="arrow-undo-outline" size={18} color={colors.text} />
+              <Text style={styles.sheetRowText}>Unarchive</Text>
+            </TouchableOpacity>
+          )}
           {onArchive && (
             <TouchableOpacity
               style={styles.sheetRow}

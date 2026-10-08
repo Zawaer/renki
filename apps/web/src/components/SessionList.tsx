@@ -113,6 +113,17 @@ export function SessionList({
     refresh();
   }
 
+  /** Archived → idle: its worktree is rebuilt and it takes prompts again. */
+  async function unarchive(id: string) {
+    try {
+      await rest.unarchiveSession(id);
+      onSelect(id);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Couldn't unarchive this session.");
+    }
+    refresh();
+  }
+
   async function restore(id: string) {
     await rest.restoreSession(id);
     refresh();
@@ -305,7 +316,7 @@ export function SessionList({
             {showArchived && (
               <div className="space-y-px">
                 {archived.map((s) => (
-                  <Row key={s.id} {...rowProps(s)} />
+                  <Row key={s.id} {...rowProps(s)} onUnarchive={() => unarchive(s.id)} />
                 ))}
               </div>
             )}
@@ -353,6 +364,7 @@ function Row({
   selected,
   onSelect,
   onArchive,
+  onUnarchive,
   onRename,
   onDelete,
   onRestore,
@@ -362,6 +374,7 @@ function Row({
   selected: boolean;
   onSelect: () => void;
   onArchive?: () => void;
+  onUnarchive?: () => void;
   onRename: (title: string) => void;
   onDelete: () => void;
   /** Both passed only for a row in the trash, which offers those two instead of archive/delete. */
@@ -476,6 +489,17 @@ function Row({
                   className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-fg) hover:bg-(--renki-hover)"
                 >
                   <span className="codicon codicon-history" /> Restore
+                </button>
+              )}
+              {onUnarchive && (
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onUnarchive();
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-fg) hover:bg-(--renki-hover)"
+                >
+                  <span className="codicon codicon-reply" /> Unarchive
                 </button>
               )}
               {onArchive && (

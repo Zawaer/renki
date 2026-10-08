@@ -510,6 +510,54 @@ describe("archive", () => {
   });
 });
 
+describe("unarchive", () => {
+  it("rebuilds the worktree at the same path, fresh from the base branch, and takes prompts again", async () => {
+    const { manager, config, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    await manager.archiveSession(s.id);
+    expect(await branches(config, repoId)).not.toContain(s.branch);
+
+    const back = await manager.unarchiveSession(s.id);
+    expect(back.status).toBe("idle");
+    expect(back.worktreePath).toBe(s.worktreePath);
+    expect(existsSync(resolve(s.worktreePath, "README.md"))).toBe(true);
+    expect(await branches(config, repoId)).toContain(s.branch);
+    expect(manager.events.read(s.id).at(-1)).toMatchObject({ kind: "notice", text: expect.stringMatching(/starts fresh from main/) });
+    expect(manager.takeControl(s.id, "d1").controller).toBe("d1");
+  });
+
+  it("checks out the branch as it was when it survived archiving", async () => {
+    const { manager, config, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    await manager.archiveSession(s.id);
+    const { simpleGit } = await import("simple-git");
+    await simpleGit(resolve(config.reposRoot, repoId)).raw(["branch", s.branch!, "main"]);
+
+    await manager.unarchiveSession(s.id);
+    expect(manager.events.read(s.id).at(-1)).toMatchObject({ kind: "notice", text: expect.stringMatching(/with the commits it had/) });
+  });
+
+  it("brings back a repo-less chat's folder, and a session restored from the trash", async () => {
+    const { manager, repoId } = setup();
+    const chat = await manager.createSession({});
+    await manager.archiveSession(chat.id);
+    expect(existsSync(chat.worktreePath)).toBe(false);
+    expect((await manager.unarchiveSession(chat.id)).status).toBe("idle");
+    expect(existsSync(chat.worktreePath)).toBe(true);
+
+    const s = await newSession(manager, repoId);
+    await manager.trashSession(s.id);
+    manager.restoreSession(s.id);
+    expect((await manager.unarchiveSession(s.id)).status).toBe("idle");
+  });
+
+  it("refuses a session that isn't archived", async () => {
+    const { manager, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    await expect(manager.unarchiveSession(s.id)).rejects.toMatchObject({ code: "invalid_request" });
+  });
+});
+
 describe("trash", () => {
   /**
    * The bin holds the transcript, not the code. Keeping worktrees open for a

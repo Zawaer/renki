@@ -156,6 +156,11 @@ export class RestClient {
    * switched off (RENKI_TRASH_RETENTION_DAYS=0), in which case this really did
    * delete it.
    */
+  /** Bring an archived session back to work: its worktree is rebuilt and it takes prompts again. */
+  async unarchiveSession(sessionId: string): Promise<Session> {
+    return (await this.post<{ session: Session }>(`/sessions/${encodeURIComponent(sessionId)}/unarchive`, {})).session;
+  }
+
   async trashSession(sessionId: string): Promise<Session | null> {
     const res = await this.request<DeleteSessionResponse>("DELETE", `/sessions/${encodeURIComponent(sessionId)}`);
     return res.session ?? null;

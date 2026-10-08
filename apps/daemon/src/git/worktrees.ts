@@ -1,4 +1,4 @@
-import { rmSync } from "node:fs";
+import { existsSync, readdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { simpleGit } from "simple-git";
 import type { Config } from "../config.js";
@@ -74,4 +74,37 @@ export async function removeWorktree(
   }
 
   logger.info("removed worktree", { worktreePath, branch });
+}
+
+/**
+ * Bring an archived session's worktree back, at the SAME path: Claude keys a
+ * conversation's transcript by its working directory, so only the same path
+ * lets the resumed session pick up where it left off.
+ *
+ * Archiving deleted the branch, so normally it's recreated from `baseBranch` —
+ * the code starts fresh. If the branch survived (its delete failed, or it was
+ * pushed and fetched back), it's checked out as it is, commits and all.
+ */
+export async function restoreWorktree(
+  repoPath: string,
+  worktreePath: string,
+  branch: string,
+  baseBranch: string,
+): Promise<{ reusedBranch: boolean }> {
+  const git = simpleGit(repoPath);
+  // A worktree registered at this path from before (removed by hand, or a
+  // half-finished cleanup) would make `worktree add` refuse.
+  await git.raw(["worktree", "prune"]).catch(() => {});
+  if (existsSync(worktreePath)) {
+    if (readdirSync(worktreePath).length > 0) throw new Error(`${worktreePath} already exists and isn't empty`);
+    rmSync(worktreePath, { recursive: true, force: true });
+  }
+  const exists = await git
+    .raw(["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`])
+    .then((out) => out.trim().length > 0)
+    .catch(() => false);
+  if (exists) await git.raw(["worktree", "add", worktreePath, branch]);
+  else await git.raw(["worktree", "add", "-b", branch, worktreePath, baseBranch]);
+  logger.info("restored worktree", { repoPath, worktreePath, branch, baseBranch, reusedBranch: exists });
+  return { reusedBranch: exists };
 }

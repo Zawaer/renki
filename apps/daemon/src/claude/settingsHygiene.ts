@@ -56,3 +56,12 @@ export function stripUntrustedHooks(cwd: string): void {
   stripHooksFromFile(join(cwd, ".claude", "settings.json"));
   stripHooksFromFile(join(cwd, ".claude", "settings.local.json"));
 }
+
+/**
+ * Passed as `settings` to every `query()`. Each CLI launch sweeps
+ * ~/.claude/projects for transcripts older than `cleanupPeriodDays` (default
+ * 30) — all of them, not just its own — and a swept transcript is a chat
+ * Claude can no longer resume. Renki's chats live as long as you keep them,
+ * so the CLI's copies have to as well.
+ */
+export const CLAUDE_SETTINGS = { cleanupPeriodDays: 36500 };

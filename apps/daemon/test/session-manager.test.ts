@@ -988,6 +988,31 @@ describe("live process pool", () => {
     expect(liveInstances[1]!.opts.resumeSessionId).toBe("claude-abc");
   });
 
+  it("a prompt whose Claude transcript is gone starts a new conversation, handed the chat so far", async () => {
+    const { manager, repoId } = setup();
+    const s = await prompted(manager, repoId);
+    liveInstances[0]!.claudeSessionId = "claude-gone";
+    manager.closeAll("shutdown");
+    runTurn
+      .mockResolvedValueOnce({ ...okTurn, ok: false, claudeSessionId: "claude-gone", errorMessage: "Claude Code returned an error result: No conversation found with session ID: claude-gone" })
+      .mockResolvedValueOnce({ ...okTurn, claudeSessionId: "claude-new" });
+
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p2", text: "still there?", resolvePermission: noopResolve });
+
+    expect(liveInstances).toHaveLength(3);
+    expect(liveInstances[1]!.opts.resumeSessionId).toBe("claude-gone");
+    expect(liveInstances[1]!.closeReasons).toEqual(["conversation lost"]);
+    expect(liveInstances[2]!.opts.resumeSessionId).toBeNull();
+    const retried = runTurn.mock.calls[2]![0] as { prompt: string; promptId: string };
+    expect(retried.promptId).toBe("p2");
+    expect(retried.prompt).toMatch(/<previous_chat>[\s\S]*hi[\s\S]*<\/previous_chat>/);
+    expect(retried.prompt).not.toMatch(/<previous_chat>[\s\S]*still there\?[\s\S]*<\/previous_chat>/);
+    expect(retried.prompt.endsWith("still there?")).toBe(true);
+    const got = manager.getSession(s.id);
+    expect(got.status).toBe("idle");
+    expect(got.claudeSessionId).toBe("claude-new");
+  });
+
   it("recycleIdleLiveSessions skips processes that are busy or still running background agents", async () => {
     const { manager, repoId } = setup();
     const a = await prompted(manager, repoId);

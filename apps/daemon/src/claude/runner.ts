@@ -3,6 +3,7 @@ import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { MAX_ATTACHMENT_BYTES } from "@renki/protocol";
 import type { AgentUsage, Attachment, CapabilitiesResponse, EventPayload, PermissionDecision } from "@renki/protocol";
 import { logger } from "../logger.js";
+import { CLAUDE_SETTINGS } from "./settingsHygiene.js";
 
 /**
  * Translates the Agent SDK's typed message stream into our EventPayloads (which
@@ -163,7 +164,7 @@ export async function warmUpCapabilities(cwd: string): Promise<CapabilitiesRespo
   try {
     const q = query({
       prompt: singlePromptStream("(internal capability check — not a real prompt)"),
-      options: { cwd, abortController },
+      options: { cwd, abortController, settings: CLAUDE_SETTINGS },
     });
     const [models, commands] = await Promise.all([q.supportedModels(), q.supportedCommands()]);
     return { models, commands };

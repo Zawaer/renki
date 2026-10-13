@@ -2,6 +2,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { logger } from "../logger.js";
 import { getCapabilities } from "./capabilities.js";
 import { singlePromptStream } from "./runner.js";
+import { CLAUDE_SETTINGS } from "./settingsHygiene.js";
 
 const FALLBACK_MODEL = "claude-haiku-4-5-20251001";
 
@@ -53,6 +54,7 @@ export async function generateSessionTitle(cwd: string, transcriptSoFar: string)
       prompt: singlePromptStream(transcriptSoFar),
       options: {
         cwd,
+        settings: CLAUDE_SETTINGS,
         model: pickCheapModel(),
         systemPrompt: TITLE_SYSTEM_PROMPT,
         tools: [],

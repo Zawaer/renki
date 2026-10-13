@@ -19,7 +19,7 @@ import {
   rejectedRateLimit,
   summarizeResultError,
 } from "./runner.js";
-import { stripUntrustedHooks } from "./settingsHygiene.js";
+import { CLAUDE_SETTINGS, stripUntrustedHooks } from "./settingsHygiene.js";
 
 /**
  * One long-lived `claude` process for one Renki session.
@@ -230,6 +230,7 @@ export class LiveClaudeSession {
 
     const options: Options = {
       cwd: opts.cwd,
+      settings: CLAUDE_SETTINGS,
       includePartialMessages: true,
       permissionMode: this.currentPermissionMode,
       // Forward a subagent's own thinking/text as it happens (not just its

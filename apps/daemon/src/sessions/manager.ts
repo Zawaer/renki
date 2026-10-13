@@ -16,6 +16,7 @@ import type { Config } from "../config.js";
 import type { DB } from "../db/index.js";
 import { compactions, sessions } from "../db/schema.js";
 import { EventLog } from "../events/log.js";
+import { chatAsContext, isLostConversation } from "../export/context.js";
 import { createWorktree, removeWorktree, restoreWorktree } from "../git/worktrees.js";
 import { newSessionId } from "../ids.js";
 import { logger } from "../logger.js";
@@ -937,6 +938,35 @@ export class SessionManager {
 
     let result = await runOnce();
     resumeId = result.claudeSessionId ?? resumeId;
+
+    // Claude's own copy of the conversation can be gone — the CLI used to sweep
+    // transcripts older than 30 days (see CLAUDE_SETTINGS). Resuming it then
+    // fails every turn, for good. Start a new conversation instead, handed the
+    // chat so far from our own log, and send the prompt again in it.
+    if (!result.ok && resumeId && isLostConversation(result.errorMessage) && !this.isRetired(input.sessionId)) {
+      logger.warn("claude transcript missing; starting a new conversation from the log", { id: input.sessionId, lost: resumeId });
+      this.events.append(input.sessionId, {
+        kind: "notice",
+        text: "Claude's copy of this conversation is gone — starting a new one, given this chat's history to carry on from.",
+        level: "warn",
+      });
+      this.closeLive(input.sessionId, "conversation lost");
+      const log = this.events.read(input.sessionId);
+      const upTo = log.findIndex((e) => e.kind === "prompt_submitted" && e.promptId === input.promptId);
+      const context = chatAsContext(this.getSession(input.sessionId), upTo >= 0 ? log.slice(0, upTo) : log);
+      resumeId = null;
+      result = await this.liveFor(input.sessionId, session.worktreePath, null, input).runTurn({
+        prompt: context + prompt,
+        attachments: input.attachments,
+        promptId: input.promptId,
+        model: input.model,
+        clientType: clientTypeFromDeviceId(input.deviceId),
+        maxThinkingTokens: input.maxThinkingTokens,
+        permissionMode: input.permissionMode,
+        resolvePermission: input.resolvePermission,
+      });
+      resumeId = result.claudeSessionId;
+    }
 
     // Rate-limit auto-rotation: if the turn failed because the account hit its
     // limit, switch to the other account and retry the SAME prompt exactly once.

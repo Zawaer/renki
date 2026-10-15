@@ -35,9 +35,14 @@ export class ServiceUsage implements UsageSource {
     this.client = client ?? createClaudeAccounts({ url, token, app: "renki" });
   }
 
-  /** True once the service tracks at least one account's usage. */
+  /**
+   * Always true: the service is where usage comes from, even before the first
+   * read. (Gating on what it tracks would never read it at all, since the
+   * rotator only asks for usage when this is true.) Accounts it has no key for
+   * show as not connected, through connectedEmails().
+   */
   get configured(): boolean {
-    return this.views.some((v) => v.usageTracked);
+    return true;
   }
 
   connectedEmails(): string[] {

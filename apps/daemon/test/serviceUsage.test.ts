@@ -89,6 +89,8 @@ describe("ServiceUsage", () => {
   it("reads usage by email and knows which accounts are tracked", async () => {
     const { client } = fakeService([view(), view({ email: "b@example.com", usageTracked: false, usage: null })]);
     const usage = new ServiceUsage("http://svc", "t", client);
+    // Configured before the first read, or the rotator would never ask for usage.
+    expect(usage.configured).toBe(true);
     const byEmail = await usage.usageByEmail();
     expect([...byEmail.keys()]).toEqual(["a@example.com"]);
     expect(usage.configured).toBe(true);

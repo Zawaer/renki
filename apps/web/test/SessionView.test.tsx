@@ -203,6 +203,40 @@ describe("SessionView", () => {
     expect(screen.getByRole("button", { name: "Take control" })).toBeInTheDocument();
   });
 
+  it("claims control by itself when nobody holds it, but never takes it from someone", () => {
+    const base = (id: string) => [
+      ev(id, {
+        kind: "session_created",
+        repoId: "demo",
+        repoName: "demo",
+        baseBranch: "main",
+        branch: "renki/vacant",
+        worktreePath: "/tmp/wt",
+      }),
+      ev(id, { kind: "status_changed", status: "idle" }),
+    ];
+    const open = (r: RealtimeClient) => {
+      const calls: string[] = [];
+      r.takeControl = (id: string) => void calls.push(id);
+      flushSync(() => r.status.set("open"));
+      return calls;
+    };
+
+    // Vacant lock: claimed once the connection is up.
+    const vacant = renderSession("s-vacant", base("s-vacant"));
+    const calls = open(vacant.realtime);
+    expect(calls).toEqual(["s-vacant"]);
+    cleanupRoots();
+
+    // Held by another device: left alone.
+    const held = renderSession("s-held", [
+      ...base("s-held"),
+      ev("s-held", { kind: "control_changed", controller: "d2", controllerName: "Phone" }),
+    ]);
+    const heldCalls = open(held.realtime);
+    expect(heldCalls).toEqual([]);
+  });
+
   it("shows a rotating verb + elapsed seconds while a thinking block is still streaming", () => {
     const sessionId = "s4";
     const events = [

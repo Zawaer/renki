@@ -194,6 +194,15 @@ export function SessionView({
   /** Not "open" means what's on screen may be behind the daemon. */
   const connection = useStoreValue(realtime.status);
 
+  // Nobody holding the lock (the idle sweep released it, or it was never
+  // taken) means there's nothing to wait on — claim it rather than making the
+  // reader click "Take control". Never steals: only fires when it's vacant.
+  const vacant = conv.status !== null && !conv.controller;
+  const claimable = status !== "trashed" && status !== "archived";
+  useEffect(() => {
+    if (vacant && claimable && connection === "open") realtime.takeControl(sessionId);
+  }, [vacant, claimable, connection, realtime, sessionId]);
+
   /**
    * How many rows the timeline had when it first showed content: rows past
    * that are new since the chat opened and ease in; the rest just appear.

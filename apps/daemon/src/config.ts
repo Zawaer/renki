@@ -106,6 +106,13 @@ const Env = z.object({
   RENKI_USAGE_LOGIN_CHANNEL: z.string().default("chrome"),
   /** How long the guided-login browser waits for you to finish signing in. */
   RENKI_USAGE_LOGIN_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(180),
+  /**
+   * The homelab's shared claude-accounts service (github.com/Zawaer/claude-accounts).
+   * With both set, usage comes from there instead of this daemon polling
+   * claude.ai itself, and limits hit here and in other apps are shared.
+   */
+  CLAUDE_ACCOUNTS_URL: z.string().url().optional(),
+  CLAUDE_ACCOUNTS_TOKEN: z.string().optional(),
 });
 
 export type Config = {
@@ -140,6 +147,8 @@ export type Config = {
   usageBaseUrl: string;
   usageLoginChannel: string;
   usageLoginTimeoutMs: number;
+  /** The shared account service, when configured — see CLAUDE_ACCOUNTS_URL. */
+  accountsService: { url: string; token: string } | null;
 };
 
 /**
@@ -229,5 +238,7 @@ export function loadConfig(): Config {
     usageBaseUrl: env.RENKI_USAGE_BASE_URL,
     usageLoginChannel: env.RENKI_USAGE_LOGIN_CHANNEL,
     usageLoginTimeoutMs: env.RENKI_USAGE_LOGIN_TIMEOUT_SECONDS * 1000,
+    accountsService:
+      env.CLAUDE_ACCOUNTS_URL && env.CLAUDE_ACCOUNTS_TOKEN ? { url: env.CLAUDE_ACCOUNTS_URL, token: env.CLAUDE_ACCOUNTS_TOKEN } : null,
   };
 }

@@ -7,7 +7,7 @@ import type { RateLimitHit } from "../claude/runner.js";
 import type { SessionManager } from "../sessions/manager.js";
 import { Cswap } from "./cswap.js";
 import { type ResumePlan, type ResumeReadiness, accountFreeAt, planResume } from "./resumePlan.js";
-import type { UsageReader } from "./usage.js";
+import type { UsageSource } from "./usage.js";
 
 type PersistedRotationSettings = { enabled?: boolean; threshold?: number; preferredEmail?: string | null; autoResume?: boolean };
 
@@ -55,7 +55,7 @@ export class AccountRotator {
   constructor(
     private readonly config: Config,
     private readonly manager: SessionManager,
-    private readonly usage: UsageReader,
+    private readonly usage: UsageSource,
   ) {
     this.cswap = new Cswap(config.rotation.cswapBin);
     this.enabled = config.rotation.enabled;
@@ -189,6 +189,17 @@ export class AccountRotator {
       logger.warn("rate-limit switch failed", { err: String(err) });
       return { switched: false, active: null, reason: "Couldn't switch account." };
     }
+  }
+
+  /**
+   * A turn was refused on the active account. With the shared account service
+   * that's news for every app, so pass it on; locally it changes nothing (the
+   * rotator reads limits from usage, and the resume plan gets `hit` itself).
+   */
+  async reportLimit(hit: RateLimitHit | null): Promise<void> {
+    if (!this.usage.reportLimit) return;
+    const email = await this.activeEmail();
+    if (email) this.usage.reportLimit(email, hit);
   }
 
   get autoResumeEnabled(): boolean {

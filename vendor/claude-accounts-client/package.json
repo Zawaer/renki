@@ -1,0 +1,9 @@
+{
+  "name": "claude-accounts-client",
+  "version": "0.1.0",
+  "description": "Vendored from claude-accounts @ 9376ff7 — edit there, then re-run scripts/vendor-client.sh.",
+  "type": "module",
+  "main": "client/index.js",
+  "types": "client/index.d.ts",
+  "exports": { ".": { "types": "./client/index.d.ts", "default": "./client/index.js" } }
+}

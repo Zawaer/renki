@@ -56,6 +56,7 @@ export function makeTestConfig(overrides: Partial<Config> = {}): Config {
     usageBaseUrl: "https://example.invalid",
     usageLoginChannel: "renki-usage-login-test",
     usageLoginTimeoutMs: 120_000,
+    accountsService: null,
     ...overrides,
   };
 }

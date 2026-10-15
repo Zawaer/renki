@@ -27,6 +27,8 @@ COPY apps/daemon/package.json apps/daemon/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY apps/mobile/package.json apps/mobile/package.json
 COPY apps/vscode/package.json apps/vscode/package.json
+# The claude-accounts client, vendored as a workspace package (see vendor/).
+COPY vendor ./vendor
 
 # Skip Chromium download for the optional Playwright-based "guided usage
 # login" — it's a Mac-only convenience feature, not needed for a headless image.

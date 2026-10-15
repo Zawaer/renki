@@ -40,6 +40,9 @@ importers:
       better-sqlite3:
         specifier: ^11.7.0
         version: 11.10.0
+      claude-accounts-client:
+        specifier: workspace:*
+        version: link:../../vendor/claude-accounts-client
       drizzle-orm:
         specifier: ^0.38.3
         version: 0.38.4(@types/better-sqlite3@7.6.13)(@types/react@18.3.31)(better-sqlite3@11.10.0)(react@19.2.7)
@@ -280,6 +283,8 @@ importers:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
+
+  vendor/claude-accounts-client: {}
 
 packages:
 

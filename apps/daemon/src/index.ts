@@ -1,5 +1,6 @@
 import { AccountRotator } from "./accounts/rotator.js";
-import { UsageReader } from "./accounts/usage.js";
+import { ServiceUsage } from "./accounts/service.js";
+import { UsageReader, type UsageSource } from "./accounts/usage.js";
 import { hasCapabilities, setCapabilities } from "./claude/capabilities.js";
 import { warmUpCapabilities } from "./claude/runner.js";
 import { loadConfig } from "./config.js";
@@ -39,7 +40,9 @@ async function main() {
   const pushTokens = new PushTokenStore(db);
   const notifier = new Notifier(config, manager, devices, pushTokens);
   notifier.attach();
-  const usageReader = new UsageReader(config.usageConfigPath, config.usageBaseUrl);
+  const usageReader: UsageSource = config.accountsService
+    ? new ServiceUsage(config.accountsService.url, config.accountsService.token)
+    : new UsageReader(config.usageConfigPath, config.usageBaseUrl);
   const accounts = new AccountRotator(config, manager, usageReader);
   manager.setAutoSwitch(accounts); // lets a rate-limited turn switch + retry, or wait for a reset
   manager.setPermissionResolverFactory((sessionId) => broker.resolverFor(sessionId));

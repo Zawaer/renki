@@ -730,6 +730,25 @@ works fine even without any of this.
 > client after installing: `pnpm --filter @renki/mobile exec expo prebuild` then
 > `pnpm --filter @renki/mobile run android` (or `ios`). It won't work in Expo Go.
 
+### Sharing usage with other apps (optional)
+
+If other apps on the same machine spend from the same Claude accounts, the
+[claude-accounts](https://github.com/Zawaer/claude-accounts) service can read
+usage once for all of them. Point Renki at it:
+
+```bash
+CLAUDE_ACCOUNTS_URL=http://claude-accounts:8080   # on the same Docker network
+CLAUDE_ACCOUNTS_TOKEN=...                          # one of the service's API_TOKENS
+```
+
+Usage then comes from the service instead of Renki's own session keys, and
+connecting or disconnecting a usage key in any client does it on the service.
+When any app is refused on an account, Renki treats that account as at its
+limit until the reset, and every limit Renki hits is reported back. Rotation,
+auto-retry and auto-resume work as before; cswap still does the switching.
+The client is vendored in `vendor/claude-accounts-client` (refresh it with
+`npm run vendor -- <path to renki>` in the claude-accounts checkout).
+
 The daemon only ever asks `cswap` to change which account the **official** CLI
 loads at startup — it never extracts or reuses a token. That's the mechanism
 Anthropic has confirmed is within the Consumer Terms.

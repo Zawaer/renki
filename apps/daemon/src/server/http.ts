@@ -17,7 +17,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import type { WebSocket } from "ws";
 import { loginAndExtractSessionKey, PlaywrightUnavailableError } from "../accounts/login.js";
 import type { AccountRotator } from "../accounts/rotator.js";
-import type { UsageReader } from "../accounts/usage.js";
+import type { UsageSource } from "../accounts/usage.js";
 import { getCapabilities } from "../claude/capabilities.js";
 import { readRtkGain } from "../claude/rtkStats.js";
 import type { Config } from "../config.js";
@@ -49,7 +49,7 @@ export type ServerDeps = {
   pushTokens: PushTokenStore;
   devices: DeviceRegistry;
   accounts: AccountRotator;
-  usage: UsageReader;
+  usage: UsageSource;
   /** Optional so tests can build a server without one; the test-push route then says so. */
   notifier?: Notifier;
   /** The Stats page's insights; optional for the same reason. */
@@ -511,7 +511,7 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
 
   // Remove a previously-connected usage key (e.g. the wrong org got picked).
   app.delete<{ Params: { email: string } }>("/accounts/usage-key/:email", async (req, reply) => {
-    const ok = usage.removeKey(req.params.email);
+    const ok = await usage.removeKey(req.params.email);
     return { ok };
   });
 

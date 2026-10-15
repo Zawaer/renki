@@ -3,7 +3,7 @@ import type { Account } from "@renki/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { AccountRotator } from "../src/accounts/rotator.js";
 import type { SessionManager } from "../src/sessions/manager.js";
-import type { UsageReader } from "../src/accounts/usage.js";
+import type { UsageSource } from "../src/accounts/usage.js";
 import { makeTestConfig } from "./helpers.js";
 
 /**
@@ -27,12 +27,12 @@ function fakeCswap(overrides: {
 }
 
 /** usage.configured: false means mergedAccounts() trusts cswap.list()'s own usage/usageStatus fields as-is. */
-function fakeUsage(): UsageReader {
+function fakeUsage(): UsageSource {
   return {
     configured: false,
     usageByEmail: vi.fn(async () => new Map()),
     connectedEmails: vi.fn(() => []),
-  } as unknown as UsageReader;
+  } as unknown as UsageSource;
 }
 
 function fakeManager(busy: boolean): SessionManager {
@@ -584,5 +584,21 @@ describe("AccountRotator.prepareResume", () => {
     expect(JSON.parse(readFileSync(config.rotationConfigPath, "utf8")).autoResume).toBe(false);
     const reloaded = new AccountRotator(config, fakeManager(false), fakeUsage());
     expect(reloaded.autoResumeEnabled).toBe(false);
+  });
+});
+
+describe("AccountRotator.reportLimit", () => {
+  it("passes a refused turn on to the usage source, for the account that was active", async () => {
+    const { rotator } = setup({ accounts: [account({ number: 1, email: "a@example.com", active: true }), account({ number: 2, email: "b@example.com" })], activeAccountNumber: 1 });
+    const reportLimit = vi.fn();
+    (rotator as any).usage = { ...fakeUsage(), reportLimit };
+    await rotator.reportLimit({ resetsAt: 123, type: "five_hour" });
+    expect(reportLimit).toHaveBeenCalledWith("a@example.com", { resetsAt: 123, type: "five_hour" });
+  });
+
+  it("does nothing when the usage source doesn't take reports (local polling)", async () => {
+    const { rotator, cswap } = setup({ accounts: [account({ active: true })], activeAccountNumber: 1 });
+    await rotator.reportLimit(null);
+    expect(cswap.list).not.toHaveBeenCalled();
   });
 });

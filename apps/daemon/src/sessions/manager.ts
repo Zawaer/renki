@@ -50,6 +50,8 @@ export type RateLimitAutoSwitch = {
   autoResumeEnabled: boolean;
   planResume: (input: { model: string | null; hit: RateLimitHit | null; attempt: number }) => Promise<ResumePlan>;
   prepareResume: (model: string | null) => Promise<ResumeReadiness>;
+  /** Tells the shared account service (when there is one) which account was refused. */
+  reportLimit?: (hit: RateLimitHit | null) => Promise<void>;
 };
 
 /**
@@ -972,6 +974,10 @@ export class SessionManager {
     // limit, switch to the other account and retry the SAME prompt exactly once.
     // The turn has already ended, so this swap is at a clean boundary — never
     // mid-flight. Once only, so two exhausted accounts can't loop.
+    // Report first, before a switch moves the active account on.
+    if (!result.ok && result.rateLimited && !result.interrupted) {
+      await this.autoSwitch?.reportLimit?.(result.rateLimit ?? null).catch(() => {});
+    }
     if (!result.ok && result.rateLimited && this.autoSwitch?.autoRetryEnabled) {
       // Deliberately not "switching account" — the switch may turn out to be
       // impossible (every login at its limit), and promising one we don't make

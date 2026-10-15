@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import { Impit } from "impit";
 import type { AccountUsage, AccountUsageExtra, AccountUsageLimit, UsageOrg } from "@renki/protocol";
 import { logger } from "../logger.js";
+import type { RateLimitHit } from "../claude/runner.js";
 
 /**
  * Reads per-account usage % straight from claude.ai's usage endpoint — the only
@@ -100,7 +101,25 @@ export function parseExtra(body: any): AccountUsageExtra | null {
   return null;
 }
 
-export class UsageReader {
+/**
+ * Where account usage comes from: this daemon's own claude.ai polling
+ * (UsageReader), or the homelab's shared claude-accounts service
+ * (ServiceUsage, accounts/service.ts). The rotator and the usage-key routes
+ * only use this much.
+ */
+export interface UsageSource {
+  readonly configured: boolean;
+  connectedEmails(): string[];
+  errorFor(email: string): string | null;
+  usageByEmail(): Promise<Map<string, AccountUsage>>;
+  addKey(sessionKey: string, orgId: string, emailHint?: string): Promise<ResolvedIdentity>;
+  removeKey(email: string): boolean | Promise<boolean>;
+  listOrgs(sessionKey: string): Promise<{ email: string | null; orgs: UsageOrg[] }>;
+  /** An account was refused a turn. Only the shared service does anything with it. */
+  reportLimit?(email: string, hit: RateLimitHit | null): void;
+}
+
+export class UsageReader implements UsageSource {
   private entries: UsageEntry[] = [];
   private readonly cache = new Map<string, { usage: AccountUsage | null; at: number }>();
   /** email -> why its last fetch failed, so clients can say what to do about it. */

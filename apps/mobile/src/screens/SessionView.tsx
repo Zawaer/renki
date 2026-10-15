@@ -202,6 +202,14 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   /** Not "open" means what's on screen may be behind; say so rather than pass it off as live. */
   const connection = useStoreValue(realtime.status);
 
+  // Nobody holding the lock (the idle sweep released it) means there's nothing to wait on — claim it rather than
+  // making the reader tap "Take control". Same as the web: only fires when it's vacant, never steals.
+  const vacant = conv.status !== null && !conv.controller;
+  const claimable = status !== "trashed" && status !== "archived";
+  useEffect(() => {
+    if (vacant && claimable && connection === "open") realtime.takeControl(sessionId);
+  }, [vacant, claimable, connection, realtime, sessionId]);
+
   /** A turn paused on a usage limit — only on the session snapshot, not in the event log. */
   const [resume, setResume] = useState<SessionResume | null>(null);
   /** The worktree's absolute path, so a reply's absolute file links can be mapped into it. */

@@ -418,6 +418,62 @@ describe("SessionView", () => {
   });
 });
 
+describe("SessionView composer while the conversation loads", () => {
+  const created = (sid: string) =>
+    ev(sid, { kind: "session_created", repoId: "demo", repoName: "demo", baseBranch: "main", branch: "renki/x", worktreePath: "/tmp/wt" });
+
+  it("lets you type before the daemon has said anything, but not send", () => {
+    // No events at all: status is still null, as in the first second or two of opening a chat.
+    const { realtime } = renderSession("s_loading", []);
+    const sent: string[] = [];
+    realtime.submitPrompt = (_sid: string, text: string) => (sent.push(text), "p1");
+
+    const box = screen.getByPlaceholderText(/Reply to Claude/) as HTMLTextAreaElement;
+    expect(box.disabled).toBe(false);
+    expect(screen.queryByPlaceholderText(/Take control/)).toBeNull();
+
+    fireEvent.change(box, { target: { value: "typed while loading" } });
+    expect(box.value).toBe("typed while loading");
+
+    // Sending waits: the button is off and Enter does nothing.
+    expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(sent).toEqual([]);
+    expect(box.value).toBe("typed while loading"); // nothing lost
+  });
+
+  it("keeps what you typed when the conversation arrives, and then sends it", () => {
+    const sid = "s_loaded";
+    const { realtime } = renderSession(sid, []);
+    const sent: string[] = [];
+    realtime.submitPrompt = (_sid: string, text: string) => (sent.push(text), "p1");
+    const box = screen.getByPlaceholderText(/Reply to Claude/) as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "hello" } });
+
+    // The daemon catches up: idle, and this device holds control.
+    flushSync(() =>
+      realtime.conversation(sid).update((st) =>
+        applyEvents(st, [created(sid), ev(sid, { kind: "status_changed", status: "idle" }), ev(sid, { kind: "control_changed", controller: "d1", controllerName: "Web" })]),
+      ),
+    );
+
+    expect((screen.getByPlaceholderText(/Reply to Claude/) as HTMLTextAreaElement).value).toBe("hello");
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(sent).toEqual(["hello"]);
+  });
+
+  it("still disables the box once it is known that someone else holds control", () => {
+    const sid = "s_other";
+    renderSession(sid, [
+      created(sid),
+      ev(sid, { kind: "status_changed", status: "idle" }),
+      ev(sid, { kind: "control_changed", controller: "someone-else", controllerName: "Phone" }),
+    ]);
+    const box = screen.getByPlaceholderText("Take control to send prompts") as HTMLTextAreaElement;
+    expect(box.disabled).toBe(true);
+  });
+});
+
 describe("SessionView steering + unprompted turns", () => {
   it("renders a steered prompt inside the running turn after the block it interrupted, and labels a background-agent follow-up turn", () => {
     const sessionId = "s_steer";

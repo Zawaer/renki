@@ -476,6 +476,9 @@ export function SessionView({
         sessionId={sessionId}
         composer={conv.composer}
         disabled={!isController || status === "trashed" || status === "archived"}
+        // The daemon hasn't told us anything yet (who has control, archived or not): let the
+        // user type and attach meanwhile; only sending waits for it. See Composer.
+        loading={conv.status === null}
         reason={
           status === "trashed"
             ? "In the trash — restore it to keep the transcript"
@@ -2021,6 +2024,7 @@ function Composer({
   sessionId,
   composer,
   disabled,
+  loading,
   reason,
   onSend,
   busy,
@@ -2029,7 +2033,10 @@ function Composer({
   sessionId: string;
   /** What the SESSION is pinned to, pushed by the daemon; null until the first push. */
   composer: SessionComposer | null;
+  /** Can't send right now (no control, archived, trashed, or still loading). */
   disabled: boolean;
+  /** The conversation hasn't loaded yet: typing and attaching are fine, sending waits. */
+  loading: boolean;
   reason: string;
   onSend: (
     text: string,
@@ -2164,11 +2171,16 @@ function Composer({
       setModelState(capabilities.models[0]?.value ?? "");
   }, [capabilities, model]);
 
-  // Move focus to the composer as soon as this device gains control (whether
-  // by taking it explicitly or via auto-claim on session creation).
+  // The box is usable while the conversation is still loading — a prompt can be
+  // written (and files attached) during the second or two it takes; only sending
+  // has to wait to learn who holds control. Once loaded, `disabled` decides as before.
+  const typingDisabled = disabled && !loading;
+
+  // Move focus to the composer as soon as it becomes usable: on open (while loading),
+  // or when this device gains control (explicitly, or via auto-claim).
   useEffect(() => {
-    if (!disabled) textareaRef.current?.focus();
-  }, [disabled]);
+    if (!typingDisabled) textareaRef.current?.focus();
+  }, [typingDisabled]);
 
   const effort =
     EFFORT_LEVELS.find((e) => e.key === effortKey) ?? EFFORT_LEVELS[0];
@@ -2518,9 +2530,9 @@ function Composer({
               }
             }}
             rows={1}
-            disabled={disabled}
+            disabled={typingDisabled}
             placeholder={
-              disabled
+              typingDisabled
                 ? reason
                 : busy
                   ? "Add to what Claude is doing…"
@@ -2544,7 +2556,7 @@ function Composer({
             <Button
               variant="ghost"
               size="icon"
-              disabled={disabled}
+              disabled={typingDisabled}
               onClick={() => fileInputRef.current?.click()}
               title="Attach images, PDFs, or text files"
               className="h-7 w-7"
@@ -2564,10 +2576,10 @@ function Composer({
                 mousedown + preventDefault so focus never leaves for the div. */}
             <div
               aria-hidden
-              className={`h-7 flex-1 ${disabled ? "" : "cursor-text"}`}
+              className={`h-7 flex-1 ${typingDisabled ? "" : "cursor-text"}`}
               onMouseDown={(e) => {
                 e.preventDefault();
-                if (!disabled) textareaRef.current?.focus();
+                if (!typingDisabled) textareaRef.current?.focus();
               }}
             />
             <div className="flex items-center gap-1">
@@ -2608,7 +2620,7 @@ function Composer({
                   type="button"
                   onClick={send}
                   aria-label="Send"
-                  title="Send (Enter)"
+                  title={loading ? "Loading… you can send in a moment" : "Send (Enter)"}
                   disabled={disabled || (!text.trim() && attachments.length === 0)}
                   className="grid h-8 w-8 place-items-center rounded-full bg-(--renki-accent) text-(--renki-accent-fg) transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
                 >

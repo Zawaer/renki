@@ -200,6 +200,8 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const status = conv.status ?? "idle";
   // Sending mid-turn queues the prompt on the daemon, same as Enter on the web.
   const canSend = isController;
+  /** The daemon hasn't reported yet: typing and attaching are fine meanwhile; only sending waits. */
+  const loading = conv.status === null;
   /** Not "open" means what's on screen may be behind; say so rather than pass it off as live. */
   const connection = useStoreValue(realtime.status);
 
@@ -599,8 +601,8 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
       {attachError && <Text style={styles.attachError}>{attachError}</Text>}
       <View style={styles.composerWrap}>
         <View style={styles.composerPill}>
-          <TouchableOpacity style={styles.roundIconBtn} disabled={!isController} onPress={() => setAttachMenuOpen(true)}>
-            <Ionicons name="add" size={22} color={isController ? colors.text : colors.faint} />
+          <TouchableOpacity style={styles.roundIconBtn} disabled={!isController && !loading} onPress={() => setAttachMenuOpen(true)}>
+            <Ionicons name="add" size={22} color={isController || loading ? colors.text : colors.faint} />
           </TouchableOpacity>
           <TextInput
             ref={inputRef}
@@ -609,7 +611,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
             onChangeText={setText}
             multiline
             placeholder={
-              !isController ? "Take control to send prompts" : status === "busy" ? "Add to what Claude is doing…" : "Chat with Claude…"
+              !isController && !loading ? "Take control to send prompts" : status === "busy" ? "Add to what Claude is doing…" : "Chat with Claude…"
             }
             placeholderTextColor={colors.faint}
           />

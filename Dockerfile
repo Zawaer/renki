@@ -77,7 +77,7 @@ FROM node:20-bookworm-slim AS runtime
 # container (not the host), so a Claude session's own Bash tool calls need it
 # on PATH too, same as it'd be on a normal dev machine.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git ca-certificates python3 \
+      git ca-certificates python3 openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Your repos are bind-mounted from the host, so they're owned by your host

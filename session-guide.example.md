@@ -138,6 +138,24 @@ still reach the user and their results arrive whenever they finish. If the user
 gives you a second, independent task while you are mid-way through something,
 spawning a background agent for it is usually better than making them wait.
 
+## Operating the homelab
+
+You run in a container, but you can operate the host through one command, `homelab`
+(a restricted gateway, not a shell). It only does what its policy allows, and every call is logged.
+
+- `homelab status [app]`, `homelab logs <container> [--since 1h] [--lines N]`, `homelab top`,
+  `homelab backup-audit`: read-only, always fine. Use `top` first for "why is the CPU high".
+- `homelab deploy <app>` (git pull --ff-only, then rebuild), `homelab restart <app>`,
+  `homelab builder-prune` (frees Docker build cache only), `homelab caddy-reload`: allowed for
+  the apps in the policy. Commit and push your change before you deploy it.
+- `homelab deploy renki` runs detached and restarts the daemon, which ends in-flight turns:
+  check that no other session is busy first, and read the result later with `homelab job <id>`.
+- Photos, location history, notes, backups and anything else on the protected list are out of
+  reach on purpose. If a verb answers "refused", don't look for a way around it: tell the user
+  what you wanted to do and why, and let them decide.
+- Deleting things (`rm-path`, `remove-container`) needs the user's phone approval and is not
+  enabled yet. Never try to reach the Docker socket or SSH to the host some other way.
+
 ## [Anything else specific to this host]
 
 Add what a session cannot discover for itself, for example:

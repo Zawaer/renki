@@ -1,0 +1,25 @@
+{
+  "run_as_home": "/home/zawaer",
+  "apps": {
+    "talkoot":              {"mode": "deploy",   "dir": "talkoot",               "git": true,  "services": ["talkoot", "scout"]},
+    "shopping-tool":        {"mode": "deploy",   "dir": "shopping-tool",         "git": true,  "services": ["shopping-tool"]},
+    "scout-tool":           {"mode": "deploy",   "dir": "scout-tool",            "git": false, "services": ["dashboard", "worker"]},
+    "meeting-app":          {"mode": "deploy",   "dir": "meeting-app",           "git": true,  "services": ["kuulo"]},
+    "otaindex":             {"mode": "deploy",   "dir": "otaindex",              "git": true,  "services": ["otaindex"]},
+    "contacts":             {"mode": "deploy",   "dir": "about-me/contacts",     "git": false, "services": ["contacts"]},
+    "sm-outreach-pipeline": {"mode": "deploy",   "dir": "sm-outreach-pipeline",  "git": true,  "services": ["app"]},
+    "ig-outreacher":        {"mode": "deploy",   "dir": "ig-outreacher",         "git": true,  "services": ["ig-outreacher"]},
+    "claude-accounts":      {"mode": "deploy",   "dir": "claude-accounts",       "git": true,  "services": ["claude-accounts"]},
+    "renki":                {"mode": "detached", "dir": "renki",                 "git": true,  "services": ["daemon", "web"]},
+    "immich":               {"mode": "read_only", "dir": "immich"},
+    "dawarich":             {"mode": "read_only", "dir": "dawarich"},
+    "obsidian-livesync":    {"mode": "read_only", "dir": "obsidian-livesync"},
+    "beszel":               {"mode": "read_only", "dir": "beszel"},
+    "backrest":             {"mode": "read_only", "dir": "backrest"},
+    "dnsmasq":              {"mode": "read_only", "dir": "dnsmasq"},
+    "caddy":                {"mode": "read_only", "dir": "caddy"}
+  },
+  "protected_containers": ["renki-daemon", "renki-web", "caddy", "backrest", "immich_*", "dawarich_*", "obsidian_livesync_couchdb", "dnsmasq", "beszel*"],
+  "backup_covered_roots": ["/home/zawaer", "/var/lib/docker/volumes"],
+  "limits": {"logs_max_lines": 2000, "output_max_bytes": 200000, "command_timeout_seconds": 1800}
+}

@@ -71,6 +71,15 @@ services:
     #   # too — just don't mount it unless it already has real data on your
     #   # host):
     #   - ${HOME}/.local/share/claude-swap:/root/.local/share/claude-swap
+    # Homelab gateway (ops/homelab-gateway, docs/homelab-gateway.md): lets sessions run a
+    # fixed set of homelab verbs (status, logs, deploy, ...) over a restricted SSH key.
+    # Run ops/homelab-gateway/install.sh on the host first; it creates ~/.homelab-gateway/.
+    extra_hosts:
+      - "homelab-host:host-gateway"
+    # (add these two under the daemon's volumes: list above)
+    #   - ${HOME}/.homelab-gateway/renki_key:/gateway/renki_key:ro
+    #   - ${HOME}/.homelab-gateway/known_hosts:/gateway/known_hosts:ro
+    #   - ./ops/homelab-gateway/homelab-client.sh:/usr/local/bin/homelab:ro
   web:
     networks:
       - reverse-proxy

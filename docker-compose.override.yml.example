@@ -74,8 +74,12 @@ services:
     # Homelab gateway (ops/homelab-gateway, docs/homelab-gateway.md): lets sessions run a
     # fixed set of homelab verbs (status, logs, deploy, ...) over a restricted SSH key.
     # Run ops/homelab-gateway/install.sh on the host first; it creates ~/.homelab-gateway/.
+    # Use the host's address on the network this daemon is attached to (the bridge gateway of
+    # your reverse-proxy network, `docker network inspect <net> --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'`),
+    # not `host-gateway`: that points at docker0, which is unused when the daemon is on another network.
+    # ufw also needs: ufw allow in on <that bridge> from <its subnet> to <gateway ip> port 22 proto tcp
     extra_hosts:
-      - "homelab-host:host-gateway"
+      - "homelab-host:172.24.0.1"
     # (add these two under the daemon's volumes: list above)
     #   - ${HOME}/.homelab-gateway/renki_key:/gateway/renki_key:ro
     #   - ${HOME}/.homelab-gateway/known_hosts:/gateway/known_hosts:ro

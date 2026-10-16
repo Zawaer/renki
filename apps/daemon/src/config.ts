@@ -1,3 +1,4 @@
+import { parseHomelabRepos } from "./claude/homelabGuard.js";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -69,6 +70,12 @@ const Env = z.object({
    * failing rtk fails open (command runs unmodified).
    */
   RENKI_ENABLE_RTK: z.string().optional(),
+  /**
+   * Comma-separated repos whose sessions may use the `homelab` gateway command (see
+   * docs/homelab-gateway.md); `@plain` = repo-less sessions. Unset = every session may.
+   * Set but empty = none. Read from the daemon's own environment, which sessions can't edit.
+   */
+  RENKI_HOMELAB_REPOS: z.string().optional(),
   /** `rtk` executable (name on PATH or absolute path) — set this if the daemon's process manager runs with a PATH that doesn't include it. */
   RENKI_RTK_BIN: z.string().min(1).default("rtk"),
   /** Expo push endpoint (override to a mock in tests). */
@@ -132,6 +139,8 @@ export type Config = {
   forcePermissionPrompts: boolean;
   enableRtk: boolean;
   rtkBin: string;
+  /** Repos allowed to use the homelab command; null = not enforced. See claude/homelabGuard.ts. */
+  homelabRepos: string[] | null;
   expoPushUrl: string;
   rotation: {
     enabled: boolean;
@@ -223,6 +232,7 @@ export function loadConfig(): Config {
     forcePermissionPrompts: env.RENKI_FORCE_PERMISSION_PROMPTS === "1" || env.RENKI_FORCE_PERMISSION_PROMPTS === "true",
     enableRtk: env.RENKI_ENABLE_RTK === "1" || env.RENKI_ENABLE_RTK === "true",
     rtkBin: env.RENKI_RTK_BIN,
+    homelabRepos: parseHomelabRepos(env.RENKI_HOMELAB_REPOS),
     expoPushUrl: env.RENKI_EXPO_PUSH_URL,
     rotation: {
       enabled: env.RENKI_ACCOUNT_ROTATION === "1" || env.RENKI_ACCOUNT_ROTATION === "true",

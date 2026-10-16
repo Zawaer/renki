@@ -114,6 +114,22 @@ re-check narrow it, and the request is still limited to an app's own folder.
 
 Fallback on the host (not reachable over the SSH key): `sudo homelab-gateway --admin approve <id>`.
 
+## Per-project access
+
+`RENKI_HOMELAB_REPOS` (daemon environment, e.g. `renki,talkoot,shopping-tool`) lists the repos
+whose sessions may use `homelab`. Unset = every session may; set but empty = none; `@plain`
+covers repo-less sessions. For any other session the daemon registers a `PreToolUse` hook
+(`apps/daemon/src/claude/homelabGuard.ts`) that refuses Bash commands that run `homelab` or
+name the gateway's key/address, and tells Claude to stop and ask you. A hook is used instead of
+`canUseTool` because hooks run in every permission mode, including Auto.
+
+**This is a guardrail, not a wall.** Sessions share one container and one user, so a session
+set on getting around it can (it can read the key file, or write the ssh command in a way the
+matcher doesn't recognise). It stops accidents and the lazy kind of prompt injection. What
+actually limits the damage is the rest of this document: the verb allowlist, the protected
+paths, and phone approval. The setting lives in the daemon's own environment (`~/renki/.env`
+on the host), which sessions cannot edit; changing it needs a daemon restart.
+
 ## What this does not cover
 
 - Money and external services: handled by scoping credentials per project, not here.

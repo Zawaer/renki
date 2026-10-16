@@ -1,3 +1,4 @@
+import { homelabAllowed } from "../claude/homelabGuard.js";
 import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk";
 import type {
   Attachment,
@@ -1420,6 +1421,12 @@ export class SessionManager {
     return this.live.size;
   }
 
+  /** True when this session's repo isn't on RENKI_HOMELAB_REPOS (see claude/homelabGuard.ts). */
+  private homelabBlockedFor(sessionId: string): boolean {
+    const session = this.getSession(sessionId);
+    return !homelabAllowed(this.config.homelabRepos, session.repoId, session.repoName);
+  }
+
   private liveFor(sessionId: string, cwd: string, resumeSessionId: string | null, first: SubmitPromptInput): LiveClaudeSession {
     const existing = this.live.get(sessionId);
     if (existing && !existing.isClosed) return existing;
@@ -1434,6 +1441,7 @@ export class SessionManager {
       forcePermissionPrompts: this.config.forcePermissionPrompts,
       enableRtk: this.config.enableRtk,
       rtkBin: this.config.rtkBin,
+      homelabBlocked: this.homelabBlockedFor(sessionId),
       // Cheap to skip once the daemon already knows this — it's static per
       // `claude` install, not per-session.
       onCapabilities: hasCapabilities() ? undefined : setCapabilities,

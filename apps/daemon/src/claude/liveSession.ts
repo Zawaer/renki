@@ -5,6 +5,7 @@ import type { Attachment, CapabilitiesResponse, EventPayload } from "@renki/prot
 import { newTurnId } from "../ids.js";
 import { logger } from "../logger.js";
 import { createRtkPreToolUseHook } from "./rtk.js";
+import { createHomelabGuardHook } from "./homelabGuard.js";
 import {
   type BlockTracking,
   type PermissionResolver,
@@ -74,6 +75,8 @@ export type LiveSessionOptions = {
   enableRtk?: boolean;
   /** `rtk` executable to invoke when enableRtk is set (name on PATH or absolute path). */
   rtkBin?: string;
+  /** If true, refuse Bash commands that would reach the homelab gateway (see ./homelabGuard.ts). */
+  homelabBlocked?: boolean;
   /** Only obtainable from a live Query object — the caller opts in when it doesn't already have this cached daemon-wide. */
   onCapabilities?: (caps: CapabilitiesResponse) => void;
   /** The CLI began a turn nobody prompted (see class doc). The caller should treat the session as busy until `onAutoTurnEnd`. */
@@ -228,6 +231,12 @@ export class LiveClaudeSession {
     // canUseTool — see settingsHygiene.ts for why this runs before every spawn.
     stripUntrustedHooks(opts.cwd);
 
+    // The homelab guard goes first, so a refused command is never rewritten or run.
+    const preToolUseHooks = [
+      ...(opts.homelabBlocked ? [createHomelabGuardHook()] : []),
+      ...(opts.enableRtk ? [createRtkPreToolUseHook(opts.rtkBin ?? "rtk")] : []),
+    ];
+
     const options: Options = {
       cwd: opts.cwd,
       settings: CLAUDE_SETTINGS,
@@ -241,7 +250,7 @@ export class LiveClaudeSession {
       ...(opts.model ? { model: opts.model } : {}),
       ...(opts.maxThinkingTokens != null ? { maxThinkingTokens: opts.maxThinkingTokens } : {}),
       ...(opts.forcePermissionPrompts ? { settingSources: [] } : {}),
-      ...(opts.enableRtk ? { hooks: { PreToolUse: [createRtkPreToolUseHook(opts.rtkBin ?? "rtk")] } } : {}),
+      ...(preToolUseHooks.length ? { hooks: { PreToolUse: preToolUseHooks } } : {}),
       // Route every permission decision through the current resolver. Only
       // fires for tools the permission system doesn't auto-resolve (edits,
       // bash, etc.) — exactly the set a human controller should see. Also

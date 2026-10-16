@@ -46,6 +46,39 @@ export async function answerGatewayApproval(
   }
 }
 
+export type GatewayPeek = {
+  /** What the gateway wrote about the request: the exact thing being approved. */
+  summary: string;
+  /** "pending" until someone decides or it times out. */
+  state: "pending" | "approve" | "deny" | "expired";
+  /** Unix seconds. */
+  expires: number;
+};
+
+/**
+ * Ask the approval service about a request: its wording from the gateway itself (never from the
+ * notification), whether it is still waiting, and when it runs out. Null when it can't be reached
+ * or the service doesn't recognise the request.
+ */
+export async function peekGatewayApproval(approval: GatewayApproval, fetchImpl: typeof fetch = fetch): Promise<GatewayPeek | null> {
+  try {
+    const res = await fetchImpl(`${approval.url}/v1/approvals/${approval.id}`, { headers: { "x-approval-token": approval.token } });
+    if (!res.ok) return null;
+    const body = (await res.json()) as Partial<GatewayPeek>;
+    if (typeof body.summary !== "string" || typeof body.expires !== "number") return null;
+    const state = body.state === "approve" || body.state === "deny" || body.state === "expired" ? body.state : "pending";
+    return { summary: body.summary, state, expires: body.expires };
+  } catch {
+    return null;
+  }
+}
+
+/** m:ss for the time left on a request (never negative). */
+export function formatTimeLeft(expiresUnixSeconds: number, nowMs: number): string {
+  const left = Math.max(0, Math.ceil(expiresUnixSeconds - nowMs / 1000));
+  return `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+}
+
 /** What to show the user once they've answered. */
 export function describeGatewayOutcome(outcome: GatewayOutcome, decision: "approve" | "deny"): string {
   switch (outcome) {

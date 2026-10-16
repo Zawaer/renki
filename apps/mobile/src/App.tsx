@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, BackHandler, Platform, StyleSheet, Text, ToastAndroid, View } from "react-native";
+import { ActivityIndicator, Alert, AppState, BackHandler, Platform, StyleSheet, Text, ToastAndroid, View } from "react-native";
 import {
   addHost,
   answerGatewayApproval,
@@ -22,6 +22,7 @@ import { loadPalette } from "./lib/composerPrefs";
 import { migrateLegacyStorage } from "./lib/storageMigration";
 import { ClientProvider } from "./lib/client";
 import { ConnectionBanner } from "./components/ConnectionBanner";
+import { GatewayApprovalSheet, type PendingApproval } from "./components/GatewayApprovalSheet";
 import { Screen } from "./components/Motion";
 import { answerFromNotification, registerForPush } from "./lib/push";
 import { Setup } from "./screens/Setup";
@@ -33,22 +34,13 @@ import { PaletteProvider, type ThemeColors, useTheme } from "./theme";
 import { TextReaderProvider } from "./components/TextReader";
 
 // Show notifications while the app is foregrounded too.
-/**
- * A homelab-gateway approval: the buttons answer straight away, and tapping the body
- * asks first, showing exactly what the gateway wrote (never anything a session wrote).
- */
-function handleGatewayApproval(approval: GatewayApproval, action: string, summary: string): void {
-  const answer = (decision: "approve" | "deny") =>
-    void answerGatewayApproval(approval, decision).then((outcome) => {
-      const message = describeGatewayOutcome(outcome, decision);
-      if (Platform.OS === "android") ToastAndroid.show(message, ToastAndroid.LONG);
-      else Alert.alert(message);
-    });
-  if (action === "approve" || action === "deny") return answer(action);
-  Alert.alert("Approve on the homelab?", summary, [
-    { text: "Deny", style: "destructive", onPress: () => answer("deny") },
-    { text: "Approve", onPress: () => answer("approve") },
-  ]);
+/** The Approve / Deny buttons on a gateway approval notification answer straight away, with a toast. */
+function answerGatewayFromButton(approval: GatewayApproval, decision: "approve" | "deny"): void {
+  void answerGatewayApproval(approval, decision).then((outcome) => {
+    const message = describeGatewayOutcome(outcome, decision);
+    if (Platform.OS === "android") ToastAndroid.show(message, ToastAndroid.LONG);
+    else Alert.alert(message);
+  });
 }
 
 Notifications.setNotificationHandler({
@@ -222,6 +214,20 @@ function Main({
   const [showStats, setShowStats] = useState(false);
   const selectedRef = useRef(setSelected);
   selectedRef.current = setSelected;
+  const colors = useTheme();
+
+  // The popup for a homelab-gateway approval (see GatewayApprovalSheet). It opens when one arrives while the
+  // app is open, when the app comes to the front with one waiting in the tray, and when its notification is tapped.
+  const [approval, setApproval] = useState<PendingApproval | null>(null);
+  const approvalRef = useRef<PendingApproval | null>(null);
+  approvalRef.current = approval;
+  const shownApprovals = useRef(new Set<string>());
+  function closeApproval(settled: boolean) {
+    const current = approvalRef.current;
+    setApproval(null);
+    // Answered, or found already settled: clear its notification from the tray too.
+    if (settled && current?.notificationId) void Notifications.dismissNotificationAsync(current.notificationId).catch(() => {});
+  }
 
   // Android hardware/gesture back should step back through this screen stack
   // (session -> settings/stats -> session list) instead of exiting the app —
@@ -254,6 +260,22 @@ function Main({
     void registerForPush(config);
     // A response can reach both the launch check and the listener; act once.
     const handled = new Set<string>();
+    const showApproval = (p: PendingApproval, force = false) => {
+      // Once per request per app run, unless the user asked for it by tapping.
+      if (!force && shownApprovals.current.has(p.approval.id)) return;
+      shownApprovals.current.add(p.approval.id);
+      setApproval(p);
+    };
+    const looksForWaiting = () => {
+      void Notifications.getPresentedNotificationsAsync()
+        .then((list) => {
+          for (const n of list) {
+            const a = parseGatewayApproval(n.request.content.data);
+            if (a) return showApproval({ approval: a, notificationId: n.request.identifier, quiet: true });
+          }
+        })
+        .catch(() => {});
+    };
     const open = (res: Notifications.NotificationResponse | null) => {
       if (!res) return;
       const key = `${res.notification.request.identifier}:${res.actionIdentifier}`;
@@ -262,8 +284,13 @@ function Main({
       const data = res.notification.request.content.data ?? {};
       const gateway = parseGatewayApproval(data);
       if (gateway) {
-        handleGatewayApproval(gateway, res.actionIdentifier, res.notification.request.content.body ?? "");
-        void Notifications.dismissNotificationAsync(res.notification.request.identifier).catch(() => {});
+        if (res.actionIdentifier === "approve" || res.actionIdentifier === "deny") {
+          answerGatewayFromButton(gateway, res.actionIdentifier);
+          void Notifications.dismissNotificationAsync(res.notification.request.identifier).catch(() => {});
+        } else {
+          // A plain tap: the popup, which checks with the gateway that it is still open.
+          showApproval({ approval: gateway, notificationId: res.notification.request.identifier }, true);
+        }
         return;
       }
       const sessionId = data.sessionId;
@@ -290,7 +317,20 @@ function Main({
       if (res && Date.now() - res.notification.date < 60_000) open(res);
     });
     const sub = Notifications.addNotificationResponseReceivedListener(open);
-    return () => sub.remove();
+    // One arriving while the app is open, and one waiting in the tray when the app opens or comes to the front.
+    const receivedSub = Notifications.addNotificationReceivedListener((n) => {
+      const a = parseGatewayApproval(n.request.content.data);
+      if (a) showApproval({ approval: a, notificationId: n.request.identifier });
+    });
+    looksForWaiting();
+    const appSub = AppState.addEventListener("change", (state) => {
+      if (state === "active") looksForWaiting();
+    });
+    return () => {
+      sub.remove();
+      receivedSub.remove();
+      appSub.remove();
+    };
   }, [config]);
 
   // Which screen is showing, and whether we got here by going deeper or back —
@@ -309,6 +349,7 @@ function Main({
         {renderScreen()}
       </Screen>
       <ConnectionBanner />
+      <GatewayApprovalSheet pending={approval} onClose={closeApproval} colors={colors} />
     </>
   );
 

@@ -290,23 +290,17 @@ export function SessionView({
             </span>
           )}
           {conv.context && <ContextMeter context={conv.context} />}
-          <span
-            className={`inline-flex items-center gap-1.5 text-xs font-medium ${
-              conv.controller && isController
-                ? "text-(--renki-success)"
-                : "text-(--renki-fg-muted)"
-            }`}
-          >
-            <span
-              className={`codicon ${conv.controller && isController ? "codicon-verified" : conv.controller ? "codicon-eye" : "codicon-unlock"} text-[13px]`}
-            />
-            {conv.controller
-              ? isController
-                ? "You're in control"
-                : `${conv.controllerName ?? conv.controller} is in control — you're watching`
-              : "Nobody is in control"}
-          </span>
-          {!isController && status !== "trashed" && status !== "archived" && (
+          {/* Only said when something is off: holding control is the normal state and needs no label.
+              Nothing either while the daemon hasn't reported yet (it would claim "nobody" for a moment). */}
+          {conv.status !== null && !(conv.controller && isController) && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-(--renki-fg-muted)">
+              <span className={`codicon ${conv.controller ? "codicon-eye" : "codicon-unlock"} text-[13px]`} />
+              {conv.controller
+                ? `${conv.controllerName ?? conv.controller} is in control — you're watching`
+                : "Nobody is in control"}
+            </span>
+          )}
+          {conv.status !== null && !isController && status !== "trashed" && status !== "archived" && (
             <Button
               variant="primary"
               onClick={() => realtime.takeControl(sessionId)}

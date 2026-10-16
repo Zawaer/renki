@@ -380,7 +380,8 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
                 <View style={[styles.dot, { backgroundColor: statusColor[status] ?? colors.faint }]} /> {status}
               </>
             )}
-            {conv.controller ? (isController ? " · you're in control" : ` · ${conv.controllerName ?? "other"}`) : " · unlocked"}
+            {/* Holding control is the normal state: say something only when it isn't (or once it's known). */}
+            {loading ? "" : conv.controller ? (isController ? "" : ` · ${conv.controllerName ?? "other"}`) : " · unlocked"}
           </Text>
         </View>
         <TouchableOpacity onPress={() => setExportOpen(true)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Export chat" style={{ paddingHorizontal: 4 }}>

@@ -120,7 +120,9 @@ describe("SessionView", () => {
     renderSession(sessionId, events);
 
     expect(screen.getByText("demo")).toBeInTheDocument();
-    expect(screen.getByText("You're in control")).toBeInTheDocument();
+    // Holding control is the normal state, so it isn't announced.
+    expect(screen.queryByText(/in control/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Take control" })).toBeNull();
     expect(screen.getByText("Idle")).toBeInTheDocument();
     expect(screen.getByText("Add a README")).toBeInTheDocument();
     expect(screen.getByText("Let me look at the repo first.")).toBeInTheDocument();
@@ -415,6 +417,28 @@ describe("SessionView", () => {
     fireEvent.click(suggestion);
 
     expect(textarea.value).toBe("/compact ");
+  });
+});
+
+describe("SessionView control label", () => {
+  const created = (sid: string) =>
+    ev(sid, { kind: "session_created", repoId: "demo", repoName: "demo", baseBranch: "main", branch: "renki/x", worktreePath: "/tmp/wt" });
+
+  it("says nothing, and offers no Take control, while the conversation is still loading", () => {
+    renderSession("s_ctl_loading", []);
+    expect(screen.queryByText(/in control/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Take control" })).toBeNull();
+  });
+
+  it("says who is in control when it is someone else, and lets you take it", () => {
+    const sid = "s_ctl_other";
+    renderSession(sid, [
+      created(sid),
+      ev(sid, { kind: "status_changed", status: "idle" }),
+      ev(sid, { kind: "control_changed", controller: "phone-1", controllerName: "Phone" }),
+    ]);
+    expect(screen.getByText("Phone is in control — you're watching")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Take control" })).toBeInTheDocument();
   });
 });
 

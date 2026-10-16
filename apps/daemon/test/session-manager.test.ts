@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { EventPayload } from "@renki/protocol";
 import { eq } from "drizzle-orm";
@@ -541,7 +541,8 @@ describe("unarchive", () => {
     const { manager, repoId } = setup();
     const chat = await manager.createSession({});
     await manager.archiveSession(chat.id);
-    expect(existsSync(chat.worktreePath)).toBe(false);
+    // A repo-less chat's folder is its only copy of whatever Claude made there: archiving keeps it.
+    expect(existsSync(chat.worktreePath)).toBe(true);
     expect((await manager.unarchiveSession(chat.id)).status).toBe("idle");
     expect(existsSync(chat.worktreePath)).toBe(true);
 
@@ -677,6 +678,57 @@ describe("trash", () => {
 
     expect(() => manager.getSession(s.id)).toThrow(SessionError);
     expect(existsSync(s.worktreePath)).toBe(false);
+  });
+});
+
+describe("a repo-less chat's folder", () => {
+  const writeWork = (dir: string) => {
+    mkdirSync(resolve(dir, "research"), { recursive: true });
+    writeFileSync(resolve(dir, "research", "notes.md"), "the only copy");
+  };
+
+  it("survives archiving and trashing, with its files", async () => {
+    const { manager } = setup();
+    const a = await manager.createSession({});
+    writeWork(a.worktreePath);
+    await manager.archiveSession(a.id);
+    expect(readFileSync(resolve(a.worktreePath, "research", "notes.md"), "utf8")).toBe("the only copy");
+
+    const b = await manager.createSession({});
+    writeWork(b.worktreePath);
+    await manager.trashSession(b.id);
+    expect(readFileSync(resolve(b.worktreePath, "research", "notes.md"), "utf8")).toBe("the only copy");
+  });
+
+  it("says so when it is unarchived", async () => {
+    const { manager } = setup();
+    const chat = await manager.createSession({});
+    writeWork(chat.worktreePath);
+    await manager.archiveSession(chat.id);
+    await manager.unarchiveSession(chat.id);
+    const notice = manager.events.read(chat.id).find((e) => e.kind === "notice" && e.text.startsWith("Unarchived"));
+    expect(notice && notice.kind === "notice" && notice.text).toMatch(/as you left it/);
+  });
+
+  it("is removed, for good, only when the chat is deleted permanently", async () => {
+    const { manager } = setup();
+    const chat = await manager.createSession({});
+    writeWork(chat.worktreePath);
+    await manager.archiveSession(chat.id);
+    await manager.purgeSession(chat.id);
+    expect(existsSync(chat.worktreePath)).toBe(false);
+  });
+
+  it("is never removed when its recorded path is outside the chats directory", async () => {
+    const { manager, config, db } = setup();
+    const chat = await manager.createSession({});
+    const elsewhere = resolve(config.dataDir, "not-chats", "precious");
+    mkdirSync(elsewhere, { recursive: true });
+    writeFileSync(resolve(elsewhere, "file"), "keep");
+    // a damaged row pointing somewhere it should never delete
+    db.update(sessions).set({ worktreePath: elsewhere }).where(eq(sessions.id, chat.id)).run();
+    await manager.purgeSession(chat.id);
+    expect(readFileSync(resolve(elsewhere, "file"), "utf8")).toBe("keep");
   });
 });
 

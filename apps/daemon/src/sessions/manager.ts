@@ -11,8 +11,9 @@ import type {
 } from "@renki/protocol";
 import { desc, eq, isNotNull, ne } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, rmSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
+import { rm } from "node:fs/promises";
+import { resolve, sep } from "node:path";
 import type { Config } from "../config.js";
 import type { DB } from "../db/index.js";
 import { compactions, sessions } from "../db/schema.js";
@@ -567,8 +568,11 @@ export class SessionManager {
         throw new SessionError("invalid_request", `Couldn't recreate the worktree: ${err instanceof Error ? err.message : String(err)}`);
       }
     } else {
+      const kept = existsSync(session.worktreePath);
       mkdirSync(session.worktreePath, { recursive: true });
-      note = "Unarchived — files made in this chat's folder before archiving aren't back.";
+      note = kept
+        ? "Unarchived — this chat's folder is as you left it."
+        : "Unarchived — files made in this chat's folder before archiving aren't back.";
     }
 
     this.patch(id, { status: "idle" });
@@ -623,7 +627,7 @@ export class SessionManager {
 
     this.closeLive(id, "trashed");
     this.clearResume(id);
-    // Already archived means the workdir went at archive time.
+    // Already archived means a repo session's worktree went at archive time (a repo-less chat's folder stays until a permanent delete).
     if (session.status !== "archived") {
       await this.cleanUpWorkdir(session).catch((err) =>
         logger.warn("workdir cleanup failed during trash", { id, err: String(err) }),
@@ -682,12 +686,16 @@ export class SessionManager {
     const session = this.getSession(id);
     this.closeLive(id, "deleted");
     this.clearResume(id);
-    // Archived and trashed sessions already had their worktree torn down.
+    // Archived and trashed repo sessions already had their worktree torn down; a repo-less chat's folder
+    // is only ever removed here.
     if (session.status !== "archived" && session.status !== "trashed") {
       await this.cleanUpWorkdir(session).catch((err) =>
         logger.warn("workdir cleanup failed during delete", { id, err: String(err) }),
       );
     }
+    await this.removeChatFolder(session).catch((err) =>
+      logger.warn("chat folder removal failed during delete", { id, err: String(err) }),
+    );
     this.events.deleteTranscript(id);
     this.db
       .update(sessions)
@@ -762,12 +770,28 @@ export class SessionManager {
 
   /** Tear down a session's on-disk working directory: a git worktree for a repo session, or just the plain scratch dir. */
   private async cleanUpWorkdir(session: Session): Promise<void> {
-    if (!session.repoId) {
-      rmSync(session.worktreePath, { recursive: true, force: true });
-      return;
-    }
+    // A repo-less chat's folder is left alone: there's no branch or remote behind it, so it can hold the
+    // only copy of everything Claude made there (research, notes, scripts), and it can be large. It goes
+    // with the chat on a permanent delete (see removeChatFolder), not on archive or trash.
+    if (!session.repoId) return;
     const repo = await findRepo(this.config, session.repoId);
     if (repo && session.branch) await removeWorktree(repo.path, session.worktreePath, session.branch);
+  }
+
+  /**
+   * A repo-less chat's folder, removed on a permanent delete. Async (a folder with node_modules is tens of
+   * thousands of files, and a synchronous delete froze the whole daemon for as long as it took), and
+   * only ever inside <data>/chats.
+   */
+  private async removeChatFolder(session: Session): Promise<void> {
+    if (session.repoId || !session.worktreePath) return;
+    const chats = resolve(this.config.dataDir, "chats") + sep;
+    const target = resolve(session.worktreePath);
+    if (!target.startsWith(chats)) {
+      logger.warn("not removing a chat folder outside the chats directory", { id: session.id, target });
+      return;
+    }
+    await rm(target, { recursive: true, force: true });
   }
 
   // ── Take-control locking ────────────────────────────────────────────────────

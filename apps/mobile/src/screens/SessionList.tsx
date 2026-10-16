@@ -78,8 +78,14 @@ export function SessionList({
   }, [realtime]);
 
   async function archive(id: string) {
-    await rest.archiveSession(id);
-    refresh();
+    try {
+      await rest.archiveSession(id);
+    } catch (err) {
+      Alert.alert("Couldn't archive", err instanceof Error ? err.message : "Try again in a moment.");
+    } finally {
+      // Whatever happened, show what the daemon now says: a slow or failed request must not leave the list stale.
+      refresh();
+    }
   }
 
   async function rename(id: string, title: string) {

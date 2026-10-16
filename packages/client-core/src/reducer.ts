@@ -115,6 +115,21 @@ export type QueuedPromptView = {
   text: string;
 };
 
+/**
+ * A prompt this device just sent that the daemon hasn't confirmed yet. It's shown
+ * at once (see `timelineWithSending`) so sending feels instant, and dropped the
+ * moment the daemon's own `prompt_submitted` / `prompt_queued` for the same
+ * `promptId` arrives — or when it's known not to be coming (an error for it, the
+ * socket dropping, a long silence). Local only: never saved to the cache.
+ */
+export type SendingPromptView = {
+  promptId: string;
+  deviceId: string;
+  text: string;
+  attachments?: Attachment[];
+  at: number;
+};
+
 /** How full the session's context window is, as the CLI last reported it. */
 export type ContextUsageView = {
   usedTokens: number;
@@ -145,6 +160,8 @@ export type ConversationState = {
    * stays what it always was: strictly ordered prompt/answer pairs.
    */
   queuedPrompts: QueuedPromptView[];
+  /** Sent from this device, not yet confirmed by the daemon — see SendingPromptView. */
+  sendingPrompts: SendingPromptView[];
   /** null until the daemon has reported it for this session (after its first turn). */
   context: ContextUsageView | null;
   /**
@@ -186,8 +203,49 @@ export function restoreBlockGaps(state: ConversationState): ConversationState {
   };
   return {
     ...state,
+    // Anything still "sending" when this was saved is long settled one way or the other.
+    sendingPrompts: [],
     timeline: state.timeline.map((it) => (it.type === "turn" ? { ...it, turn: { ...it.turn, blocks: fix(it.turn.blocks) } } : it)),
   };
+}
+
+// ── prompts sent but not yet confirmed (local echo) ──────────────────────────
+
+/** `sendingPrompts` without `promptId` — tolerant of a state that predates the field. */
+function withoutSending(state: ConversationState, promptId: string): SendingPromptView[] {
+  const list = state.sendingPrompts ?? [];
+  return list.some((p) => p.promptId === promptId) ? list.filter((p) => p.promptId !== promptId) : list;
+}
+
+export function addSendingPrompt(state: ConversationState, prompt: SendingPromptView): ConversationState {
+  const list = state.sendingPrompts ?? [];
+  if (list.some((p) => p.promptId === prompt.promptId)) return state;
+  return { ...state, sendingPrompts: [...list, prompt] };
+}
+
+export function dropSendingPrompt(state: ConversationState, promptId: string): ConversationState {
+  const next = withoutSending(state, promptId);
+  return next === state.sendingPrompts ? state : { ...state, sendingPrompts: next };
+}
+
+export function dropAllSendingPrompts(state: ConversationState): ConversationState {
+  return state.sendingPrompts?.length ? { ...state, sendingPrompts: [] } : state;
+}
+
+/**
+ * What the transcript shows: the real timeline, then any prompt sent from here that
+ * the daemon hasn't confirmed yet. When the confirmation arrives it lands at this
+ * same position, so the row just carries on (same index, same promptId).
+ */
+export function timelineWithSending(state: ConversationState): TimelineItem[] {
+  const sending = state.sendingPrompts;
+  if (!sending?.length) return state.timeline;
+  return [
+    ...state.timeline,
+    ...sending
+      .filter((p) => !state.queuedPrompts.some((q) => q.promptId === p.promptId))
+      .map((p): TimelineItem => ({ type: "prompt", promptId: p.promptId, deviceId: p.deviceId, text: p.text, attachments: p.attachments, at: p.at })),
+  ];
 }
 
 /**
@@ -200,7 +258,8 @@ export function restoreBlockGaps(state: ConversationState): ConversationState {
 // was skipped while later live events still applied — so they're dropped.
 // 3: tool results carry their images; older copies folded them away.
 // 4: tool calls carry their start time and agents their usage (the agent map).
-export const CONVERSATION_CACHE_VERSION = 4;
+// 5: conversations carry `sendingPrompts` (local echo of a just-sent message).
+export const CONVERSATION_CACHE_VERSION = 5;
 
 export function initialConversation(sessionId: string): ConversationState {
   return {
@@ -213,6 +272,7 @@ export function initialConversation(sessionId: string): ConversationState {
     timeline: [],
     pending: [],
     queuedPrompts: [],
+    sendingPrompts: [],
     context: null,
     model: null,
     composer: null,
@@ -251,6 +311,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       return s;
 
     case "prompt_queued":
+      s.sendingPrompts = withoutSending(s, e.promptId);
       s.queuedPrompts = [...s.queuedPrompts, { promptId: e.promptId, deviceId: e.deviceId, text: e.text }];
       return s;
 
@@ -263,6 +324,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       return s;
 
     case "prompt_submitted": {
+      s.sendingPrompts = withoutSending(s, e.promptId);
       s.queuedPrompts = s.queuedPrompts.filter((q) => q.promptId !== e.promptId);
       // Steered into a running turn: it belongs INSIDE that turn, pinned after
       // whatever block was current when it landed, so the transcript reads in

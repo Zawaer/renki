@@ -39,6 +39,7 @@ import {
   modelMenuLabel,
   segmentImages,
   agentMapOf,
+  timelineWithSending,
 } from "@renki/client-core";
 import type { AttachmentView, CapabilitiesResponse, SessionResume } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
@@ -282,11 +283,10 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const hadContentAtMount = useRef(conv.timeline.length > 0);
   if (settledCount.current === null && conv.timeline.length > 0) settledCount.current = conv.timeline.length;
 
+  /** The timeline plus any message sent from here that the daemon hasn't confirmed yet (shown instantly). */
+  const rows = useMemo(() => timelineWithSending(conv), [conv.timeline, conv.sendingPrompts, conv.queuedPrompts]);
   /** Newest first for the inverted list, each with its position in the timeline for a stable key. */
-  const entries = useMemo(
-    () => conv.timeline.map((item, index): TimelineEntry => ({ item, index })).reverse(),
-    [conv.timeline],
-  );
+  const entries = useMemo(() => rows.map((item, index): TimelineEntry => ({ item, index })).reverse(), [rows]);
   /** The session's subagents as a tree — the header's Agents button and sheet. */
   const agents = useMemo(() => agentMapOf(conv.timeline), [conv.timeline]);
   const [agentsOpen, setAgentsOpen] = useState(false);
@@ -460,7 +460,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
           windowSize={9}
         />
         </FadeIn>
-        {conv.timeline.length === 0 && (
+        {rows.length === 0 && (
           <View style={styles.timelineEmpty} pointerEvents="none">
             {conv.status === null ? (
               <ConversationSkeleton />
@@ -472,7 +472,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
           </View>
         )}
         {/* Scrolled up while more arrives below: one tap back to the live end. */}
-        {!atBottom && conv.timeline.length > 0 && (
+        {!atBottom && rows.length > 0 && (
           <FadeIn style={styles.jumpWrap} pointerEvents="box-none">
           <View style={styles.jumpWrapInner} pointerEvents="box-none">
             <TouchableOpacity style={styles.jump} onPress={jumpToLatest} activeOpacity={0.85} accessibilityRole="button" accessibilityLabel="Jump to latest">

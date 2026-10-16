@@ -9,7 +9,16 @@ import {
 } from "@renki/protocol";
 import type { PermissionModeKey } from "./permissionMode.js";
 import { localTimeZone } from "./rest.js";
-import { type ConversationState, applyEvent, applyEvents, initialConversation, restoreBlockGaps } from "./reducer.js";
+import {
+  type ConversationState,
+  addSendingPrompt,
+  applyEvent,
+  applyEvents,
+  dropAllSendingPrompts,
+  dropSendingPrompt,
+  initialConversation,
+  restoreBlockGaps,
+} from "./reducer.js";
 import { Store } from "./store.js";
 
 /**
@@ -110,6 +119,7 @@ export class RealtimeClient {
     this.stopped = true;
     this.clearTimers();
     this.clearPendingUnwatches();
+    this.dropEchoes();
     this.ws?.close();
     this.ws = null;
     this.status.set("closed");
@@ -146,6 +156,7 @@ export class RealtimeClient {
       if (this.ws !== ws) return;
       this.clearTimers();
       this.status.set("closed");
+      this.dropEchoes();
       if (!this.stopped) this.scheduleReconnect();
     };
 
@@ -164,6 +175,7 @@ export class RealtimeClient {
     const dead = this.ws;
     this.ws = null;
     this.clearTimers();
+    this.dropEchoes();
     try {
       dead?.close();
     } catch {
@@ -292,8 +304,28 @@ export class RealtimeClient {
     },
   ): string {
     const promptId = genId("p");
+    // Show it straight away rather than after the round trip to the daemon and back —
+    // but only if it can actually go: send() drops a message while offline, and a bubble
+    // for something that was never sent would be a lie.
+    if (this.isOpen()) this.echoPrompt(sessionId, promptId, text, opts?.attachments);
     this.send({ type: "submit_prompt", sessionId, promptId, text, ...opts, timeZone: localTimeZone() });
     return promptId;
+  }
+
+  /** How long a local echo waits for the daemon's confirmation before it's taken back. */
+  private static readonly ECHO_TIMEOUT_MS = 30_000;
+
+  private echoPrompt(sessionId: string, promptId: string, text: string, attachments?: Attachment[]): void {
+    const store = this.conversation(sessionId);
+    store.update((s) => addSendingPrompt(s, { promptId, deviceId: this.opts.deviceId, text, attachments, at: Date.now() }));
+    // A message nobody ever confirms (lost, or silently refused) must not sit there for good.
+    const timer = setTimeout(() => store.update((s) => dropSendingPrompt(s, promptId)), RealtimeClient.ECHO_TIMEOUT_MS);
+    (timer as { unref?: () => void }).unref?.();
+  }
+
+  /** Take back every unconfirmed local echo — it either reached the daemon (and comes back in the replay) or it didn't. */
+  private dropEchoes(): void {
+    for (const store of this.conversations.values()) store.update(dropAllSendingPrompts);
   }
 
   resolvePermission(
@@ -417,7 +449,7 @@ export class RealtimeClient {
     if (!this.opts.cache || !this.unsaved.has(sessionId)) return;
     this.unsaved.delete(sessionId);
     const state = this.conversations.get(sessionId)?.get();
-    if (state && state.lastSeq >= 0) void this.opts.cache.save(sessionId, state).catch(() => {});
+    if (state && state.lastSeq >= 0) void this.opts.cache.save(sessionId, dropAllSendingPrompts(state)).catch(() => {});
   }
 
   private sendSubscribe(sessionId: string): void {
@@ -456,6 +488,8 @@ export class RealtimeClient {
         return;
       }
       case "error":
+        // A refused prompt is never coming back as an event; take its echo down.
+        if (msg.ref) for (const store of this.conversations.values()) store.update((s) => dropSendingPrompt(s, msg.ref!));
         this.lastError.set({ code: msg.code, message: msg.message, ref: msg.ref });
         return;
       case "session": {

@@ -66,6 +66,7 @@ describe("initialConversation", () => {
       timeline: [],
       pending: [],
       queuedPrompts: [],
+      sendingPrompts: [],
       context: null,
       model: null,
       // Session-owned composer settings; null until the daemon pushes them.

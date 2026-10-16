@@ -41,6 +41,7 @@ import {
   modelFullName,
   modelMenuLabel,
   segmentImages,
+  timelineWithSending,
 } from "@renki/client-core";
 import type { Account, AttachmentView, CapabilitiesResponse, SessionComposer, SessionResume } from "@renki/protocol";
 import { useEffect, useMemo, useRef, useState, Fragment } from "react";
@@ -211,6 +212,9 @@ export function SessionView({
   const hadContentAtMount = useRef(conv.timeline.length > 0);
   if (settledCount.current === null && conv.timeline.length > 0) settledCount.current = conv.timeline.length;
 
+  /** The timeline plus any message sent from here that the daemon hasn't confirmed yet (shown instantly). */
+  const rows = useMemo(() => timelineWithSending(conv), [conv.timeline, conv.sendingPrompts, conv.queuedPrompts]);
+
   /** The Changes/Files side panel, if open. Remembered per browser, like the sidebar. */
   const [panel, setPanel] = useState<WorkspaceTab | null>(() => loadPanel());
   const togglePanel = (tab: WorkspaceTab) =>
@@ -344,7 +348,7 @@ export function SessionView({
       {/* Timeline */}
       <div ref={scrollRef} onScroll={onTranscriptScroll} className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl space-y-7 px-6 py-6">
-          {conv.status === null && conv.timeline.length === 0 && (
+          {conv.status === null && rows.length === 0 && (
             <div className="space-y-7" aria-busy="true" aria-label="Loading conversation">
               <div className="flex justify-end">
                 <Skeleton className="h-16 w-[60%] rounded-2xl" />
@@ -359,7 +363,7 @@ export function SessionView({
               </div>
             </div>
           )}
-          {conv.status !== null && conv.timeline.length === 0 && (
+          {conv.status !== null && rows.length === 0 && (
             <div className="flex flex-col items-center gap-3 py-24 text-center">
               <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-(--renki-surface) text-(--renki-fg-muted) shadow-(--renki-shadow-sm)">
                 <span className="codicon codicon-sparkle text-xl" />
@@ -380,17 +384,17 @@ export function SessionView({
               </div>
             </div>
           )}
-          {conv.timeline.length > 0 && (
+          {rows.length > 0 && (
             // Crossfades in over the skeleton the first time content arrives;
             // a chat that opened with content already loaded just shows it.
             <div key="content" className={`space-y-7 ${hadContentAtMount.current ? "" : "renki-fade"}`}>
-              {conv.timeline.map((item, i) => (
+              {rows.map((item, i) => (
                 <TimelineRow key={i} item={item} animate={settledCount.current !== null && i >= settledCount.current} />
               ))}
             </div>
           )}
         </div>
-        {!atBottom && conv.timeline.length > 0 && (
+        {!atBottom && rows.length > 0 && (
           <div className="pointer-events-none sticky bottom-4 flex h-0 items-end justify-center">
             <button
               onClick={jumpToLatest}
@@ -481,7 +485,12 @@ export function SessionView({
                 ? "Take control to send prompts"
                 : ""
         }
-        onSend={(text, opts) => realtime.submitPrompt(sessionId, text, opts)}
+        onSend={(text, opts) => {
+          // You sent something: show it, even if you'd scrolled up.
+          stickToBottom.current = true;
+          setAtBottom(true);
+          return realtime.submitPrompt(sessionId, text, opts);
+        }}
         busy={isController && status === "busy"}
         onStop={() => realtime.interrupt(sessionId)}
       />

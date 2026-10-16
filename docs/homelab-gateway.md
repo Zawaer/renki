@@ -33,6 +33,7 @@ Renki container --(ssh, forced command, key without a shell)--> gateway (host, o
 | 1 reversible | `caddy-reload` | validate Caddyfile, then reload; never restart |
 | 2 approval | `rm-path <path>` | only inside an app's own dir, never inside `protected`; needs phone approval |
 | 2 approval | `remove-container <name>` | stopped containers of `deploy` apps only |
+| 2 approval | `create-repo <name> [--public]` | an empty GitHub repo under the policy's owner, private unless `--public`; refuses names that exist |
 | never | anything else | `down -v`, `volume rm`, `system prune`, `rm` outside policy, docker run/exec, shell |
 
 ## Policy
@@ -113,6 +114,19 @@ phone's notifications can approve. There is a small window between the final che
 re-check narrow it, and the request is still limited to an app's own folder.
 
 Fallback on the host (not reachable over the SSH key): `sudo homelab-gateway --admin approve <id>`.
+
+## Creating GitHub repos
+
+Sessions only hold a fine-grained GitHub token (no repo creation: GitHub doesn't let those create
+personal repos). `homelab create-repo <name>` fills that gap safely: the gateway checks the name and
+that the repo doesn't exist, asks on the phone ("Create a private GitHub repo Zawaer/<name>"), and
+only then runs one fixed `gh repo create`. It uses a separate GitHub login kept in
+`/var/lib/homelab-gateway/gh` on the host, which the container can't see and sessions can't read.
+Set it up once as the homelab user, after the installer: `GH_CONFIG_DIR=/var/lib/homelab-gateway/gh
+gh auth login --hostname github.com --git-protocol https --web --scopes repo`. That login has the broad
+`repo` scope, so it is the one credential to keep on the host only; revoking GitHub's "GitHub CLI"
+authorization (Settings, Applications) kills it along with every other `gh` login. A repo it creates
+is covered at once by the sessions' "All repositories" token.
 
 ## Per-project access
 

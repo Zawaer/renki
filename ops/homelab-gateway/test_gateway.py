@@ -10,8 +10,9 @@ class Fake:
     def __init__(self, containers=("talkoot", "immich_server")):
         self.calls, self.containers = [], containers
 
-    def __call__(self, cmd, cwd=None, timeout=1800):
+    def __call__(self, cmd, cwd=None, timeout=1800, env=None):
         self.calls.append((cmd, cwd))
+        self.envs = getattr(self, "envs", []) + [env]
         if cmd[:3] == ["docker", "ps", "-a"] and "{{.Names}}" in cmd[-1]:
             return 0, "\n".join(self.containers) + "\n"
         return 0, "ok\n"
@@ -234,6 +235,71 @@ class ApprovalTest(unittest.TestCase):
         with mock.patch.object(gateway, "run", rec), mock.patch.object(gateway, "request_approval", return_value=True):
             gateway.v_remove_container(self.policy, ["talkoot-old"])
         self.assertEqual(calls[-1], ["docker", "rm", "talkoot-old"])  # no -v: volumes are kept
+
+    # --- create-repo
+    def _gh(self, exists=False, signed_in=True):
+        calls = []
+
+        def run(cmd, cwd=None, timeout=1800, env=None):
+            calls.append((cmd, env))
+            if cmd[:2] == ["gh", "api"]:
+                if not signed_in:
+                    return 1, "gh: authentication required"
+                return (0, "") if exists else (1, "gh: Not Found (HTTP 404)")
+            return 0, "https://github.com/Zawaer/x\n"
+
+        return calls, run
+
+    def test_create_repo_rejects_bad_names_and_unset_config(self):
+        for bad in ["", "../x", "a b", "-rf", "--public", ".git", "x.git", "a/b", "x;y", "a" * 101]:
+            with mock.patch.object(gateway, "run", self._gh()[1]), \
+                 mock.patch.object(gateway, "request_approval", side_effect=AssertionError("must not ask")):
+                with self.assertRaises(gateway.Refused, msg=bad):
+                    gateway.v_create_repo(self.policy, [bad] if bad else [])
+        policy = json.loads(json.dumps(self.policy)); policy.pop("github", None)
+        with self.assertRaises(gateway.Refused):
+            gateway.v_create_repo(policy, ["fine-name"])
+
+    def test_create_repo_refuses_an_existing_repo_and_a_broken_login(self):
+        for exists, signed_in in [(True, True), (False, False)]:
+            calls, run_ = self._gh(exists=exists, signed_in=signed_in)
+            with mock.patch.object(gateway, "run", run_), \
+                 mock.patch.object(gateway, "request_approval", side_effect=AssertionError("must not ask")):
+                with self.assertRaises(gateway.Refused):
+                    gateway.v_create_repo(self.policy, ["taken"])
+            self.assertTrue(all(c[0][:2] == ["gh", "api"] for c in calls))  # nothing was created
+
+    def test_create_repo_does_nothing_without_approval(self):
+        calls, run_ = self._gh()
+        with mock.patch.object(gateway, "run", run_), mock.patch.object(gateway, "request_approval", return_value=False):
+            rc, out = gateway.v_create_repo(self.policy, ["new-thing"])
+        self.assertEqual(rc, 3)
+        self.assertFalse(any(c[0][:3] == ["gh", "repo", "create"] for c in calls))
+
+    def test_create_repo_private_by_default_with_the_gateways_own_login(self):
+        calls, run_ = self._gh()
+        asked = {}
+        def approve(policy, verb, args, summary, **kw):
+            asked["summary"] = summary; return True
+        with mock.patch.object(gateway, "run", run_), mock.patch.object(gateway, "request_approval", side_effect=approve):
+            rc, out = gateway.v_create_repo(self.policy, ["new-thing"])
+        self.assertEqual(rc, 0)
+        create = [c for c in calls if c[0][:3] == ["gh", "repo", "create"]][0]
+        self.assertEqual(create[0], ["gh", "repo", "create", "Zawaer/new-thing", "--private"])
+        self.assertEqual(create[1]["GH_CONFIG_DIR"], "/var/lib/homelab-gateway/gh")
+        self.assertIn("private GitHub repo Zawaer/new-thing", asked["summary"])
+        self.assertNotIn("PUBLIC", asked["summary"])
+
+    def test_create_repo_public_is_loud_in_what_the_user_is_asked(self):
+        calls, run_ = self._gh()
+        asked = {}
+        def approve(policy, verb, args, summary, **kw):
+            asked["summary"] = summary; return True
+        with mock.patch.object(gateway, "run", run_), mock.patch.object(gateway, "request_approval", side_effect=approve):
+            gateway.v_create_repo(self.policy, ["--public", "open-thing"])
+        self.assertIn("PUBLIC", asked["summary"])
+        self.assertIn("Anyone on the internet", asked["summary"])
+        self.assertEqual([c for c in calls if c[0][:3] == ["gh", "repo", "create"]][0][0][-1], "--public")
 
     def test_http_service_end_to_end(self):
         import threading, urllib.request, urllib.error

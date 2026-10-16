@@ -151,5 +151,9 @@
     "listen": "172.24.0.1:4530",
     "url": "https://approvals.internal",
     "push_db": "/home/zawaer/renki/data/renki.sqlite"
+  },
+  "github": {
+    "owner": "Zawaer",
+    "config_dir": "/var/lib/homelab-gateway/gh"
   }
 }

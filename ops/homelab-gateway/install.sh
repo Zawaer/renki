@@ -24,7 +24,7 @@ else
   install -m 644 -o root -g root "$HERE/policy.json" /etc/homelab-gateway/policy.json
 fi
 
-install -d -m 700 -o "$OPS_USER" /var/lib/homelab-gateway /var/lib/homelab-gateway/approvals
+install -d -m 700 -o "$OPS_USER" /var/lib/homelab-gateway /var/lib/homelab-gateway/approvals /var/lib/homelab-gateway/gh
 install -m 644 "$HERE/homelab-gateway-approvals.service" /etc/systemd/system/homelab-gateway-approvals.service
 systemctl daemon-reload
 systemctl enable --now homelab-gateway-approvals.service
@@ -70,5 +70,7 @@ Installed.
   kill switch off:  sudo rm /etc/homelab-gateway/DISABLED
   audit log      :  /var/log/homelab-gateway.log
   container key  :  $KEYDIR/renki_key  (mount read-only into renki-daemon)
+GitHub login for create-repo (once, as $OPS_USER, no sudo):
+    GH_CONFIG_DIR=/var/lib/homelab-gateway/gh gh auth login --hostname github.com --git-protocol https --web --scopes repo
 Test from this host:  ssh -i $KEYDIR/renki_key -o UserKnownHostsFile=$KEYDIR/known_hosts $GW_USER@localhost status
 DONE

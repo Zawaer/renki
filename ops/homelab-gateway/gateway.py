@@ -52,9 +52,10 @@ def cap(text, limit):
     return data[-limit:].decode("utf-8", "replace") + f"\n[output truncated to last {limit} bytes]\n"
 
 
-def run(cmd, cwd=None, timeout=1800):
-    """Run a fixed argument list. Never through a shell."""
-    p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+def run(cmd, cwd=None, timeout=1800, env=None):
+    """Run a fixed argument list. Never through a shell. `env` is added to the process environment."""
+    p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout,
+                       env={**os.environ, **env} if env else None)
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 
@@ -456,6 +457,41 @@ def v_remove_container(policy, args):
     return run(["docker", "rm", name], timeout=60)
 
 
+REPO_NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$")  # no leading dash: never mistaken for an option
+
+
+def v_create_repo(policy, args):
+    """Create an empty GitHub repo under the policy's owner, after approval on the phone.
+
+    Needs a login that can create repos (the Renki session token cannot). That login lives in
+    policy github.config_dir on the host, which the container never sees, and is used for this
+    one fixed command."""
+    usage = "usage: create-repo <name> [--public]   (private unless --public; letters, digits, . _ -)"
+    rest = list(args)
+    public = "--public" in rest
+    if public:
+        rest.remove("--public")
+    if len(rest) != 1 or not REPO_NAME_RE.match(rest[0]) or rest[0].endswith(".git") or rest[0] in (".", ".."):
+        raise Refused(usage)
+    name = rest[0]
+    gh = policy.get("github") or {}
+    owner, cfg = gh.get("owner"), gh.get("config_dir")
+    if not owner or not cfg:
+        raise Refused("repo creation is not set up on this host")
+    env = {"GH_CONFIG_DIR": cfg, "GH_PROMPT_DISABLED": "1", "GH_NO_UPDATE_NOTIFIER": "1"}
+    rc, out = run(["gh", "api", f"repos/{owner}/{name}", "--silent"], timeout=30, env=env)
+    if rc == 0:
+        raise Refused(f"{owner}/{name} already exists")
+    if "404" not in out:
+        raise Refused("couldn't check GitHub with the gateway's login (is it signed in?)")
+    kind = "PUBLIC" if public else "private"
+    summary = f"Create a {kind} GitHub repo {owner}/{name} (empty)." + (" Anyone on the internet can see a public repo." if public else "")
+    if not request_approval(policy, "create-repo", args, summary):
+        return 3, "denied: not approved on the phone in time.\n"
+    rc, out = run(["gh", "repo", "create", f"{owner}/{name}", "--public" if public else "--private"], timeout=60, env=env)
+    return rc, out + (f"created https://github.com/{owner}/{name}\n" if rc == 0 else "")
+
+
 class ApprovalHandler(BaseHTTPRequestHandler):
     approval_dir = APPROVAL_DIR
 
@@ -500,9 +536,9 @@ VERBS = {
     "status": v_status, "logs": v_logs, "top": v_top, "backup-audit": v_backup_audit,
     "deploy": v_deploy, "restart": v_restart, "builder-prune": v_builder_prune,
     "caddy-reload": v_caddy_reload, "job": v_job,
-    "rm-path": v_rm_path, "remove-container": v_remove_container,
+    "rm-path": v_rm_path, "remove-container": v_remove_container, "create-repo": v_create_repo,
 }
-HELP = "verbs: " + ", ".join(sorted(VERBS)) + "  (rm-path and remove-container wait for approval on the phone)"
+HELP = "verbs: " + ", ".join(sorted(VERBS)) + "  (rm-path, remove-container and create-repo wait for approval on the phone)"
 
 
 def audit(entry):

@@ -3,6 +3,7 @@
 # Idempotent. Never overwrites an existing policy.json (writes policy.json.new instead).
 set -euo pipefail
 [ "$(id -u)" = 0 ] || exec sudo "$0" "$@"
+[ "${1:-}" = "--replace-policy" ] && REPLACE_POLICY=1
 
 OPS_USER="${OPS_USER:-zawaer}"        # the user the gateway acts as (owns the apps, in the docker group)
 GW_USER="homelab-gw"                  # the account the SSH key logs in as; can run nothing but the gateway
@@ -18,7 +19,7 @@ install -d -m 755 -o root -g root /etc/homelab-gateway
 install -m 755 -o root -g root "$HERE/gateway.py" /usr/local/sbin/homelab-gateway
 if [ -e /etc/homelab-gateway/policy.json ] && [ -z "${REPLACE_POLICY:-}" ]; then
   install -m 644 -o root -g root "$HERE/policy.json" /etc/homelab-gateway/policy.json.new
-  echo "policy.json exists; wrote policy.json.new next to it. Review it, or re-run with REPLACE_POLICY=1 to take the repo's version."
+  echo "policy.json exists; wrote policy.json.new next to it. Review it, or re-run with --replace-policy to take the repo's version."
 else
   install -m 644 -o root -g root "$HERE/policy.json" /etc/homelab-gateway/policy.json
 fi

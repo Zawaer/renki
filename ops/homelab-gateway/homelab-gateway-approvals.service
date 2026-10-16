@@ -1,0 +1,18 @@
+[Unit]
+Description=Homelab gateway approval service (phone approvals for deleting verbs)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+User=zawaer
+ExecStart=/usr/local/sbin/homelab-gateway --serve
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/homelab-gateway /var/log
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

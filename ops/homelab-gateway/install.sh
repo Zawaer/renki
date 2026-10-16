@@ -16,11 +16,27 @@ gpasswd -d "$GW_USER" docker >/dev/null 2>&1 || true
 
 install -d -m 755 -o root -g root /etc/homelab-gateway
 install -m 755 -o root -g root "$HERE/gateway.py" /usr/local/sbin/homelab-gateway
-if [ -e /etc/homelab-gateway/policy.json ]; then
+if [ -e /etc/homelab-gateway/policy.json ] && [ -z "${REPLACE_POLICY:-}" ]; then
   install -m 644 -o root -g root "$HERE/policy.json" /etc/homelab-gateway/policy.json.new
-  echo "policy.json exists; wrote policy.json.new next to it (diff and merge by hand)."
+  echo "policy.json exists; wrote policy.json.new next to it. Review it, or re-run with REPLACE_POLICY=1 to take the repo's version."
 else
   install -m 644 -o root -g root "$HERE/policy.json" /etc/homelab-gateway/policy.json
+fi
+
+install -d -m 700 -o "$OPS_USER" /var/lib/homelab-gateway /var/lib/homelab-gateway/approvals
+install -m 644 "$HERE/homelab-gateway-approvals.service" /etc/systemd/system/homelab-gateway-approvals.service
+systemctl daemon-reload
+systemctl enable --now homelab-gateway-approvals.service
+systemctl restart homelab-gateway-approvals.service
+
+# The approval service listens on the Docker network's bridge address, so the phone (via Caddy)
+# can reach it. Open exactly that port, from that network only.
+NET="${APPROVAL_NET:-homelab_net}"
+if command -v ufw >/dev/null && ufw status | grep -q "Status: active" && docker network inspect "$NET" >/dev/null 2>&1; then
+  BR="br-$(docker network inspect "$NET" --format '{{.Id}}' | cut -c1-12)"
+  GWIP="$(docker network inspect "$NET" --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}')"
+  SUBNET="$(docker network inspect "$NET" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}')"
+  ufw allow in on "$BR" from "$SUBNET" to "$GWIP" port 4530 proto tcp comment 'homelab gateway approvals'
 fi
 
 touch /var/log/homelab-gateway.log

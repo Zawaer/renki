@@ -40,11 +40,6 @@ class GatewayTest(unittest.TestCase):
             self.assertEqual(rc, 2, c)
             self.assertEqual(fake.calls, [], c)
 
-    def test_tier2_not_enabled(self):
-        for c in ["rm-path /home/zawaer/immich", "remove-container immich_server"]:
-            rc, out, fake, _ = self.go(c)
-            self.assertEqual(rc, 2); self.assertIn("approval", out); self.assertEqual(fake.calls, [])
-
     def test_deploy_allowed_app_runs_fixed_commands(self):
         rc, out, fake, _ = self.go("deploy talkoot")
         self.assertEqual(rc, 0)
@@ -104,6 +99,161 @@ class GatewayTest(unittest.TestCase):
 
     def test_output_is_capped(self):
         self.assertLess(len(gateway.cap("x" * 1_000_000, 1000)), 1100)
+
+
+class ApprovalTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = os.path.realpath(tempfile.mkdtemp())
+        self.home = os.path.realpath(tempfile.mkdtemp())  # macOS temp dirs sit behind a symlink
+        os.makedirs(os.path.join(self.home, "talkoot/data/cache"))
+        open(os.path.join(self.home, "talkoot/data/cache/a.bin"), "w").write("x" * 2048)
+        os.makedirs(os.path.join(self.home, "immich/library"))
+        os.makedirs(os.path.join(self.home, "talkoot/.git"))
+        self.policy = json.loads(json.dumps(POLICY))
+        self.policy["run_as_home"] = self.home
+        self.policy["protected_paths"] = [os.path.join(self.home, "immich"), os.path.join(self.home, "talkoot/data/keep")]
+        self.policy["approval"] = {"timeout_seconds": 3, "url": "https://x", "push_db": ""}
+
+    def cap_notify(self):
+        got = {}
+        def notify(**kw):
+            got.update(kw); return True
+        return got, notify
+
+    # --- the approval service
+    def test_only_the_right_token_approves(self):
+        aid, token = gateway.create_approval(self.dir, "rm-path", ["/x"], "s", 60)
+        self.assertEqual(gateway.decide(self.dir, aid, "wrong", "approve")[0], 403)
+        self.assertIsNone(gateway.read_decision(self.dir, aid))
+        code, body = gateway.decide(self.dir, aid, token, "approve")
+        self.assertEqual(code, 200)
+        self.assertEqual(gateway.read_decision(self.dir, aid), "approve")
+
+    def test_decision_is_single_use(self):
+        aid, token = gateway.create_approval(self.dir, "rm-path", ["/x"], "s", 60)
+        self.assertEqual(gateway.decide(self.dir, aid, token, "deny")[0], 200)
+        self.assertEqual(gateway.decide(self.dir, aid, token, "approve")[0], 409)
+        self.assertEqual(gateway.read_decision(self.dir, aid), "deny")
+
+    def test_expired_request_cannot_be_approved(self):
+        aid, token = gateway.create_approval(self.dir, "rm-path", ["/x"], "s", 10, now=1000)
+        self.assertEqual(gateway.decide(self.dir, aid, token, "approve", now=1011)[0], 410)
+        self.assertIsNone(gateway.read_decision(self.dir, aid))
+
+    def test_five_wrong_tokens_deny_the_request(self):
+        aid, token = gateway.create_approval(self.dir, "rm-path", ["/x"], "s", 60)
+        gateway._bad_attempts.clear()
+        for _ in range(5):
+            gateway.decide(self.dir, aid, "guess", "approve")
+        self.assertEqual(gateway.read_decision(self.dir, aid), "deny")
+        self.assertEqual(gateway.decide(self.dir, aid, token, "approve")[0], 409)
+
+    def test_token_is_not_stored_and_files_are_private(self):
+        aid, token = gateway.create_approval(self.dir, "rm-path", ["/x"], "s", 60)
+        raw = open(os.path.join(self.dir, aid + ".json")).read()
+        self.assertNotIn(token, raw)
+        self.assertEqual(oct(os.stat(os.path.join(self.dir, aid + ".json")).st_mode & 0o777), "0o600")
+
+    def test_malformed_requests(self):
+        for aid, tok, dec in [("../etc", "t", "approve"), ("a" * 10, "t", "approve"), ("0" * 10, None, "approve"), ("0" * 10, "t", "maybe")]:
+            self.assertIn(gateway.decide(self.dir, aid, tok, dec)[0], (400, 404))
+
+    # --- request_approval
+    def test_waits_then_returns_true_on_approval_and_pushes_token_to_phone_only(self):
+        got, notify = self.cap_notify()
+        def sleeper(_):
+            gateway.decide(self.dir, got["data"]["id"], got["data"]["token"], "approve")
+        ok = gateway.request_approval(self.policy, "rm-path", ["/x"], "Delete x", notify=notify, approval_dir=self.dir, sleep=sleeper)
+        self.assertTrue(ok)
+        self.assertEqual(got["body"], "Delete x")
+
+    def test_timeout_denies_and_closes_the_request(self):
+        got, notify = self.cap_notify()
+        t = [0]
+        ok = gateway.request_approval(self.policy, "rm-path", ["/x"], "s", notify=notify, approval_dir=self.dir,
+                                      sleep=lambda _: t.__setitem__(0, t[0] + 1), now=lambda: t[0])
+        self.assertFalse(ok)
+        self.assertEqual(gateway.read_decision(self.dir, got["data"]["id"]), "deny")
+        self.assertNotEqual(gateway.decide(self.dir, got["data"]["id"], got["data"]["token"], "approve")[0], 200)
+
+    def test_no_phone_to_notify_is_a_refusal(self):
+        t = [0]
+        with self.assertRaises(gateway.Refused):
+            gateway.request_approval(self.policy, "rm-path", ["/x"], "s", notify=lambda **kw: False, approval_dir=self.dir,
+                                     sleep=lambda _: t.__setitem__(0, t[0] + 1), now=lambda: t[0])
+
+    # --- rm-path rules
+    def test_rm_path_rules(self):
+        h = self.home
+        ok = os.path.join(h, "talkoot/data/cache")
+        real, summary = gateway.check_rm_path(self.policy, ok)
+        self.assertEqual(real, ok); self.assertIn("1 files", summary); self.assertIn("talkoot", summary)
+        for bad in [os.path.join(h, "immich/library"), os.path.join(h, "talkoot"), h, "/etc/passwd", "relative/p",
+                    os.path.join(h, "talkoot/.git"), os.path.join(h, "talkoot/data/../data/cache"),
+                    os.path.join(h, "talkoot/data/keep"), os.path.join(h, "nope"), os.path.join(h, "talkoot/data/missing")]:
+            with self.assertRaises(gateway.Refused, msg=bad):
+                gateway.check_rm_path(self.policy, bad)
+
+    def test_rm_path_refuses_symlink_escape(self):
+        link = os.path.join(self.home, "talkoot/data/escape")
+        os.symlink(os.path.join(self.home, "immich/library"), link)
+        for p in [link, link + "/x"]:
+            with self.assertRaises(gateway.Refused):
+                gateway.check_rm_path(self.policy, p)
+
+    def test_rm_path_does_not_run_without_approval(self):
+        fake = Fake()
+        target = os.path.join(self.home, "talkoot/data/cache")
+        with mock.patch.object(gateway, "run", fake), mock.patch.object(gateway, "request_approval", return_value=False):
+            rc, out = gateway.v_rm_path(self.policy, [target])
+        self.assertEqual(rc, 3); self.assertEqual(fake.calls, []); self.assertTrue(os.path.exists(target))
+
+    def test_rm_path_runs_fixed_command_after_approval(self):
+        fake = Fake()
+        target = os.path.join(self.home, "talkoot/data/cache")
+        with mock.patch.object(gateway, "run", fake), mock.patch.object(gateway, "request_approval", return_value=True):
+            rc, out = gateway.v_rm_path(self.policy, [target])
+        self.assertEqual(fake.calls[0][0], ["rm", "-rf", "--one-file-system", "--", target])
+
+    # --- remove-container rules
+    def test_remove_container_rules(self):
+        def runner(status, project):
+            def f(cmd, cwd=None, timeout=1800):
+                return 0, f"{status}|{project}|img:1\n" if cmd[1] == "inspect" else (0, "ok")
+            return f
+        for name, status, project in [("immich_server", "exited", "immich"), ("talkoot", "running", "talkoot"),
+                                      ("foo", "exited", "unrelated"), ("renki-daemon", "exited", "renki")]:
+            with mock.patch.object(gateway, "run", runner(status, project)), \
+                 mock.patch.object(gateway, "request_approval", side_effect=AssertionError("must not ask")):
+                with self.assertRaises(gateway.Refused, msg=name):
+                    gateway.v_remove_container(self.policy, [name])
+        calls = []
+        def rec(cmd, cwd=None, timeout=1800):
+            calls.append(cmd)
+            return (0, "exited|talkoot|img:1\n") if cmd[1] == "inspect" else (0, "ok")
+        with mock.patch.object(gateway, "run", rec), mock.patch.object(gateway, "request_approval", return_value=True):
+            gateway.v_remove_container(self.policy, ["talkoot-old"])
+        self.assertEqual(calls[-1], ["docker", "rm", "talkoot-old"])  # no -v: volumes are kept
+
+    def test_http_service_end_to_end(self):
+        import threading, urllib.request, urllib.error
+        aid, token = gateway.create_approval(self.dir, "rm-path", ["/x"], "Delete x", 60)
+        handler = type("H", (gateway.ApprovalHandler,), {"approval_dir": self.dir})
+        srv = gateway.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{srv.server_address[1]}/v1/approvals/{aid}"
+        try:
+            req = urllib.request.Request(base, headers={"x-approval-token": token})
+            self.assertEqual(json.load(urllib.request.urlopen(req))["summary"], "Delete x")
+            bad = urllib.request.Request(base, data=json.dumps({"token": "no", "decision": "approve"}).encode(), method="POST")
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                urllib.request.urlopen(bad)
+            self.assertEqual(cm.exception.code, 403)
+            good = urllib.request.Request(base, data=json.dumps({"token": token, "decision": "approve"}).encode(), method="POST")
+            self.assertTrue(json.load(urllib.request.urlopen(good))["ok"])
+            self.assertEqual(gateway.read_decision(self.dir, aid), "approve")
+        finally:
+            srv.shutdown()
 
 
 if __name__ == "__main__":

@@ -38,8 +38,7 @@ Renki container --(ssh, forced command, key without a shell)--> gateway (host, o
 ## Policy
 
 The implemented policy is `ops/homelab-gateway/policy.json` (plain JSON, so the gateway needs no
-extra Python packages); the YAML below is the readable summary. v1 implements tiers 0 and 1.
-Tier 2 verbs are refused until the approval flow below exists.
+extra Python packages); the YAML below is the readable summary. Tiers 0, 1 and 2 are implemented.
 
 ```yaml
 # /etc/homelab-gateway/policy.yml
@@ -87,15 +86,33 @@ limits:
 
 ## Approval (tier 2)
 
-The gateway never trusts the session. For a tier 2 verb it:
+`rm-path` and `remove-container` never run on a session's say-so.
 
-1. Writes the exact command and a one-line summary to its own pending queue.
-2. Sends a push to the paired phone through the daemon's existing push channel.
-3. Waits for an approval signed by the phone's device key (single use, 5 min, bound to
-   that exact command). A session cannot produce it: the daemon's auth token is in the
-   container-mounted `/data`, so the approval secret must live elsewhere
-   (the phone's device key / a key the container never sees). **Open design point.**
-4. No answer within the timeout means denied.
+1. The gateway checks the request against the policy first (only inside a deployable app's
+   own folder, never `.git`, never a protected path, no symlinks or `..`; only *stopped*
+   containers of deployable apps) and writes its **own** summary: what, how many files,
+   how big. Nothing a session wrote is shown to you.
+2. It stores only the SHA-256 of a one-time token and pushes the token itself to your
+   phone through Expo, straight from the gateway. The daemon is not on this path.
+3. Your phone answers the approval service (`https://approvals.internal`, a small service
+   on the host behind Caddy) with that token. First answer wins; a request expires after
+   5 minutes (no answer = denied); five wrong tokens deny it.
+4. Only on "approve", and only if nothing changed meanwhile (the checks run again), the
+   gateway runs one fixed command: `rm -rf --one-file-system -- <path>` or `docker rm <name>`
+   (never `-v`, so volumes are kept).
+
+**Why a session cannot approve itself.** Sessions run as root next to the daemon and can
+read the daemon's token and database. The one-time token only ever exists in the
+gateway's memory and in the push payload; the approval file holds just its hash. A session
+can reach the approval service's port but can only fail there.
+
+**Honest limits.** The token travels through Expo's push service (and Google's), so you are
+trusting them with a single-use, 5-minute, single-purpose secret. Anyone who can read your
+phone's notifications can approve. There is a small window between the final check and
+`rm` in which a session could swap a directory for a symlink; `--one-file-system` and the
+re-check narrow it, and the request is still limited to an app's own folder.
+
+Fallback on the host (not reachable over the SSH key): `sudo homelab-gateway --admin approve <id>`.
 
 ## What this does not cover
 

@@ -38,3 +38,5 @@ dev-workflow-notes.md
 .expo/
 apps/mobile/android/
 apps/mobile/ios/
+__pycache__/
+*.pyc

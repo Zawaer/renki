@@ -1,6 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, BackHandler, Platform, StyleSheet, Text, ToastAndroid, View } from "react-native";
-import { addHost, DEFAULT_PALETTE, emptyHostsState, removeHost, updateHost, type HostsState, type PaletteKey } from "@renki/client-core";
+import { ActivityIndicator, Alert, BackHandler, Platform, StyleSheet, Text, ToastAndroid, View } from "react-native";
+import {
+  addHost,
+  answerGatewayApproval,
+  DEFAULT_PALETTE,
+  describeGatewayOutcome,
+  emptyHostsState,
+  parseGatewayApproval,
+  removeHost,
+  updateHost,
+  type GatewayApproval,
+  type HostsState,
+  type PaletteKey,
+} from "@renki/client-core";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as Notifications from "expo-notifications";
@@ -21,6 +33,24 @@ import { PaletteProvider, type ThemeColors, useTheme } from "./theme";
 import { TextReaderProvider } from "./components/TextReader";
 
 // Show notifications while the app is foregrounded too.
+/**
+ * A homelab-gateway approval: the buttons answer straight away, and tapping the body
+ * asks first, showing exactly what the gateway wrote (never anything a session wrote).
+ */
+function handleGatewayApproval(approval: GatewayApproval, action: string, summary: string): void {
+  const answer = (decision: "approve" | "deny") =>
+    void answerGatewayApproval(approval, decision).then((outcome) => {
+      const message = describeGatewayOutcome(outcome, decision);
+      if (Platform.OS === "android") ToastAndroid.show(message, ToastAndroid.LONG);
+      else Alert.alert(message);
+    });
+  if (action === "approve" || action === "deny") return answer(action);
+  Alert.alert("Approve on the homelab?", summary, [
+    { text: "Deny", style: "destructive", onPress: () => answer("deny") },
+    { text: "Approve", onPress: () => answer("approve") },
+  ]);
+}
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     // shouldShowAlert is the legacy field; banner/list are its newer split.
@@ -230,6 +260,12 @@ function Main({
       if (handled.has(key)) return;
       handled.add(key);
       const data = res.notification.request.content.data ?? {};
+      const gateway = parseGatewayApproval(data);
+      if (gateway) {
+        handleGatewayApproval(gateway, res.actionIdentifier, res.notification.request.content.body ?? "");
+        void Notifications.dismissNotificationAsync(res.notification.request.identifier).catch(() => {});
+        return;
+      }
       const sessionId = data.sessionId;
       if (typeof sessionId !== "string") return;
       const action = res.actionIdentifier;

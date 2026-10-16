@@ -72,6 +72,12 @@ async function registerCategories(): Promise<void> {
     { identifier: "allow", buttonTitle: "Allow", options: { opensAppToForeground: true } },
     { identifier: "deny", buttonTitle: "Deny", options: { opensAppToForeground: true, isDestructive: true } },
   ]);
+  // The homelab gateway's own approvals (deleting things on the host). Answered
+  // straight to the gateway, never through the daemon — see client-core's gatewayApproval.
+  await Notifications.setNotificationCategoryAsync("gateway-approval", [
+    { identifier: "approve", buttonTitle: "Approve", options: { opensAppToForeground: true } },
+    { identifier: "deny", buttonTitle: "Deny", options: { opensAppToForeground: true, isDestructive: true } },
+  ]);
 }
 
 /**

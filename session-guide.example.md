@@ -153,8 +153,10 @@ You run in a container, but you can operate the host through one command, `homel
 - Photos, location history, notes, backups and anything else on the protected list are out of
   reach on purpose. If a verb answers "refused", don't look for a way around it: tell the user
   what you wanted to do and why, and let them decide.
-- Deleting things (`rm-path`, `remove-container`) needs the user's phone approval and is not
-  enabled yet. Never try to reach the Docker socket or SSH to the host some other way.
+- Deleting things (`homelab rm-path <absolute path>`, `homelab remove-container <name>`) sends the
+  user an approval on their phone and waits up to 5 minutes for it. Say what you are asking
+  to delete and why before you run it; if it comes back "denied", don't retry or look for
+  another way. Never try to reach the Docker socket or SSH to the host some other way.
 
 ## [Anything else specific to this host]
 

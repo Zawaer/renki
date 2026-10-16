@@ -7,25 +7,33 @@ by /etc/homelab-gateway/policy.json and runs a fixed command list (never a
 shell). See docs/homelab-gateway.md.
 """
 import fnmatch
+import hashlib
+import hmac
 import json
 import os
 import re
+import secrets
 import shlex
+import sqlite3
 import subprocess
 import sys
 import time
+import urllib.request
 import uuid
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 POLICY_PATH = "/etc/homelab-gateway/policy.json"
 DISABLED_PATH = "/etc/homelab-gateway/DISABLED"
 AUDIT_LOG = "/var/log/homelab-gateway.log"
 JOBS_DIR = "/var/log/homelab-gateway-jobs"
+APPROVAL_DIR = "/var/lib/homelab-gateway/approvals"
+EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,80}$")
 SINCE_RE = re.compile(r"^[0-9]{1,3}[smhd]$")
 DB_IMAGE_RE = re.compile(r"postgres|postgis|mysql|mariadb|mongo|couchdb|redis|valkey|sqlite", re.I)
 
-TIER2 = {"rm-path", "remove-container"}
+ID_RE = re.compile(r"^[0-9a-f]{10}$")
 
 
 class Refused(Exception):
@@ -216,12 +224,285 @@ def v_job(policy, args):
         raise Refused("no such job")
 
 
+# ---- phone approval (tier 2) ------------------------------------------------
+#
+# A deleting verb never runs on the session's say-so. The gateway:
+#   1. checks the request against the policy and writes its OWN plain-English summary
+#      (nothing the session wrote is shown to the user),
+#   2. stores only the SHA-256 of a one-time token, and pushes the token to the paired
+#      phone (the session never sees the push or the token),
+#   3. waits for the phone to present that token to the approval service (--serve),
+#      which records one decision atomically,
+#   4. runs the command only on "approve", within the timeout, exactly once.
+# A session can reach the approval service's port, but without the token it can only
+# fail; five wrong tries deny the request.
+
+def approval_cfg(policy):
+    return policy.get("approval") or {}
+
+
+def _rec_path(approval_dir, aid):
+    return os.path.join(approval_dir, aid + ".json")
+
+
+def _dec_path(approval_dir, aid):
+    return os.path.join(approval_dir, aid + ".decision")
+
+
+def create_approval(approval_dir, verb, args, summary, ttl, now=None):
+    now = time.time() if now is None else now
+    os.makedirs(approval_dir, mode=0o700, exist_ok=True)
+    aid, token = secrets.token_hex(5), secrets.token_urlsafe(32)
+    rec = {"id": aid, "verb": verb, "args": args, "summary": summary, "created": now,
+           "expires": now + ttl, "token_sha256": hashlib.sha256(token.encode()).hexdigest()}
+    tmp = _rec_path(approval_dir, aid) + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(rec, f)
+    os.replace(tmp, _rec_path(approval_dir, aid))
+    return aid, token
+
+
+def read_decision(approval_dir, aid):
+    try:
+        with open(_dec_path(approval_dir, aid)) as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return None
+
+
+def write_decision(approval_dir, aid, decision):
+    """First writer wins (O_EXCL); returns False if a decision already exists."""
+    try:
+        fd = os.open(_dec_path(approval_dir, aid), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        return False
+    with os.fdopen(fd, "w") as f:
+        f.write(decision)
+    return True
+
+
+_bad_attempts = {}
+
+
+def decide(approval_dir, aid, token, decision, now=None):
+    """The approval service's whole job. Returns (http_status, body)."""
+    now = time.time() if now is None else now
+    if not ID_RE.match(aid or "") or decision not in ("approve", "deny") or not isinstance(token, str):
+        return 400, {"error": "bad request"}
+    try:
+        with open(_rec_path(approval_dir, aid)) as f:
+            rec = json.load(f)
+    except (FileNotFoundError, ValueError):
+        return 404, {"error": "unknown request"}
+    if now > rec["expires"]:
+        return 410, {"error": "expired"}
+    if read_decision(approval_dir, aid) is not None:
+        return 409, {"error": "already decided"}
+    good = hmac.compare_digest(hashlib.sha256(token.encode()).hexdigest(), rec["token_sha256"])
+    if not good:
+        _bad_attempts[aid] = _bad_attempts.get(aid, 0) + 1
+        if _bad_attempts[aid] >= 5:
+            write_decision(approval_dir, aid, "deny")
+        return 403, {"error": "forbidden"}
+    if not write_decision(approval_dir, aid, "approve" if decision == "approve" else "deny"):
+        return 409, {"error": "already decided"}
+    return 200, {"ok": True, "decision": decision, "summary": rec["summary"]}
+
+
+def peek(approval_dir, aid, token, now=None):
+    """What the phone shows before the user taps: only with the right token."""
+    now = time.time() if now is None else now
+    if not ID_RE.match(aid or ""):
+        return 400, {"error": "bad request"}
+    try:
+        with open(_rec_path(approval_dir, aid)) as f:
+            rec = json.load(f)
+    except (FileNotFoundError, ValueError):
+        return 404, {"error": "unknown request"}
+    if not hmac.compare_digest(hashlib.sha256((token or "").encode()).hexdigest(), rec["token_sha256"]):
+        return 403, {"error": "forbidden"}
+    state = read_decision(approval_dir, aid) or ("expired" if now > rec["expires"] else "pending")
+    return 200, {"summary": rec["summary"], "state": state, "expires": rec["expires"]}
+
+
+def push_tokens_from_db(db_path):
+    try:
+        con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
+        try:
+            return [r[0] for r in con.execute("SELECT expo_token FROM push_tokens")]
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return []
+
+
+def send_push(tokens, title, body, data):
+    if not tokens:
+        return False
+    msgs = [{"to": t, "title": title, "body": body, "data": data, "categoryId": "gateway-approval",
+             "channelId": "input", "priority": "high", "sound": "default"} for t in tokens]
+    req = urllib.request.Request(EXPO_PUSH_URL, data=json.dumps(msgs).encode(),
+                                 headers={"content-type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return 200 <= r.status < 300
+    except OSError:
+        return False
+
+
+def request_approval(policy, verb, args, summary, notify=None, approval_dir=None, sleep=time.sleep, now=time.time):
+    """Block until the phone decides. Returns True only for an in-time approval."""
+    cfg = approval_cfg(policy)
+    approval_dir = approval_dir or APPROVAL_DIR
+    ttl = int(cfg.get("timeout_seconds", 300))
+    aid, token = create_approval(approval_dir, verb, args, summary, ttl, now())
+    notify = notify or (lambda **kw: send_push(push_tokens_from_db(cfg.get("push_db", "")), kw["title"], kw["body"], kw["data"]))
+    delivered = notify(title="Approve on the homelab?", body=summary,
+                       data={"kind": "gateway-approval", "id": aid, "token": token, "url": cfg.get("url", "")})
+    deadline = now() + ttl
+    while now() < deadline:
+        d = read_decision(approval_dir, aid)
+        if d is not None:
+            return d == "approve"
+        sleep(1)
+    write_decision(approval_dir, aid, "deny")  # nobody answered: closed for good
+    if not delivered:
+        raise Refused("no phone could be notified (is the Renki app registered for push?); denied")
+    return False
+
+
+def human_size(n):
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+
+
+def tree_stats(path, cap_files=200000):
+    files = size = 0
+    if os.path.isfile(path) or os.path.islink(path):
+        return 1, os.lstat(path).st_size
+    for root, dirs, names in os.walk(path):
+        for n in names:
+            files += 1
+            try:
+                size += os.lstat(os.path.join(root, n)).st_size
+            except OSError:
+                pass
+            if files >= cap_files:
+                return files, size
+    return files, size
+
+
+def check_rm_path(policy, raw):
+    if not raw or "\x00" in raw or not raw.startswith("/"):
+        raise Refused("usage: rm-path <absolute path inside an app's own folder>")
+    real = os.path.realpath(raw)
+    if real != raw:
+        raise Refused("path must be canonical (no symlinks, '..' or double slashes)")
+    home = policy["run_as_home"]
+    for pat in policy.get("protected_paths", []):
+        if real == pat or real.startswith(pat.rstrip("/") + "/") or pat.startswith(real.rstrip("/") + "/"):
+            raise Refused("that path is protected")
+    owner = None
+    for name, app in policy["apps"].items():
+        root = os.path.join(home, app["dir"])
+        if app["mode"] in ("deploy", "detached") and real.startswith(root + "/"):
+            owner = (name, root)
+    if owner is None:
+        raise Refused("only paths inside a deployable app's own folder can be removed")
+    if ".git" in real[len(owner[1]):].split("/"):
+        raise Refused("will not remove anything inside .git")
+    if not os.path.lexists(real):
+        raise Refused("no such path")
+    files, size = tree_stats(real)
+    kind = "folder" if os.path.isdir(real) and not os.path.islink(real) else "file"
+    return real, f"Delete {kind} {real} ({owner[0]}): {files} files, {human_size(size)}. This cannot be undone."
+
+
+def v_rm_path(policy, args):
+    if len(args) != 1:
+        raise Refused("usage: rm-path <path>")
+    real, summary = check_rm_path(policy, args[0])
+    if not request_approval(policy, "rm-path", args, summary):
+        return 3, "denied: not approved on the phone in time.\n"
+    # re-check right before acting: the world may have changed while waiting
+    real2, _ = check_rm_path(policy, args[0])
+    rc, out = run(["rm", "-rf", "--one-file-system", "--", real2], timeout=600)
+    return rc, f"approved; removed {real2}\n" + out
+
+
+def v_remove_container(policy, args):
+    if len(args) != 1 or not NAME_RE.match(args[0]):
+        raise Refused("usage: remove-container <name>")
+    name = args[0]
+    if is_protected(policy, name):
+        raise Refused("that container is protected")
+    rc, out = run(["docker", "inspect", name, "--format",
+                   "{{.State.Status}}|{{index .Config.Labels \"com.docker.compose.project\"}}|{{.Config.Image}}"], timeout=30)
+    if rc != 0:
+        raise Refused("no such container")
+    status, _, rest = out.strip().partition("|")
+    project, _, image = rest.partition("|")
+    deployable = {os.path.basename(a["dir"]) for a in policy["apps"].values() if a["mode"] in ("deploy", "detached")}
+    if project not in deployable:
+        raise Refused("only containers of a deployable app can be removed")
+    if status == "running":
+        raise Refused("container is running; stop it by redeploying or ask the user (only stopped containers can be removed)")
+    summary = f"Remove stopped container {name} ({image}). Its volumes and data are kept."
+    if not request_approval(policy, "remove-container", args, summary):
+        return 3, "denied: not approved on the phone in time.\n"
+    return run(["docker", "rm", name], timeout=60)
+
+
+class ApprovalHandler(BaseHTTPRequestHandler):
+    approval_dir = APPROVAL_DIR
+
+    def _reply(self, code, body):
+        raw = json.dumps(body).encode()
+        self.send_response(code)
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def _parts(self):
+        m = re.fullmatch(r"/v1/approvals/([0-9a-f]{10})(?:\?.*)?", self.path)
+        return m.group(1) if m else None
+
+    def do_GET(self):
+        aid = self._parts()
+        token = (self.headers.get("x-approval-token") or "")
+        self._reply(*(peek(self.approval_dir, aid, token) if aid else (404, {"error": "not found"})))
+
+    def do_POST(self):
+        aid = self._parts()
+        if not aid:
+            return self._reply(404, {"error": "not found"})
+        try:
+            n = min(int(self.headers.get("content-length") or 0), 4096)
+            body = json.loads(self.rfile.read(n) or b"{}")
+        except ValueError:
+            return self._reply(400, {"error": "bad request"})
+        self._reply(*decide(self.approval_dir, aid, body.get("token"), body.get("decision")))
+
+    def log_message(self, fmt, *a):
+        pass
+
+
+def serve(policy):
+    host, _, port = approval_cfg(policy).get("listen", "127.0.0.1:4530").rpartition(":")
+    ThreadingHTTPServer((host, int(port)), ApprovalHandler).serve_forever()
+
+
 VERBS = {
     "status": v_status, "logs": v_logs, "top": v_top, "backup-audit": v_backup_audit,
     "deploy": v_deploy, "restart": v_restart, "builder-prune": v_builder_prune,
     "caddy-reload": v_caddy_reload, "job": v_job,
+    "rm-path": v_rm_path, "remove-container": v_remove_container,
 }
-HELP = "verbs: " + ", ".join(sorted(VERBS)) + "  (rm-path, remove-container need phone approval: not enabled yet)"
+HELP = "verbs: " + ", ".join(sorted(VERBS)) + "  (rm-path and remove-container wait for approval on the phone)"
 
 
 def audit(entry):
@@ -243,8 +524,6 @@ def handle(command, policy=None, disabled_path=DISABLED_PATH):
         if not argv:
             raise Refused(HELP)
         verb, args = argv[0], argv[1:]
-        if verb in TIER2:
-            raise Refused(f"'{verb}' needs phone approval, which is not enabled yet")
         if verb not in VERBS:
             raise Refused(f"unknown verb '{verb}'. {HELP}")
         policy = policy or load_policy()
@@ -262,7 +541,22 @@ def handle(command, policy=None, disabled_path=DISABLED_PATH):
     return rc, out
 
 
+def admin(argv):
+    """Host-only fallback: `homelab-gateway --admin approve|deny <id>`; refused over SSH."""
+    if "SSH_ORIGINAL_COMMAND" in os.environ or len(argv) != 2 or argv[0] not in ("approve", "deny") or not ID_RE.match(argv[1]):
+        print("usage (on the host): --admin approve|deny <id>")
+        return 2
+    ok = write_decision(APPROVAL_DIR, argv[1], "approve" if argv[0] == "approve" else "deny")
+    print("recorded" if ok else "already decided")
+    return 0 if ok else 1
+
+
 def main():
+    if len(sys.argv) >= 2 and sys.argv[1] == "--serve" and "SSH_ORIGINAL_COMMAND" not in os.environ:
+        serve(load_policy())
+        return 0
+    if len(sys.argv) >= 2 and sys.argv[1] == "--admin":
+        return admin(sys.argv[2:])
     if len(sys.argv) >= 3 and sys.argv[1] == "--run-job" and "SSH_ORIGINAL_COMMAND" not in os.environ:
         rc, out = do_deploy(load_policy(), sys.argv[2])
         sys.stdout.write(out + f"\n[done, exit {rc}]\n")

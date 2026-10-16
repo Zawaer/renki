@@ -150,6 +150,8 @@ You run in a container, but you can operate the host through one command, `homel
   the apps in the policy. Commit and push your change before you deploy it.
 - `homelab deploy renki` runs detached and restarts the daemon, which ends in-flight turns:
   check that no other session is busy first, and read the result later with `homelab job <id>`.
+- If a call is refused with "This project doesn't have homelab access", the user has switched
+  the command off for this project: stop, say what you wanted and why, and let them decide.
 - Photos, location history, notes, backups and anything else on the protected list are out of
   reach on purpose. If a verb answers "refused", don't look for a way around it: tell the user
   what you wanted to do and why, and let them decide.

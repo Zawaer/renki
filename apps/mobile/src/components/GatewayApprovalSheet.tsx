@@ -136,7 +136,8 @@ function toast(message: string): void {
 
 function makeStyles(colors: ThemeColors) {
   return StyleSheet.create({
-    body: { paddingHorizontal: 20, paddingBottom: 26, gap: 14 },
+    // The shared Sheet already pads the bottom (to clear the gesture bar), so none more here.
+    body: { paddingHorizontal: 20, paddingBottom: 2, gap: 14 },
     summary: { color: colors.text, fontSize: 17, lineHeight: 24, fontWeight: "600" },
     text: { color: colors.text, fontSize: 15 },
     dim: { color: colors.dim, fontSize: 13.5, lineHeight: 19 },

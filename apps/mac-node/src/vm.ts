@@ -158,8 +158,9 @@ export class BuildVm {
       const st = await exec(colima, ["start", profile, "--activate=false", ...flags], { timeoutMs: 10 * 60_000 });
       if (st.code !== 0) return `The build VM didn't start: ${st.out.trim().split("\n").slice(-3).join(" ")}`;
     }
-    const mounts = await exec(colima, ["ssh", "-p", profile, "--", "sh", "-c", "mount | awk '$5 ~ /^(virtiofs|9p|fuse|fuse\\.sshfs|nfs|nfs4|cifs|smb3)$/' || true"], { timeoutMs: 30_000 });
+    const mounts = await exec(colima, ["ssh", "-p", profile, "--", "sh", "-c", "mount | awk '$5 ~ /^(virtiofs|9p|fuse|fuse\\.sshfs|nfs|nfs4|cifs|smb3)$/ && !($1 == \"vz-rosetta\" && $3 == \"/mnt/lima-rosetta\")' || true"], { timeoutMs: 30_000 });
     if (mounts.code !== 0) return "Couldn't inspect the build VM.";
+    // Only Apple's Rosetta runtime (vz-rosetta) may be shared in; it holds Apple's binaries, not your files.
     if (mounts.out.trim()) return `Refused: the build VM has folders from the Mac shared into it (${mounts.out.trim().split("\n")[0]}). It must have none.`;
 
     // 2. The build network and its firewall.

@@ -14,6 +14,9 @@ mkdir -p "$build/Renki Mac.app/Contents/MacOS" "$build/Renki Mac.app/Contents/Re
 swiftc -O -o "$build/Renki Mac.app/Contents/MacOS/RenkiMac" "$here/RenkiMac.swift" -framework AppKit -framework ServiceManagement
 cp "$here/../dist/renki-mac-node.mjs" "$build/Renki Mac.app/Contents/Resources/"
 cp -R "$here/../dist/runner-image" "$build/Renki Mac.app/Contents/Resources/"
+# The app icon, drawn by the app itself from Renki's mark (one source for this and the menu bar icon).
+"$build/Renki Mac.app/Contents/MacOS/RenkiMac" --write-iconset "$build/AppIcon.iconset"
+iconutil -c icns "$build/AppIcon.iconset" -o "$build/Renki Mac.app/Contents/Resources/AppIcon.icns"
 node_path="$(command -v node || true)"
 cat > "$build/Renki Mac.app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -27,6 +30,7 @@ cat > "$build/Renki Mac.app/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>RenkiNodePath</key><string>${node_path}</string>
 </dict></plist>
 PLIST

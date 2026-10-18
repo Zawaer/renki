@@ -228,6 +228,17 @@ export function dropSendingPrompt(state: ConversationState, promptId: string): C
   return next === state.sendingPrompts ? state : { ...state, sendingPrompts: next };
 }
 
+/**
+ * Take down an approval card the daemon says nothing is waiting on any more.
+ * Its permission_resolved normally does this; this covers one that never came
+ * (a request from before a daemon restart, on an older daemon).
+ */
+export function dropPendingPermission(state: ConversationState, requestId: string): ConversationState {
+  return state.pending.some((p) => p.requestId === requestId)
+    ? { ...state, pending: state.pending.filter((p) => p.requestId !== requestId) }
+    : state;
+}
+
 export function dropAllSendingPrompts(state: ConversationState): ConversationState {
   return state.sendingPrompts?.length ? { ...state, sendingPrompts: [] } : state;
 }

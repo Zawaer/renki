@@ -141,6 +141,19 @@ describe("RealtimeClient: local echo", () => {
     expect(client.conversation("s1").get().sendingPrompts).toEqual([]);
   });
 
+  it("closes an approval card the daemon says nothing is waiting on, without an error", () => {
+    const { client, socket } = connect();
+    client.conversation("s1");
+    const req = (id: string) => ev(0, { kind: "permission_request", requestId: id, turnId: "t", toolName: "Bash", toolInput: {} });
+    socket.receive({ type: "replay", sessionId: "s1", events: [req("r1"), { ...req("r2"), seq: 1 }], upToSeq: 1 });
+    expect(client.conversation("s1").get().pending.map((p) => p.requestId)).toEqual(["r1", "r2"]);
+    socket.receive({ type: "error", code: "permission_gone", message: "gone", ref: "r1" });
+    // An older daemon's wording for the same thing.
+    socket.receive({ type: "error", code: "bad_message", message: "No such pending permission request.", ref: "r2" });
+    expect(client.conversation("s1").get().pending).toEqual([]);
+    expect(client.lastError.get()).toBeNull();
+  });
+
   it("takes the echo back when the connection drops", () => {
     const { client, socket } = connect();
     client.submitPrompt("s1", "hello");

@@ -263,6 +263,11 @@ function prepare(): void {
   }
   const lic = spawnSync("bash", ["-c", "yes | sdkmanager --licenses >/dev/null 2>&1; true"], { env, stdio: "inherit" });
   if (lic.status !== 0) fail("couldn't accept the SDK licences");
+  // Gradle init scripts from the image (e.g. React Native's Hermes compiler on arm64 Linux).
+  const initDir = join(env.GRADLE_USER_HOME ?? join(HOME, ".gradle"), "init.d");
+  mkdirSync(initDir, { recursive: true });
+  const cp = spawnSync("cp", ["-f", "/opt/renki/init.d/renki-linux-arm64.gradle", initDir], { stdio: "inherit" });
+  if (cp.status !== 0) fail("couldn't install the Gradle init scripts");
   process.stdout.write("{}");
 }
 

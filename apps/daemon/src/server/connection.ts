@@ -164,11 +164,11 @@ export class Connection {
           if (session.controller && this.devices.isOnline(session.controller)) {
             return this.error(WsErrorCode.NotController, "Only the controller can resolve permissions.");
           }
-          if (this.broker.sessionOf(msg.requestId) !== msg.sessionId) return this.error(WsErrorCode.BadMessage, "No such pending permission request.", msg.requestId);
+          if (this.broker.sessionOf(msg.requestId) !== msg.sessionId) return this.error(WsErrorCode.PermissionGone, "That request isn't waiting any more.", msg.requestId);
           this.manager.takeControl(msg.sessionId, this.deviceId, this.deviceName ?? undefined);
         }
         const matched = this.broker.answer(msg.requestId, msg.decision, this.deviceId, msg.updatedInput);
-        if (!matched) this.error(WsErrorCode.BadMessage, "No such pending permission request.", msg.requestId);
+        if (!matched) this.error(WsErrorCode.PermissionGone, "That request isn't waiting any more.", msg.requestId);
         return;
       }
     }

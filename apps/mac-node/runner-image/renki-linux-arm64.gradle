@@ -1,0 +1,20 @@
+// Renki build VM: arm64 Linux. React Native's Gradle plugin only knows a Hermes
+// compiler for x86_64 Linux and fails with "OS not recognized" here, even though
+// that compiler runs fine under Rosetta. Point the plugin at it. Copied into
+// ~/.gradle/init.d by renki-runner.mjs (prepare), so no project has to change.
+if (System.getProperty("os.name").toLowerCase().contains("linux") && System.getProperty("os.arch") == "aarch64") {
+  allprojects {
+    plugins.withId("com.facebook.react") {
+      def react = extensions.getByName("react")
+      afterEvaluate {
+        def cmd = react.hermesCommand.getOrElse("")
+        if (cmd.contains("%OS-BIN%")) {
+          react.hermesCommand.set(cmd.replace("%OS-BIN%", "linux64-bin"))
+        } else if (cmd.isEmpty()) {
+          def npm = new File(react.root.get().asFile, "node_modules/hermes-compiler/hermesc/linux64-bin/hermesc")
+          if (npm.exists()) react.hermesCommand.set(npm.absolutePath)
+        }
+      }
+    }
+  }
+}

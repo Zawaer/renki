@@ -6,6 +6,7 @@ import {
   type SessionComposer,
   type ServerMessage,
   ServerMessage as ServerMessageSchema,
+  WsErrorCode,
 } from "@renki/protocol";
 import type { PermissionModeKey } from "./permissionMode.js";
 import { localTimeZone } from "./rest.js";
@@ -15,6 +16,7 @@ import {
   applyEvent,
   applyEvents,
   dropAllSendingPrompts,
+  dropPendingPermission,
   dropSendingPrompt,
   initialConversation,
   restoreBlockGaps,
@@ -488,6 +490,12 @@ export class RealtimeClient {
         return;
       }
       case "error":
+        // An approval nobody is waiting on any more: just close its card. Older
+        // daemons said so with bad_message, so match those by their ref too.
+        if (msg.ref && (msg.code === WsErrorCode.PermissionGone || (msg.code === WsErrorCode.BadMessage && /pending permission/i.test(msg.message)))) {
+          for (const store of this.conversations.values()) store.update((s) => dropPendingPermission(s, msg.ref!));
+          return;
+        }
         // A refused prompt is never coming back as an event; take its echo down.
         if (msg.ref) for (const store of this.conversations.values()) store.update((s) => dropSendingPrompt(s, msg.ref!));
         this.lastError.set({ code: msg.code, message: msg.message, ref: msg.ref });

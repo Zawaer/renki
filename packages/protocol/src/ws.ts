@@ -211,6 +211,12 @@ export const WsErrorCode = {
   QueueFull: "queue_full",
   /** `interrupt` sent while no turn was running for this session. */
   NotBusy: "not_busy",
+  /**
+   * `resolve_permission` for a request nothing is waiting on any more (answered
+   * elsewhere, timed out, cancelled by Claude, or from before a restart).
+   * `ref` is its requestId; clients just drop the card.
+   */
+  PermissionGone: "permission_gone",
   /** `resume_action` sent for a session with no resume scheduled. */
   NoResume: "no_resume",
 } as const;

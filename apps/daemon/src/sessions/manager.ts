@@ -204,6 +204,22 @@ export class SessionManager {
    * them automatically would mean re-running arbitrary prompts unattended at
    * boot, which is out of scope for what's otherwise a display-only wedge.
    */
+  /**
+   * Close every permission request a restart left unanswerable. Nothing is
+   * waiting on it any more (the process that asked is gone), but its unresolved
+   * permission_request would keep showing every client a card whose answer
+   * the daemon can only refuse. Any session, not only ones left "busy": a
+   * clean shutdown marks sessions idle first, and a background agent asks
+   * between turns anyway. Denied, since the tool call never ran.
+   */
+  closeStalePermissions(): void {
+    for (const { sessionId, requestId } of this.events.openPermissionRequests()) {
+      this.events.append(sessionId, { kind: "permission_resolved", requestId, decision: "deny", byDeviceId: null });
+      logger.info("closed a permission request the restart left open", { sessionId, requestId });
+    }
+    this.db.update(sessions).set({ hasPendingPermission: false }).where(eq(sessions.hasPendingPermission, true)).run();
+  }
+
   reconcileOrphanedTurns(): void {
     const stuck = this.db.select().from(sessions).where(eq(sessions.status, "busy")).all();
     for (const row of stuck) {

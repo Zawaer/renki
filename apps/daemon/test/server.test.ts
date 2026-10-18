@@ -587,7 +587,7 @@ describe("WebSocket: approvals while the controller is away", () => {
     void broker.resolverFor(a.id)({ requestId: "r9", toolName: "Bash", toolInput: {} } as never);
     const { ws, bus } = await connectWs(wsBase, `deviceId=laptop&token=${config.authToken}`);
     ws.send(JSON.stringify({ type: "resolve_permission", sessionId: b.id, requestId: "r9", decision: "allow" }));
-    expect(await bus.next((m) => m.type === "error")).toMatchObject({ code: "bad_message" });
+    expect(await bus.next((m) => m.type === "error")).toMatchObject({ code: "permission_gone", ref: "r9" });
     expect(manager.getSession(b.id).controller).toBeNull();
     ws.close();
   });

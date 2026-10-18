@@ -61,6 +61,28 @@ export class EventLog {
     return rows.map(rowToEvent);
   }
 
+  /**
+   * Every permission request, in any session, that was never resolved: one
+   * pass over just the permission events, not every session's whole log.
+   */
+  openPermissionRequests(): Array<{ sessionId: string; requestId: string }> {
+    const rows = this.db
+      .select({ sessionId: events.sessionId, kind: events.kind, data: events.data })
+      .from(events)
+      .where(inArray(events.kind, ["permission_request", "permission_resolved"]))
+      .orderBy(asc(events.sessionId), asc(events.seq))
+      .all();
+    const open = new Map<string, string>(); // `${sessionId}\0${requestId}` -> sessionId
+    for (const r of rows) {
+      const requestId = (JSON.parse(r.data) as { requestId?: string }).requestId;
+      if (!requestId) continue;
+      const key = `${r.sessionId}\0${requestId}`;
+      if (r.kind === "permission_request") open.set(key, r.sessionId);
+      else open.delete(key);
+    }
+    return [...open].map(([key, sessionId]) => ({ sessionId, requestId: key.slice(sessionId.length + 1) }));
+  }
+
   /** One event by its seq, or null — how a lazily replayed attachment is fetched back. */
   get(sessionId: string, seq: number): SessionEvent | null {
     const row = this.db

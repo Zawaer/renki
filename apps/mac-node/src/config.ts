@@ -48,12 +48,12 @@ const File = z.object({
     .object({
       profile: z.string().regex(/^[\w-]+$/).default("renki-runner"),
       cpus: z.number().int().min(1).max(32).default(6),
-      memoryGb: z.number().min(2).max(64).default(6),
+      memoryGb: z.number().min(2).max(64).default(8),
       diskGb: z.number().int().min(20).max(500).default(40),
       colima: z.string().default("/opt/homebrew/bin/colima"),
       docker: z.string().default("/opt/homebrew/bin/docker"),
     })
-    .default({ profile: "renki-runner", cpus: 6, memoryGb: 6, diskGb: 40, colima: "/opt/homebrew/bin/colima", docker: "/opt/homebrew/bin/docker" }),
+    .default({ profile: "renki-runner", cpus: 6, memoryGb: 8, diskGb: 40, colima: "/opt/homebrew/bin/colima", docker: "/opt/homebrew/bin/docker" }),
 });
 
 export type JobConfig = z.infer<typeof File>["jobs"][string][string];

@@ -38,6 +38,7 @@ RUN printf '%s\n' \
       > /etc/renki-runner-env
 
 COPY renki-runner.mjs /opt/renki/renki-runner.mjs
+COPY renki-linux-arm64.gradle /opt/renki/init.d/renki-linux-arm64.gradle
 USER 1000:1000
 WORKDIR /home/runner
 CMD ["sleep", "infinity"]

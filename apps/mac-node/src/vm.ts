@@ -34,9 +34,13 @@ const VOLUME = "renki-home";
 export const MAC_FROM_VM = "192.168.5.2";
 const IDLE_MS = 30 * 60_000;
 
-/** Run as root in the VM. Idempotent: rebuilds the RENKI chain each time. */
-const FIREWALL = `
+/** Run as root in the VM. Idempotent: swap for bursts of parallel C++ compiles, then the RENKI firewall chain, rebuilt each time. */
+const VM_SETUP = `
 set -e
+if ! swapon --show=NAME --noheadings | grep -qx /swapfile; then
+  [ -f /swapfile ] || { fallocate -l 8G /swapfile; chmod 600 /swapfile; mkswap /swapfile >/dev/null; }
+  swapon /swapfile
+fi
 iptables -N RENKI 2>/dev/null || iptables -F RENKI
 iptables -A RENKI -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
 for net in 192.168.5.0/24 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 169.254.0.0/16 127.0.0.0/8 224.0.0.0/4; do
@@ -75,7 +79,7 @@ export class BuildVm {
 
   constructor(
     private readonly cfg: VmConfig,
-    /** Folder with the Dockerfile and renki-runner.mjs. */
+    /** Folder with the Dockerfile and the files it copies in. */
     private readonly imageDir: string,
     private readonly log: (msg: string) => void,
   ) {
@@ -148,13 +152,30 @@ export class BuildVm {
 
   private async bringUp(): Promise<string | null> {
     const { profile, colima } = this.cfg;
-    // 1. The VM: created with no shared folders and no port forwarding.
+    // 1. The VM: created with no shared folders and no port forwarding. A running
+    //    one with other CPU or memory settings is restarted to pick them up.
+    const size = ["--cpus", String(this.cfg.cpus), "--memory", String(this.cfg.memoryGb)];
+    const listed = await exec(colima, ["list", "-j"], { timeoutMs: 20_000 });
+    const vmInfo = listed.out
+      .split("\n")
+      .map((l) => {
+        try {
+          return JSON.parse(l) as { name: string; status: string; cpus: number; memory: number };
+        } catch {
+          return null;
+        }
+      })
+      .find((v) => v?.name === profile);
+    if (vmInfo?.status === "Running" && (vmInfo.cpus !== this.cfg.cpus || vmInfo.memory !== this.cfg.memoryGb * 1024 ** 3)) {
+      this.log("restarting the build VM with its new size");
+      await exec(colima, ["stop", profile], { timeoutMs: 120_000 });
+    }
     if ((await exec(colima, ["status", profile], { timeoutMs: 20_000 })).code !== 0) {
       this.log("starting the build VM");
       const created = existsSync(join(homedir(), ".colima", profile, "colima.yaml"));
       const flags = created
-        ? []
-        : ["--vm-type", "vz", "--vz-rosetta", "--cpus", String(this.cfg.cpus), "--memory", String(this.cfg.memoryGb), "--disk", String(this.cfg.diskGb), "--mount", "none", "--port-forwarder", "none"];
+        ? size
+        : ["--vm-type", "vz", "--vz-rosetta", ...size, "--disk", String(this.cfg.diskGb), "--mount", "none", "--port-forwarder", "none"];
       const st = await exec(colima, ["start", profile, "--activate=false", ...flags], { timeoutMs: 10 * 60_000 });
       if (st.code !== 0) return `The build VM didn't start: ${st.out.trim().split("\n").slice(-3).join(" ")}`;
     }
@@ -168,13 +189,14 @@ export class BuildVm {
       const n = await this.docker(["network", "create", "--opt", `com.docker.network.bridge.name=${BRIDGE}`, NETWORK], 30_000);
       if (n.code !== 0) return `Couldn't create the build network: ${n.out.trim()}`;
     }
-    const fw = await exec(colima, ["ssh", "-p", profile, "--", "sudo", "sh", "-s"], { input: FIREWALL, timeoutMs: 30_000 });
+    const fw = await exec(colima, ["ssh", "-p", profile, "--", "sudo", "sh", "-s"], { input: VM_SETUP, timeoutMs: 60_000 });
     if (fw.code !== 0) return `Couldn't set up the build VM's firewall: ${fw.out.trim()}`;
 
     // 3. The image, rebuilt whenever the Dockerfile or the wrapper changes.
     const hash = createHash("sha256")
       .update(readFileSync(join(this.imageDir, "Dockerfile")))
       .update(readFileSync(join(this.imageDir, "renki-runner.mjs")))
+      .update(readFileSync(join(this.imageDir, "renki-linux-arm64.gradle")))
       .digest("hex")
       .slice(0, 12);
     const image = `renki-runner:${hash}`;
@@ -197,6 +219,8 @@ export class BuildVm {
           "--security-opt", "no-new-privileges",
           "--pids-limit", "8192",
           "--memory", `${Math.max(2, this.cfg.memoryGb - 1)}g`,
+          // Room to spill into the VM's swap rather than be killed mid-compile.
+          "--memory-swap", `${Math.max(2, this.cfg.memoryGb - 1) + 8}g`,
           "-v", `${VOLUME}:/home/runner`,
           image,
         ],

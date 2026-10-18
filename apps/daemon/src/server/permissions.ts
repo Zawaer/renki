@@ -37,6 +37,20 @@ export class PermissionBroker {
         timer.unref?.();
 
         this.pending.set(req.requestId, { sessionId, settle: resolve, timer });
+
+        // Claude cancelled the request itself (the user steered the turn, it was
+        // interrupted): settle now, so its card closes instead of lingering
+        // until the timeout with an answer nothing is waiting for.
+        const signal = req.signal;
+        const onAbort = () => {
+          const entry = this.pending.get(req.requestId);
+          if (!entry) return;
+          clearTimeout(entry.timer);
+          this.pending.delete(req.requestId);
+          resolve({ decision: "deny", byDeviceId: null });
+        };
+        if (signal?.aborted) onAbort();
+        else signal?.addEventListener("abort", onAbort, { once: true });
       });
   }
 

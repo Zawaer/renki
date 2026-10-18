@@ -75,6 +75,14 @@
         "claude-accounts"
       ]
     },
+    "matka": {
+      "mode": "deploy",
+      "dir": "matka",
+      "git": true,
+      "services": [
+        "matka"
+      ]
+    },
     "renki": {
       "mode": "detached",
       "dir": "renki",

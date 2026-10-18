@@ -28,12 +28,14 @@ function saveChoices(c: Choices): void {
 /**
  * Export one chat: Markdown (a .md, or a .zip with its media) or PDF, with
  * what to include. The daemon builds the file, so the phone's export is
- * the same; this just asks and downloads.
+ * the same; this just asks and downloads. "Copy" puts the same chat on the
+ * clipboard as Markdown text instead (never media), using the same choices.
  */
 export function ExportDialog({ sessionId, title, onClose }: { sessionId: string; title: string; onClose: () => void }) {
   const { rest } = useClient();
   const [choices, setChoices] = useState<Choices>(loadChoices);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"export" | "copy" | null>(null);
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const titleId = useId();
 
@@ -45,8 +47,30 @@ export function ExportDialog({ sessionId, title, onClose }: { sessionId: string;
 
   const set = <K extends keyof Choices>(k: K, v: Choices[K]) => setChoices((c) => ({ ...c, [k]: v }));
 
+  async function copy() {
+    setBusy("copy");
+    setError(null);
+    saveChoices(choices);
+    const text = rest.exportSessionText(sessionId, { tools: choices.tools, thinking: choices.thinking, stats: choices.stats });
+    try {
+      // Safari only lets a page write to the clipboard inside the click itself, not after an await,
+      // so where it can, hand the clipboard the text that is still on its way.
+      if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+        await navigator.clipboard.write([new ClipboardItem({ "text/plain": text.then((t) => new Blob([t], { type: "text/plain" })) })]);
+      } else {
+        await navigator.clipboard.writeText(await text);
+      }
+      setCopied(true);
+      setTimeout(onClose, 900);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't copy the chat.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function run() {
-    setBusy(true);
+    setBusy("export");
     setError(null);
     saveChoices(choices);
     try {
@@ -63,7 +87,7 @@ export function ExportDialog({ sessionId, title, onClose }: { sessionId: string;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Export failed.");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -115,8 +139,28 @@ export function ExportDialog({ sessionId, title, onClose }: { sessionId: string;
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" disabled={busy} onClick={() => void run()}>
-            {busy ? (
+          <Button
+            variant="default"
+            disabled={busy !== null}
+            title="Copy the chat as Markdown text, with the choices above (never media)"
+            onClick={() => void copy()}
+          >
+            {copied ? (
+              <>
+                <span className="codicon codicon-check" /> Copied
+              </>
+            ) : busy === "copy" ? (
+              <>
+                <span className="codicon codicon-loading codicon-modifier-spin" /> Copying…
+              </>
+            ) : (
+              <>
+                <span className="codicon codicon-copy" /> Copy
+              </>
+            )}
+          </Button>
+          <Button variant="primary" disabled={busy !== null} onClick={() => void run()}>
+            {busy === "export" ? (
               <>
                 <span className="codicon codicon-loading codicon-modifier-spin" /> Exporting…
               </>

@@ -15,6 +15,12 @@ beforeEach(() => {
   HTMLAnchorElement.prototype.click = vi.fn();
 });
 
+/** Exactly these bytes: a TextEncoder result can sit in a larger shared buffer. */
+function bytes(text: string): ArrayBuffer {
+  const u = new TextEncoder().encode(text);
+  return u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength) as ArrayBuffer;
+}
+
 function renderDialog(exportSession: RestClient["exportSession"], onClose = vi.fn()) {
   const realtime = new RealtimeClient({ baseUrl: "http://test.invalid", token: "t", deviceId: "d1" });
   const rest = new RestClient({ baseUrl: "http://test.invalid", token: "t" });
@@ -51,6 +57,52 @@ describe("ExportDialog", () => {
     }));
     fireEvent.click(screen.getByText("Export"));
     await waitFor(() => expect(screen.getByText(/needs Chromium/)).toBeInTheDocument());
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("copies the chat as Markdown text, without media, using the same choices", async () => {
+    const md = "# My chat\n\nhéllo — ✓";
+    const exportSession = vi.fn(async () => ({ filename: "my-chat.md", contentType: "text/markdown", data: bytes(md) }));
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const onClose = renderDialog(exportSession);
+
+    fireEvent.click(screen.getByLabelText(/Include tool calls/)); // off
+    fireEvent.click(screen.getByText("Copy"));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(md));
+    expect(exportSession).toHaveBeenCalledWith("s1", { format: "markdown", media: false, tools: false, thinking: false, stats: false });
+    expect(await screen.findByText("Copied")).toBeInTheDocument();
+    await waitFor(() => expect(onClose).toHaveBeenCalled(), { timeout: 2000 });
+  });
+
+  it("uses a clipboard item where the browser has one (so Safari keeps the click's permission)", async () => {
+    const md = "# Safari";
+    const exportSession = vi.fn(async () => ({ filename: "c.md", contentType: "text/markdown", data: bytes(md) }));
+    const items: Array<Record<string, Promise<Blob>>> = [];
+    vi.stubGlobal("ClipboardItem", class { constructor(public data: Record<string, Promise<Blob>>) { items.push(data); } });
+    const write = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", { value: { write, writeText: vi.fn() }, configurable: true });
+    renderDialog(exportSession);
+
+    fireEvent.click(screen.getByText("Copy"));
+    await waitFor(() => expect(write).toHaveBeenCalled());
+    const blob = await items[0]!["text/plain"]!;
+    // jsdom's Blob has no .text(); its FileReader reads it.
+    const read = await new Promise<string>((done) => {
+      const r = new FileReader();
+      r.onload = () => done(String(r.result));
+      r.readAsText(blob);
+    });
+    expect(read).toBe(md);
+    vi.unstubAllGlobals();
+  });
+
+  it("says why a copy failed and stays open", async () => {
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn(async () => { throw new Error("Clipboard permission denied"); }) }, configurable: true });
+    const onClose = renderDialog(vi.fn(async () => ({ filename: "c.md", contentType: "text/markdown", data: bytes("x") })));
+    fireEvent.click(screen.getByText("Copy"));
+    await waitFor(() => expect(screen.getByText(/permission denied/)).toBeInTheDocument());
     expect(onClose).not.toHaveBeenCalled();
   });
 });

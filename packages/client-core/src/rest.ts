@@ -182,6 +182,18 @@ export class RestClient {
     return { filename, contentType: res.headers.get("content-type") ?? "application/octet-stream", data: await res.arrayBuffer() };
   }
 
+  /**
+   * The chat as plain Markdown text, for copying or sharing as text rather than as a file.
+   * The same export as `exportSession`, always Markdown and without media (media would make it a .zip).
+   */
+  async exportSessionText(
+    sessionId: string,
+    opts: Partial<Pick<ExportOptions, "tools" | "thinking" | "stats">> = {},
+  ): Promise<string> {
+    const file = await this.exportSession(sessionId, { ...opts, format: "markdown", media: false });
+    return new TextDecoder().decode(file.data);
+  }
+
   /** Bring an archived session back to work: its worktree is rebuilt and it takes prompts again. */
   async unarchiveSession(sessionId: string): Promise<Session> {
     return (await this.post<{ session: Session }>(`/sessions/${encodeURIComponent(sessionId)}/unarchive`, {})).session;

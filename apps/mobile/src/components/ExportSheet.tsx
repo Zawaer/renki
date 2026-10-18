@@ -1,7 +1,7 @@
 import type { ExportFormat } from "@renki/protocol";
 import { StorageAccessFramework, EncodingType } from "expo-file-system";
 import { useState } from "react";
-import { ActivityIndicator, Alert, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Share, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
 import { useClient } from "../lib/client";
 import { radius, type ThemeColors } from "../theme";
 import { Sheet } from "./Sheet";
@@ -32,6 +32,7 @@ export function ExportSheet({
   const { rest } = useClient();
   const [choices, setChoices] = useState<Choices>(DEFAULTS);
   const [busy, setBusy] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const styles = makeStyles(colors);
   const set = <K extends keyof Choices>(k: K, v: Choices[K]) => setChoices((c) => ({ ...c, [k]: v }));
 
@@ -49,6 +50,28 @@ export function ExportSheet({
       Alert.alert("Couldn't export", err instanceof Error ? err.message : "Try again in a moment.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  /**
+   * The chat as Markdown text through Android's share sheet, which has Copy as well as every app
+   * that takes text. No clipboard module needed (that would mean a new app build, not an update).
+   */
+  async function shareText() {
+    setSharing(true);
+    try {
+      const text = await rest.exportSessionText(sessionId, { tools: choices.tools, thinking: choices.thinking, stats: choices.stats });
+      // Android hands shared text across processes, which fails above roughly a megabyte.
+      if (text.length > 400_000) {
+        Alert.alert("Too long to share as text", "Turn off tool calls to make it shorter, or export it as a file.");
+        return;
+      }
+      await Share.share({ message: text, title });
+      onClose();
+    } catch (err) {
+      Alert.alert("Couldn't share", err instanceof Error ? err.message : "Try again in a moment.");
+    } finally {
+      setSharing(false);
     }
   }
 
@@ -81,7 +104,10 @@ export function ExportSheet({
         <Toggle label="Include tool calls" hint="Commands Claude ran, files it edited, and their output" value={choices.tools} onChange={(v) => set("tools", v)} styles={styles} />
         <Toggle label="Include thinking" hint="Claude's reasoning, where it was shown" value={choices.thinking} onChange={(v) => set("thinking", v)} styles={styles} />
         <Toggle label="Include stats" hint="Each reply's duration, tokens and cost" value={choices.stats} onChange={(v) => set("stats", v)} styles={styles} />
-        <TouchableOpacity style={[styles.button, busy && { opacity: 0.6 }]} disabled={busy} onPress={() => void run()}>
+        <TouchableOpacity style={[styles.secondary, (busy || sharing) && { opacity: 0.6 }]} disabled={busy || sharing} onPress={() => void shareText()}>
+          {sharing ? <ActivityIndicator color={colors.text} /> : <Text style={styles.secondaryText}>Copy or share as text…</Text>}
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.button, (busy || sharing) && { opacity: 0.6 }]} disabled={busy || sharing} onPress={() => void run()}>
           {busy ? <ActivityIndicator color={colors.accentFg} /> : <Text style={styles.buttonText}>Export and save…</Text>}
         </TouchableOpacity>
       </View>
@@ -133,5 +159,7 @@ function makeStyles(colors: ThemeColors) {
     toggleHint: { color: colors.faint, fontSize: 12.5, marginTop: 2 },
     button: { backgroundColor: colors.accent, borderRadius: radius.pill, alignItems: "center", paddingVertical: 13, marginTop: 4 },
     buttonText: { color: colors.accentFg, fontSize: 15, fontWeight: "700" },
+    secondary: { backgroundColor: colors.inset, borderRadius: radius.pill, alignItems: "center", paddingVertical: 13, marginTop: 4 },
+    secondaryText: { color: colors.text, fontSize: 15, fontWeight: "600" },
   });
 }

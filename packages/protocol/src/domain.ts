@@ -137,6 +137,13 @@ export const Session = z.object({
    */
   hasPendingPermission: z.boolean(),
   controller: DeviceId.nullable(),
+  /**
+   * Whether the controller has a live connection right now. A controller that
+   * isn't connected (a script that sent one message, a closed laptop) can't
+   * answer an approval, so any connected device may: answering takes control.
+   * Optional so older daemons' sessions still parse; absent = unknown (treat as online).
+   */
+  controllerOnline: z.boolean().optional(),
   claudeSessionId: z.string().nullable(),
   title: z.string().nullable(),
   createdAt: z.number().int(),

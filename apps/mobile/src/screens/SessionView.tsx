@@ -219,7 +219,10 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const [worktreePath, setWorktreePath] = useState<string | null>(null);
   /** Repo and branch as the session's row has them now — a session can be moved into a repo after it started (see the web's SessionView). */
   const [place, setPlace] = useState<{ repoName: string; branch: string | null } | null>(null);
+  /** False once the controller's last connection closed; it can't answer approvals then, so anyone may. */
+  const [controllerOnline, setControllerOnline] = useState(true);
   useEffect(() => {
+    setControllerOnline(true);
     setResume(null);
     setWorktreePath(null);
     setPlace(null);
@@ -228,6 +231,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
       setResume(s.resume ?? null);
       setWorktreePath(s.worktreePath);
       setPlace({ repoName: s.repoName, branch: s.branch });
+      setControllerOnline(s.controllerOnline ?? true);
     });
   }, [realtime, sessionId]);
   const repoName = place?.repoName ?? conv.repoName;
@@ -500,7 +504,10 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
         <PermissionCard
           key={p.requestId}
           perm={p}
-          canAct={isController}
+          // An absent or vacant controller can't answer, so this device may (the daemon hands it control as it answers).
+          canAct={isController || !conv.controller || !controllerOnline}
+          controllerName={conv.controllerName ?? conv.controller}
+          onTakeControl={() => realtime.takeControl(sessionId)}
           onDecide={(d, updatedInput) => realtime.resolvePermission(sessionId, p.requestId, d, updatedInput)}
           colors={colors}
           styles={styles}
@@ -1449,15 +1456,35 @@ function TurnFooter({ turn, colors, styles }: { turn: TurnView; colors: ThemeCol
   );
 }
 
+/**
+ * Under an approval this device can't answer yet: who can, and the one tap
+ * that makes it this device. The card above stays as the controller sees it,
+ * buttons disabled, so it reads as the same decision.
+ */
+function NotInControl({ name, onTakeControl, styles }: { name: string | null; onTakeControl: () => void; styles: Styles }) {
+  return (
+    <View style={styles.permNotInControl}>
+      <Text style={[styles.permBody, { flexShrink: 1 }]}>{name ? `${name} has control, so only it can answer.` : "Another device has control."}</Text>
+      <TouchableOpacity style={styles.ctrlBtn} onPress={onTakeControl}>
+        <Text style={styles.ctrlBtnText}>Take control</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 function PermissionCard({
   perm,
   canAct,
+  controllerName,
+  onTakeControl,
   onDecide,
   colors,
   styles,
 }: {
   perm: PermissionView;
   canAct: boolean;
+  controllerName: string | null;
+  onTakeControl: () => void;
   onDecide: (d: "allow" | "deny", updatedInput?: Record<string, unknown>) => void;
   colors: ThemeColors;
   styles: Styles;
@@ -1473,6 +1500,8 @@ function PermissionCard({
       <AskUserQuestionCard
         view={askQuestion}
         canAct={canAct}
+        controllerName={controllerName}
+        onTakeControl={onTakeControl}
         onSubmit={(answers) => onDecide("allow", { ...(perm.toolInput as Record<string, unknown>), answers })}
         onCancel={() => onDecide("deny")}
         colors={colors}
@@ -1504,18 +1533,15 @@ function PermissionCard({
           {truncate(JSON.stringify(perm.toolInput), 240)}
         </Text>
       )}
-      {canAct ? (
-        <View style={styles.permActions}>
-          <TouchableOpacity style={styles.allowBtn} onPress={() => onDecide("allow")}>
-            <Text style={styles.allowText}>{plan != null ? "Approve plan" : "Allow"}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.denyBtn} onPress={() => onDecide("deny")}>
-            <Text style={styles.denyText}>{plan != null ? "Keep planning" : "Deny"}</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <Text style={styles.permBody}>Only the controller can respond.</Text>
-      )}
+      <View style={[styles.permActions, !canAct && { opacity: 0.4 }]}>
+        <TouchableOpacity style={styles.allowBtn} disabled={!canAct} onPress={() => onDecide("allow")}>
+          <Text style={styles.allowText}>{plan != null ? "Approve plan" : "Allow"}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.denyBtn} disabled={!canAct} onPress={() => onDecide("deny")}>
+          <Text style={styles.denyText}>{plan != null ? "Keep planning" : "Deny"}</Text>
+        </TouchableOpacity>
+      </View>
+      {!canAct && <NotInControl name={controllerName} onTakeControl={onTakeControl} styles={styles} />}
     </View>
   );
 }
@@ -1531,6 +1557,8 @@ const OTHER_OPTION = "__other__";
 function AskUserQuestionCard({
   view,
   canAct,
+  controllerName,
+  onTakeControl,
   onSubmit,
   onCancel,
   colors,
@@ -1538,6 +1566,8 @@ function AskUserQuestionCard({
 }: {
   view: AskUserQuestionView;
   canAct: boolean;
+  controllerName: string | null;
+  onTakeControl: () => void;
   onSubmit: (answers: Record<string, string>) => void;
   onCancel: () => void;
   colors: ThemeColors;
@@ -1638,22 +1668,19 @@ function AskUserQuestionCard({
           style={styles.askQOtherInput}
         />
       )}
-      {canAct ? (
-        <View style={styles.permActions}>
-          <TouchableOpacity
-            style={[styles.allowBtn, !allAnswered && { opacity: 0.4 }]}
-            disabled={!allAnswered}
-            onPress={handleSubmit}
-          >
-            <Text style={styles.allowText}>Submit answers</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.denyBtn} onPress={onCancel}>
-            <Text style={styles.denyText}>Cancel</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <Text style={styles.permBody}>Only the controller can respond.</Text>
-      )}
+      <View style={[styles.permActions, !canAct && { opacity: 0.4 }]}>
+        <TouchableOpacity
+          style={[styles.allowBtn, canAct && !allAnswered && { opacity: 0.4 }]}
+          disabled={!canAct || !allAnswered}
+          onPress={handleSubmit}
+        >
+          <Text style={styles.allowText}>Submit answers</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.denyBtn} disabled={!canAct} onPress={onCancel}>
+          <Text style={styles.denyText}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+      {!canAct && <NotInControl name={controllerName} onTakeControl={onTakeControl} styles={styles} />}
     </View>
   );
 }
@@ -1882,6 +1909,7 @@ const makeStyles = (colors: ThemeColors) =>
     permBody: { color: colors.dim, fontSize: 12 },
     permDetailScroll: { maxHeight: 220, backgroundColor: colors.panel, borderRadius: radius.sm },
     permActions: { flexDirection: "row", gap: 10, marginTop: 4 },
+    permNotInControl: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 8 },
     askQTabs: { flexDirection: "row", gap: 14, borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: 6 },
     askQTab: { paddingBottom: 6, borderBottomWidth: 2, borderBottomColor: "transparent" },
     askQTabActive: { borderBottomColor: colors.busy },

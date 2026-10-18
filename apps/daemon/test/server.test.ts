@@ -554,6 +554,60 @@ describe("WebSocket: lazy attachments", () => {
   });
 });
 
+describe("WebSocket: approvals while the controller is away", () => {
+  const sessionMsg = (bus: MessageBus, id: string, pred: (s: { controller: string | null; controllerOnline?: boolean }) => boolean) =>
+    bus.next((m) => m.type === "session" && (m.session as { id: string }).id === id && pred(m.session as never));
+
+  it("lets a viewer answer once the controller has disconnected, taking control", async () => {
+    const { wsBase, config, manager, broker } = await startServer();
+    const s = await manager.createSession({});
+    const script = await connectWs(wsBase, `deviceId=script&token=${config.authToken}`);
+    script.ws.send(JSON.stringify({ type: "take_control", sessionId: s.id }));
+    const viewer = await connectWs(wsBase, `deviceId=laptop&deviceName=Laptop&token=${config.authToken}`);
+    await subscribe(viewer.ws, viewer.bus, s.id);
+    await sessionMsg(viewer.bus, s.id, (x) => x.controller === "script" && x.controllerOnline === true);
+
+    const decided = broker.resolverFor(s.id)({ requestId: "r1", toolName: "Bash", toolInput: { command: "ls" } } as never);
+    // While the controller is connected, a viewer still can't answer.
+    viewer.ws.send(JSON.stringify({ type: "resolve_permission", sessionId: s.id, requestId: "r1", decision: "allow" }));
+    expect(await viewer.bus.next((m) => m.type === "error")).toMatchObject({ code: "not_controller" });
+
+    script.ws.close();
+    await sessionMsg(viewer.bus, s.id, (x) => x.controller === "script" && x.controllerOnline === false);
+    viewer.ws.send(JSON.stringify({ type: "resolve_permission", sessionId: s.id, requestId: "r1", decision: "allow" }));
+    expect(await decided).toMatchObject({ decision: "allow", byDeviceId: "laptop" });
+    expect(manager.getSession(s.id).controller).toBe("laptop");
+    viewer.ws.close();
+  });
+
+  it("won't let an answer for one session's request land through another", async () => {
+    const { wsBase, config, manager, broker } = await startServer();
+    const a = await manager.createSession({});
+    const b = await manager.createSession({});
+    void broker.resolverFor(a.id)({ requestId: "r9", toolName: "Bash", toolInput: {} } as never);
+    const { ws, bus } = await connectWs(wsBase, `deviceId=laptop&token=${config.authToken}`);
+    ws.send(JSON.stringify({ type: "resolve_permission", sessionId: b.id, requestId: "r9", decision: "allow" }));
+    expect(await bus.next((m) => m.type === "error")).toMatchObject({ code: "bad_message" });
+    expect(manager.getSession(b.id).controller).toBeNull();
+    ws.close();
+  });
+
+  it("gives the lock back on release_control, from the controller only", async () => {
+    const { wsBase, config, manager } = await startServer();
+    const s = await manager.createSession({});
+    manager.takeControl(s.id, "someone_else");
+    const { ws } = await connectWs(wsBase, `deviceId=script&token=${config.authToken}`);
+    ws.send(JSON.stringify({ type: "release_control", sessionId: s.id }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(manager.getSession(s.id).controller).toBe("someone_else");
+    manager.takeControl(s.id, "script");
+    ws.send(JSON.stringify({ type: "release_control", sessionId: s.id }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(manager.getSession(s.id).controller).toBeNull();
+    ws.close();
+  });
+});
+
 describe("REST: answering a permission from a notification", () => {
   it("takes control for the device and answers the request, once", async () => {
     const { base, config, manager, broker } = await startServer();

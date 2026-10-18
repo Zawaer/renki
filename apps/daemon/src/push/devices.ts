@@ -8,14 +8,17 @@
  */
 export class DeviceRegistry {
   private readonly counts = new Map<string, number>();
+  private readonly changeListeners = new Set<(deviceId: string) => void>();
 
   /** `onPresence` hears each flip between "nobody connected" and "someone is" — for the hands-off stat. */
   constructor(private readonly onPresence?: (anyoneOnline: boolean) => void) {}
 
   connect(deviceId: string): void {
     const wasEmpty = this.counts.size === 0;
-    this.counts.set(deviceId, (this.counts.get(deviceId) ?? 0) + 1);
+    const n = (this.counts.get(deviceId) ?? 0) + 1;
+    this.counts.set(deviceId, n);
     if (wasEmpty) this.onPresence?.(true);
+    if (n === 1) for (const fn of this.changeListeners) fn(deviceId);
   }
 
   disconnect(deviceId: string): void {
@@ -23,6 +26,18 @@ export class DeviceRegistry {
     if (n <= 0) this.counts.delete(deviceId);
     else this.counts.set(deviceId, n);
     if (this.counts.size === 0) this.onPresence?.(false);
+    if (n <= 0) for (const fn of this.changeListeners) fn(deviceId);
+  }
+
+  /** Hear a device come online or go offline (its first connection opens, or its last one closes). */
+  onChange(fn: (deviceId: string) => void): () => void {
+    this.changeListeners.add(fn);
+    return () => this.changeListeners.delete(fn);
+  }
+
+  /** The session with `controllerOnline` filled in, as clients get it. */
+  withPresence<T extends { controller: string | null }>(session: T): T & { controllerOnline: boolean } {
+    return { ...session, controllerOnline: session.controller ? this.isOnline(session.controller) : false };
   }
 
   isOnline(deviceId: string): boolean {

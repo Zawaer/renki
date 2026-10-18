@@ -103,7 +103,10 @@ export function SessionView({
    * row, so the header follows it too. Falls back to the log until it lands.
    */
   const [place, setPlace] = useState<{ repoName: string; branch: string | null } | null>(null);
+  /** False once the controller's last connection closed; it can't answer approvals then, so anyone may. */
+  const [controllerOnline, setControllerOnline] = useState(true);
   useEffect(() => {
+    setControllerOnline(true);
     setPurgeAt(null);
     setResume(null);
     setTitle(null);
@@ -116,6 +119,7 @@ export function SessionView({
       setTitle(s.title);
       setWorktreePath(s.worktreePath);
       setPlace({ repoName: s.repoName, branch: s.branch });
+      setControllerOnline(s.controllerOnline ?? true);
     });
   }, [realtime, sessionId]);
 
@@ -416,7 +420,11 @@ export function SessionView({
               <PermissionCard
                 key={p.requestId}
                 perm={p}
-                canAct={isController}
+                // An absent or vacant controller can't answer, so this device may
+                // (the daemon hands it control as it answers).
+                canAct={isController || !conv.controller || !controllerOnline}
+                controllerName={conv.controllerName ?? conv.controller}
+                onTakeControl={() => realtime.takeControl(sessionId)}
                 onDecide={(d, updatedInput) =>
                   realtime.resolvePermission(
                     sessionId,
@@ -1569,13 +1577,33 @@ function permissionCommand(toolName: string, input: unknown): string | null {
   return toolName === "Bash" && typeof command === "string" ? command : null;
 }
 
+/**
+ * Under an approval this device can't answer yet: who can, and the one click
+ * that makes it this device. The card above stays exactly as the controller
+ * sees it, with its buttons disabled, so it reads as the same decision.
+ */
+function NotInControl({ name, onTakeControl }: { name: string | null; onTakeControl: () => void }) {
+  return (
+    <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-(--renki-fg-muted)">
+      <span>{name ? `${name} has control, so only it can answer.` : "Another device has control."}</span>
+      <Button onClick={onTakeControl}>
+        Take control to answer
+      </Button>
+    </div>
+  );
+}
+
 function PermissionCard({
   perm,
   canAct,
+  controllerName,
+  onTakeControl,
   onDecide,
 }: {
   perm: PermissionView;
   canAct: boolean;
+  controllerName: string | null;
+  onTakeControl: () => void;
   onDecide: (
     d: "allow" | "deny",
     updatedInput?: Record<string, unknown>,
@@ -1598,6 +1626,8 @@ function PermissionCard({
       <AskUserQuestionCard
         view={askQuestion}
         canAct={canAct}
+        controllerName={controllerName}
+        onTakeControl={onTakeControl}
         onSubmit={(answers) =>
           onDecide("allow", {
             ...(perm.toolInput as Record<string, unknown>),
@@ -1650,22 +1680,17 @@ function PermissionCard({
           )}
         </div>
       )}
-      {canAct ? (
-        <div className="mt-3 flex gap-2">
-          <Button variant="primary" onClick={() => onDecide("allow")}>
-            <span className="codicon codicon-check" />{" "}
-            {plan != null ? "Approve plan" : "Allow"}
-          </Button>
-          <Button variant="danger" onClick={() => onDecide("deny")}>
-            <span className="codicon codicon-close" />{" "}
-            {plan != null ? "Keep planning" : "Deny"}
-          </Button>
-        </div>
-      ) : (
-        <div className="mt-2 text-xs text-(--renki-fg-muted)">
-          Only the controller can respond.
-        </div>
-      )}
+      <div className="mt-3 flex gap-2">
+        <Button variant="primary" disabled={!canAct} onClick={() => onDecide("allow")}>
+          <span className="codicon codicon-check" />{" "}
+          {plan != null ? "Approve plan" : "Allow"}
+        </Button>
+        <Button variant="danger" disabled={!canAct} onClick={() => onDecide("deny")}>
+          <span className="codicon codicon-close" />{" "}
+          {plan != null ? "Keep planning" : "Deny"}
+        </Button>
+      </div>
+      {!canAct && <NotInControl name={controllerName} onTakeControl={onTakeControl} />}
     </div>
   );
 }
@@ -1679,6 +1704,8 @@ const OTHER_OPTION = "__other__";
  * caller provides it), so it's added here for every question.
  */
 function AskUserQuestionCard({
+  controllerName,
+  onTakeControl,
   view,
   canAct,
   onSubmit,
@@ -1686,6 +1713,8 @@ function AskUserQuestionCard({
 }: {
   view: AskUserQuestionView;
   canAct: boolean;
+  controllerName: string | null;
+  onTakeControl: () => void;
   onSubmit: (answers: Record<string, string>) => void;
   onCancel: () => void;
 }) {
@@ -1810,22 +1839,17 @@ function AskUserQuestionCard({
           />
         )}
       </div>
-      {canAct ? (
-        <div className="mt-2 flex items-center gap-2">
-          <Button
-            variant="primary"
-            disabled={!allAnswered}
-            onClick={handleSubmit}
-          >
-            <span className="codicon codicon-check" /> Submit answers
-          </Button>
-          <span className="text-xs text-(--renki-fg-muted)">Esc to cancel</span>
-        </div>
-      ) : (
-        <div className="mt-2 text-xs text-(--renki-fg-muted)">
-          Only the controller can respond.
-        </div>
-      )}
+      <div className="mt-2 flex items-center gap-2">
+        <Button
+          variant="primary"
+          disabled={!canAct || !allAnswered}
+          onClick={handleSubmit}
+        >
+          <span className="codicon codicon-check" /> Submit answers
+        </Button>
+        {canAct && <span className="text-xs text-(--renki-fg-muted)">Esc to cancel</span>}
+      </div>
+      {!canAct && <NotInControl name={controllerName} onTakeControl={onTakeControl} />}
     </div>
   );
 }

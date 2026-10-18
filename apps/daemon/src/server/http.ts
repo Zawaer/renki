@@ -12,6 +12,7 @@ import {
   RegisterPushTokenRequest,
   RenameSessionRequest,
   UpdateSessionComposerRequest,
+  type Session,
   SwitchAccountRequest,
   UpdateRotationRequest,
 } from "@renki/protocol";
@@ -82,13 +83,20 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
   // handshake just for a list view. Per-session detail still goes through the
   // event log/`subscribe` (see Connection.subscribe) — this is roster-only.
   const liveConnections = new Set<Connection>();
+  const pushSession = (session: Session) => {
+    const withPresence = devices.withPresence(session);
+    for (const conn of liveConnections) conn.notify({ type: "session", session: withPresence });
+  };
   manager.setBroadcast({
-    onSessionChanged: (session) => {
-      for (const conn of liveConnections) conn.notify({ type: "session", session });
-    },
+    onSessionChanged: pushSession,
     onSessionRemoved: (sessionId) => {
       for (const conn of liveConnections) conn.notify({ type: "session_removed", sessionId });
     },
+  });
+  // A controller connecting or going away changes what its sessions' viewers
+  // may do (answer an approval without taking control first), so tell them.
+  devices.onChange((deviceId) => {
+    for (const s of manager.listSessions()) if (s.controller === deviceId) pushSession(s);
   });
 
   // Registered before any hook that might short-circuit a request (CORS,
@@ -203,7 +211,7 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
   // real, shareable one when showing a pairing QR — see tailscale.ts.
   app.get("/tailscale-status", async () => getTailscaleStatus(config.port));
 
-  app.get("/sessions", async () => ({ sessions: manager.listSessions() }));
+  app.get("/sessions", async () => ({ sessions: manager.listSessions().map((s) => devices.withPresence(s)) }));
 
   // Cost/token/wait-time analytics across every session, for the Stats page.
   app.get("/stats", async () => manager.events.statsSummary());

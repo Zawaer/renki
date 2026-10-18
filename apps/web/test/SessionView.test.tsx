@@ -178,10 +178,12 @@ describe("SessionView", () => {
     expect(screen.getByRole("button", { name: "Deny" })).toBeInTheDocument();
     cleanupRoots();
 
-    // Rendered as a non-controller viewer: no buttons, just the notice.
+    // Rendered as a viewer: the same card, its buttons disabled, and who has control.
     renderSession(sessionId, events, "d2");
-    expect(screen.getByText("Only the controller can respond.")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Allow" })).not.toBeInTheDocument();
+    expect(screen.getByText("Web has control, so only it can answer.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Allow" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Deny" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Take control to answer" })).toBeEnabled();
   });
 
   it("shows the empty state and a Take control button when unlocked", () => {

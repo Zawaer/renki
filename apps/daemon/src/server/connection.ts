@@ -149,11 +149,23 @@ export class Connection {
         return;
       }
 
+      case "release_control": {
+        this.manager.releaseControl(msg.sessionId, this.deviceId); // no-op unless this device holds it
+        return;
+      }
+
       case "resolve_permission": {
-        // Only the current controller may answer a permission request.
+        // The controller answers. While the controller isn't connected (a
+        // script that sent one message, a laptop that closed), nobody could,
+        // so any connected device may: answering takes control first, the
+        // same as the notification buttons do.
         const session = this.manager.getSession(msg.sessionId);
         if (session.controller !== this.deviceId) {
-          return this.error(WsErrorCode.NotController, "Only the controller can resolve permissions.");
+          if (session.controller && this.devices.isOnline(session.controller)) {
+            return this.error(WsErrorCode.NotController, "Only the controller can resolve permissions.");
+          }
+          if (this.broker.sessionOf(msg.requestId) !== msg.sessionId) return this.error(WsErrorCode.BadMessage, "No such pending permission request.", msg.requestId);
+          this.manager.takeControl(msg.sessionId, this.deviceId, this.deviceName ?? undefined);
         }
         const matched = this.broker.answer(msg.requestId, msg.decision, this.deviceId, msg.updatedInput);
         if (!matched) this.error(WsErrorCode.BadMessage, "No such pending permission request.", msg.requestId);
@@ -176,7 +188,7 @@ export class Connection {
     // needs isn't in the event log at all — the trash's purge deadline, for
     // one — and this reuses the same `session` push the fleet-wide listener
     // already handles, so opening a session cold looks like any other update.
-    this.send({ type: "session", session });
+    this.send({ type: "session", session: this.devices.withPresence(session) });
 
     // A tool's screenshots go by reference even live: a turn that checks its
     // work after every edit would otherwise push each one down the socket,

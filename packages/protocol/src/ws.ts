@@ -75,7 +75,19 @@ export const ClientMessage = z.discriminatedUnion("type", [
     timeZone: z.string().max(64).optional(),
   }),
 
-  /** Answer a pending permission request. Only honored from the controller. */
+  /**
+   * Give the lock back (a script that only came to send one message). Only
+   * honored from the controller; a no-op otherwise.
+   */
+  z.object({
+    type: z.literal("release_control"),
+    sessionId: z.string(),
+  }),
+
+  /**
+   * Answer a pending permission request. Honored from the controller, or from
+   * any device while the controller isn't connected (it then takes control).
+   */
   z.object({
     type: z.literal("resolve_permission"),
     sessionId: z.string(),

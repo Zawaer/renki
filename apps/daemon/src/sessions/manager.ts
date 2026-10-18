@@ -1,4 +1,6 @@
 import { homelabAllowed } from "../claude/homelabGuard.js";
+import type { MacBridge } from "../mac/bridge.js";
+import { createMacMcpServer } from "../mac/tools.js";
 import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk";
 import type {
   Attachment,
@@ -144,6 +146,7 @@ export type SessionBroadcast = {
 export class SessionManager {
   readonly events: EventLog;
   private autoSwitch: RateLimitAutoSwitch | null = null;
+  private macBridge: MacBridge | null = null;
   private broadcast: SessionBroadcast | null = null;
   /** sessionId -> prompts submitted while busy, FIFO; drained in submitPrompt's loop. */
   private readonly queues = new Map<string, SubmitPromptInput[]>();
@@ -348,6 +351,11 @@ export class SessionManager {
   }
 
   /** Wire the account rotator in (set once at startup; avoids a ctor cycle). */
+  /** Gives allowed sessions the phone tools of the user's Mac (see mac/tools.ts). Takes effect for processes spawned after this. */
+  setMacBridge(bridge: MacBridge): void {
+    this.macBridge = bridge;
+  }
+
   setAutoSwitch(autoSwitch: RateLimitAutoSwitch): void {
     this.autoSwitch = autoSwitch;
   }
@@ -1451,6 +1459,12 @@ export class SessionManager {
     return !homelabAllowed(this.config.homelabRepos, session.repoId, session.repoName);
   }
 
+  private macServerFor(sessionId: string, cwd: string) {
+    if (!this.macBridge) return undefined;
+    const session = this.getSession(sessionId);
+    return homelabAllowed(this.config.macRepos, session.repoId, session.repoName) ? createMacMcpServer(this.macBridge, cwd) : undefined;
+  }
+
   private liveFor(sessionId: string, cwd: string, resumeSessionId: string | null, first: SubmitPromptInput): LiveClaudeSession {
     const existing = this.live.get(sessionId);
     if (existing && !existing.isClosed) return existing;
@@ -1466,6 +1480,7 @@ export class SessionManager {
       enableRtk: this.config.enableRtk,
       rtkBin: this.config.rtkBin,
       homelabBlocked: this.homelabBlockedFor(sessionId),
+      macServer: this.macServerFor(sessionId, cwd),
       // Cheap to skip once the daemon already knows this — it's static per
       // `claude` install, not per-session.
       onCapabilities: hasCapabilities() ? undefined : setCapabilities,

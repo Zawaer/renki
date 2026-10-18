@@ -1,5 +1,5 @@
 import websocketPlugin from "@fastify/websocket";
-import { existsSync } from "node:fs";
+import { createReadStream, existsSync, statSync } from "node:fs";
 import {
   AddSetupTokenRequest,
   CloneRepoRequest,
@@ -22,6 +22,7 @@ import { getCapabilities } from "../claude/capabilities.js";
 import { readRtkGain } from "../claude/rtkStats.js";
 import type { Config } from "../config.js";
 import { logger } from "../logger.js";
+import type { MacBridge } from "../mac/bridge.js";
 import type { DeviceRegistry } from "../push/devices.js";
 import type { Notifier } from "../push/notifier.js";
 import type { PushTokenStore } from "../push/tokens.js";
@@ -54,6 +55,8 @@ export type ServerDeps = {
   notifier?: Notifier;
   /** The Stats page's insights; optional for the same reason. */
   insights?: InsightsCache;
+  /** The Mac bridge (apps/mac-node); optional for the same reason. */
+  mac?: MacBridge;
 };
 
 /**
@@ -541,6 +544,30 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
         .code(200)
         .send({ ok: false, email: null, usage: null, orgs: [], sessionKey: null, message, unavailable: false });
     }
+  });
+
+  // ── Mac bridge (see mac/bridge.ts) ─────────────────────────────────────────
+  // Whether a Mac is lending its phone. Nothing here runs anything on the Mac:
+  // sessions reach it only through their in-process `mac` MCP tools.
+  app.get("/mac", async () => deps.mac?.status() ?? { connected: false, name: null, since: null, verbs: [] });
+
+  // One-time download of an APK a session asked to install (offered by the
+  // phone_install_apk tool, fetched by the Mac right after).
+  app.get<{ Params: { id: string } }>("/mac/files/:id", async (req, reply) => {
+    const path = deps.mac?.takeFile(req.params.id);
+    if (!path || !existsSync(path)) return reply.code(404).send({ error: "not_found" });
+    return reply
+      .header("content-type", "application/vnd.android.package-archive")
+      .header("content-length", statSync(path).size)
+      .send(createReadStream(path));
+  });
+
+  app.get("/mac/ws", { websocket: true }, (socket: WebSocket) => {
+    if (!deps.mac) {
+      socket.close(1011, "mac bridge not enabled");
+      return;
+    }
+    deps.mac.attach(socket);
   });
 
   // ── WebSocket (plugin registered above, before the auth hook) ─────────────

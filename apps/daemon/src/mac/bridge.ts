@@ -1,0 +1,158 @@
+import { randomBytes, randomUUID } from "node:crypto";
+import { MacToDaemon, type MacImage, type MacStatus, type MacVerb } from "@renki/protocol";
+import type { WebSocket } from "ws";
+import { logger } from "../logger.js";
+
+/**
+ * The daemon's end of the Mac bridge (see packages/protocol/src/mac.ts).
+ *
+ * At most one Mac is attached; a newer one replaces the older (the same Mac
+ * reconnecting after sleep usually beats its own dead socket's close). A call
+ * never rejects: an offline Mac, a timeout or a dropped socket all come back
+ * as `ok: false` with a message written for Claude.
+ */
+
+export type MacResult = { ok: boolean; text: string; image?: MacImage };
+
+type Attached = { socket: WebSocket; name: string; since: number; verbs: string[]; lastHeard: number };
+type Pending = { socket: WebSocket; settle: (r: MacResult) => void; timer: NodeJS.Timeout };
+type Offer = { path: string; expires: number };
+
+const PING_EVERY_MS = 25_000;
+/** A Mac that misses this long is gone (asleep, off the tailnet); its socket may never close by itself. */
+const SILENT_LIMIT_MS = 70_000;
+const OFFER_TTL_MS = 10 * 60_000;
+
+export const MAC_OFFLINE =
+  "The Mac isn't connected to Renki right now, so the phone can't be reached. " +
+  "Ask the user to switch on \"Lend this Mac\" in the Renki menu bar on their Mac (with the phone plugged in or paired), then try again.";
+
+export class MacBridge {
+  private current: Attached | null = null;
+  private readonly pending = new Map<string, Pending>();
+  private readonly offers = new Map<string, Offer>();
+  private readonly pinger: NodeJS.Timeout;
+
+  constructor() {
+    this.pinger = setInterval(() => this.keepAlive(), PING_EVERY_MS);
+    this.pinger.unref();
+  }
+
+  status(): MacStatus {
+    const c = this.current;
+    return { connected: c !== null, name: c?.name ?? null, since: c?.since ?? null, verbs: c?.verbs ?? [] };
+  }
+
+  /** A freshly upgraded `/mac/ws` socket. It counts as attached once it says hello. */
+  attach(socket: WebSocket): void {
+    socket.on("message", (raw) => this.onMessage(socket, raw.toString()));
+    socket.on("close", () => this.onClose(socket));
+    socket.on("error", (err) => logger.warn("mac socket error", { err: String(err) }));
+  }
+
+  /** Run one verb on the Mac. `timeoutMs` covers the whole round trip. */
+  call(verb: MacVerb, args: Record<string, unknown>, timeoutMs: number): Promise<MacResult> {
+    const c = this.current;
+    if (!c) return Promise.resolve({ ok: false, text: MAC_OFFLINE });
+    if (!c.verbs.includes(verb)) {
+      return Promise.resolve({
+        ok: false,
+        text: `The Mac (${c.name}) has "${verb}" switched off in its own settings. Tell the user what you wanted to do; don't look for another way.`,
+      });
+    }
+    const id = randomUUID();
+    return new Promise<MacResult>((resolve) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        resolve({ ok: false, text: `The Mac didn't answer within ${Math.round(timeoutMs / 1000)}s.` });
+      }, timeoutMs);
+      timer.unref?.();
+      this.pending.set(id, { socket: c.socket, settle: resolve, timer });
+      c.socket.send(JSON.stringify({ type: "call", id, verb, args }));
+    });
+  }
+
+  /** Let the Mac download this file once, within OFFER_TTL_MS. Returns the id it asks for. */
+  offerFile(path: string): string {
+    this.sweepOffers();
+    const id = randomBytes(18).toString("base64url");
+    this.offers.set(id, { path, expires: Date.now() + OFFER_TTL_MS });
+    return id;
+  }
+
+  /** The offered file's path, consuming the offer; null when unknown or expired. */
+  takeFile(id: string): string | null {
+    this.sweepOffers();
+    const offer = this.offers.get(id);
+    if (!offer) return null;
+    this.offers.delete(id);
+    return offer.path;
+  }
+
+  close(): void {
+    clearInterval(this.pinger);
+    this.current?.socket.close(1001, "daemon shutting down");
+  }
+
+  private onMessage(socket: WebSocket, raw: string): void {
+    let parsed: MacToDaemon;
+    try {
+      parsed = MacToDaemon.parse(JSON.parse(raw));
+    } catch {
+      logger.warn("mac sent an unrecognised message");
+      return;
+    }
+    if (this.current?.socket === socket) this.current.lastHeard = Date.now();
+
+    switch (parsed.type) {
+      case "hello": {
+        const previous = this.current;
+        this.current = { socket, name: parsed.name, since: Date.now(), verbs: parsed.verbs, lastHeard: Date.now() };
+        if (previous && previous.socket !== socket) previous.socket.close(4000, "replaced by a newer connection");
+        logger.info("mac attached", { name: parsed.name, version: parsed.version, verbs: parsed.verbs });
+        return;
+      }
+      case "result": {
+        const p = this.pending.get(parsed.id);
+        // Only the socket a call went out on may answer it.
+        if (!p || p.socket !== socket) return;
+        clearTimeout(p.timer);
+        this.pending.delete(parsed.id);
+        p.settle({ ok: parsed.ok, text: parsed.text, ...(parsed.image ? { image: parsed.image } : {}) });
+        return;
+      }
+      case "pong":
+        return;
+    }
+  }
+
+  private onClose(socket: WebSocket): void {
+    for (const [id, p] of this.pending) {
+      if (p.socket !== socket) continue;
+      clearTimeout(p.timer);
+      this.pending.delete(id);
+      p.settle({ ok: false, text: "The Mac disconnected before it answered." });
+    }
+    if (this.current?.socket === socket) {
+      logger.info("mac detached", { name: this.current.name });
+      this.current = null;
+    }
+  }
+
+  private keepAlive(): void {
+    const c = this.current;
+    if (!c) return;
+    if (Date.now() - c.lastHeard > SILENT_LIMIT_MS) {
+      logger.info("mac went silent; dropping it", { name: c.name });
+      c.socket.terminate();
+      this.onClose(c.socket);
+      return;
+    }
+    c.socket.send(JSON.stringify({ type: "ping" }));
+  }
+
+  private sweepOffers(): void {
+    const now = Date.now();
+    for (const [id, o] of this.offers) if (o.expires < now) this.offers.delete(id);
+  }
+}

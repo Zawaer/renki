@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import type { Options, PermissionMode, PermissionResult, Query, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { McpSdkServerConfigWithInstance, Options, PermissionMode, PermissionResult, Query, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Attachment, CapabilitiesResponse, EventPayload } from "@renki/protocol";
 import { newTurnId } from "../ids.js";
 import { logger } from "../logger.js";
 import { createRtkPreToolUseHook } from "./rtk.js";
 import { createHomelabGuardHook } from "./homelabGuard.js";
+import { MAC_FREE_TOOLS, MAC_SERVER, createMacApprovalHook } from "../mac/tools.js";
 import {
   type BlockTracking,
   type PermissionResolver,
@@ -77,6 +78,8 @@ export type LiveSessionOptions = {
   rtkBin?: string;
   /** If true, refuse Bash commands that would reach the homelab gateway (see ./homelabGuard.ts). */
   homelabBlocked?: boolean;
+  /** The `mac` MCP server (phone tools via the user's Mac, see ../mac/tools.ts), when this session may use it. */
+  macServer?: McpSdkServerConfigWithInstance;
   /** Only obtainable from a live Query object — the caller opts in when it doesn't already have this cached daemon-wide. */
   onCapabilities?: (caps: CapabilitiesResponse) => void;
   /** The CLI began a turn nobody prompted (see class doc). The caller should treat the session as busy until `onAutoTurnEnd`. */
@@ -234,6 +237,7 @@ export class LiveClaudeSession {
     // The homelab guard goes first, so a refused command is never rewritten or run.
     const preToolUseHooks = [
       ...(opts.homelabBlocked ? [createHomelabGuardHook()] : []),
+      ...(opts.macServer ? [createMacApprovalHook()] : []),
       ...(opts.enableRtk ? [createRtkPreToolUseHook(opts.rtkBin ?? "rtk")] : []),
     ];
 
@@ -251,6 +255,7 @@ export class LiveClaudeSession {
       ...(opts.maxThinkingTokens != null ? { maxThinkingTokens: opts.maxThinkingTokens } : {}),
       ...(opts.forcePermissionPrompts ? { settingSources: [] } : {}),
       ...(preToolUseHooks.length ? { hooks: { PreToolUse: preToolUseHooks } } : {}),
+      ...(opts.macServer ? { mcpServers: { [MAC_SERVER]: opts.macServer }, allowedTools: MAC_FREE_TOOLS } : {}),
       // Route every permission decision through the current resolver. Only
       // fires for tools the permission system doesn't auto-resolve (edits,
       // bash, etc.) — exactly the set a human controller should see. Also

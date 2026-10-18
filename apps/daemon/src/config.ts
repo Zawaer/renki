@@ -76,6 +76,12 @@ const Env = z.object({
    * Set but empty = none. Read from the daemon's own environment, which sessions can't edit.
    */
   RENKI_HOMELAB_REPOS: z.string().optional(),
+  /**
+   * Comma-separated repos whose sessions get the `mac` phone tools (see mac/tools.ts and
+   * apps/mac-node), same format as RENKI_HOMELAB_REPOS. Unset = every session; the Mac
+   * itself being switched on is the main gate.
+   */
+  RENKI_MAC_REPOS: z.string().optional(),
   /** `rtk` executable (name on PATH or absolute path) — set this if the daemon's process manager runs with a PATH that doesn't include it. */
   RENKI_RTK_BIN: z.string().min(1).default("rtk"),
   /** Expo push endpoint (override to a mock in tests). */
@@ -141,6 +147,8 @@ export type Config = {
   rtkBin: string;
   /** Repos allowed to use the homelab command; null = not enforced. See claude/homelabGuard.ts. */
   homelabRepos: string[] | null;
+  /** Repos whose sessions get the Mac phone tools; null = every session. See mac/tools.ts. */
+  macRepos: string[] | null;
   expoPushUrl: string;
   rotation: {
     enabled: boolean;
@@ -233,6 +241,7 @@ export function loadConfig(): Config {
     enableRtk: env.RENKI_ENABLE_RTK === "1" || env.RENKI_ENABLE_RTK === "true",
     rtkBin: env.RENKI_RTK_BIN,
     homelabRepos: parseHomelabRepos(env.RENKI_HOMELAB_REPOS),
+    macRepos: parseHomelabRepos(env.RENKI_MAC_REPOS),
     expoPushUrl: env.RENKI_EXPO_PUSH_URL,
     rotation: {
       enabled: env.RENKI_ACCOUNT_ROTATION === "1" || env.RENKI_ACCOUNT_ROTATION === "true",

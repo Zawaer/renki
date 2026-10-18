@@ -93,6 +93,25 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
 
+  apps/mac-node:
+    dependencies:
+      '@renki/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.20.1
+      esbuild:
+        specifier: ^0.21.5
+        version: 0.21.5
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
   apps/mobile:
     dependencies:
       '@expo/vector-icons':

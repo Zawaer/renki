@@ -16,7 +16,9 @@ import { SessionManager } from "./sessions/manager.js";
 import { createServer } from "./server/http.js";
 import { InsightsCache } from "./stats/insights.js";
 import { PermissionBroker } from "./server/permissions.js";
+import { join } from "node:path";
 import { MacBridge } from "./mac/bridge.js";
+import { MacJobs } from "./mac/jobs.js";
 
 /**
  * Daemon entry point. Boots persistence + the session manager, then serves the
@@ -49,11 +51,12 @@ async function main() {
   manager.setPermissionResolverFactory((sessionId) => broker.resolverFor(sessionId));
   manager.restoreScheduledResumes();
   const mac = new MacBridge();
-  manager.setMacBridge(mac);
+  const macJobs = new MacJobs(join(config.dataDir, "mac-artifacts"));
+  manager.setMacBridge(mac, macJobs);
   accounts.setOnSwitched(() => manager.recycleIdleLiveSessions()); // idle processes may cache the old account's creds
   accounts.start();
 
-  const app = await createServer(config, { manager, broker, pushTokens, devices, accounts, usage: usageReader, notifier, insights: new InsightsCache(db), mac });
+  const app = await createServer(config, { manager, broker, pushTokens, devices, accounts, usage: usageReader, notifier, insights: new InsightsCache(db), mac, macJobs });
   await app.listen({ host: config.host, port: config.port });
   logger.info("daemon listening", { url: `http://${config.host}:${config.port}`, reposRoot: config.reposRoot });
 

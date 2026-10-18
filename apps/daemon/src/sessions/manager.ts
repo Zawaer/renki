@@ -1,5 +1,6 @@
 import { homelabAllowed } from "../claude/homelabGuard.js";
 import type { MacBridge } from "../mac/bridge.js";
+import type { MacJobs } from "../mac/jobs.js";
 import { createMacMcpServer } from "../mac/tools.js";
 import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk";
 import type {
@@ -146,7 +147,7 @@ export type SessionBroadcast = {
 export class SessionManager {
   readonly events: EventLog;
   private autoSwitch: RateLimitAutoSwitch | null = null;
-  private macBridge: MacBridge | null = null;
+  private mac: { bridge: MacBridge; jobs: MacJobs } | null = null;
   private broadcast: SessionBroadcast | null = null;
   /** sessionId -> prompts submitted while busy, FIFO; drained in submitPrompt's loop. */
   private readonly queues = new Map<string, SubmitPromptInput[]>();
@@ -352,8 +353,8 @@ export class SessionManager {
 
   /** Wire the account rotator in (set once at startup; avoids a ctor cycle). */
   /** Gives allowed sessions the phone tools of the user's Mac (see mac/tools.ts). Takes effect for processes spawned after this. */
-  setMacBridge(bridge: MacBridge): void {
-    this.macBridge = bridge;
+  setMacBridge(bridge: MacBridge, jobs: MacJobs): void {
+    this.mac = { bridge, jobs };
   }
 
   setAutoSwitch(autoSwitch: RateLimitAutoSwitch): void {
@@ -1460,9 +1461,10 @@ export class SessionManager {
   }
 
   private macServerFor(sessionId: string, cwd: string) {
-    if (!this.macBridge) return undefined;
+    if (!this.mac) return undefined;
     const session = this.getSession(sessionId);
-    return homelabAllowed(this.config.macRepos, session.repoId, session.repoName) ? createMacMcpServer(this.macBridge, cwd) : undefined;
+    if (!homelabAllowed(this.config.macRepos, session.repoId, session.repoName)) return undefined;
+    return createMacMcpServer(this.mac.bridge, this.mac.jobs, { cwd, sessionId, project: session.repoId ? session.repoName : null });
   }
 
   private liveFor(sessionId: string, cwd: string, resumeSessionId: string | null, first: SubmitPromptInput): LiveClaudeSession {

@@ -127,6 +127,8 @@ export class Adb {
           return await this.shell(parsed.data as MacArgs<"shell">);
         case "install":
           return await this.install(parsed.data as MacArgs<"install">);
+        case "run":
+          return { ok: false, text: "Build jobs are handled by the runner, not adb." };
       }
     } catch (err) {
       return { ok: false, text: `Failed on the Mac: ${err instanceof Error ? err.message : String(err)}` };
@@ -221,17 +223,26 @@ export class Adb {
   }
 
   private async install(args: MacArgs<"install">): Promise<Result> {
-    const s = await this.serial(args.serial);
     const dir = await mkdtemp(join(tmpdir(), "renki-apk-"));
     try {
       const apk = join(dir, "app.apk");
       await this.deps.download(args.fileId, apk);
-      const r = await this.adb(["-s", s, "install", "-r", ...(args.downgrade ? ["-d"] : []), apk], 5 * 60_000);
-      const out = `${r.stdout.toString()}${r.stderr.toString()}`.trim();
-      const ok = r.code === 0 && /Success/.test(out);
-      return { ok, text: ok ? `Installed ${args.name} on ${s}.` : `Install of ${args.name} failed: ${capText(out, 4000)}` };
+      return await this.installLocal(apk, args.name, args.serial, args.downgrade);
     } finally {
       await rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  /** Install an APK already on this Mac (a build job's output). Never throws. */
+  async installLocal(apk: string, name: string, serial?: string, downgrade?: boolean): Promise<Result> {
+    try {
+      const s = await this.serial(serial);
+      const r = await this.adb(["-s", s, "install", "-r", ...(downgrade ? ["-d"] : []), apk], 5 * 60_000);
+      const out = `${r.stdout.toString()}${r.stderr.toString()}`.trim();
+      const ok = r.code === 0 && /Success/.test(out);
+      return { ok, text: ok ? `Installed ${name} on ${s}.` : `Install of ${name} failed: ${capText(out, 4000)}` };
+    } catch (err) {
+      return { ok: false, text: err instanceof Error ? err.message : String(err) };
     }
   }
 }

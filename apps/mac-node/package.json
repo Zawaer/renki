@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Lends a Mac's adb (and the phone plugged into it) to a Renki daemon. See README.md.",
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/renki-mac-node.mjs",
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/renki-mac-node.mjs && esbuild src/runner-wrapper.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/runner-image/renki-runner.mjs && cp runner-image/Dockerfile dist/runner-image/",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "app": "bash macos/build-app.sh"

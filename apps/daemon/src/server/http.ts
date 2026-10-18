@@ -1,5 +1,8 @@
 import websocketPlugin from "@fastify/websocket";
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, statSync, unlinkSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import {
   AddSetupTokenRequest,
   CloneRepoRequest,
@@ -23,6 +26,7 @@ import { readRtkGain } from "../claude/rtkStats.js";
 import type { Config } from "../config.js";
 import { logger } from "../logger.js";
 import type { MacBridge } from "../mac/bridge.js";
+import { MAX_ARTIFACT_BYTES, type MacJobs } from "../mac/jobs.js";
 import type { DeviceRegistry } from "../push/devices.js";
 import type { Notifier } from "../push/notifier.js";
 import type { PushTokenStore } from "../push/tokens.js";
@@ -57,6 +61,7 @@ export type ServerDeps = {
   insights?: InsightsCache;
   /** The Mac bridge (apps/mac-node); optional for the same reason. */
   mac?: MacBridge;
+  macJobs?: MacJobs;
 };
 
 /**
@@ -115,6 +120,9 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
       return reply.code(401).send({ error: "unauthorized" });
     }
   });
+
+  // Raw uploads (a Mac job's artifacts) reach their route as a stream; the route caps the size.
+  app.addContentTypeParser("application/octet-stream", (_req, payload, done) => done(null, payload));
 
   app.get("/health", async () => ({ ok: true }));
 
@@ -560,6 +568,50 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
       .header("content-type", "application/vnd.android.package-archive")
       .header("content-length", statSync(path).size)
       .send(createReadStream(path));
+  });
+
+  // A build job's changed files, as the Mac asks for them: for each, a JSON
+  // header line {"p","n"} then n bytes (n = -1: gone, nothing follows). Only
+  // files in that job's manifest, i.e. this session's own working tree.
+  app.post<{ Params: { id: string }; Body: { paths?: unknown } }>("/mac/jobs/:id/files", { bodyLimit: 32 * 1024 * 1024 }, async (req, reply) => {
+    const jobs = deps.macJobs;
+    const paths = req.body?.paths;
+    if (!jobs || !Array.isArray(paths) || !paths.every((p) => typeof p === "string")) return reply.code(400).send({ error: "bad_request" });
+    if (!jobs.isOpen(req.params.id)) return reply.code(404).send({ error: "not_found" });
+    const id = req.params.id;
+    async function* frames() {
+      for (const p of paths as string[]) {
+        const full = jobs!.fileFor(id, p);
+        const data = full ? await readFile(full).catch(() => null) : null;
+        yield Buffer.from(`${JSON.stringify({ p, n: data ? data.length : -1 })}\n`);
+        if (data) yield data;
+      }
+    }
+    return reply.header("content-type", "application/octet-stream").send(Readable.from(frames()));
+  });
+
+  // A job's artifact (an APK, the build log) coming back from the Mac.
+  app.put<{ Params: { id: string; name: string } }>("/mac/jobs/:id/artifacts/:name", async (req, reply) => {
+    const dest = deps.macJobs?.artifactPath(req.params.id, req.params.name);
+    if (!dest) return reply.code(404).send({ error: "not_found" });
+    let seen = 0;
+    const cap = new Transform({
+      transform(chunk: Buffer, _enc, done) {
+        seen += chunk.length;
+        done(seen > MAX_ARTIFACT_BYTES ? new Error("too large") : null, chunk);
+      },
+    });
+    try {
+      await pipeline(req.body as NodeJS.ReadableStream, cap, createWriteStream(dest, { flags: "wx" }));
+    } catch (err) {
+      try {
+        unlinkSync(dest);
+      } catch {
+        /* never created */
+      }
+      return reply.code(String(err).includes("too large") ? 413 : 400).send({ error: "upload_failed" });
+    }
+    return { path: dest, bytes: seen };
   });
 
   app.get("/mac/ws", { websocket: true }, (socket: WebSocket) => {

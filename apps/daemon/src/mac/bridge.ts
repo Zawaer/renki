@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { MacToDaemon, type MacImage, type MacStatus, type MacVerb } from "@renki/protocol";
+import { MacToDaemon, type MacImage, type MacJobInfo, type MacStatus, type MacVerb } from "@renki/protocol";
 import type { WebSocket } from "ws";
 import { logger } from "../logger.js";
 
@@ -14,7 +14,7 @@ import { logger } from "../logger.js";
 
 export type MacResult = { ok: boolean; text: string; image?: MacImage };
 
-type Attached = { socket: WebSocket; name: string; since: number; verbs: string[]; lastHeard: number };
+type Attached = { socket: WebSocket; name: string; since: number; verbs: string[]; jobs: Record<string, MacJobInfo[]>; lastHeard: number };
 type Pending = { socket: WebSocket; settle: (r: MacResult) => void; timer: NodeJS.Timeout };
 type Offer = { path: string; expires: number };
 
@@ -40,7 +40,7 @@ export class MacBridge {
 
   status(): MacStatus {
     const c = this.current;
-    return { connected: c !== null, name: c?.name ?? null, since: c?.since ?? null, verbs: c?.verbs ?? [] };
+    return { connected: c !== null, name: c?.name ?? null, since: c?.since ?? null, verbs: c?.verbs ?? [], jobs: c?.jobs ?? {} };
   }
 
   /** A freshly upgraded `/mac/ws` socket. It counts as attached once it says hello. */
@@ -107,9 +107,9 @@ export class MacBridge {
     switch (parsed.type) {
       case "hello": {
         const previous = this.current;
-        this.current = { socket, name: parsed.name, since: Date.now(), verbs: parsed.verbs, lastHeard: Date.now() };
+        this.current = { socket, name: parsed.name, since: Date.now(), verbs: parsed.verbs, jobs: parsed.jobs ?? {}, lastHeard: Date.now() };
         if (previous && previous.socket !== socket) previous.socket.close(4000, "replaced by a newer connection");
-        logger.info("mac attached", { name: parsed.name, version: parsed.version, verbs: parsed.verbs });
+        logger.info("mac attached", { name: parsed.name, version: parsed.version, verbs: parsed.verbs, jobs: Object.keys(parsed.jobs ?? {}) });
         return;
       }
       case "result": {

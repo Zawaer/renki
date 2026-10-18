@@ -12,6 +12,24 @@ import { z } from "zod";
  * A session can therefore ask for anything, but only these shapes ever run.
  */
 
+/** A project's folder name on the Mac (the session's repo name), or a job's name. */
+export const MacName = z.string().regex(/^[\w][\w.-]{0,79}$/);
+
+/** A path inside a project, relative and without `..`; the Mac checks it again before touching anything. */
+export const MacRelPath = z
+  .string()
+  .min(1)
+  .max(1024)
+  .refine((p) => !p.startsWith("/") && !p.includes("\0") && p.split("/").every((seg) => seg !== "" && seg !== "." && seg !== ".."), "must be a plain relative path");
+
+/** One file of a session's working tree, as `mac_build` mirrors it to the Mac: path, sha1, executable bit. */
+export const MacManifestEntry = z.object({ p: MacRelPath, h: z.string().regex(/^[0-9a-f]{40}$/), x: z.boolean() });
+export type MacManifestEntry = z.infer<typeof MacManifestEntry>;
+
+/** A build job the Mac's own config defines for a project. Sessions only ever see and name these. */
+export const MacJobInfo = z.object({ name: MacName, description: z.string().max(300), installs: z.boolean() });
+export type MacJobInfo = z.infer<typeof MacJobInfo>;
+
 /** A device serial as `adb devices` prints it: USB serials, or `ip:port` for wireless debugging. */
 export const AdbSerial = z.string().regex(/^[\w.:-]{1,64}$/);
 
@@ -65,6 +83,24 @@ export const MacVerbArgs = {
       downgrade: z.boolean().optional(),
     })
     .strict(),
+  /**
+   * Run one of the build jobs defined in the Mac's own config, by name. There
+   * is deliberately no command field: the homelab can't choose what runs on
+   * the Mac, only which of the user's jobs. The Mac first brings the project's
+   * mirror in line with `manifest` (fetching changed files for `jobId`), runs
+   * the job as its sandboxed runner user, sends the job's artifacts back and,
+   * when `install` is set, installs the job's APK on the phone.
+   */
+  run: z
+    .object({
+      jobId: z.string().regex(/^[\w-]{16,64}$/),
+      project: MacName,
+      job: MacName,
+      manifest: z.array(MacManifestEntry).max(50_000),
+      install: z.boolean().optional(),
+      serial: AdbSerial.optional(),
+    })
+    .strict(),
 } as const;
 
 export type MacVerb = keyof typeof MacVerbArgs;
@@ -97,6 +133,8 @@ export const MacToDaemon = z.discriminatedUnion("type", [
     name: z.string().max(100),
     version: z.string().max(40),
     verbs: z.array(z.string()),
+    /** Build jobs per project, when this Mac has its runner set up. */
+    jobs: z.record(z.string(), z.array(MacJobInfo)).optional(),
   }),
   z.object({
     type: z.literal("result"),
@@ -116,5 +154,6 @@ export const MacStatus = z.object({
   name: z.string().nullable(),
   since: z.number().nullable(),
   verbs: z.array(z.string()),
+  jobs: z.record(z.string(), z.array(MacJobInfo)),
 });
 export type MacStatus = z.infer<typeof MacStatus>;

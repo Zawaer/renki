@@ -1,6 +1,11 @@
-import { DaemonToMac, type MacToDaemon } from "@renki/protocol";
-import { Adb, saveResponse } from "./adb.js";
-import { loadConfig } from "./config.js";
+import { basename } from "node:path";
+import { DaemonToMac, MacVerbArgs, type MacToDaemon } from "@renki/protocol";
+import { Adb, type Result, saveResponse } from "./adb.js";
+import { jobInfo, loadConfig } from "./config.js";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { Runner, putFile } from "./runner.js";
+import { BuildVm, MAC_FROM_VM } from "./vm.js";
 
 /**
  * Renki Mac agent: dials out to the daemon's `/mac/ws` and runs the phone
@@ -23,6 +28,32 @@ const adb = new Adb({
   adb: config.adb,
   download: async (fileId, dest) => saveResponse(await fetch(`${config.url}/mac/files/${encodeURIComponent(fileId)}`, { headers: auth }), dest),
 });
+
+const daemonUrl = new URL(config.url);
+// The Dockerfile and renki-runner.mjs, next to this script (dist/ or the app's Resources/).
+const imageDir = process.env.RENKI_RUNNER_IMAGE ?? join(dirname(fileURLToPath(import.meta.url)), "runner-image");
+const vm = config.runner ? new BuildVm(config.runner, imageDir, log) : null;
+const runner = vm
+  ? new Runner(
+      config,
+      { wrapper: vm.wrapper, ensure: () => vm.ensure(), stop: () => vm.stop(), macAddress: MAC_FROM_VM },
+      {
+        fetchFiles: async (jobId, paths) => {
+          const res = await fetch(`${config.url}/mac/jobs/${encodeURIComponent(jobId)}/files`, {
+            method: "POST",
+            headers: { ...auth, "content-type": "application/json" },
+            body: JSON.stringify({ paths }),
+          });
+          if (!res.ok) throw new Error(`fetching files failed (HTTP ${res.status})`);
+          return Buffer.from(await res.arrayBuffer());
+        },
+        upload: (jobId, name, file) => putFile(`${config.url}/mac/jobs/${encodeURIComponent(jobId)}/artifacts/${encodeURIComponent(name)}`, auth, file),
+        host: daemonUrl.hostname,
+        port: Number(daemonUrl.port) || (daemonUrl.protocol === "https:" ? 443 : 80),
+      },
+      (apk, serial) => adb.installLocal(apk, basename(apk), serial),
+    )
+  : null;
 
 function status(obj: Record<string, unknown>): void {
   process.stdout.write(`${JSON.stringify(obj)}\n`);
@@ -70,7 +101,7 @@ async function connect(): Promise<void> {
   ws.addEventListener("open", () => {
     lastHeard = Date.now();
     backoffMs = 1000;
-    send({ type: "hello", name: config.name, version: VERSION, verbs: config.verbs });
+    send({ type: "hello", name: config.name, version: VERSION, verbs: config.verbs, ...(runner ? { jobs: jobInfo(config) } : {}) });
     status({ state: "connected", detail: `${config.name} → ${new URL(config.url).host}`, verbs: config.verbs });
     log(`connected to ${config.url} as ${config.name}; verbs: ${config.verbs.join(", ")}`);
   });
@@ -92,7 +123,15 @@ async function connect(): Promise<void> {
     }
     status({ call: verb, phase: "start" });
     log(`${verb} ${verb === "shell" ? JSON.stringify(args) : ""}`.trim());
-    void adb.run(verb, args).then((r) => {
+    const work: Promise<Result> =
+      verb === "run"
+        ? (() => {
+            const parsed = MacVerbArgs.run.safeParse(args);
+            if (!parsed.success || !runner) return Promise.resolve({ ok: false, text: "Refused by the Mac: bad build job request." });
+            return runner.run(parsed.data);
+          })()
+        : adb.run(verb, args);
+    void work.then((r) => {
       status({ call: verb, phase: "end", ok: r.ok });
       if (!r.ok) log(`${verb} failed: ${r.text.slice(0, 300)}`);
       send({ type: "result", id, ok: r.ok, text: r.text, ...(r.image ? { image: r.image } : {}) });
@@ -128,7 +167,8 @@ setInterval(() => {
 function shutdown(): void {
   stopping = true;
   socket?.close(1000, "switched off on the Mac");
-  setTimeout(() => process.exit(0), 300);
+  // Switched off: the build VM stops too, and everything in it.
+  void Promise.race([runner?.stop(), new Promise((r) => setTimeout(r, 60_000))]).then(() => process.exit(0));
 }
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);

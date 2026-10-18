@@ -1,9 +1,10 @@
 import { statSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { createSdkMcpServer, tool, type HookCallbackMatcher, type HookJSONOutput, type McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk";
-import { AdbSerial, MacVerbArgs, type MacVerb } from "@renki/protocol";
+import { AdbSerial, MacName, MacVerbArgs, type MacVerb } from "@renki/protocol";
 import { z } from "zod";
-import type { MacBridge, MacResult } from "./bridge.js";
+import { MAC_OFFLINE, type MacBridge, type MacResult } from "./bridge.js";
+import { ManifestError, buildManifest, type MacJobs } from "./jobs.js";
 
 /**
  * The `mac` MCP server every allowed session gets: the phone plugged into the
@@ -14,6 +15,10 @@ import type { MacBridge, MacResult } from "./bridge.js";
  * Reading the phone (devices, screenshot, logcat) and tapping/typing on it run
  * without asking. A free phone shell and installing an APK ask the controller
  * first, in every permission mode (see createMacApprovalHook).
+ *
+ * `mac_build` runs one of the build jobs the user defined on the Mac, by name.
+ * Sessions can't send a command: the Mac's config is the only place one is
+ * written. The job runs as a sandboxed user on the Mac (apps/mac-node/README.md).
  */
 
 export const MAC_SERVER = "mac";
@@ -21,8 +26,10 @@ const tid = (name: string) => `mcp__${MAC_SERVER}__${name}`;
 
 /** Tools that change what is on the phone; these always ask. */
 export const MAC_ASK_TOOLS = [tid("phone_shell"), tid("phone_install_apk")];
-/** Tools that only look or tap; allowed without asking. */
-export const MAC_FREE_TOOLS = [tid("phone_devices"), tid("phone_screenshot"), tid("phone_logcat"), tid("phone_input")];
+/** Builds the user defined on the Mac; ask only when the build is to be installed on the phone. */
+export const MAC_BUILD_TOOL = tid("mac_build");
+/** Tools that only look or tap, and builds without install; allowed without asking. */
+export const MAC_FREE_TOOLS = [tid("phone_devices"), tid("phone_screenshot"), tid("phone_logcat"), tid("phone_input"), MAC_BUILD_TOOL];
 
 const MAX_APK_BYTES = 500 * 1024 * 1024;
 
@@ -36,7 +43,10 @@ function asToolResult(r: MacResult) {
   };
 }
 
-export function createMacMcpServer(bridge: MacBridge, cwd: string): McpSdkServerConfigWithInstance {
+export type MacSessionContext = { cwd: string; sessionId: string; /** The session's repo name: the project's name on the Mac. Null for repo-less chats. */ project: string | null };
+
+export function createMacMcpServer(bridge: MacBridge, jobs: MacJobs, ctx: MacSessionContext): McpSdkServerConfigWithInstance {
+  const { cwd } = ctx;
   const run = async (verb: MacVerb, args: Record<string, unknown>, timeoutMs: number) =>
     asToolResult(await bridge.call(verb, args, timeoutMs));
 
@@ -94,6 +104,43 @@ export function createMacMcpServer(bridge: MacBridge, cwd: string): McpSdkServer
           return run("install", { fileId, name: basename(full), ...(serial ? { serial } : {}), ...(downgrade ? { downgrade } : {}) }, 6 * 60_000);
         },
       ),
+      tool(
+        "mac_build",
+        "Run one of the build jobs the user defined on their Mac for this project (e.g. a fast Android build), on the Mac's faster CPU with warm caches. " +
+          "This session's working tree (git-tracked and new files) is mirrored to the Mac first, so build what you have here; you can't pass a command. " +
+          "Returns the exit code, the end of the log, and where the job's artifacts (APK, full log) were saved on this machine. " +
+          "`install: true` also installs the job's APK on the phone (the user approves that). Call with job \"list\" to see the jobs.",
+        { job: z.union([MacName, z.literal("list")]), install: z.boolean().optional(), serial: AdbSerial.optional() },
+        async ({ job, install, serial }) => {
+          const st = bridge.status();
+          if (!st.connected) return asToolResult({ ok: false, text: MAC_OFFLINE });
+          if (!ctx.project) return asToolResult({ ok: false, text: "Build jobs need a project (a repo); this chat has none." });
+          const defined = st.jobs[ctx.project] ?? [];
+          const listing = defined.length
+            ? defined.map((j) => `- ${j.name}${j.installs ? " (can install)" : ""}: ${j.description}`).join("\n")
+            : `No jobs are defined for "${ctx.project}" on the Mac. The user adds them in the Mac's mac-node.json (jobs > ${ctx.project}); don't look for another way to run commands there.`;
+          if (job === "list" || !defined.some((j) => j.name === job)) {
+            return asToolResult({ ok: job === "list", text: `${job === "list" ? "" : `There is no job "${job}". `}Jobs for ${ctx.project} on ${st.name}:\n${listing}` });
+          }
+          let manifest;
+          try {
+            manifest = await buildManifest(cwd);
+          } catch (err) {
+            return asToolResult({ ok: false, text: err instanceof ManifestError ? err.message : `Couldn't list the working tree: ${String(err)}` });
+          }
+          const { id } = jobs.open(cwd, ctx.sessionId, manifest);
+          try {
+            return await run(
+              "run",
+              { jobId: id, project: ctx.project, job, manifest, ...(install ? { install } : {}), ...(serial ? { serial } : {}) },
+              // The Mac enforces the job's own timeout (60 min at most); this only covers a Mac that vanished.
+              70 * 60_000,
+            );
+          } finally {
+            jobs.close(id);
+          }
+        },
+      ),
     ],
   });
 }
@@ -105,10 +152,12 @@ export function createMacMcpServer(bridge: MacBridge, cwd: string): McpSdkServer
  */
 export function createMacApprovalHook(): HookCallbackMatcher {
   return {
-    matcher: MAC_ASK_TOOLS.join("|"),
+    matcher: [...MAC_ASK_TOOLS, MAC_BUILD_TOOL].join("|"),
     hooks: [
       async (input): Promise<HookJSONOutput> => {
-        if (input.hook_event_name !== "PreToolUse" || !MAC_ASK_TOOLS.includes(input.tool_name)) return { continue: true };
+        if (input.hook_event_name !== "PreToolUse") return { continue: true };
+        const installsBuild = input.tool_name === MAC_BUILD_TOOL && (input.tool_input as { install?: unknown } | null)?.install === true;
+        if (!MAC_ASK_TOOLS.includes(input.tool_name) && !installsBuild) return { continue: true };
         return {
           hookSpecificOutput: {
             hookEventName: "PreToolUse",

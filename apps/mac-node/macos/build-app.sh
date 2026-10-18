@@ -13,6 +13,7 @@ trap 'rm -rf "$build"' EXIT
 mkdir -p "$build/Renki Mac.app/Contents/MacOS" "$build/Renki Mac.app/Contents/Resources"
 swiftc -O -o "$build/Renki Mac.app/Contents/MacOS/RenkiMac" "$here/RenkiMac.swift" -framework AppKit -framework ServiceManagement
 cp "$here/../dist/renki-mac-node.mjs" "$build/Renki Mac.app/Contents/Resources/"
+cp -R "$here/../dist/runner-image" "$build/Renki Mac.app/Contents/Resources/"
 node_path="$(command -v node || true)"
 cat > "$build/Renki Mac.app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

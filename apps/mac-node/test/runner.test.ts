@@ -8,18 +8,27 @@ const config: Config = {
   token: "t",
   name: "Mac",
   adb: "adb",
+  apksigner: null,
   verbs: ["run"],
   runner: { profile: "renki-runner", cpus: 2, memoryGb: 4, diskGb: 40, colima: "colima", docker: "docker" },
   jobs: {
     matka: {
       build: { description: "", command: "./gradlew assembleDebug", cwd: "mobile", timeoutMinutes: 5, artifacts: ["out/app.apk"], installApk: "out/app.apk" },
+      signed: {
+        description: "",
+        command: "./gradlew assembleRelease",
+        timeoutMinutes: 5,
+        artifacts: ["out/app.apk", "out/mapping.txt"],
+        installApk: "out/app.apk",
+        signApks: "/Users/me/.matka/signing.properties",
+      },
     },
   },
 };
 const manifest = [{ p: "mobile/a.ts", h: "a".repeat(40), x: false }];
 const args = (extra: object = {}) => ({ jobId: "j".repeat(20), project: "matka", job: "build", manifest, ...extra });
 
-function setup(probe: object, down: string | null = null) {
+function setup(probe: object, down: string | null = null, sign?: (apk: string, props: string) => Promise<string>) {
   const calls: string[][] = [];
   const uploads: string[] = [];
   const installs: string[] = [];
@@ -48,6 +57,7 @@ function setup(probe: object, down: string | null = null) {
     { wrapper, ensure: async () => down, stop: async () => {}, macAddress: "192.168.5.2" },
     { fetchFiles: async () => Buffer.from("frames"), upload: async (_j, name) => (uploads.push(name), `/data/mac-artifacts/s/${name}`), host: "renki.internal", port: 443 },
     async (apk) => (installs.push(apk), { ok: true, text: "Installed." }),
+    sign,
   );
   return { runner, calls, uploads, installs };
 }
@@ -55,6 +65,28 @@ function setup(probe: object, down: string | null = null) {
 const CONTAINED = { own: "connected", other: "refused", homelab: "refused", internet: "connected" };
 
 describe("Runner", () => {
+  it("signs a job's APKs on the Mac before they're uploaded or installed, and keeps none it couldn't sign", async () => {
+    const signed: string[] = [];
+    const ok = setup(CONTAINED, null, async (apk, props) => {
+      signed.push(`${apk.split("/").pop()} ${props}`);
+      return "ab".repeat(32);
+    });
+    const r = await ok.runner.run(args({ job: "signed", install: true }));
+    expect(signed).toEqual(["app.apk /Users/me/.matka/signing.properties"]);
+    expect(r.text).toContain("Signed app.apk with your key (certificate SHA-256 abababababababab…)");
+    expect(ok.uploads).toEqual(["build.log", "app.apk", "mapping.txt"]);
+    expect(ok.installs).toHaveLength(1);
+
+    const bad = setup(CONTAINED, null, async () => {
+      throw new Error("wrong password");
+    });
+    const r2 = await bad.runner.run(args({ job: "signed", install: true }));
+    expect(r2.text).toContain("Signing out/app.apk failed, so it wasn't kept: wrong password");
+    expect(bad.uploads).toEqual(["build.log", "mapping.txt"]);
+    expect(bad.installs).toEqual([]);
+    expect(r2.text).toContain("Install failed");
+  });
+
   it("refuses to run anything when the firewall doesn't contain the runner", async () => {
     for (const probe of [{ ...CONTAINED, other: "connected" }, { ...CONTAINED, homelab: "connected" }]) {
       const { runner, calls } = setup(probe);

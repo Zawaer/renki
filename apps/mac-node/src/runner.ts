@@ -8,6 +8,7 @@ import type { MacArgs } from "@renki/protocol";
 import type { Result } from "./adb.js";
 import { capText } from "./adb.js";
 import type { Config } from "./config.js";
+import { signApk } from "./signing.js";
 
 /**
  * Build jobs (verb `run`), agent side. The agent never runs a build itself:
@@ -15,7 +16,8 @@ import type { Config } from "./config.js";
  * (./vm.ts). The agent only moves bytes:
  *
  *   containment probe -> diff -> fetch changed files -> apply -> run ->
- *   export artifacts -> upload to the homelab -> (install the APK with adb)
+ *   export artifacts -> (sign APKs with the user's key, here) -> upload to the
+ *   homelab -> (install the APK with adb)
  *
  * Nothing comes back from the container except through its stdout, so a
  * build can't trick this process (the real user) into reading a file of yours.
@@ -66,6 +68,8 @@ export class Runner {
     private readonly host: BuildHost,
     private readonly daemon: Daemon,
     private readonly install: (apk: string, serial: string | undefined) => Promise<Result>,
+    /** Sign an APK in place with the key `props` names; returns its certificate's SHA-256. */
+    private readonly sign: (apk: string, props: string) => Promise<string> = (apk, props) => signApk(apk, props, config.apksigner),
   ) {}
 
   /** One job at a time per project: they share a mirror. */
@@ -161,6 +165,18 @@ export class Runner {
           if (ex.code !== 0) {
             lines.push(`Artifact ${rel}: ${ex.stderr.trim()}`);
             continue;
+          }
+          if (job.signApks && rel.endsWith(".apk")) {
+            progress("Signing with your key");
+            const signed = await this.sign(local, job.signApks).then(
+              (sha) => `Signed ${name} with your key (certificate SHA-256 ${sha.slice(0, 16)}…).`,
+              (e: unknown) => {
+                lines.push(`Signing ${rel} failed, so it wasn't kept: ${e instanceof Error ? e.message : String(e)}`);
+                return null;
+              },
+            );
+            if (!signed) continue;
+            lines.push(signed);
           }
           if (rel === job.installApk) apkLocal = local;
           if (job.artifacts.includes(rel)) {

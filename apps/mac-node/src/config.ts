@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { join } from "node:path";
 import { MAC_VERBS, MacName, MacRelPath, type MacJobInfo, type MacVerb } from "@renki/protocol";
@@ -18,6 +18,8 @@ const File = z.object({
   /** Shown to the daemon and in Claude's messages. */
   name: z.string().max(100).optional(),
   adb: z.string().optional(),
+  /** apksigner, for jobs with signApks; defaults to the newest in the Android SDK's build-tools. */
+  apksigner: z.string().optional(),
   /** Switch single verbs off, e.g. { "shell": false }. Unlisted verbs are on. */
   verbs: z.record(z.string(), z.boolean()).optional(),
   /**
@@ -39,6 +41,13 @@ const File = z.object({
           artifacts: z.array(MacRelPath).max(10).default([]),
           /** The APK `install: true` puts on the phone. */
           installApk: MacRelPath.optional(),
+          /**
+           * Re-sign the job's APKs on this Mac, with the key a properties file
+           * here names (storeFile, storePassword, keyAlias, keyPassword), before
+           * they're uploaded or installed. The key never enters the build VM,
+           * where the session's code runs. See signing.ts.
+           */
+          signApks: z.string().startsWith("/").optional(),
         }),
       ),
     )
@@ -64,6 +73,8 @@ export type Config = {
   token: string;
   name: string;
   adb: string;
+  /** Null when no Android build-tools were found. */
+  apksigner: string | null;
   verbs: MacVerb[];
   jobs: Record<string, Record<string, JobConfig>>;
   /** Null when Colima or Docker isn't installed. */
@@ -80,6 +91,22 @@ export function jobInfo(c: Config): Record<string, MacJobInfo[]> {
   );
 }
 
+function findApksigner(): string | null {
+  const sdk = process.env.ANDROID_HOME ?? join(homedir(), "Library", "Android", "sdk");
+  let versions: string[];
+  try {
+    versions = readdirSync(join(sdk, "build-tools"));
+  } catch {
+    return null;
+  }
+  const newest = versions.sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).reverse();
+  for (const v of newest) {
+    const p = join(sdk, "build-tools", v, "apksigner");
+    if (existsSync(p)) return p;
+  }
+  return null;
+}
+
 export function loadConfig(path = CONFIG_PATH): Config {
   let raw: unknown;
   try {
@@ -94,6 +121,7 @@ export function loadConfig(path = CONFIG_PATH): Config {
     token: f.token,
     name: f.name ?? hostname().replace(/\.local$/, ""),
     adb: f.adb ?? "/opt/homebrew/bin/adb",
+    apksigner: f.apksigner ?? findApksigner(),
     verbs: MAC_VERBS.filter((v) => f.verbs?.[v] !== false && (v !== "run" || (runner !== null && Object.keys(f.jobs).length > 0))),
     jobs: f.jobs,
     runner,

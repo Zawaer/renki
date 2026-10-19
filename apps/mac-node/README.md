@@ -70,6 +70,11 @@ A build still runs the repo's own build scripts, and a session can edit those. S
   plant a symlink that makes the agent, which runs as you, read or upload your files.
 - **Only uses memory while needed.** The VM starts on the first job and stops after 30 idle minutes, or
   as soon as you switch lending off. The SDK, caches and project mirrors stay in a Docker volume.
+- **Signing with your own key.** A job with `"signApks": "/Users/you/.app/signing.properties"` has its
+  APKs re-signed on the Mac (apksigner from the Android SDK build-tools) before they're uploaded or
+  installed. The properties file names `storeFile`, `storePassword`, `keyAlias` and `keyPassword`.
+  The key stays on the Mac and never enters the build VM, where the session's code runs and could
+  read it. An APK that fails to sign isn't kept.
 - **Installs ask.** `install: true` asks whoever holds control, like `phone_install_apk`.
 
 Android's Linux host tools (aapt2, NDK, CMake) are x86_64 only. They run under Rosetta, which needs

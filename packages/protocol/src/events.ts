@@ -100,7 +100,7 @@ const payloads = [
     kind: z.literal("turn_started"),
     turnId: z.string(),
     promptId: z.string(),
-    trigger: z.enum(["prompt", "background_task", "auto"]),
+    trigger: z.enum(["prompt", "background_task", "mac_build", "auto"]),
   }),
 
   /**
@@ -310,6 +310,28 @@ const payloads = [
     kind: z.literal("agent_progress"),
     toolUseId: z.string(),
     usage: AgentUsage,
+  }),
+
+  /**
+   * A build job running on the user's Mac (the `mac_build` tool, see
+   * apps/daemon/src/mac/builds.ts). The tool call returns as soon as the job
+   * starts, so like background_task this is matched to its tool_use by
+   * toolUseId alone, and reports in until the job ends. Each event carries
+   * the whole current state, so the latest one is all a client needs.
+   */
+  z.object({
+    kind: z.literal("mac_build"),
+    buildId: z.string(),
+    /** The mac_build call that started it; null if it couldn't be told. */
+    toolUseId: z.string().nullable(),
+    job: z.string(),
+    state: z.enum(["running", "succeeded", "failed"]),
+    /** What it is doing now ("Syncing files", "Building"…), or how it ended. */
+    phase: z.string(),
+    /** The latest log line while running; the result's first line once done. */
+    detail: z.string().nullable(),
+    startedAt: z.number().int(),
+    endedAt: z.number().int().nullable(),
   }),
 ] as const;
 

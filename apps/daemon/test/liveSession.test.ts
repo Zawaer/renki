@@ -441,6 +441,41 @@ describe("LiveClaudeSession steering", () => {
   });
 });
 
+describe("LiveClaudeSession.notify", () => {
+  it("while idle, sends the message and labels the turn it causes with the trigger", async () => {
+    const { live, fake, events } = makeLive();
+    const t = live.runTurn({ prompt: "build it", promptId: "p1", resolvePermission: allow });
+    await new Promise((r) => setTimeout(r, 0));
+    await fake.emit(okResult as never);
+    await t;
+
+    live.notify("<mac-build-finished>…</mac-build-finished>", "mac_build");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(JSON.stringify(fake.sent.at(-1)!.message.content)).toContain("mac-build-finished");
+    await fake.emit(assistant("the build passed"));
+    await fake.emit(okResult as never);
+    const started = events.filter((e) => e.kind === "turn_started") as Array<{ trigger: string }>;
+    expect(started.map((e) => e.trigger)).toEqual(["prompt", "mac_build"]);
+
+    // The label is for that one turn only.
+    await fake.emit(assistant("still going"));
+    await fake.emit(okResult as never);
+    expect((events.filter((e) => e.kind === "turn_started").at(-1) as { trigger: string }).trigger).toBe("auto");
+  });
+
+  it("mid-turn, folds into the running turn without counting as a prompt", async () => {
+    const { live, fake, events } = makeLive();
+    const t = live.runTurn({ prompt: "work", promptId: "p1", resolvePermission: allow });
+    await new Promise((r) => setTimeout(r, 0));
+    live.notify("build done", "mac_build");
+    await fake.emit(assistant("noted"));
+    await fake.emit(okResult as never);
+    await t;
+    expect(events.filter((e) => e.kind === "turn_started")).toHaveLength(1);
+    expect(events.find((e) => e.kind === "turn_result")).toMatchObject({ promptIds: ["p1"] });
+  });
+});
+
 describe("LiveClaudeSession cost accounting", () => {
   it("reports each turn's own cost, since the SDK's total is cumulative for the process", async () => {
     const { live, fake, events } = makeLive();

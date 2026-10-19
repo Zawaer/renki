@@ -128,7 +128,7 @@ async function connect(): Promise<void> {
         ? (() => {
             const parsed = MacVerbArgs.run.safeParse(args);
             if (!parsed.success || !runner) return Promise.resolve({ ok: false, text: "Refused by the Mac: bad build job request." });
-            return runner.run(parsed.data);
+            return runner.run(parsed.data, progressSender(id, send));
           })()
         : adb.run(verb, args);
     void work.then((r) => {
@@ -149,6 +149,31 @@ async function connect(): Promise<void> {
   ws.addEventListener("error", () => {
     // `close` follows and handles the retry.
   });
+}
+
+/**
+ * Progress for one call, as the daemon wants it: a phase change goes at once,
+ * a newer log line at most every few seconds (the latest one wins).
+ */
+function progressSender(id: string, send: (msg: MacToDaemon) => void): (phase: string, detail?: string) => void {
+  let phase = "";
+  let sentAt = 0;
+  let pending: NodeJS.Timeout | null = null;
+  let latest: string | undefined;
+  const flush = () => {
+    pending = null;
+    sentAt = Date.now();
+    send({ type: "progress", id, phase, ...(latest ? { detail: latest } : {}) });
+  };
+  return (p, detail) => {
+    latest = detail;
+    if (p !== phase) {
+      phase = p;
+      if (pending) clearTimeout(pending);
+      return flush();
+    }
+    if (!pending) pending = setTimeout(flush, Math.max(0, 3_000 - (Date.now() - sentAt)));
+  };
 }
 
 // The daemon pings every 25s. Hearing nothing for longer (the Mac slept, the

@@ -34,6 +34,17 @@ const SAMPLES: Record<EventKind, unknown> = {
   context_usage: { kind: "context_usage", usedTokens: 42_000, maxTokens: 128_000, percentage: 33, autoCompact: true },
   background_task: { kind: "background_task", taskId: "task1", toolUseId: "tu", status: "completed", summary: "done" },
   agent_progress: { kind: "agent_progress", toolUseId: "tu", usage: { tokens: 1200, toolUses: 3, durationMs: 4000 } },
+  mac_build: {
+    kind: "mac_build",
+    buildId: "b_1",
+    toolUseId: "tu",
+    job: "android-debug",
+    state: "running",
+    phase: "Building",
+    detail: "> Task :app:compileDebugKotlin",
+    startedAt: 1,
+    endedAt: null,
+  },
 };
 
 describe("EventPayload", () => {

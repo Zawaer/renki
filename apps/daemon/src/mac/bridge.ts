@@ -15,7 +15,8 @@ import { logger } from "../logger.js";
 export type MacResult = { ok: boolean; text: string; image?: MacImage };
 
 type Attached = { socket: WebSocket; name: string; since: number; verbs: string[]; jobs: Record<string, MacJobInfo[]>; lastHeard: number };
-type Pending = { socket: WebSocket; settle: (r: MacResult) => void; timer: NodeJS.Timeout };
+export type MacProgress = { phase: string; detail?: string };
+type Pending = { socket: WebSocket; settle: (r: MacResult) => void; timer: NodeJS.Timeout; onProgress?: (p: MacProgress) => void };
 type Offer = { path: string; expires: number };
 
 const PING_EVERY_MS = 25_000;
@@ -50,8 +51,8 @@ export class MacBridge {
     socket.on("error", (err) => logger.warn("mac socket error", { err: String(err) }));
   }
 
-  /** Run one verb on the Mac. `timeoutMs` covers the whole round trip. */
-  call(verb: MacVerb, args: Record<string, unknown>, timeoutMs: number): Promise<MacResult> {
+  /** Run one verb on the Mac. `timeoutMs` covers the whole round trip; `onProgress` hears where a long call has got to. */
+  call(verb: MacVerb, args: Record<string, unknown>, timeoutMs: number, onProgress?: (p: MacProgress) => void): Promise<MacResult> {
     const c = this.current;
     if (!c) return Promise.resolve({ ok: false, text: MAC_OFFLINE });
     if (!c.verbs.includes(verb)) {
@@ -67,7 +68,7 @@ export class MacBridge {
         resolve({ ok: false, text: `The Mac didn't answer within ${Math.round(timeoutMs / 1000)}s.` });
       }, timeoutMs);
       timer.unref?.();
-      this.pending.set(id, { socket: c.socket, settle: resolve, timer });
+      this.pending.set(id, { socket: c.socket, settle: resolve, timer, onProgress });
       c.socket.send(JSON.stringify({ type: "call", id, verb, args }));
     });
   }
@@ -119,6 +120,12 @@ export class MacBridge {
         clearTimeout(p.timer);
         this.pending.delete(parsed.id);
         p.settle({ ok: parsed.ok, text: parsed.text, ...(parsed.image ? { image: parsed.image } : {}) });
+        return;
+      }
+      case "progress": {
+        const p = this.pending.get(parsed.id);
+        if (!p || p.socket !== socket) return;
+        p.onProgress?.({ phase: parsed.phase, ...(parsed.detail ? { detail: parsed.detail } : {}) });
         return;
       }
       case "pong":

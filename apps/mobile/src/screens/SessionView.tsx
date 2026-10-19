@@ -21,6 +21,7 @@ import {
   type Attachment,
   type BlockView,
   type EditToolView,
+  type MacBuildView,
   type PermissionModeKey,
   type PermissionView,
   type SteeredPromptView,
@@ -1212,6 +1213,9 @@ function ToolStep({
   // "done" signal.
   const agentRunning = block.subagent?.status === "running" && !block.backgroundTask;
   const running = !block.result && !block.backgroundTask && turnRunning;
+  // Likewise a Mac build: its call returns at once, and the build reports on
+  // until it ends — maybe after the turn has.
+  const build = block.macBuild;
   const richPayload = editView != null || todos != null || plan != null || block.subagent != null;
   const command = block.toolName === "Bash" ? ((block.toolInput as { command?: string } | null)?.command ?? null) : null;
   // Whole-file Writes and long scripts stay folded, even while running — see isBulkyToolPayload.
@@ -1229,23 +1233,29 @@ function ToolStep({
 
   // One glyph language for every step: check = finished, cross = failed,
   // spinner-ish dot = still going, square = stopped.
-  const outcome: { icon: keyof typeof Ionicons.glyphMap; color: string } | null = block.backgroundTask
-    ? block.backgroundTask.status === "completed"
-      ? { icon: "checkmark", color: colors.ok }
-      : block.backgroundTask.status === "stopped"
-        ? { icon: "square", color: colors.faint }
+  const outcome: { icon: keyof typeof Ionicons.glyphMap; color: string } | null = build
+    ? build.state === "running"
+      ? { icon: "ellipsis-horizontal", color: colors.faint }
+      : build.state === "succeeded"
+        ? { icon: "checkmark", color: colors.ok }
         : { icon: "close", color: colors.danger }
-    : block.subagent
-      ? agentRunning
-        ? { icon: "ellipsis-horizontal", color: colors.faint }
-        : { icon: "checkmark", color: colors.ok }
-      : block.result
-        ? block.result.ok
-          ? { icon: "checkmark", color: colors.ok }
+    : block.backgroundTask
+      ? block.backgroundTask.status === "completed"
+        ? { icon: "checkmark", color: colors.ok }
+        : block.backgroundTask.status === "stopped"
+          ? { icon: "square", color: colors.faint }
           : { icon: "close", color: colors.danger }
-        : running
+      : block.subagent
+        ? agentRunning
           ? { icon: "ellipsis-horizontal", color: colors.faint }
-          : null;
+          : { icon: "checkmark", color: colors.ok }
+        : block.result
+          ? block.result.ok
+            ? { icon: "checkmark", color: colors.ok }
+            : { icon: "close", color: colors.danger }
+          : running
+            ? { icon: "ellipsis-horizontal", color: colors.faint }
+            : null;
 
   return (
     <View style={styles.toolStep}>
@@ -1270,6 +1280,7 @@ function ToolStep({
         {outcome && <Ionicons name={outcome.icon} size={13} color={outcome.color} />}
         <Ionicons name={open ? "chevron-up" : "chevron-down"} size={12} color={colors.faint} />
       </TouchableOpacity>
+      {build && <MacBuildStatus build={build} styles={styles} />}
       {open && (
         <View style={styles.toolStepBody}>
           {editView ? (
@@ -1292,6 +1303,35 @@ function ToolStep({
             <Text style={styles.toolBody}>{truncate(block.backgroundTask.summary, 300)}</Text>
           )}
         </View>
+      )}
+    </View>
+  );
+}
+
+/**
+ * A Mac build's progress under its call, folded or not: the phase with a
+ * ticking m:ss while it runs, then how it ended and how long it took. The
+ * detail is the build's latest log line, then the first line of its result.
+ */
+function MacBuildStatus({ build, styles }: { build: MacBuildView; styles: Styles }) {
+  const live = build.state === "running";
+  const elapsedSeconds = useElapsedSeconds(live ? build.startedAt : null);
+  const time =
+    elapsedSeconds != null
+      ? `${Math.floor(elapsedSeconds / 60)}:${String(elapsedSeconds % 60).padStart(2, "0")}`
+      : build.endedAt != null
+        ? formatTurnDuration(build.endedAt - build.startedAt)
+        : null;
+  return (
+    <View style={styles.macBuild}>
+      <Text style={[styles.macBuildPhase, build.state === "failed" && styles.errText]} numberOfLines={1}>
+        {build.phase}
+        {time && <Text style={styles.macBuildTime}> · {time}</Text>}
+      </Text>
+      {build.detail && (
+        <Text style={styles.toolBody} numberOfLines={1} ellipsizeMode="tail">
+          {build.detail}
+        </Text>
       )}
     </View>
   );
@@ -1898,6 +1938,9 @@ const makeStyles = (colors: ThemeColors) =>
     toolHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
     toolName: { color: colors.busy, fontSize: 13, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
     toolBody: { color: colors.dim, fontSize: 12, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
+    macBuild: { gap: 2, paddingBottom: 6, paddingLeft: 20 },
+    macBuildPhase: { color: colors.dim, fontSize: 12 },
+    macBuildTime: { color: colors.faint, fontVariant: ["tabular-nums"] },
     subagentWrap: { borderTopWidth: 1, borderTopColor: colors.border, marginTop: 6, paddingTop: 8, gap: 8 },
     subagentHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
     subagentType: { color: colors.text, fontSize: 12, fontWeight: "700" },

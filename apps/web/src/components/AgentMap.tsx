@@ -330,7 +330,7 @@ export function BackgroundTaskRow({ task }: { task: BackgroundTaskView }) {
           <span className="shrink-0 text-[10.5px] text-(--renki-fg-muted)">{task.kind === "agent" ? "agent" : "command"}</span>
         </span>
         {task.status === "running" ? (
-          <span className="block text-(--renki-fg-muted)">No result yet</span>
+          <span className="block truncate text-(--renki-fg-muted)">{task.summary ?? "No result yet"}</span>
         ) : (
           task.summary && <span className={`block text-(--renki-fg-muted) ${open ? "whitespace-pre-wrap" : "truncate"}`}>{task.summary}</span>
         )}

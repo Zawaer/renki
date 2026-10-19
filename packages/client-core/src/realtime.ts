@@ -6,6 +6,7 @@ import {
   type SessionComposer,
   type ServerMessage,
   ServerMessage as ServerMessageSchema,
+  SessionEvent as SessionEventSchema,
   WsErrorCode,
 } from "@renki/protocol";
 import type { PermissionModeKey } from "./permissionMode.js";
@@ -469,8 +470,16 @@ export class RealtimeClient {
       return;
     }
     const result = ServerMessageSchema.safeParse(parsed);
-    if (!result.success) return;
-    this.route(result.data);
+    if (result.success) return this.route(result.data);
+    // A newer daemon's replay can hold an event kind this build doesn't know;
+    // fold the rest instead of losing the whole batch (a single unknown live
+    // event is simply skipped).
+    const batch = parsed as { type?: unknown; events?: unknown };
+    if (batch?.type === "replay" && Array.isArray(batch.events)) {
+      const known = batch.events.filter((e) => SessionEventSchema.safeParse(e).success);
+      const retried = ServerMessageSchema.safeParse({ ...batch, events: known });
+      if (retried.success) this.route(retried.data);
+    }
   }
 
   private route(msg: ServerMessage): void {

@@ -47,7 +47,20 @@ export type BlockView =
       startedAtMs?: number;
       /** For an Agent/Task call: what the agent has spent, live while it runs and final once it reports. */
       agentUsage?: AgentUsage;
+      /** For a mac_build call: the build it started, live while it runs (the call itself returns at once). */
+      macBuild?: MacBuildView;
     };
+
+/** A build job on the user's Mac, as its latest mac_build event put it. */
+export type MacBuildView = {
+  buildId: string;
+  job: string;
+  state: "running" | "succeeded" | "failed";
+  phase: string;
+  detail: string | null;
+  startedAt: number;
+  endedAt: number | null;
+};
 
 /** A prompt the controller sent while this turn was already running — answered inside the turn, not by a turn of its own. */
 export type SteeredPromptView = {
@@ -68,7 +81,7 @@ export type TurnView = {
    * background agent finishing, or the CLI continuing for some other reason.
    * null for turns recorded before turn_started existed.
    */
-  trigger: "prompt" | "background_task" | "auto" | null;
+  trigger: "prompt" | "background_task" | "mac_build" | "auto" | null;
   steeredPrompts: SteeredPromptView[];
   /** Ordered by the block index Claude assigned. */
   blocks: BlockView[];
@@ -511,6 +524,26 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       return s;
     }
 
+    case "mac_build": {
+      const view: MacBuildView = {
+        buildId: e.buildId,
+        job: e.job,
+        state: e.state,
+        phase: e.phase,
+        detail: e.detail,
+        startedAt: e.startedAt,
+        endedAt: e.endedAt,
+      };
+      const found = e.toolUseId ? patchToolBlock(s.timeline, e.toolUseId, (b) => ({ ...b, macBuild: view })) : null;
+      if (found) s.timeline = found;
+      else if (e.state !== "running") {
+        // No call to show it on (never replayed, or unknown): say how it ended.
+        const text = `Mac build ${e.job} ${e.state === "succeeded" ? "succeeded" : "failed"}${e.detail ? `: ${e.detail}` : "."}`;
+        s.timeline = [...s.timeline, { type: "notice", text, level: e.state === "succeeded" ? "info" : "warn", at: e.ts }];
+      }
+      return s;
+    }
+
     case "error":
       // Non-turn errors aren't rendered inline in v1; surfaced via the client's
       // own error channel instead. Fold nothing.
@@ -767,6 +800,7 @@ function emptyTurn(turnId: string): TurnView {
  */
 export function turnTriggerLabel(turn: TurnView): string | null {
   if (turn.trigger === "background_task") return "Background agent finished — Claude's follow-up";
+  if (turn.trigger === "mac_build") return "Mac build finished — Claude's follow-up";
   if (turn.trigger === "auto") return "Claude continued on its own";
   return null;
 }

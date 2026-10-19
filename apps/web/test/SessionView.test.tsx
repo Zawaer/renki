@@ -731,6 +731,49 @@ describe("SessionView tidy transcript", () => {
     expect(screen.getAllByText("Wait a minute").length).toBeGreaterThan(0);
   });
 
+  const macBuild = (i: number, payload: { state: "running" | "succeeded" | "failed"; phase: string; detail: string | null; endedAt: number | null }) =>
+    ev("s1", { kind: "mac_build", buildId: "b1", toolUseId: `tu_${i}`, job: "ios", startedAt: Date.now() - 125_000, ...payload });
+  const buildCall = (i: number) =>
+    ev("s1", { kind: "assistant_block", turnId: "t1", blockIndex: i, blockKind: "tool_use", text: null, toolUseId: `tu_${i}`, toolName: "mcp__mac__mac_build", toolInput: { job: "ios" } });
+
+  it("keeps a Mac build running after its call returned and the turn ended", () => {
+    renderSession("s1", [
+      ...start,
+      buildCall(0),
+      result(0),
+      finish(),
+      macBuild(0, { state: "running", phase: "Building", detail: "Compiling Renki.swift", endedAt: null }),
+    ]);
+    expect(screen.getByLabelText(/Running · Building · 2:0\d/)).toBeInTheDocument();
+    expect(screen.getByText("Compiling Renki.swift")).toBeInTheDocument();
+  });
+
+  it("shows a finished Mac build's outcome and duration, and keeps a build out of tool groups", () => {
+    renderSession("s1", [
+      ...start,
+      buildCall(0),
+      result(0),
+      finish(),
+      macBuild(0, { state: "failed", phase: "Failed", detail: "error: no such module", endedAt: Date.now() - 5_000 }),
+    ]);
+    expect(screen.getByLabelText("Failed · 2:00")).toBeInTheDocument();
+    expect(screen.getByText("error: no such module")).toBeInTheDocument();
+    cleanupRoots();
+
+    renderSession("s1", [
+      ...start,
+      bash(0, { command: "ls", description: "List the files" }),
+      result(0),
+      buildCall(1),
+      result(1),
+      finish(),
+      macBuild(1, { state: "running", phase: "Syncing files", detail: null, endedAt: null }),
+    ]);
+    expect(screen.queryByRole("button", { name: /Ran 1 command, used 1 tool/ })).toBeNull();
+    expect(screen.getByText("Built on the Mac")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Running · Syncing files · 2:0\d/)).toBeInTheDocument();
+  });
+
   it("shows a nested agent in the transcript from the agent map, opening its parent", async () => {
     const agent = (i: number, id: string, description: string, parent?: string) =>
       ev("s1", {

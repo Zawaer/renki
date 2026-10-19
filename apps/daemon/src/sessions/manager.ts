@@ -1,7 +1,8 @@
 import { homelabAllowed } from "../claude/homelabGuard.js";
 import type { MacBridge } from "../mac/bridge.js";
 import type { MacJobs } from "../mac/jobs.js";
-import { createMacMcpServer } from "../mac/tools.js";
+import type { MacBuilds } from "../mac/builds.js";
+import { MacCallIds, createMacMcpServer } from "../mac/tools.js";
 import type { PermissionMode } from "@anthropic-ai/claude-agent-sdk";
 import type {
   Attachment,
@@ -147,7 +148,7 @@ export type SessionBroadcast = {
 export class SessionManager {
   readonly events: EventLog;
   private autoSwitch: RateLimitAutoSwitch | null = null;
-  private mac: { bridge: MacBridge; jobs: MacJobs } | null = null;
+  private mac: { bridge: MacBridge; jobs: MacJobs; builds: MacBuilds } | null = null;
   private broadcast: SessionBroadcast | null = null;
   /** sessionId -> prompts submitted while busy, FIFO; drained in submitPrompt's loop. */
   private readonly queues = new Map<string, SubmitPromptInput[]>();
@@ -369,8 +370,40 @@ export class SessionManager {
 
   /** Wire the account rotator in (set once at startup; avoids a ctor cycle). */
   /** Gives allowed sessions the phone tools of the user's Mac (see mac/tools.ts). Takes effect for processes spawned after this. */
-  setMacBridge(bridge: MacBridge, jobs: MacJobs): void {
-    this.mac = { bridge, jobs };
+  setMacBridge(bridge: MacBridge, jobs: MacJobs, builds: MacBuilds): void {
+    this.mac = { bridge, jobs, builds };
+    builds.setSink({
+      emit: (sessionId, payload) => {
+        if (!this.isRetired(sessionId)) this.events.append(sessionId, payload);
+      },
+      finished: (sessionId, message) => this.deliverBuildResult(sessionId, message),
+    });
+  }
+
+  /**
+   * A Mac build this session started has ended: tell Claude. Into the running
+   * turn if there is one, else it starts a turn of its own (an auto turn, which
+   * flips the session busy like any other).
+   */
+  private deliverBuildResult(sessionId: string, message: string): void {
+    if (this.isRetired(sessionId)) return;
+    const live = this.live.get(sessionId);
+    if (live && !live.isClosed) {
+      live.notify(message, "mac_build");
+      this.patch(sessionId, { lastActivityAt: Date.now() });
+      return;
+    }
+    // Only after a crash: the reaper keeps a process with a build running.
+    this.events.append(sessionId, {
+      kind: "notice",
+      text: "A Mac build finished while Claude wasn't running here. Ask Claude to check mac_build_status for its result.",
+      level: "info",
+    });
+  }
+
+  /** Mac builds still running for this session — they report back into its process, so it must stay up. */
+  private buildsRunning(sessionId: string): boolean {
+    return (this.mac?.builds.running(sessionId).length ?? 0) > 0;
   }
 
   setAutoSwitch(autoSwitch: RateLimitAutoSwitch): void {
@@ -1460,7 +1493,7 @@ export class SessionManager {
    */
   recycleIdleLiveSessions(reason = "account switched"): void {
     for (const [id, live] of [...this.live]) {
-      if (live.busy || live.backgroundTaskCount > 0) continue;
+      if (live.busy || live.backgroundTaskCount > 0 || this.buildsRunning(id)) continue;
       this.closeLive(id, reason);
     }
   }
@@ -1476,11 +1509,13 @@ export class SessionManager {
     return !homelabAllowed(this.config.homelabRepos, session.repoId, session.repoName);
   }
 
-  private macServerFor(sessionId: string, cwd: string) {
+  private macFor(sessionId: string, cwd: string) {
     if (!this.mac) return undefined;
     const session = this.getSession(sessionId);
     if (!homelabAllowed(this.config.macRepos, session.repoId, session.repoName)) return undefined;
-    return createMacMcpServer(this.mac.bridge, this.mac.jobs, { cwd, sessionId, project: session.repoId ? session.repoName : null });
+    const callIds = new MacCallIds();
+    const ctx = { cwd, sessionId, project: session.repoId ? session.repoName : null };
+    return { server: createMacMcpServer(this.mac.bridge, this.mac.jobs, this.mac.builds, ctx, callIds), callIds };
   }
 
   private liveFor(sessionId: string, cwd: string, resumeSessionId: string | null, first: SubmitPromptInput): LiveClaudeSession {
@@ -1498,7 +1533,7 @@ export class SessionManager {
       enableRtk: this.config.enableRtk,
       rtkBin: this.config.rtkBin,
       homelabBlocked: this.homelabBlockedFor(sessionId),
-      macServer: this.macServerFor(sessionId, cwd),
+      mac: this.macFor(sessionId, cwd),
       // Cheap to skip once the daemon already knows this — it's static per
       // `claude` install, not per-session.
       onCapabilities: hasCapabilities() ? undefined : setCapabilities,
@@ -1575,7 +1610,7 @@ export class SessionManager {
   private reapIdleLive(): void {
     const now = Date.now();
     for (const [id, live] of [...this.live]) {
-      if (live.busy || live.backgroundTaskCount > 0 || this.pendingPermissions.has(id)) continue;
+      if (live.busy || live.backgroundTaskCount > 0 || this.buildsRunning(id) || this.pendingPermissions.has(id)) continue;
       if (now - live.lastActivityAt < this.config.liveIdleMs) continue;
       logger.info("closing idle live session", { id, idleMs: now - live.lastActivityAt });
       this.closeLive(id, "idle");

@@ -51,6 +51,22 @@ describe("MacBridge", () => {
     expect(bridge.status()).toMatchObject({ connected: true, name: "Toivo's Mac", verbs: ["devices", "screenshot", "shell"] });
   });
 
+  it("passes a call's progress to its caller, and only from the socket it went out on", async () => {
+    bridge = new MacBridge();
+    const s = attach("Mac", ["run"]);
+    const heard: unknown[] = [];
+    const p = bridge.call("run", {}, 1000, (pr) => heard.push(pr));
+    const { id } = s.sent.at(-1);
+    s.say({ type: "progress", id, phase: "Building", detail: "> Task :app:compileDebugKotlin" });
+    const other = new FakeSocket();
+    bridge.attach(other as unknown as WebSocket);
+    other.say({ type: "progress", id, phase: "Forged" });
+    s.say({ type: "progress", id: "unknown", phase: "Nope" });
+    s.say({ type: "result", id, ok: true, text: "built" });
+    expect(await p).toEqual({ ok: true, text: "built" });
+    expect(heard).toEqual([{ phase: "Building", detail: "> Task :app:compileDebugKotlin" }]);
+  });
+
   it("round-trips a call, and ignores answers from another socket", async () => {
     bridge = new MacBridge();
     const s = attach();

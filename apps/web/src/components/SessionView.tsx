@@ -1069,6 +1069,10 @@ function ToolStep({
   const agentRunning =
     block.subagent?.status === "running" && !block.backgroundTask;
   const running = !block.result && !block.backgroundTask && turnRunning;
+  // mac_build returns at once and the build carries on in the background, so
+  // its live state — not the tool result or the turn — says whether it's done.
+  const build = block.macBuild;
+  const buildSeconds = useElapsedSeconds(build?.state === "running" ? build.startedAt : null);
   const richPayload =
     editView != null || todos != null || plan != null || block.subagent != null;
   const command =
@@ -1103,7 +1107,16 @@ function ToolStep({
   // One glyph language for every step: check = finished, cross = failed,
   // spinner = still going, square = stopped. No "ok" vs "done" — same thing.
   const toolCount = block.subagent?.blocks.filter((b) => b.kind === "tool_use").length ?? 0;
-  const status = block.backgroundTask ? (
+  const status = build ? (
+    <Outcome
+      kind={build.state === "running" ? "running" : build.state === "succeeded" ? "done" : "failed"}
+      label={
+        build.state === "running"
+          ? `${build.phase} · ${formatClock(buildSeconds ?? 0)}`
+          : formatClock(Math.round(((build.endedAt ?? build.startedAt) - build.startedAt) / 1000))
+      }
+    />
+  ) : block.backgroundTask ? (
     <Outcome
       kind={block.backgroundTask.status === "completed" ? "done" : block.backgroundTask.status === "stopped" ? "stopped" : "failed"}
     />
@@ -1130,7 +1143,7 @@ function ToolStep({
         className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 py-1 text-left text-[13px] text-(--renki-fg-muted) transition-colors hover:bg-(--renki-surface)/60 hover:text-(--renki-fg)"
       >
         <span className="text-(--renki-fg)">{label}</span>
-        {meta && <span className="truncate font-mono text-xs">{meta}</span>}
+        {(meta ?? build?.job) && <span className="truncate font-mono text-xs">{meta ?? build?.job}</span>}
         <span
           className={`codicon ${open ? "codicon-chevron-down" : "codicon-chevron-right"} shrink-0 text-[12px]`}
         />
@@ -1153,6 +1166,11 @@ function ToolStep({
           </span>
         )}
       </button>
+      {build?.detail && (
+        <div className="truncate font-mono text-[11px] text-(--renki-fg-muted)" title={build.detail}>
+          {build.detail}
+        </div>
+      )}
       <Reveal open={open}>
         <div className="mt-2 space-y-2 rounded-xl border border-(--renki-border)/70 p-3 text-xs">
           <div className="text-[13px] text-(--renki-fg)">{block.toolName}</div>
@@ -1533,6 +1551,11 @@ function useElapsedSeconds(startedAtMs: number | null): number | null {
   return startedAtMs == null
     ? null
     : Math.max(0, Math.round((now - startedAtMs) / 1000));
+}
+
+/** "4:07" — a running clock's minutes and seconds. */
+function formatClock(seconds: number): string {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 /** Rotates through THINKING_VERBS while `live`; holds still (and hides) otherwise. */

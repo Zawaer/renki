@@ -6,7 +6,7 @@ import { newTurnId } from "../ids.js";
 import { logger } from "../logger.js";
 import { createRtkPreToolUseHook } from "./rtk.js";
 import { createHomelabGuardHook } from "./homelabGuard.js";
-import { MAC_FREE_TOOLS, MAC_SERVER, createMacApprovalHook } from "../mac/tools.js";
+import { MAC_FREE_TOOLS, MAC_SERVER, type MacCallIds, createMacApprovalHook } from "../mac/tools.js";
 import {
   type BlockTracking,
   type PermissionResolver,
@@ -79,7 +79,7 @@ export type LiveSessionOptions = {
   /** If true, refuse Bash commands that would reach the homelab gateway (see ./homelabGuard.ts). */
   homelabBlocked?: boolean;
   /** The `mac` MCP server (phone tools via the user's Mac, see ../mac/tools.ts), when this session may use it. */
-  macServer?: McpSdkServerConfigWithInstance;
+  mac?: { server: McpSdkServerConfigWithInstance; callIds: MacCallIds };
   /** Only obtainable from a live Query object — the caller opts in when it doesn't already have this cached daemon-wide. */
   onCapabilities?: (caps: CapabilitiesResponse) => void;
   /** The CLI began a turn nobody prompted (see class doc). The caller should treat the session as busy until `onAutoTurnEnd`. */
@@ -179,6 +179,8 @@ export class LiveClaudeSession {
   private steered: string[] = [];
   /** A background task finished since the last `result` — makes the next unprompted turn a "background_task" one, not a mystery. */
   private taskFinishedSinceResult = false;
+  /** What a notify() sent while idle is about to start — labels the unprompted turn it causes. */
+  private notifiedTrigger: "mac_build" | null = null;
   /** Resolvers waiting for the current auto turn to settle (see runTurn). */
   private autoTurnWaiters: Array<() => void> = [];
   private resolver: PermissionResolver | null = null;
@@ -237,7 +239,7 @@ export class LiveClaudeSession {
     // The homelab guard goes first, so a refused command is never rewritten or run.
     const preToolUseHooks = [
       ...(opts.homelabBlocked ? [createHomelabGuardHook()] : []),
-      ...(opts.macServer ? [createMacApprovalHook()] : []),
+      ...(opts.mac ? [createMacApprovalHook(opts.mac.callIds)] : []),
       ...(opts.enableRtk ? [createRtkPreToolUseHook(opts.rtkBin ?? "rtk")] : []),
     ];
 
@@ -255,7 +257,7 @@ export class LiveClaudeSession {
       ...(opts.maxThinkingTokens != null ? { maxThinkingTokens: opts.maxThinkingTokens } : {}),
       ...(opts.forcePermissionPrompts ? { settingSources: [] } : {}),
       ...(preToolUseHooks.length ? { hooks: { PreToolUse: preToolUseHooks } } : {}),
-      ...(opts.macServer ? { mcpServers: { [MAC_SERVER]: opts.macServer }, allowedTools: MAC_FREE_TOOLS } : {}),
+      ...(opts.mac ? { mcpServers: { [MAC_SERVER]: opts.mac.server }, allowedTools: MAC_FREE_TOOLS } : {}),
       // Route every permission decision through the current resolver. Only
       // fires for tools the permission system doesn't auto-resolve (edits,
       // bash, etc.) — exactly the set a human controller should see. Also
@@ -341,6 +343,8 @@ export class LiveClaudeSession {
         resolve,
       };
       this._lastActivityAt = Date.now();
+      // A notification pushed just before this would be folded into this turn.
+      this.notifiedTrigger = null;
       this.opts.emit({ kind: "turn_started", turnId, promptId: args.promptId, trigger: "prompt" });
       try {
         // `uuid` is our handle for cross-checking `result.user_message_uuid`
@@ -365,6 +369,20 @@ export class LiveClaudeSession {
     if (!this.busy) throw new Error("LiveClaudeSession: no turn in flight to steer");
     this.channel.push({ ...buildUserMessage(args.prompt, args.attachments), uuid: randomUUID() as SDKUserMessage["uuid"] });
     this.steered.push(args.promptId);
+    this._lastActivityAt = Date.now();
+  }
+
+  /**
+   * Hand Claude a message that isn't the user's: a background job's result
+   * (see mac/builds.ts). During a turn it is read at the next tool-call
+   * boundary, like a steered prompt but not counted as one. While idle the
+   * CLI answers it with a turn of its own, which arrives as an auto turn
+   * labelled `trigger`.
+   */
+  notify(text: string, trigger: "mac_build"): void {
+    if (this.closed) throw new Error("LiveClaudeSession: closed");
+    this.notifiedTrigger = this.busy ? null : trigger;
+    this.channel.push({ ...buildUserMessage(text), uuid: randomUUID() as SDKUserMessage["uuid"] });
     this._lastActivityAt = Date.now();
   }
 
@@ -512,7 +530,8 @@ export class LiveClaudeSession {
     this.autoTurn = { turnId, promptId: `auto_${turnId}` };
     this.agentTracking.delete("");
     this.lastTurnId = turnId;
-    const trigger = this.taskFinishedSinceResult ? "background_task" : "auto";
+    const trigger = this.notifiedTrigger ?? (this.taskFinishedSinceResult ? "background_task" : "auto");
+    this.notifiedTrigger = null;
     logger.info("live session started an unprompted turn", { cwd: this.opts.cwd, turnId, trigger });
     this.opts.onAutoTurnStart?.(turnId, this.autoTurn.promptId);
     this.opts.emit({ kind: "turn_started", turnId, promptId: this.autoTurn.promptId, trigger });

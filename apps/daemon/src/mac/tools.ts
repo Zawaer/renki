@@ -4,6 +4,7 @@ import { createSdkMcpServer, tool, type HookCallbackMatcher, type HookJSONOutput
 import { AdbSerial, MacName, MacVerbArgs, type MacVerb } from "@renki/protocol";
 import { z } from "zod";
 import { MAC_OFFLINE, type MacBridge, type MacResult } from "./bridge.js";
+import { describeBuild, type MacBuilds } from "./builds.js";
 import { ManifestError, buildManifest, type MacJobs } from "./jobs.js";
 
 /**
@@ -18,7 +19,9 @@ import { ManifestError, buildManifest, type MacJobs } from "./jobs.js";
  *
  * `mac_build` runs one of the build jobs the user defined on the Mac, by name.
  * Sessions can't send a command: the Mac's config is the only place one is
- * written. The job runs as a sandboxed user on the Mac (apps/mac-node/README.md).
+ * written. The job runs in the Mac's build VM (apps/mac-node/README.md). It
+ * runs in the background (./builds.ts): the call returns once the job starts,
+ * and the result comes back to Claude as a message when it ends.
  */
 
 export const MAC_SERVER = "mac";
@@ -29,7 +32,7 @@ export const MAC_ASK_TOOLS = [tid("phone_shell"), tid("phone_install_apk")];
 /** Builds the user defined on the Mac; ask only when the build is to be installed on the phone. */
 export const MAC_BUILD_TOOL = tid("mac_build");
 /** Tools that only look or tap, and builds without install; allowed without asking. */
-export const MAC_FREE_TOOLS = [tid("phone_devices"), tid("phone_screenshot"), tid("phone_logcat"), tid("phone_input"), MAC_BUILD_TOOL];
+export const MAC_FREE_TOOLS = [tid("phone_devices"), tid("phone_screenshot"), tid("phone_logcat"), tid("phone_input"), MAC_BUILD_TOOL, tid("mac_build_status")];
 
 const MAX_APK_BYTES = 500 * 1024 * 1024;
 
@@ -45,7 +48,39 @@ function asToolResult(r: MacResult) {
 
 export type MacSessionContext = { cwd: string; sessionId: string; /** The session's repo name: the project's name on the Mac. Null for repo-less chats. */ project: string | null };
 
-export function createMacMcpServer(bridge: MacBridge, jobs: MacJobs, ctx: MacSessionContext): McpSdkServerConfigWithInstance {
+/**
+ * Which tool call a mac_build handler is serving. The SDK doesn't tell an MCP
+ * handler, but the PreToolUse hook (createMacApprovalHook) sees the id, so it
+ * notes it here and the handler takes the latest one for its job. One per
+ * `claude` process, shared by its hook and its server.
+ */
+export class MacCallIds {
+  private seen: Array<{ id: string; job: unknown }> = [];
+
+  note(id: string, input: unknown): void {
+    this.seen.push({ id, job: (input as { job?: unknown } | null)?.job });
+    if (this.seen.length > 20) this.seen.shift();
+  }
+
+  /** The newest noted call for this job, forgetting it and anything older (calls that were denied never reach a handler). */
+  take(job: string): string | null {
+    for (let i = this.seen.length - 1; i >= 0; i--) {
+      if (this.seen[i]!.job !== job) continue;
+      const { id } = this.seen[i]!;
+      this.seen = this.seen.slice(i + 1);
+      return id;
+    }
+    return null;
+  }
+}
+
+export function createMacMcpServer(
+  bridge: MacBridge,
+  jobs: MacJobs,
+  builds: MacBuilds,
+  ctx: MacSessionContext,
+  callIds: MacCallIds,
+): McpSdkServerConfigWithInstance {
   const { cwd } = ctx;
   const run = async (verb: MacVerb, args: Record<string, unknown>, timeoutMs: number) =>
     asToolResult(await bridge.call(verb, args, timeoutMs));
@@ -106,9 +141,12 @@ export function createMacMcpServer(bridge: MacBridge, jobs: MacJobs, ctx: MacSes
       ),
       tool(
         "mac_build",
-        "Run one of the build jobs the user defined on their Mac for this project (e.g. a fast Android build), on the Mac's faster CPU with warm caches. " +
+        "Start one of the build jobs the user defined on their Mac for this project (e.g. a fast Android build), on the Mac's faster CPU with warm caches. " +
           "This session's working tree (git-tracked and new files) is mirrored to the Mac first, so build what you have here; you can't pass a command. " +
-          "Returns the exit code, the end of the log, and where the job's artifacts (APK, full log) were saved on this machine. " +
+          "The build runs in the background and takes minutes: this returns as soon as it has started. When it ends, its result (exit code, the end of the log, " +
+          "where the job's artifacts like the APK and full log were saved on this machine) arrives as a message in this conversation. " +
+          "Meanwhile get on with other work. Don't sleep or poll waiting for it; if there is nothing else to do, end your turn and the result will start a new one. " +
+          "mac_build_status shows how far it has got. " +
           "`install: true` also installs the job's APK on the phone (the user approves that). Call with job \"list\" to see the jobs.",
         { job: z.union([MacName, z.literal("list")]), install: z.boolean().optional(), serial: AdbSerial.optional() },
         async ({ job, install, serial }) => {
@@ -122,23 +160,57 @@ export function createMacMcpServer(bridge: MacBridge, jobs: MacJobs, ctx: MacSes
           if (job === "list" || !defined.some((j) => j.name === job)) {
             return asToolResult({ ok: job === "list", text: `${job === "list" ? "" : `There is no job "${job}". `}Jobs for ${ctx.project} on ${st.name}:\n${listing}` });
           }
+          const toolUseId = callIds.take(job);
+          const already = builds.running(ctx.sessionId).find((b) => b.job === job);
+          if (already) {
+            return asToolResult({ ok: false, text: `${job} is already building (${describeBuild(already)}). Its result will arrive as a message; don't start it twice.` });
+          }
+          // Snapshot the tree now, so the build is of what's here at this moment.
           let manifest;
           try {
             manifest = await buildManifest(cwd);
           } catch (err) {
             return asToolResult({ ok: false, text: err instanceof ManifestError ? err.message : `Couldn't list the working tree: ${String(err)}` });
           }
+          const project = ctx.project;
           const { id } = jobs.open(cwd, ctx.sessionId, manifest);
-          try {
-            return await run(
-              "run",
-              { jobId: id, project: ctx.project, job, manifest, ...(install ? { install } : {}), ...(serial ? { serial } : {}) },
-              // The Mac enforces the job's own timeout (60 min at most); this only covers a Mac that vanished.
-              70 * 60_000,
-            );
-          } finally {
-            jobs.close(id);
+          const build = builds.start({
+            sessionId: ctx.sessionId,
+            toolUseId,
+            job,
+            run: (onProgress) =>
+              bridge
+                .call(
+                  "run",
+                  { jobId: id, project, job, manifest, ...(install ? { install } : {}), ...(serial ? { serial } : {}) },
+                  // The Mac enforces the job's own timeout (60 min at most); this only covers a Mac that vanished.
+                  70 * 60_000,
+                  onProgress,
+                )
+                .finally(() => jobs.close(id)),
+          });
+          return asToolResult({
+            ok: true,
+            text:
+              `Started ${job} on ${st.name} as build ${build.id}. It runs in the background; its result will arrive as a message in this conversation when it ends. ` +
+              "Carry on with anything else meanwhile, or end your turn if there's nothing else to do. Don't wait or poll for it.",
+          });
+        },
+      ),
+      tool(
+        "mac_build_status",
+        "How this session's Mac builds (started with mac_build) are getting on: what each is doing and for how long. Pass `build` for one build's full result once it has ended. " +
+          "You don't need this to learn that a build finished; that arrives as a message by itself.",
+        { build: z.string().max(40).optional() },
+        async ({ build }) => {
+          const mine = builds.forSession(ctx.sessionId);
+          if (build) {
+            const b = mine.find((x) => x.id === build);
+            if (!b) return asToolResult({ ok: false, text: `No build "${build}" in this session.` });
+            return asToolResult({ ok: true, text: b.result ? `${describeBuild(b)}\n\n${b.result.text}` : describeBuild(b) });
           }
+          if (!mine.length) return asToolResult({ ok: true, text: "No Mac builds in this session (finished ones are forgotten after two hours)." });
+          return asToolResult({ ok: true, text: mine.map((b) => `- ${describeBuild(b)}`).join("\n") });
         },
       ),
     ],
@@ -150,12 +222,13 @@ export function createMacMcpServer(bridge: MacBridge, jobs: MacJobs, ctx: MacSes
  * when settings would allow them. A hook, not canUseTool, because hooks run in
  * every permission mode (same reasoning as homelabGuard.ts).
  */
-export function createMacApprovalHook(): HookCallbackMatcher {
+export function createMacApprovalHook(callIds?: MacCallIds): HookCallbackMatcher {
   return {
     matcher: [...MAC_ASK_TOOLS, MAC_BUILD_TOOL].join("|"),
     hooks: [
       async (input): Promise<HookJSONOutput> => {
         if (input.hook_event_name !== "PreToolUse") return { continue: true };
+        if (input.tool_name === MAC_BUILD_TOOL) callIds?.note(input.tool_use_id, input.tool_input);
         const installsBuild = input.tool_name === MAC_BUILD_TOOL && (input.tool_input as { install?: unknown } | null)?.install === true;
         if (!MAC_ASK_TOOLS.includes(input.tool_name) && !installsBuild) return { continue: true };
         return {

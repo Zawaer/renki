@@ -144,6 +144,17 @@ export const MacToDaemon = z.discriminatedUnion("type", [
     text: z.string(),
     image: MacImage.optional(),
   }),
+  /**
+   * Where a long call (a build job) has got to: a phase like "Building", and
+   * optionally its latest log line. Sent on every phase change and at most
+   * every few seconds otherwise; a call needn't send any.
+   */
+  z.object({
+    type: z.literal("progress"),
+    id: z.string().max(64),
+    phase: z.string().max(60),
+    detail: z.string().max(300).optional(),
+  }),
   z.object({ type: z.literal("pong") }),
 ]);
 export type MacToDaemon = z.infer<typeof MacToDaemon>;

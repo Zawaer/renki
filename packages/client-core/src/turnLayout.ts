@@ -20,7 +20,8 @@ export type TurnSegment =
  * each is something to read (a plan, a task list, a question) or a unit of
  * work worth seeing by itself (an agent).
  */
-const STANDALONE_TOOLS = new Set(["Agent", "Task", "TodoWrite", "ExitPlanMode", "AskUserQuestion"]);
+// A Mac build reports in for minutes after its call returns, so it keeps a row of its own like an agent.
+const STANDALONE_TOOLS = new Set(["Agent", "Task", "TodoWrite", "ExitPlanMode", "AskUserQuestion", "mcp__mac__mac_build"]);
 
 function groupable(b: BlockView): boolean {
   if (b.kind === "thinking") return true;
@@ -253,7 +254,7 @@ export function backgroundTasksOf(timeline: TimelineItem[]): BackgroundTaskView[
     for (const b of blocks) {
       if (b?.kind !== "tool_use") continue;
       const inBackground = (b.toolInput as { run_in_background?: unknown } | null)?.run_in_background === true;
-      if (inBackground || b.backgroundTask) out.push(taskView(b));
+      if (inBackground || b.backgroundTask || b.macBuild) out.push(taskView(b));
       if (b.subagent) walk(b.subagent.blocks);
     }
   };
@@ -266,8 +267,10 @@ function taskView(b: ToolBlock): BackgroundTaskView {
     toolUseId: b.toolUseId,
     kind: b.toolName === "Agent" || b.toolName === "Task" ? "agent" : "command",
     label: describeTool(b.toolName, b.toolInput).label,
-    status: b.backgroundTask?.status ?? "running",
-    summary: b.backgroundTask?.summary ?? null,
+    status: b.macBuild
+      ? b.macBuild.state === "running" ? "running" : b.macBuild.state === "succeeded" ? "completed" : "failed"
+      : (b.backgroundTask?.status ?? "running"),
+    summary: b.macBuild ? (b.macBuild.state === "running" ? `${b.macBuild.phase}${b.macBuild.detail ? ` · ${b.macBuild.detail}` : ""}` : b.macBuild.detail) : (b.backgroundTask?.summary ?? null),
   };
 }
 

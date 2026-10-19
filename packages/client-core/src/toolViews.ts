@@ -219,6 +219,10 @@ export function describeTool(name: string, input: unknown): ToolDescription {
     }
     case "BashOutput":
       return { label: "Checked command output", meta: null };
+    case "mcp__mac__mac_build":
+      return str("job") === "list" ? { label: "Listed Mac build jobs", meta: null } : { label: "Built on the Mac", meta: str("job") };
+    case "mcp__mac__mac_build_status":
+      return { label: "Checked Mac builds", meta: str("build") };
     case "Read":
       return { label: "Read", meta: base(str("file_path")) };
     case "Write":

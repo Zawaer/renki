@@ -97,3 +97,13 @@ describe("Runner", () => {
     expect(b.installs).toHaveLength(1);
   });
 });
+
+describe("LastLine", () => {
+  it("gives the newest complete non-blank line, without colour codes, across chunks", async () => {
+    const { LastLine } = await import("../src/runner.js");
+    const l = new LastLine();
+    expect(l.push(Buffer.from("> Task :app:pre"))).toBeNull();
+    expect(l.push(Buffer.from("Build\n\x1b[1m> Task :app:compileDebugKotlin\x1b[0m\n\n"))).toBe("> Task :app:compileDebugKotlin");
+    expect(l.push(Buffer.from("50% EXECUTING\r60% EXECUTING\r"))).toBe("60% EXECUTING");
+  });
+});

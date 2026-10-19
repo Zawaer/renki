@@ -19,6 +19,7 @@ import { PermissionBroker } from "./server/permissions.js";
 import { join } from "node:path";
 import { MacBridge } from "./mac/bridge.js";
 import { MacJobs } from "./mac/jobs.js";
+import { MacBuilds } from "./mac/builds.js";
 
 /**
  * Daemon entry point. Boots persistence + the session manager, then serves the
@@ -54,7 +55,7 @@ async function main() {
   manager.restoreScheduledResumes();
   const mac = new MacBridge();
   const macJobs = new MacJobs(join(config.dataDir, "mac-artifacts"));
-  manager.setMacBridge(mac, macJobs);
+  manager.setMacBridge(mac, macJobs, new MacBuilds());
   accounts.setOnSwitched(() => manager.recycleIdleLiveSessions()); // idle processes may cache the old account's creds
   accounts.start();
 

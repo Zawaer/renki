@@ -47,6 +47,9 @@ export type Daemon = {
 
 const MAX_LOG = 20 * 1024 * 1024;
 
+/** Where a job has got to, for the session watching it: a phase, and the build's latest log line. */
+export type Progress = (phase: string, detail?: string) => void;
+
 export class Runner {
   private readonly locks = new Map<string, Promise<unknown>>();
 
@@ -58,9 +61,10 @@ export class Runner {
   ) {}
 
   /** One job at a time per project: they share a mirror. */
-  run(args: MacArgs<"run">): Promise<Result> {
-    const prev = this.locks.get(args.project) ?? Promise.resolve();
-    const next = prev.then(() => this.runLocked(args)).catch((err) => ({ ok: false, text: `Failed on the Mac: ${err instanceof Error ? err.message : String(err)}` }));
+  run(args: MacArgs<"run">, progress: Progress = () => {}): Promise<Result> {
+    const prev = this.locks.get(args.project);
+    if (prev) progress("Waiting for another build of this project");
+    const next = (prev ?? Promise.resolve()).then(() => this.runLocked(args, progress)).catch((err) => ({ ok: false, text: `Failed on the Mac: ${err instanceof Error ? err.message : String(err)}` }));
     this.locks.set(args.project, next);
     return next;
   }
@@ -74,13 +78,15 @@ export class Runner {
     return this.host.wrapper;
   }
 
-  private async runLocked(args: MacArgs<"run">): Promise<Result> {
+  private async runLocked(args: MacArgs<"run">, progress: Progress): Promise<Result> {
     const job = this.config.jobs[args.project]?.[args.job];
     if (!job) return { ok: false, text: `This Mac has no job "${args.job}" for ${args.project}.` };
     if (args.install && !job.installApk) return { ok: false, text: `Job "${args.job}" doesn't produce an APK to install.` };
 
+    progress("Starting the build VM");
     const down = await this.host.ensure();
     if (down) return { ok: false, text: down };
+    progress("Checking the sandbox");
     const probe = await this.checkContainment();
     if (probe) return { ok: false, text: probe };
 
@@ -88,21 +94,27 @@ export class Runner {
     const p = args.project;
 
     // 1. Bring the mirror in line with the session's working tree.
+    progress("Syncing files");
     const manifestJson = Buffer.from(JSON.stringify(args.manifest));
     const diff = await this.wrapper(["diff", p], { stdin: manifestJson });
     if (diff.code !== 0) return { ok: false, text: `Syncing failed on the Mac: ${diff.stderr.trim()}` };
     const need = JSON.parse(diff.stdout.toString()) as string[];
+    progress("Syncing files", `${need.length} changed of ${args.manifest.length}`);
     const bundle = need.length ? await this.daemon.fetchFiles(args.jobId, need) : Buffer.alloc(0);
     const applied = await this.wrapper(["apply", p], { stdin: Buffer.concat([manifestJson, Buffer.from("\n"), bundle]) });
     if (applied.code !== 0) return { ok: false, text: `Syncing failed on the Mac: ${applied.stderr.trim()}` };
 
     // 2. Run the job's own command, as the runner.
+    progress("Building");
     const log: Buffer[] = [];
     let logBytes = 0;
+    const lastLine = new LastLine();
     const res = await this.wrapper(["run", p, job.cwd ?? ".", String(job.timeoutMinutes * 60), job.command], {
       onOutput: (d) => {
         if (logBytes < MAX_LOG) log.push(d);
         logBytes += d.length;
+        const line = lastLine.push(d);
+        if (line) progress("Building", line);
       },
     });
     const logText = Buffer.concat(log).toString();
@@ -115,6 +127,7 @@ export class Runner {
       ];
 
       // 3. Bring back the full log, and on success the artifacts.
+      progress("Uploading artifacts");
       const logFile = join(work, "build.log");
       await new Promise<void>((resolve, reject) => {
         const w = createWriteStream(logFile, { mode: 0o600 });
@@ -144,6 +157,7 @@ export class Runner {
         }
         // 4. Install straight from the Mac.
         if (args.install) {
+          progress("Installing on the phone");
           const r = apkLocal ? await this.install(apkLocal, args.serial) : { ok: false, text: "the APK wasn't produced" };
           lines.push(r.ok ? r.text : `Install failed: ${r.text}`);
         }
@@ -178,6 +192,24 @@ export class Runner {
     } finally {
       srv.close();
     }
+  }
+}
+
+/**
+ * The newest complete, non-blank line of a stream of output, without terminal
+ * colour codes; null when a chunk ends none.
+ */
+export class LastLine {
+  private partial = "";
+
+  push(chunk: Buffer): string | null {
+    const lines = (this.partial + chunk.toString()).split(/\r?\n|\r/);
+    this.partial = (lines.pop() ?? "").slice(-2000);
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i]!.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").trim();
+      if (line) return line.slice(0, 300);
+    }
+    return null;
   }
 }
 

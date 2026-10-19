@@ -63,6 +63,42 @@ function log(msg: string): void {
 }
 
 let socket: WebSocket | null = null;
+
+/**
+ * Builds by call id. A build outlives the connection it came on (the Mac
+ * slept, the network changed): its progress and result go to whichever
+ * connection is current, and its result is kept a while in case that one was
+ * already dead. On reconnecting, the daemon says which builds it still wants
+ * (`awaiting`); the others are stopped, since nobody will read their result.
+ */
+const builds = new Map<string, { abort: AbortController; result: MacToDaemon | null }>();
+const KEEP_RESULT_MS = 30 * 60_000;
+
+function sendNow(msg: MacToDaemon): void {
+  if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(msg));
+}
+
+function onAwaiting(ids: string[]): void {
+  for (const [id, b] of builds) {
+    if (ids.includes(id)) {
+      if (b.result) sendNow(b.result);
+      continue;
+    }
+    builds.delete(id);
+    if (!b.result) {
+      log(`stopping build ${id.slice(0, 8)}: Renki no longer waits for it`);
+      b.abort.abort();
+    }
+  }
+}
+
+function startBuild(id: string, args: unknown): Promise<Result> {
+  const parsed = MacVerbArgs.run.safeParse(args);
+  if (!parsed.success || !runner) return Promise.resolve({ ok: false, text: "Refused by the Mac: bad build job request." });
+  const abort = new AbortController();
+  builds.set(id, { abort, result: null });
+  return runner.run(parsed.data, progressSender(id, sendNow), abort.signal);
+}
 let lastHeard = 0;
 let backoffMs = 1000;
 let retry: NodeJS.Timeout | null = null;
@@ -116,6 +152,7 @@ async function connect(): Promise<void> {
       return;
     }
     if (msg.type === "ping") return send({ type: "pong" });
+    if (msg.type === "awaiting") return onAwaiting(msg.ids);
 
     const { id, verb, args } = msg;
     if (!config.verbs.includes(verb)) {
@@ -123,18 +160,17 @@ async function connect(): Promise<void> {
     }
     status({ call: verb, phase: "start" });
     log(`${verb} ${verb === "shell" ? JSON.stringify(args) : ""}`.trim());
-    const work: Promise<Result> =
-      verb === "run"
-        ? (() => {
-            const parsed = MacVerbArgs.run.safeParse(args);
-            if (!parsed.success || !runner) return Promise.resolve({ ok: false, text: "Refused by the Mac: bad build job request." });
-            return runner.run(parsed.data, progressSender(id, send));
-          })()
-        : adb.run(verb, args);
+    const work: Promise<Result> = verb === "run" ? startBuild(id, args) : adb.run(verb, args);
     void work.then((r) => {
       status({ call: verb, phase: "end", ok: r.ok });
       if (!r.ok) log(`${verb} failed: ${r.text.slice(0, 300)}`);
-      send({ type: "result", id, ok: r.ok, text: r.text, ...(r.image ? { image: r.image } : {}) });
+      const result: MacToDaemon = { type: "result", id, ok: r.ok, text: r.text, ...(r.image ? { image: r.image } : {}) };
+      if (verb !== "run") return send(result);
+      const b = builds.get(id);
+      if (!b) return; // stopped: nobody is waiting
+      b.result = result;
+      sendNow(result);
+      setTimeout(() => builds.delete(id), KEEP_RESULT_MS).unref();
     });
   });
 

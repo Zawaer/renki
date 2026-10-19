@@ -192,16 +192,28 @@ function run(projectName: string | undefined, cwdRel: string | undefined, timeou
   const cwd = cwdRel && cwdRel !== "." ? safePath(root, cwdRel) : root;
   if (!existsSync(cwd)) fail(`${cwdRel} doesn't exist in the mirror`);
   const timeoutSec = Math.min(Math.max(Number(timeoutArg) || 600, 10), 3600);
-  const child = spawn("/bin/bash", ["-c", command], { cwd, env: loadEnv(), stdio: "inherit", detached: true });
-  const timer = setTimeout(() => {
-    process.stderr.write(`\nrenki-runner: timed out after ${timeoutSec}s; stopping the job\n`);
+  // The job gets no stdin: ours is the agent's lifeline (see below).
+  const child = spawn("/bin/bash", ["-c", command], { cwd, env: loadEnv(), stdio: ["ignore", "inherit", "inherit"], detached: true });
+  const stop = (why: string) => {
+    process.stderr.write(`\nrenki-runner: ${why}; stopping the job\n`);
     try {
       process.kill(-child.pid!, "SIGTERM");
-      setTimeout(() => process.kill(-child.pid!, "SIGKILL"), 10_000).unref();
+      setTimeout(() => {
+        try {
+          process.kill(-child.pid!, "SIGKILL");
+        } catch {
+          /* already gone */
+        }
+      }, 10_000).unref();
     } catch {
       /* already gone */
     }
-  }, timeoutSec * 1000);
+  };
+  const timer = setTimeout(() => stop(`timed out after ${timeoutSec}s`), timeoutSec * 1000);
+  // The agent holds stdin open while it still wants the job; EOF means stop
+  // (Renki stopped waiting for it, or the agent itself is gone).
+  process.stdin.on("data", () => {});
+  process.stdin.on("end", () => stop("the Mac agent stopped waiting"));
   child.on("exit", (code, signal) => {
     clearTimeout(timer);
     process.exit(code ?? (signal ? 124 : 1));

@@ -120,6 +120,13 @@ export const DaemonToMac = z.discriminatedUnion("type", [
   MacCall,
   /** Application-level keepalive: the Mac answers `pong`, and reconnects if it hears nothing for a while (sleep, network change). */
   z.object({ type: z.literal("ping") }),
+  /**
+   * Sent right after `hello`: the build calls (`run`) the daemon is still
+   * waiting on. A build survives a dropped connection; on reconnect the Mac
+   * sends the results of these that finished meanwhile, and stops any other
+   * build, since nobody will read its result (the daemon restarted).
+   */
+  z.object({ type: z.literal("awaiting"), ids: z.array(z.string().max(64)).max(100) }),
 ]);
 export type DaemonToMac = z.infer<typeof DaemonToMac>;
 

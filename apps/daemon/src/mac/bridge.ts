@@ -10,19 +10,36 @@ import { logger } from "../logger.js";
  * reconnecting after sleep usually beats its own dead socket's close). A call
  * never rejects: an offline Mac, a timeout or a dropped socket all come back
  * as `ok: false` with a message written for Claude.
+ *
+ * A build (`run`) survives a dropped connection: it keeps running on the Mac,
+ * so its call waits up to RECONNECT_GRACE_MS for the same Mac to come back,
+ * then tells it (`awaiting`) which builds are still wanted. The Mac sends the
+ * results of those and stops the rest — after a daemon restart, all of them.
  */
 
 export type MacResult = { ok: boolean; text: string; image?: MacImage };
 
 type Attached = { socket: WebSocket; name: string; since: number; verbs: string[]; jobs: Record<string, MacJobInfo[]>; lastHeard: number };
 export type MacProgress = { phase: string; detail?: string };
-type Pending = { socket: WebSocket; settle: (r: MacResult) => void; timer: NodeJS.Timeout; onProgress?: (p: MacProgress) => void };
+type Pending = {
+  socket: WebSocket;
+  verb: MacVerb;
+  /** The Mac it went to; only that one may pick it up after a reconnect. */
+  mac: string;
+  settle: (r: MacResult) => void;
+  timer: NodeJS.Timeout;
+  /** Set while its socket is gone and the call waits for the Mac to reconnect. */
+  orphaned?: NodeJS.Timeout;
+  onProgress?: (p: MacProgress) => void;
+};
 type Offer = { path: string; expires: number };
 
 const PING_EVERY_MS = 25_000;
 /** A Mac that misses this long is gone (asleep, off the tailnet); its socket may never close by itself. */
 const SILENT_LIMIT_MS = 70_000;
 const OFFER_TTL_MS = 10 * 60_000;
+/** How long a build waits for its Mac to reconnect (sleep, a network change) before it counts as lost. */
+const RECONNECT_GRACE_MS = 15 * 60_000;
 
 export const MAC_OFFLINE =
   "The Mac isn't connected to Renki right now, so the phone can't be reached. " +
@@ -64,11 +81,13 @@ export class MacBridge {
     const id = randomUUID();
     return new Promise<MacResult>((resolve) => {
       const timer = setTimeout(() => {
+        const p = this.pending.get(id);
+        if (p?.orphaned) clearTimeout(p.orphaned);
         this.pending.delete(id);
         resolve({ ok: false, text: `The Mac didn't answer within ${Math.round(timeoutMs / 1000)}s.` });
       }, timeoutMs);
       timer.unref?.();
-      this.pending.set(id, { socket: c.socket, settle: resolve, timer, onProgress });
+      this.pending.set(id, { socket: c.socket, verb, mac: c.name, settle: resolve, timer, onProgress });
       c.socket.send(JSON.stringify({ type: "call", id, verb, args }));
     });
   }
@@ -110,6 +129,7 @@ export class MacBridge {
         const previous = this.current;
         this.current = { socket, name: parsed.name, since: Date.now(), verbs: parsed.verbs, jobs: parsed.jobs ?? {}, lastHeard: Date.now() };
         if (previous && previous.socket !== socket) previous.socket.close(4000, "replaced by a newer connection");
+        this.adoptBuilds(socket, parsed.name);
         logger.info("mac attached", { name: parsed.name, version: parsed.version, verbs: parsed.verbs, jobs: Object.keys(parsed.jobs ?? {}) });
         return;
       }
@@ -133,12 +153,37 @@ export class MacBridge {
     }
   }
 
+  /** A Mac said hello: its builds that lost their socket continue on this one, and it learns which builds are still wanted. */
+  private adoptBuilds(socket: WebSocket, name: string): void {
+    const ids: string[] = [];
+    for (const [id, p] of this.pending) {
+      if (p.verb !== "run" || p.mac !== name) continue;
+      if (p.orphaned) clearTimeout(p.orphaned);
+      p.orphaned = undefined;
+      p.socket = socket;
+      ids.push(id);
+    }
+    socket.send(JSON.stringify({ type: "awaiting", ids }));
+  }
+
   private onClose(socket: WebSocket): void {
     for (const [id, p] of this.pending) {
-      if (p.socket !== socket) continue;
-      clearTimeout(p.timer);
-      this.pending.delete(id);
-      p.settle({ ok: false, text: "The Mac disconnected before it answered." });
+      if (p.socket !== socket || p.orphaned) continue;
+      const fail = (text: string) => {
+        clearTimeout(p.timer);
+        this.pending.delete(id);
+        p.settle({ ok: false, text });
+      };
+      if (p.verb !== "run") {
+        fail("The Mac disconnected before it answered.");
+        continue;
+      }
+      p.onProgress?.({ phase: "Waiting for the Mac to reconnect" });
+      p.orphaned = setTimeout(
+        () => fail(`The Mac disconnected during the build and didn't come back within ${RECONNECT_GRACE_MS / 60_000} minutes.`),
+        RECONNECT_GRACE_MS,
+      );
+      p.orphaned.unref?.();
     }
     if (this.current?.socket === socket) {
       logger.info("mac detached", { name: this.current.name });

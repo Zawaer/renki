@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -24,6 +24,22 @@ afterAll(() => rmSync(join(bundle, ".."), { recursive: true, force: true }));
 function wrapper(args: string[], stdin: Buffer | string = "") {
   const r = spawnSync(process.execPath, [bundle, ...args], { input: stdin, env: { HOME: home, PATH: process.env.PATH }, timeout: 20_000 });
   return { code: r.status, out: r.stdout.toString(), err: r.stderr.toString() };
+}
+
+/** `run` as the agent calls it: stdin held open as the job's lifeline, closed after `closeAfterMs` if given. */
+function runHeld(args: string[], opts: { env?: Record<string, string>; closeAfterMs?: number } = {}): Promise<{ code: number | null; out: string; err: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [bundle, "run", ...args], { env: { HOME: home, PATH: process.env.PATH!, ...opts.env } });
+    let out = "";
+    let err = "";
+    child.stdout.on("data", (d) => (out += d));
+    child.stderr.on("data", (d) => (err += d));
+    if (opts.closeAfterMs != null) setTimeout(() => child.stdin.end(), opts.closeAfterMs);
+    child.on("close", (code) => {
+      child.stdin.destroy();
+      resolve({ code, out, err });
+    });
+  });
 }
 
 const sha = (s: string) => createHash("sha1").update(s).digest("hex");
@@ -77,17 +93,23 @@ describe("renki-runner.mjs", () => {
     expect(wrapper(["export", "proj", "../../secret.txt"]).err).toMatch(/bad path/);
   });
 
-  it("runs a command in the mirror with a clean environment, and streams a file out", () => {
-    const r = spawnSync(process.execPath, [bundle, "run", "proj", "src", "30", "pwd; echo ${RENKI_SECRET:-clean}; echo $CI"], {
-      env: { HOME: home, PATH: process.env.PATH, RENKI_SECRET: "leaked" },
-    });
-    expect(r.stdout.toString().trim().split("\n")).toEqual([expect.stringContaining("work/proj/src"), "clean", "1"]);
+  it("runs a command in the mirror with a clean environment, and streams a file out", async () => {
+    const r = await runHeld(["proj", "src", "30", "pwd; echo ${RENKI_SECRET:-clean}; echo $CI"], { env: { RENKI_SECRET: "leaked" } });
+    expect(r.out.trim().split("\n")).toEqual([expect.stringContaining("work/proj/src"), "clean", "1"]);
     expect(wrapper(["export", "proj", "src/run.sh"]).out).toBe("#!/bin/sh\necho hi\n");
   });
 
-  it("stops a job at its timeout", () => {
-    const r = wrapper(["run", "proj", ".", "10", "sleep 30"]);
+  it("stops a job at its timeout", async () => {
+    const r = await runHeld(["proj", ".", "10", "sleep 30"]);
     expect(r.code).not.toBe(0);
     expect(r.err).toMatch(/timed out/);
+  }, 30_000);
+
+  it("stops a job when the agent closes its stdin", async () => {
+    const started = Date.now();
+    const r = await runHeld(["proj", ".", "60", "sleep 30"], { closeAfterMs: 500 });
+    expect(r.code).not.toBe(0);
+    expect(r.err).toMatch(/stopped waiting/);
+    expect(Date.now() - started).toBeLessThan(10_000);
   }, 30_000);
 });

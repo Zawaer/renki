@@ -126,7 +126,19 @@ export class BuildVm {
       });
       child.on("error", (e) => resolve({ code: 127, stdout: Buffer.alloc(0), stderr: String(e) }));
       child.on("close", (code) => void written.then(() => resolve({ code: code ?? 1, stdout: Buffer.concat(out), stderr: err })));
-      child.stdin.end(opts.stdin ?? Buffer.alloc(0));
+      if (!opts.signal) child.stdin.end(opts.stdin ?? Buffer.alloc(0));
+      else {
+        // Held open as the job's lifeline: EOF inside the container stops it.
+        if (opts.stdin) child.stdin.write(opts.stdin);
+        const stop = () => {
+          child.stdin.end();
+          // If EOF didn't get through, at least stop waiting for it.
+          setTimeout(() => child.kill("SIGKILL"), 30_000).unref();
+        };
+        if (opts.signal.aborted) stop();
+        else opts.signal.addEventListener("abort", stop, { once: true });
+        child.on("close", () => opts.signal?.removeEventListener("abort", stop));
+      }
     });
 
   /** Stop the VM (lending switched off, or idle). Everything in it stops with it. */

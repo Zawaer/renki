@@ -32,8 +32,14 @@ export type BuildHost = {
 };
 
 export type WrapperResult = { code: number; stdout: Buffer; stderr: string };
-/** Run renki-runner.mjs where builds run. `onOutput` streams stdout+stderr instead of collecting stdout. */
-export type RunWrapper = (args: string[], opts?: { stdin?: Buffer; onOutput?: (chunk: Buffer) => void; stdoutTo?: string }) => Promise<WrapperResult>;
+/**
+ * Run renki-runner.mjs where builds run. `onOutput` streams stdout+stderr instead of collecting stdout.
+ * With `signal`, its stdin stays open until the signal fires; closing it stops the job (see runner-wrapper.ts `run`).
+ */
+export type RunWrapper = (
+  args: string[],
+  opts?: { stdin?: Buffer; onOutput?: (chunk: Buffer) => void; stdoutTo?: string; signal?: AbortSignal },
+) => Promise<WrapperResult>;
 
 export type Daemon = {
   /** POST the paths, get the framed bundle back. */
@@ -46,6 +52,8 @@ export type Daemon = {
 };
 
 const MAX_LOG = 20 * 1024 * 1024;
+
+const STOPPED: Result = { ok: false, text: "Stopped on the Mac: Renki no longer waits for this build." };
 
 /** Where a job has got to, for the session watching it: a phase, and the build's latest log line. */
 export type Progress = (phase: string, detail?: string) => void;
@@ -61,10 +69,10 @@ export class Runner {
   ) {}
 
   /** One job at a time per project: they share a mirror. */
-  run(args: MacArgs<"run">, progress: Progress = () => {}): Promise<Result> {
+  run(args: MacArgs<"run">, progress: Progress = () => {}, signal?: AbortSignal): Promise<Result> {
     const prev = this.locks.get(args.project);
     if (prev) progress("Waiting for another build of this project");
-    const next = (prev ?? Promise.resolve()).then(() => this.runLocked(args, progress)).catch((err) => ({ ok: false, text: `Failed on the Mac: ${err instanceof Error ? err.message : String(err)}` }));
+    const next = (prev ?? Promise.resolve()).then(() => this.runLocked(args, progress, signal)).catch((err) => ({ ok: false, text: `Failed on the Mac: ${err instanceof Error ? err.message : String(err)}` }));
     this.locks.set(args.project, next);
     return next;
   }
@@ -78,7 +86,8 @@ export class Runner {
     return this.host.wrapper;
   }
 
-  private async runLocked(args: MacArgs<"run">, progress: Progress): Promise<Result> {
+  private async runLocked(args: MacArgs<"run">, progress: Progress, signal?: AbortSignal): Promise<Result> {
+    if (signal?.aborted) return STOPPED;
     const job = this.config.jobs[args.project]?.[args.job];
     if (!job) return { ok: false, text: `This Mac has no job "${args.job}" for ${args.project}.` };
     if (args.install && !job.installApk) return { ok: false, text: `Job "${args.job}" doesn't produce an APK to install.` };
@@ -109,7 +118,9 @@ export class Runner {
     const log: Buffer[] = [];
     let logBytes = 0;
     const lastLine = new LastLine();
+    if (signal?.aborted) return STOPPED;
     const res = await this.wrapper(["run", p, job.cwd ?? ".", String(job.timeoutMinutes * 60), job.command], {
+      signal,
       onOutput: (d) => {
         if (logBytes < MAX_LOG) log.push(d);
         logBytes += d.length;
@@ -117,6 +128,7 @@ export class Runner {
         if (line) progress("Building", line);
       },
     });
+    if (signal?.aborted) return STOPPED;
     const logText = Buffer.concat(log).toString();
     const took = Math.round((Date.now() - started) / 1000);
 

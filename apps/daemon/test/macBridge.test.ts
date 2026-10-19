@@ -67,6 +67,35 @@ describe("MacBridge", () => {
     expect(heard).toEqual([{ phase: "Building", detail: "> Task :app:compileDebugKotlin" }]);
   });
 
+  it("lets a build outlive a dropped connection: the Mac reconnects, hears it's still wanted, and answers there", async () => {
+    bridge = new MacBridge();
+    const s1 = attach("Mac", ["run", "devices"]);
+    expect(s1.sent.at(-1)).toEqual({ type: "awaiting", ids: [] });
+    const heard: unknown[] = [];
+    const build = bridge.call("run", {}, 60_000, (p) => heard.push(p));
+    const { id } = s1.sent.at(-1);
+    const shot = bridge.call("devices", {}, 60_000);
+    s1.close();
+    // A quick call fails at once; the build waits.
+    expect(await shot).toEqual({ ok: false, text: "The Mac disconnected before it answered." });
+    expect(heard).toEqual([{ phase: "Waiting for the Mac to reconnect" }]);
+
+    const s2 = attach("Mac", ["run", "devices"]);
+    expect(s2.sent.at(-1)).toEqual({ type: "awaiting", ids: [id] });
+    s1.say({ type: "result", id, ok: true, text: "from the dead socket" });
+    s2.say({ type: "result", id, ok: true, text: "built" });
+    expect(await build).toEqual({ ok: true, text: "built" });
+  });
+
+  it("doesn't hand a build to a different Mac", async () => {
+    bridge = new MacBridge();
+    const s1 = attach("Mac A", ["run"]);
+    void bridge.call("run", {}, 60_000);
+    s1.close();
+    const s2 = attach("Mac B", ["run"]);
+    expect(s2.sent.at(-1)).toEqual({ type: "awaiting", ids: [] });
+  });
+
   it("round-trips a call, and ignores answers from another socket", async () => {
     bridge = new MacBridge();
     const s = attach();
@@ -88,7 +117,7 @@ describe("MacBridge", () => {
     const r = await bridge.call("shell", { command: "ls" }, 1000);
     expect(r.ok).toBe(false);
     expect(r.text).toMatch(/switched off/);
-    expect(s.sent).toEqual([]);
+    expect(s.sent.filter((m) => m.type === "call")).toEqual([]);
   });
 
   it("fails pending calls when the Mac drops, and a newer Mac replaces an older one", async () => {

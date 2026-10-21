@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { McpSdkServerConfigWithInstance, Options, PermissionMode, PermissionResult, Query, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Attachment, CapabilitiesResponse, EventPayload } from "@renki/protocol";
 import { newTurnId } from "../ids.js";
 import { logger } from "../logger.js";
+import { unpackArchives } from "./archives.js";
 import { createRtkPreToolUseHook } from "./rtk.js";
 import { createHomelabGuardHook } from "./homelabGuard.js";
 import { MAC_FREE_TOOLS, MAC_SERVER, type MacCallIds, createMacApprovalHook } from "../mac/tools.js";
@@ -60,6 +62,8 @@ import { CLAUDE_SETTINGS, stripUntrustedHooks } from "./settingsHygiene.js";
 
 export type LiveSessionOptions = {
   cwd: string;
+  /** Where zip attachments are unpacked for Claude to read (see ./archives.ts); readable without a prompt. Zips are refused without it. */
+  archiveDir?: string;
   /** Prior Claude session id to resume, or null to start a fresh conversation. */
   resumeSessionId: string | null;
   /** Append an event to the session's log (the live session's only output channel). */
@@ -243,8 +247,11 @@ export class LiveClaudeSession {
       ...(opts.enableRtk ? [createRtkPreToolUseHook(opts.rtkBin ?? "rtk")] : []),
     ];
 
+    if (opts.archiveDir) mkdirSync(opts.archiveDir, { recursive: true });
+
     const options: Options = {
       cwd: opts.cwd,
+      ...(opts.archiveDir ? { additionalDirectories: [opts.archiveDir] } : {}),
       settings: CLAUDE_SETTINGS,
       includePartialMessages: true,
       permissionMode: this.currentPermissionMode,
@@ -349,7 +356,7 @@ export class LiveClaudeSession {
       try {
         // `uuid` is our handle for cross-checking `result.user_message_uuid`
         // and for reading `interrupt()`'s still_queued receipt.
-        this.channel.push({ ...buildUserMessage(args.prompt, args.attachments), uuid: uuid as SDKUserMessage["uuid"] });
+        this.channel.push({ ...this.promptMessage(args), uuid: uuid as SDKUserMessage["uuid"] });
       } catch (err) {
         this.settleInflight(this.failedResult(err instanceof Error ? err.message : String(err), false), true);
       }
@@ -367,9 +374,16 @@ export class LiveClaudeSession {
   steer(args: SteerArgs): void {
     if (this.closed) throw new Error("LiveClaudeSession: closed");
     if (!this.busy) throw new Error("LiveClaudeSession: no turn in flight to steer");
-    this.channel.push({ ...buildUserMessage(args.prompt, args.attachments), uuid: randomUUID() as SDKUserMessage["uuid"] });
+    this.channel.push({ ...this.promptMessage(args), uuid: randomUUID() as SDKUserMessage["uuid"] });
     this.steered.push(args.promptId);
     this._lastActivityAt = Date.now();
+  }
+
+  /** The user's prompt as a message, with any zip attachments unpacked to disk and named in a note before the text. */
+  private promptMessage(args: { prompt: string; attachments?: Attachment[]; promptId: string }): SDKUserMessage {
+    if (!this.opts.archiveDir) return buildUserMessage(args.prompt, args.attachments);
+    const { attachments, note } = unpackArchives(args.attachments, this.opts.archiveDir, args.promptId);
+    return buildUserMessage(note + args.prompt, attachments);
   }
 
   /**

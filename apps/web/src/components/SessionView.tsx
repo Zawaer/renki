@@ -1961,7 +1961,7 @@ function AttachmentChip({
             className="h-6 w-6 rounded-sm object-cover"
           />
         ) : (
-          <span className="codicon codicon-file text-(--renki-fg-muted)" />
+          <span className={`codicon ${attachment.mediaType === "application/zip" ? "codicon-file-zip" : "codicon-file"} text-(--renki-fg-muted)`} />
         )}
         <span
           className="max-w-40 truncate text-(--renki-fg)"
@@ -2609,7 +2609,7 @@ function Composer({
               ref={fileInputRef}
               type="file"
               multiple
-              accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,.md,.json,.csv,.log,.yaml,.yml"
+              accept="image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,.md,.json,.csv,.log,.yaml,.yml,.zip"
               className="hidden"
               onChange={(e) => {
                 if (e.target.files) void addFiles(e.target.files);

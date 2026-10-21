@@ -1,13 +1,22 @@
 import { z } from "zod";
 
 /**
- * Media types Renki hands to the model as a real content block (image or
- * document), mirroring what Claude Code's own chat-box "attach" supports.
- * Anything else the user wants Claude to see, they reference by absolute
- * path in the prompt text instead — Claude reads it itself via the Read
- * tool, same as today, no attachment machinery involved.
+ * Media types Renki accepts as attachments. Images, PDFs and text go to the
+ * model as a real content block, mirroring what Claude Code's own chat-box
+ * "attach" supports; a zip is unpacked on the daemon and Claude is told where
+ * its files are. Anything else the user wants Claude to see, they reference
+ * by absolute path in the prompt text instead — Claude reads it itself via
+ * the Read tool, no attachment machinery involved.
  */
-export const AttachmentMediaType = z.enum(["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf", "text/plain"]);
+export const AttachmentMediaType = z.enum([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "application/pdf",
+  "text/plain",
+  "application/zip",
+]);
 export type AttachmentMediaType = z.infer<typeof AttachmentMediaType>;
 
 /** Per-file cap (decoded bytes) — generous for a screenshot or a short PDF, small enough not to bloat the event log or a single WS message too badly. */

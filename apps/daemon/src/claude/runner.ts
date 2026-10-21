@@ -92,9 +92,11 @@ type UserContentBlock = Exclude<SDKUserMessage["message"]["content"], string>[nu
  * kind) into the content block shape the Messages API expects. Images and PDFs
  * stay base64 (that's what their `source.type: "base64"` wants); a text file's
  * `PlainTextSource.data` wants the actual text, not base64, so that one case
- * decodes first.
+ * decodes first. A zip has no block of its own — unpackArchives (./archives.ts)
+ * takes those out first.
  */
 function attachmentToContentBlock(a: Attachment): UserContentBlock {
+  if (a.mediaType === "application/zip") throw new Error(`${a.name}: a zip must be unpacked, not sent to the model`);
   if (a.mediaType === "text/plain") {
     return {
       type: "document",

@@ -9,6 +9,7 @@ const config: Config = {
   name: "Mac",
   adb: "adb",
   apksigner: null,
+  espPython: null,
   verbs: ["run"],
   runner: { profile: "renki-runner", cpus: 2, memoryGb: 4, diskGb: 40, colima: "colima", docker: "docker" },
   jobs: {

@@ -822,6 +822,9 @@ export class SessionManager {
     await this.removeChatFolder(session).catch((err) =>
       logger.warn("chat folder removal failed during delete", { id, err: String(err) }),
     );
+    await rm(this.archiveDirFor(id), { recursive: true, force: true }).catch((err) =>
+      logger.warn("unpacked attachments removal failed during delete", { id, err: String(err) }),
+    );
     this.events.deleteTranscript(id);
     this.db
       .update(sessions)
@@ -902,6 +905,11 @@ export class SessionManager {
     if (!session.repoId) return;
     const repo = await findRepo(this.config, session.repoId);
     if (repo && session.branch) await removeWorktree(repo.path, session.worktreePath, session.branch);
+  }
+
+  /** Where this session's zip attachments are unpacked — outside its folder, so they never show up as changes in a repo. */
+  private archiveDirFor(sessionId: string): string {
+    return resolve(this.config.dataDir, "attachments", sessionId);
   }
 
   /**
@@ -1593,6 +1601,7 @@ export class SessionManager {
 
     const live = new LiveClaudeSession({
       cwd,
+      archiveDir: this.archiveDirFor(sessionId),
       resumeSessionId,
       emit: this.emitterFor(sessionId),
       model: first.model,

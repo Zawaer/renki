@@ -25,7 +25,13 @@ describe("classifyAttachment", () => {
 
   it("rejects an unsupported MIME type even with no recognizable extension", () => {
     expect(classifyAttachment({ name: "movie.mp4", type: "video/mp4" })).toBeNull();
-    expect(classifyAttachment({ name: "archive.zip", type: "application/zip" })).toBeNull();
+  });
+
+  it("recognizes a zip by MIME type or by name", () => {
+    expect(classifyAttachment({ name: "photos.zip", type: "application/zip" })).toBe("application/zip");
+    expect(classifyAttachment({ name: "photos.zip", type: "application/x-zip-compressed" })).toBe("application/zip");
+    expect(classifyAttachment({ name: "photos.ZIP", type: "" })).toBe("application/zip");
+    expect(classifyAttachment({ name: "photos.zip", type: "application/octet-stream" })).toBe("application/zip");
   });
 
   it("falls back to the file extension when the platform reports no MIME type", () => {

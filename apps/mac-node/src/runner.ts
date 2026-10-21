@@ -8,7 +8,7 @@ import type { MacArgs } from "@renki/protocol";
 import type { Result } from "./adb.js";
 import { capText } from "./adb.js";
 import type { Config } from "./config.js";
-import { signApk } from "./signing.js";
+import { signApk, signEspImage } from "./signing.js";
 
 /**
  * Build jobs (verb `run`), agent side. The agent never runs a build itself:
@@ -70,6 +70,8 @@ export class Runner {
     private readonly install: (apk: string, serial: string | undefined) => Promise<Result>,
     /** Sign an APK in place with the key `props` names; returns its certificate's SHA-256. */
     private readonly sign: (apk: string, props: string) => Promise<string> = (apk, props) => signApk(apk, props, config.apksigner),
+    /** Sign an ESP-IDF app image in place with the PEM key at `key`. */
+    private readonly signEsp: (bin: string, key: string) => Promise<void> = (bin, key) => signEspImage(bin, key, config.espPython),
   ) {}
 
   /** One job at a time per project: they share a mirror. */
@@ -177,6 +179,18 @@ export class Runner {
             );
             if (!signed) continue;
             lines.push(signed);
+          }
+          if (job.signEspImages?.images.includes(rel)) {
+            progress("Signing with your key");
+            const ok = await this.signEsp(local, job.signEspImages.key).then(
+              () => true,
+              (e: unknown) => {
+                lines.push(`Signing ${rel} failed, so it wasn't kept: ${e instanceof Error ? e.message : String(e)}`);
+                return false;
+              },
+            );
+            if (!ok) continue;
+            lines.push(`Signed ${name} with your key (secure boot v2), and checked the signature.`);
           }
           if (rel === job.installApk) apkLocal = local;
           if (job.artifacts.includes(rel)) {

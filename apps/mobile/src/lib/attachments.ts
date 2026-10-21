@@ -43,7 +43,7 @@ export async function pickImageAttachments(remaining: number): Promise<Array<Pen
 }
 
 /**
- * Opens the system document picker (PDF/text; images are better served by
+ * Opens the system document picker (PDF/text/zip; images are better served by
  * pickImageAttachments' native photo picker) and reads every picked file into
  * wire-format base64. Returns an empty array if the user cancels.
  */

@@ -33,6 +33,12 @@ export type MacJobInfo = z.infer<typeof MacJobInfo>;
 /** A device serial as `adb devices` prints it: USB serials, or `ip:port` for wireless debugging. */
 export const AdbSerial = z.string().regex(/^[\w.:-]{1,64}$/);
 
+/** A serial device on the Mac, as macOS names it (`/dev/cu.usbmodem14101`). The Mac checks it exists. */
+export const SerialPort = z.string().regex(/^\/dev\/cu\.[\w.-]{1,64}$/);
+
+/** A flash offset, as esptool takes it. */
+export const FlashOffset = z.string().regex(/^0x[0-9a-fA-F]{1,8}$/);
+
 export const MacVerbArgs = {
   /** `adb devices -l`. */
   devices: z.object({}).strict(),
@@ -99,6 +105,38 @@ export const MacVerbArgs = {
       manifest: z.array(MacManifestEntry).max(50_000),
       install: z.boolean().optional(),
       serial: AdbSerial.optional(),
+    })
+    .strict(),
+  /** The USB serial devices on the Mac (dev boards like an ESP32). */
+  serial_ports: z.object({}).strict(),
+  /**
+   * What a board printed on its serial port. The first read starts a monitor
+   * on the Mac (115200 baud) that keeps collecting while lending is on, so
+   * nothing printed between reads is lost; `since` (the `next` of the previous
+   * read) returns only what is new.
+   */
+  serial_read: z
+    .object({
+      port: SerialPort.optional(),
+      since: z.number().int().min(0).optional(),
+      /** Keep only lines containing this (case-insensitive). */
+      grep: z.string().max(200).optional(),
+    })
+    .strict(),
+  /** Reset an ESP32 (what pressing RST does), with esptool. The monitor keeps reading across it. */
+  esp_reset: z.object({ port: SerialPort.optional() }).strict(),
+  /**
+   * Write images the daemon offers (by id) to an ESP32 at fixed offsets, with
+   * esptool's write_flash, then reset it. `erase` erases the whole chip first.
+   */
+  esp_flash: z
+    .object({
+      port: SerialPort.optional(),
+      images: z
+        .array(z.object({ offset: FlashOffset, fileId: z.string().regex(/^[\w-]{16,64}$/), name: z.string().max(200) }).strict())
+        .min(1)
+        .max(8),
+      erase: z.boolean().optional(),
     })
     .strict(),
 } as const;

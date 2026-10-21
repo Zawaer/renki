@@ -1,7 +1,7 @@
 import { statSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { createSdkMcpServer, tool, type HookCallbackMatcher, type HookJSONOutput, type McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk";
-import { AdbSerial, MacName, MacVerbArgs, type MacVerb } from "@renki/protocol";
+import { AdbSerial, FlashOffset, MacName, MacVerbArgs, SerialPort, type MacVerb } from "@renki/protocol";
 import { z } from "zod";
 import { MAC_OFFLINE, type MacBridge, type MacResult } from "./bridge.js";
 import { describeBuild, type MacBuilds } from "./builds.js";
@@ -27,12 +27,22 @@ import { ManifestError, buildManifest, type MacJobs } from "./jobs.js";
 export const MAC_SERVER = "mac";
 const tid = (name: string) => `mcp__${MAC_SERVER}__${name}`;
 
-/** Tools that change what is on the phone; these always ask. */
-export const MAC_ASK_TOOLS = [tid("phone_shell"), tid("phone_install_apk")];
+/** Tools that change what is on the phone or a board; these always ask. */
+export const MAC_ASK_TOOLS = [tid("phone_shell"), tid("phone_install_apk"), tid("esp_flash")];
 /** Builds the user defined on the Mac; ask only when the build is to be installed on the phone. */
 export const MAC_BUILD_TOOL = tid("mac_build");
 /** Tools that only look or tap, and builds without install; allowed without asking. */
-export const MAC_FREE_TOOLS = [tid("phone_devices"), tid("phone_screenshot"), tid("phone_logcat"), tid("phone_input"), MAC_BUILD_TOOL, tid("mac_build_status")];
+export const MAC_FREE_TOOLS = [
+  tid("phone_devices"),
+  tid("phone_screenshot"),
+  tid("phone_logcat"),
+  tid("phone_input"),
+  MAC_BUILD_TOOL,
+  tid("mac_build_status"),
+  tid("esp_ports"),
+  tid("esp_serial"),
+  tid("esp_reset"),
+];
 
 const MAX_APK_BYTES = 500 * 1024 * 1024;
 
@@ -137,6 +147,52 @@ export function createMacMcpServer(
           if (size > MAX_APK_BYTES) return asToolResult({ ok: false, text: `${basename(full)} is over 500 MB.` });
           const fileId = bridge.offerFile(full);
           return run("install", { fileId, name: basename(full), ...(serial ? { serial } : {}), ...(downgrade ? { downgrade } : {}) }, 6 * 60_000);
+        },
+      ),
+      tool(
+        "esp_ports",
+        "List the USB serial devices (dev boards such as an ESP32) plugged into the user's Mac. Pass one as `port` to the other esp_* tools when more than one is listed.",
+        MacVerbArgs.serial_ports.shape,
+        async () => run("serial_ports", {}, 20_000),
+      ),
+      tool(
+        "esp_serial",
+        "Read what a board printed on its serial port (115200 baud), on the user's Mac. The first call starts a monitor that keeps collecting in the background, " +
+          "so nothing printed between reads is lost, across resets and reflashes too. Each reply ends with `next: N`: pass it as `since` to get only what is new. " +
+          "`grep` keeps matching lines. To wait for something the board prints minutes later, end your turn or do other work and read again; don't sleep in a loop.",
+        MacVerbArgs.serial_read.shape,
+        async (args) => run("serial_read", args, 30_000),
+      ),
+      tool(
+        "esp_reset",
+        "Reset an ESP32 on the user's Mac (what pressing its RST button does), with esptool. The serial monitor keeps reading across it, so read its boot with esp_serial.",
+        MacVerbArgs.esp_reset.shape,
+        async (args) => run("esp_reset", args, 90_000),
+      ),
+      tool(
+        "esp_flash",
+        "Flash images built here (e.g. a mac_build job's artifacts) onto an ESP32 on the user's Mac with esptool write_flash, then reset it. " +
+          "`images` are .bin files on this machine (relative to the working directory, or absolute) with their flash offsets, like 0x0 for the bootloader, " +
+          "0x8000 for the partition table or the app partition's offset. `erase: true` erases the whole chip first. The user approves each flash.",
+        {
+          images: z.array(z.object({ path: z.string().min(1), offset: FlashOffset })).min(1).max(8),
+          erase: z.boolean().optional(),
+          port: SerialPort.optional(),
+        },
+        async ({ images, erase, port }) => {
+          const offered = [];
+          for (const img of images) {
+            const full = resolve(cwd, img.path);
+            try {
+              const st = statSync(full);
+              if (!st.isFile()) return asToolResult({ ok: false, text: `${full} is not a file.` });
+              if (st.size > 32 * 1024 * 1024) return asToolResult({ ok: false, text: `${basename(full)} is over 32 MB, bigger than any ESP32's flash.` });
+            } catch {
+              return asToolResult({ ok: false, text: `${full} doesn't exist.` });
+            }
+            offered.push({ offset: img.offset, fileId: bridge.offerFile(full), name: basename(full) });
+          }
+          return run("esp_flash", { images: offered, ...(erase ? { erase } : {}), ...(port ? { port } : {}) }, 11 * 60_000);
         },
       ),
       tool(

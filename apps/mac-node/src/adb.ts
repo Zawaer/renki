@@ -127,8 +127,8 @@ export class Adb {
           return await this.shell(parsed.data as MacArgs<"shell">);
         case "install":
           return await this.install(parsed.data as MacArgs<"install">);
-        case "run":
-          return { ok: false, text: "Build jobs are handled by the runner, not adb." };
+        default:
+          return { ok: false, text: `${verb} isn't an adb verb.` };
       }
     } catch (err) {
       return { ok: false, text: `Failed on the Mac: ${err instanceof Error ? err.message : String(err)}` };

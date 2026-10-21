@@ -5,6 +5,7 @@ import { jobInfo, loadConfig } from "./config.js";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Runner, putFile } from "./runner.js";
+import { Serial } from "./serial.js";
 import { BuildVm, MAC_FROM_VM } from "./vm.js";
 
 /**
@@ -28,6 +29,18 @@ const adb = new Adb({
   adb: config.adb,
   download: async (fileId, dest) => saveResponse(await fetch(`${config.url}/mac/files/${encodeURIComponent(fileId)}`, { headers: auth }), dest),
 });
+
+const download = async (fileId: string, dest: string) =>
+  saveResponse(await fetch(`${config.url}/mac/files/${encodeURIComponent(fileId)}`, { headers: auth }), dest);
+const serial = config.espPython ? new Serial({ python: config.espPython, download }) : null;
+const SERIAL_VERBS = new Set(["serial_ports", "serial_read", "esp_reset", "esp_flash"]);
+
+/** A serial call, checked against the shared schemas here on the Mac, whatever the daemon sent. */
+function runSerial(verb: "serial_ports" | "serial_read" | "esp_reset" | "esp_flash", args: unknown): Promise<Result> {
+  const parsed = MacVerbArgs[verb].safeParse(args);
+  if (!parsed.success || !serial) return Promise.resolve({ ok: false, text: `Refused by the Mac: bad arguments for ${verb}.` });
+  return serial.run(verb, parsed.data);
+}
 
 const daemonUrl = new URL(config.url);
 // The Dockerfile and renki-runner.mjs, next to this script (dist/ or the app's Resources/).
@@ -160,7 +173,12 @@ async function connect(): Promise<void> {
     }
     status({ call: verb, phase: "start" });
     log(`${verb} ${verb === "shell" ? JSON.stringify(args) : ""}`.trim());
-    const work: Promise<Result> = verb === "run" ? startBuild(id, args) : adb.run(verb, args);
+    const work: Promise<Result> =
+      verb === "run"
+        ? startBuild(id, args)
+        : SERIAL_VERBS.has(verb)
+          ? runSerial(verb as "serial_ports" | "serial_read" | "esp_reset" | "esp_flash", args)
+          : adb.run(verb, args);
     void work.then((r) => {
       status({ call: verb, phase: "end", ok: r.ok });
       if (!r.ok) log(`${verb} failed: ${r.text.slice(0, 300)}`);
@@ -228,6 +246,7 @@ setInterval(() => {
 function shutdown(): void {
   stopping = true;
   socket?.close(1000, "switched off on the Mac");
+  serial?.stopAll();
   // Switched off: the build VM stops too, and everything in it.
   void Promise.race([runner?.stop(), new Promise((r) => setTimeout(r, 60_000))]).then(() => process.exit(0));
 }

@@ -52,10 +52,12 @@ const TEXT_EXTENSIONS = new Set([
   "env",
 ]);
 
+const ZIP_TYPES = new Set(["application/zip", "application/x-zip-compressed", "application/x-zip"]);
+
 /**
  * Maps a picked file's reported name/MIME type to the wire `AttachmentMediaType`
  * Renki knows how to hand the model as a real content block, or null if it isn't
- * one of the supported kinds (image/PDF/text) — the caller should reject those
+ * one of the supported kinds (image/PDF/text/zip) — the caller should reject those
  * with a message to reference the file by absolute path instead.
  */
 export function classifyAttachment(file: { name: string; type: string }): AttachmentMediaType | null {
@@ -65,6 +67,8 @@ export function classifyAttachment(file: { name: string; type: string }): Attach
   if (type.startsWith("text/")) return "text/plain";
 
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  // Browsers and pickers disagree on a zip's type (Windows says x-zip-compressed), so go by name.
+  if (ext === "zip" || ZIP_TYPES.has(type)) return "application/zip";
   return TEXT_EXTENSIONS.has(ext) ? "text/plain" : null;
 }
 

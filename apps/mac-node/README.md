@@ -84,6 +84,27 @@ slower QEMU emulation.
 What remains: a build can use the internet, for example to send the project's source somewhere. The
 homelab and GitHub already hold that source.
 
+## Dev boards (`esp_*`)
+
+Sessions can also work with an ESP32 plugged into the Mac, through the ESP-IDF Python's pyserial and esptool
+(found in `~/.espressif/python_env`, or set `espPython`). Without one, these are off.
+
+- `esp_ports` lists the USB serial devices (Bluetooth and debug ports are left out).
+- `esp_serial` reads what the board printed. The first read starts a monitor at 115200 baud that keeps
+  collecting while the Mac is lent, across resets and reflashes, so output printed minutes later isn't lost;
+  each read returns `next`, and `since=next` gives only what's new.
+- `esp_reset` resets the board (what its RST button does).
+- `esp_flash` writes images the session has to fixed offsets and resets the board. **It asks** whoever holds
+  control, like an APK install.
+
+Each of these runs esptool or the monitor with a fixed argv: the port must be a USB serial device that's
+plugged in, offsets are hex, and images are files the daemon offers, downloaded to a fresh temp folder.
+
+**Firmware builds** run in the build VM like any job (the image has ESP-IDF). A project that signs its app
+images (secure boot v2) builds them unsigned there, and the Mac signs them afterwards with
+`"signEspImages": { "key": "/path/signing_key.pem", "images": ["firmware/build/app.bin"] }`: espsecure signs
+and verifies each listed image, and one that fails isn't kept. The key never enters the VM.
+
 ## What a session can and can't do
 
 - It can look at the phone (devices, screenshots, logcat) and tap or type on it without asking.

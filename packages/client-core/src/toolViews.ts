@@ -223,6 +223,26 @@ export function describeTool(name: string, input: unknown): ToolDescription {
       return str("job") === "list" ? { label: "Listed Mac build jobs", meta: null } : { label: "Built on the Mac", meta: str("job") };
     case "mcp__mac__mac_build_status":
       return { label: "Checked Mac builds", meta: str("build") };
+    case "mcp__mac__esp_ports":
+      return { label: "Listed the boards on the Mac", meta: null };
+    case "mcp__mac__esp_serial":
+      return { label: "Read the board's serial log", meta: str("grep") };
+    case "mcp__mac__esp_reset":
+      return { label: "Reset the board", meta: null };
+    case "mcp__mac__esp_flash":
+      return { label: "Flashed the board", meta: Array.isArray(inp.images) ? `${inp.images.length} image${inp.images.length === 1 ? "" : "s"}` : null };
+    case "mcp__mac__phone_devices":
+      return { label: "Listed phones on the Mac", meta: null };
+    case "mcp__mac__phone_screenshot":
+      return { label: "Took a phone screenshot", meta: null };
+    case "mcp__mac__phone_logcat":
+      return { label: "Read the phone's log", meta: str("grep") };
+    case "mcp__mac__phone_input":
+      return { label: "Used the phone", meta: null };
+    case "mcp__mac__phone_shell":
+      return { label: "Ran a phone command", meta: truncateMeta(str("command") ?? "", 72) };
+    case "mcp__mac__phone_install_apk":
+      return { label: "Installed an app on the phone", meta: base(str("path")) };
     case "Read":
       return { label: "Read", meta: base(str("file_path")) };
     case "Write":

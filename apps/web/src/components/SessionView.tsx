@@ -1172,7 +1172,7 @@ function ToolStep({
         }}
         className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 py-1 text-left text-[13px] text-(--renki-fg-muted) transition-colors hover:bg-(--renki-surface)/60 hover:text-(--renki-fg)"
       >
-        <span className="text-(--renki-fg)">{label}</span>
+        <span>{label}</span>
         {(meta ?? build?.job) && <span className="truncate font-mono text-xs">{meta ?? build?.job}</span>}
         <span
           className={`codicon ${open ? "codicon-chevron-down" : "codicon-chevron-right"} shrink-0 text-[12px]`}
@@ -1355,7 +1355,9 @@ function ToolGroup({
         aria-expanded={open}
         className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 py-1 text-left text-[13px] text-(--renki-fg-muted) transition-colors hover:bg-(--renki-surface)/60 hover:text-(--renki-fg)"
       >
-        <span className="shrink-0 text-(--renki-fg)">{summary.text}</span>
+        {/* Muted like the rest of the row: steps are scaffolding, and at full
+            contrast they read as part of the reply. Hover brings them up. */}
+        <span className="shrink-0">{summary.text}</span>
         <DiffStat added={summary.added} removed={summary.removed} />
         <span className={`codicon ${open ? "codicon-chevron-down" : "codicon-chevron-right"} shrink-0 text-[12px]`} />
         {live && summary.current && <span className="min-w-0 truncate text-xs">{summary.current}</span>}

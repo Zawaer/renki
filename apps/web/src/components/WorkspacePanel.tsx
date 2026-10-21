@@ -30,9 +30,12 @@ export function WorkspacePanel({
   onClose,
   refreshKey,
   openRequest = null,
+  hasChanges = true,
 }: {
   sessionId: string;
   tab: WorkspaceTab;
+  /** False for a repo-less chat: a folder to browse, but no git to diff against. */
+  hasChanges?: boolean;
   onTab: (tab: WorkspaceTab) => void;
   onClose: () => void;
   refreshKey: unknown;
@@ -45,9 +48,11 @@ export function WorkspacePanel({
       className="renki-panel flex min-h-0 flex-col border-l border-(--renki-border) bg-(--renki-bg) max-lg:absolute max-lg:inset-0 max-lg:z-30 lg:w-[45%] lg:max-w-[44rem] lg:shrink-0"
     >
       <div className="flex shrink-0 items-center gap-1 border-b border-(--renki-border) px-3 py-2">
-        <PanelTab active={tab === "changes"} onClick={() => onTab("changes")} icon="codicon-diff">
-          Changes
-        </PanelTab>
+        {hasChanges && (
+          <PanelTab active={tab === "changes"} onClick={() => onTab("changes")} icon="codicon-diff">
+            Changes
+          </PanelTab>
+        )}
         <PanelTab active={tab === "files"} onClick={() => onTab("files")} icon="codicon-files">
           Files
         </PanelTab>

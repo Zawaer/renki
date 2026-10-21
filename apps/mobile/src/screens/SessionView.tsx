@@ -41,6 +41,7 @@ import {
   modelMenuLabel,
   segmentImages,
   agentMapOf,
+  backgroundTasksOf,
   timelineWithSending,
 } from "@renki/client-core";
 import type { AttachmentView, CapabilitiesResponse, SessionResume } from "@renki/protocol";
@@ -250,10 +251,12 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
    */
   const [openFile, setOpenFile] = useState<OpenFile | null>(null);
   useEffect(() => setOpenFile(null), [sessionId]);
-  const hasTree = !!branch && conv.status !== "archived" && conv.status !== "trashed";
+  /** Every live session has a folder to browse; only one in a repo has changes to diff. */
+  const hasFiles = conv.status !== "archived" && conv.status !== "trashed";
+  const hasTree = !!branch && hasFiles;
   const fileLinks = useMemo<FileLinkTarget | null>(
-    () => (hasTree ? { worktreePath, onOpenFile: (path, line) => setOpenFile({ path, line }) } : null),
-    [hasTree, worktreePath],
+    () => (hasFiles ? { worktreePath, onOpenFile: (path, line) => setOpenFile({ path, line }) } : null),
+    [hasFiles, worktreePath],
   );
   // Re-render every 30s so "today 15:31" turns into "shortly" on time.
   const [, setTick] = useState(0);
@@ -303,6 +306,8 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const entries = useMemo(() => rows.map((item, index): TimelineEntry => ({ item, index })).reverse(), [rows]);
   /** The session's subagents as a tree — the header's Agents button and sheet. */
   const agents = useMemo(() => agentMapOf(conv.timeline), [conv.timeline]);
+  /** Commands sent to run in the background (the web's agent map lists them too). */
+  const commands = useMemo(() => backgroundTasksOf(conv.timeline).filter((t) => t.kind === "command"), [conv.timeline]);
   const [agentsOpen, setAgentsOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -400,7 +405,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
         <TouchableOpacity onPress={() => setToolsOpen(true)} hitSlop={10} accessibilityRole="button" accessibilityLabel="More" style={{ paddingHorizontal: 4 }}>
           <Ionicons name="ellipsis-horizontal" size={20} color={colors.dim} />
         </TouchableOpacity>
-        <AgentsButton agents={agents} onPress={() => setAgentsOpen(true)} />
+        <AgentsButton agents={agents} commands={commands} onPress={() => setAgentsOpen(true)} />
         {conv.status === "archived" ? (
           // Archived sessions can't be controlled; bringing one back rebuilds its worktree and resumes the chat.
           <TouchableOpacity
@@ -716,15 +721,20 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
           setToolsOpen(false);
           setExportOpen(true);
         }}
+        onAgents={() => {
+          setToolsOpen(false);
+          setAgentsOpen(true);
+        }}
         sessionId={sessionId}
         context={conv.context}
+        hasFiles={hasFiles}
         hasTree={hasTree}
       />
       <ExportSheet sessionId={sessionId} title={title || repoName || "This chat"} visible={exportOpen} onClose={() => setExportOpen(false)} colors={colors} />
 
       <ImagePreviewModal attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} />
       <FileSheet sessionId={sessionId} file={openFile} onClose={() => setOpenFile(null)} />
-      <AgentsSheet visible={agentsOpen} onClose={() => setAgentsOpen(false)} agents={agents} />
+      <AgentsSheet visible={agentsOpen} onClose={() => setAgentsOpen(false)} agents={agents} commands={commands} />
     </KeyboardAvoidingView>
     </FileLinkContext.Provider>
   );

@@ -229,7 +229,11 @@ export function SessionView({
       savePanel(next);
       return next;
     });
-  const hasTree = !!branch && status !== "archived" && status !== "trashed";
+  /** Every live session has a folder to browse; only one in a repo has changes to diff. */
+  const hasFiles = status !== "archived" && status !== "trashed";
+  const hasTree = !!branch && hasFiles;
+  // A repo-less chat has no Changes tab, whatever this browser last had open.
+  const shownPanel: WorkspaceTab | null = panel === "changes" && !hasTree ? "files" : panel;
   // Bumped each time a turn settles, so an open Changes list follows the work.
   const settledTurns = conv.timeline.filter((i) => i.type === "turn" && i.turn.status !== "running").length;
 
@@ -242,7 +246,7 @@ export function SessionView({
   useEffect(() => setFileRequest(null), [sessionId]);
   const fileLinks = useMemo<FileLinkTarget | null>(
     () =>
-      hasTree
+      hasFiles
         ? {
             worktreePath,
             onOpenFile: (path, line) => {
@@ -252,7 +256,7 @@ export function SessionView({
             },
           }
         : null,
-    [hasTree, worktreePath],
+    [hasFiles, worktreePath],
   );
 
   return (
@@ -289,10 +293,12 @@ export function SessionView({
           <AgentMapButton timeline={conv.timeline} title={title || repoName || "This session"} model={conv.model} />
           <HeaderIconButton icon="codicon-desktop-download" label="Export chat" active={exporting} onClick={() => setExporting(true)} />
           {exporting && <ExportDialog sessionId={sessionId} title={title || repoName || "This session"} onClose={() => setExporting(false)} />}
-          {hasTree && (
+          {hasFiles && (
             <span className="flex items-center gap-0.5">
-              <HeaderIconButton icon="codicon-diff" label="Changes" active={panel === "changes"} onClick={() => togglePanel("changes")} />
-              <HeaderIconButton icon="codicon-files" label="Files" active={panel === "files"} onClick={() => togglePanel("files")} />
+              {hasTree && (
+                <HeaderIconButton icon="codicon-diff" label="Changes" active={shownPanel === "changes"} onClick={() => togglePanel("changes")} />
+              )}
+              <HeaderIconButton icon="codicon-files" label="Files" active={shownPanel === "files"} onClick={() => togglePanel("files")} />
             </span>
           )}
           {conv.context && <ContextMeter context={conv.context} />}
@@ -502,10 +508,11 @@ export function SessionView({
         onStop={() => realtime.interrupt(sessionId)}
       />
     </div>
-      {panel && hasTree && (
+      {shownPanel && hasFiles && (
         <WorkspacePanel
           sessionId={sessionId}
-          tab={panel}
+          tab={shownPanel}
+          hasChanges={hasTree}
           onTab={(t) => {
             setPanel(t);
             savePanel(t);

@@ -27,17 +27,23 @@ export function SessionToolsSheet({
   visible,
   onClose,
   onExport,
+  onAgents,
   sessionId,
   context,
+  hasFiles,
   hasTree,
 }: {
   visible: boolean;
   onClose: () => void;
   /** Closes this sheet and opens the export one. */
   onExport: () => void;
+  /** Closes this sheet and opens the agents & background tasks one. */
+  onAgents: () => void;
   sessionId: string;
   context: ContextUsageView | null;
-  /** The session still has a working tree to browse. */
+  /** The session still has a folder to browse (every live session, repo or not). */
+  hasFiles: boolean;
+  /** It's in a repo, so there are changes to diff. */
   hasTree: boolean;
 }) {
   const colors = useTheme();
@@ -81,12 +87,13 @@ export function SessionToolsSheet({
           <MenuRow icon="pie-chart-outline" label="Context window" styles={styles} colors={colors} onPress={() => setView({ kind: "context" })}>
             {context && <Meter pct={context.percentage} colors={colors} small />}
           </MenuRow>
-          {hasTree && (
-            <>
-              <MenuRow icon="folder-outline" label="Files" styles={styles} colors={colors} onPress={() => setView({ kind: "files", dir: "" })} />
-              <MenuRow icon="git-compare-outline" label="Changes" styles={styles} colors={colors} onPress={() => setView({ kind: "changes" })} />
-            </>
+          {hasFiles && (
+            <MenuRow icon="folder-outline" label="Files" styles={styles} colors={colors} onPress={() => setView({ kind: "files", dir: "" })} />
           )}
+          {hasTree && (
+            <MenuRow icon="git-compare-outline" label="Changes" styles={styles} colors={colors} onPress={() => setView({ kind: "changes" })} />
+          )}
+          <MenuRow icon="git-network-outline" label="Agents & background tasks" styles={styles} colors={colors} onPress={onAgents} />
           <MenuRow icon="download-outline" label="Export chat…" styles={styles} colors={colors} onPress={onExport} />
         </View>
       )}

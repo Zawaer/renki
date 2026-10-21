@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { type AgentNode, flattenAgents, formatTokenCount, formatTurnDuration } from "@renki/client-core";
+import { type AgentNode, type BackgroundTaskView, flattenAgents, formatTokenCount, formatTurnDuration } from "@renki/client-core";
 import { useEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { radius, type ThemeColors, useTheme, withAlpha } from "../theme";
@@ -15,13 +15,14 @@ import { Sheet } from "./Sheet";
  */
 
 /** The header's entry point — hidden until the session has started an agent. */
-export function AgentsButton({ agents, onPress }: { agents: AgentNode[]; onPress: () => void }) {
+export function AgentsButton({ agents, commands, onPress }: { agents: AgentNode[]; commands: BackgroundTaskView[]; onPress: () => void }) {
   const colors = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const all = useMemo(() => flattenAgents(agents), [agents]);
-  if (all.length === 0) return null;
-  const running = all.filter((a) => a.status === "running").length;
-  const label = running > 0 ? `${running} of ${all.length} agents running` : `${all.length} agents`;
+  if (all.length === 0 && commands.length === 0) return null;
+  const running = all.filter((a) => a.status === "running").length + commands.filter((c) => c.status === "running").length;
+  const total = all.length + commands.length;
+  const label = running > 0 ? `${running} of ${total} running` : `${total} agents and background tasks`;
   return (
     <TouchableOpacity
       style={styles.headerBtn}
@@ -31,17 +32,29 @@ export function AgentsButton({ agents, onPress }: { agents: AgentNode[]; onPress
       accessibilityLabel={label}
     >
       <Ionicons name="git-network-outline" size={16} color={running > 0 ? colors.text : colors.dim} />
-      <Text style={[styles.headerBtnCount, running > 0 && { color: colors.text }]}>{running > 0 ? running : all.length}</Text>
+      <Text style={[styles.headerBtnCount, running > 0 && { color: colors.text }]}>{running > 0 ? running : total}</Text>
       {running > 0 && <PulseDot color={colors.ok} size={6} />}
     </TouchableOpacity>
   );
 }
 
-export function AgentsSheet({ visible, onClose, agents }: { visible: boolean; onClose: () => void; agents: AgentNode[] }) {
+export function AgentsSheet({
+  visible,
+  onClose,
+  agents,
+  commands,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  agents: AgentNode[];
+  /** Commands sent to run in the background, listed under the agents as on the web's agent map. */
+  commands: BackgroundTaskView[];
+}) {
   const colors = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const all = useMemo(() => flattenAgents(agents), [agents]);
   const running = all.filter((a) => a.status === "running").length;
+  const commandsRunning = commands.filter((c) => c.status === "running").length;
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
 
   // Running agents' durations tick from their start — only while someone is
@@ -64,19 +77,26 @@ export function AgentsSheet({ visible, onClose, agents }: { visible: boolean; on
     });
   };
 
-  const subtitle = `${all.length} ${all.length === 1 ? "agent" : "agents"}${running > 0 ? ` · ${running} running` : ""}`;
+  const subtitle = [
+    `${all.length} ${all.length === 1 ? "agent" : "agents"}`,
+    `${commands.length} background ${commands.length === 1 ? "command" : "commands"}`,
+    running + commandsRunning > 0 ? `${running + commandsRunning} running` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
-    <Sheet visible={visible} onClose={onClose} title="Agents" colors={colors}>
+    <Sheet visible={visible} onClose={onClose} title="Agents & background" colors={colors}>
       <Text style={styles.subtitle}>{subtitle}</Text>
       <ScrollView contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled">
-        {agents.length === 0 ? (
-          <Text style={styles.empty}>No agents in this session.</Text>
-        ) : (
-          agents.map((a) => (
-            <AgentTree key={a.toolUseId} node={a} now={now} expanded={expanded} onToggle={toggle} colors={colors} styles={styles} />
-          ))
-        )}
+        {agents.length === 0 && commands.length === 0 && <Text style={styles.empty}>Nothing has run in the background in this chat.</Text>}
+        {agents.map((a) => (
+          <AgentTree key={a.toolUseId} node={a} now={now} expanded={expanded} onToggle={toggle} colors={colors} styles={styles} />
+        ))}
+        {commands.length > 0 && <Text style={styles.section}>Background commands</Text>}
+        {commands.map((c) => (
+          <CommandRow key={c.toolUseId} task={c} open={expanded.has(c.toolUseId)} onToggle={() => toggle(c.toolUseId)} colors={colors} styles={styles} />
+        ))}
       </ScrollView>
     </Sheet>
   );
@@ -158,6 +178,57 @@ function AgentTree({
   );
 }
 
+/** One backgrounded command: what ran, how it ended, and its output summary when opened. */
+function CommandRow({
+  task,
+  open,
+  onToggle,
+  colors,
+  styles,
+}: {
+  task: BackgroundTaskView;
+  open: boolean;
+  onToggle: () => void;
+  colors: ThemeColors;
+  styles: Styles;
+}) {
+  return (
+    <View>
+      <TouchableOpacity
+        style={[styles.row, open && { backgroundColor: colors.hover }]}
+        onPress={onToggle}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+      >
+        <View style={styles.dotSlot}>
+          <StatusDot status={task.status === "completed" ? "done" : task.status} colors={colors} />
+        </View>
+        <View style={styles.flex1}>
+          <Text style={[styles.label, task.status === "stopped" && { color: colors.dim }]} numberOfLines={open ? undefined : 1}>
+            {task.label}
+          </Text>
+          <Text style={styles.meta} numberOfLines={1}>
+            {task.status === "running" ? "no result yet" : task.status}
+          </Text>
+        </View>
+        <Ionicons name={open ? "chevron-up" : "chevron-down"} size={14} color={colors.faint} />
+      </TouchableOpacity>
+      {open && (
+        <View style={styles.detail}>
+          {task.summary ? (
+            <ScrollView style={styles.summary} nestedScrollEnabled>
+              <Text style={styles.detailMeta}>{task.summary}</Text>
+            </ScrollView>
+          ) : (
+            <Text style={styles.detailMeta}>{task.status === "running" ? "No result yet." : "No output recorded."}</Text>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
 function StatusDot({ status, colors }: { status: AgentNode["status"]; colors: ThemeColors }) {
   switch (status) {
     case "running":
@@ -198,6 +269,7 @@ const makeStyles = (colors: ThemeColors) =>
     },
     headerBtnCount: { color: colors.dim, fontSize: 12, fontWeight: "700", fontVariant: ["tabular-nums"] },
     subtitle: { color: colors.faint, fontSize: 12, textAlign: "center", marginTop: -8, marginBottom: 8 },
+    section: { color: colors.dim, fontSize: 12, fontWeight: "600", marginTop: 14, marginBottom: 4, marginLeft: 4 },
     list: { paddingHorizontal: 12, paddingBottom: 8 },
     empty: { color: colors.faint, fontSize: 13, textAlign: "center", paddingVertical: 24 },
     row: {

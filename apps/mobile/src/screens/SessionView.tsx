@@ -259,7 +259,8 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
 
   // The list is inverted — newest at offset 0, the bottom — so "at the
   // bottom" is just a small offset, and new output stays in view by itself
-  // without scrolling after every change.
+  // without scrolling after every change. Scrolled up, the FlatList's
+  // maintainVisibleContentPosition keeps it from moving under you.
   function onTimelineScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
     const stick = e.nativeEvent.contentOffset.y <= 24;
     if (!stick && Date.now() < jumpingUntil.current) return;
@@ -458,10 +459,17 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
             />
           )}
           ItemSeparatorComponent={TimelineGap}
+          ListFooterComponent={TimelineAnchor}
           style={styles.timeline}
           contentContainerStyle={styles.timelineContent}
           onScroll={onTimelineScroll}
           scrollEventThrottle={32}
+          // Scrolled up, the newest row (index 0) growing as a reply streams
+          // would push everything you're reading off-screen. Anchor on the
+          // first visible row past it instead (or the empty footer, when the
+          // reply is the only row), so the view holds still. At the bottom,
+          // leave it off: the inverted list already follows on its own.
+          maintainVisibleContentPosition={atBottom ? undefined : { minIndexForVisible: 1 }}
           keyboardShouldPersistTaps="handled"
           initialNumToRender={6}
           maxToRenderPerBatch={6}
@@ -874,6 +882,14 @@ function entryKey(e: TimelineEntry): string {
 
 function TimelineGap() {
   return <View style={{ height: 14 }} />;
+}
+
+/**
+ * Nothing to see — it's there so maintainVisibleContentPosition always has a
+ * view past the newest row to anchor on, even when that row is the only one.
+ */
+function TimelineAnchor() {
+  return null;
 }
 
 /**

@@ -7,6 +7,7 @@ import {
   describeGatewayOutcome,
   emptyHostsState,
   parseGatewayApproval,
+  requestGatewayResend,
   removeHost,
   updateHost,
   type GatewayApproval,
@@ -20,6 +21,7 @@ import { type AppConfig, getOrCreateDeviceId } from "./lib/config";
 import { loadHosts, saveHosts } from "./lib/hosts";
 import { loadPalette } from "./lib/composerPrefs";
 import { migrateLegacyStorage } from "./lib/storageMigration";
+import { loadGatewayUrl, rememberGatewayUrl } from "./lib/gatewayUrl";
 import { ClientProvider } from "./lib/client";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { GatewayApprovalSheet, type PendingApproval } from "./components/GatewayApprovalSheet";
@@ -261,6 +263,7 @@ function Main({
     // A response can reach both the launch check and the listener; act once.
     const handled = new Set<string>();
     const showApproval = (p: PendingApproval, force = false) => {
+      rememberGatewayUrl(p.approval.url);
       // Once per request per app run, unless the user asked for it by tapping.
       if (!force && shownApprovals.current.has(p.approval.id)) return;
       shownApprovals.current.add(p.approval.id);
@@ -268,11 +271,16 @@ function Main({
     };
     const looksForWaiting = () => {
       void Notifications.getPresentedNotificationsAsync()
-        .then((list) => {
+        .then(async (list) => {
           for (const n of list) {
             const a = parseGatewayApproval(n.request.content.data);
             if (a) return showApproval({ approval: a, notificationId: n.request.identifier, quiet: true });
           }
+          // Nothing in the tray, but a request may still be waiting: one whose notification was
+          // swiped away. Its token lives only in that notification and the waiting gateway, so ask
+          // the gateway to push it again; it arrives while the app is open and pops up as usual.
+          const url = await loadGatewayUrl();
+          if (url) await requestGatewayResend(url);
         })
         .catch(() => {});
     };

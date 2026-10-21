@@ -183,6 +183,32 @@ class ApprovalTest(unittest.TestCase):
             gateway.request_approval(self.policy, "rm-path", ["/x"], "s", notify=lambda **kw: False, approval_dir=self.dir,
                                      sleep=lambda _: t.__setitem__(0, t[0] + 1), now=lambda: t[0])
 
+    # --- resending a lost notification
+    def test_resend_pushes_the_same_request_again_within_limits(self):
+        sent = []
+        t = [0]
+        def notify(**kw):
+            sent.append(kw["data"]); return True
+        def sleeper(_):
+            t[0] += 1
+            # Ask on every tick: only one push per gap gets through, and never more than the cap.
+            gateway.request_resend(self.dir, now=t[0])
+        policy = dict(self.policy, approval=dict(self.policy["approval"], timeout_seconds=500))
+        ok = gateway.request_approval(policy, "rm-path", ["/x"], "s", notify=notify, approval_dir=self.dir, sleep=sleeper, now=lambda: t[0])
+        self.assertFalse(ok)
+        self.assertEqual(len(sent), 1 + gateway.MAX_RESENDS)
+        self.assertTrue(all(d == sent[0] for d in sent))  # same id and token every time
+
+    def test_resend_only_flags_open_requests(self):
+        open_id, _ = gateway.create_approval(self.dir, "rm-path", ["/x"], "s", 60, now=1000)
+        done_id, tok = gateway.create_approval(self.dir, "rm-path", ["/y"], "s", 60, now=1000)
+        gateway.decide(self.dir, done_id, tok, "deny", now=1001)
+        old_id, _ = gateway.create_approval(self.dir, "rm-path", ["/z"], "s", 5, now=1000)
+        self.assertEqual(gateway.request_resend(self.dir, now=1010), 1)
+        self.assertTrue(os.path.exists(os.path.join(self.dir, open_id + ".resend")))
+        self.assertFalse(os.path.exists(os.path.join(self.dir, done_id + ".resend")))
+        self.assertFalse(os.path.exists(os.path.join(self.dir, old_id + ".resend")))
+
     # --- rm-path rules
     def test_rm_path_rules(self):
         h = self.home

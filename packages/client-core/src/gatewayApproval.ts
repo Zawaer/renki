@@ -46,6 +46,24 @@ export async function answerGatewayApproval(
   }
 }
 
+/**
+ * Ask the approval service to push every request still waiting to the phone again: a
+ * notification swiped away took its token with it, and only the waiting gateway still has
+ * it. Needs no token (it reveals and grants nothing); the gateway rate-limits the pushes.
+ * Returns how many requests are waiting, or null when the service can't be reached.
+ */
+export async function requestGatewayResend(url: string, fetchImpl: typeof fetch = fetch): Promise<number | null> {
+  if (!/^https:\/\/[^/\s]+\/?$/.test(url)) return null;
+  try {
+    const res = await fetchImpl(`${url.replace(/\/$/, "")}/v1/approvals/resend`, { method: "POST" });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { pending?: unknown };
+    return typeof body.pending === "number" ? body.pending : null;
+  } catch {
+    return null;
+  }
+}
+
 export type GatewayPeek = {
   /** What the gateway wrote about the request: the exact thing being approved. */
   summary: string;

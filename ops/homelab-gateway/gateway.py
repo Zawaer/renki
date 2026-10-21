@@ -250,6 +250,45 @@ def _dec_path(approval_dir, aid):
     return os.path.join(approval_dir, aid + ".decision")
 
 
+def _resend_path(approval_dir, aid):
+    return os.path.join(approval_dir, aid + ".resend")
+
+
+# A lost notification is the token lost: it exists nowhere else but in the waiting gateway's memory.
+# So the phone can ask for every open request to be pushed again. Asking needs no token and only
+# ever pushes to the paired phone, so a session asking gets nothing but an extra notification there;
+# the gaps and the cap keep even that from becoming spam.
+RESEND_GAP_SECONDS = 20
+MAX_RESENDS = 5
+
+
+def request_resend(approval_dir, now=None):
+    """Flag every open request to be pushed to the phone again. Returns how many are open."""
+    now = time.time() if now is None else now
+    try:
+        names = os.listdir(approval_dir)
+    except FileNotFoundError:
+        return 0
+    n = 0
+    for name in names:
+        aid = name[:-5] if name.endswith(".json") else None
+        if not aid or not ID_RE.match(aid):
+            continue
+        try:
+            with open(_rec_path(approval_dir, aid)) as f:
+                rec = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if now > rec["expires"] or read_decision(approval_dir, aid) is not None:
+            continue
+        n += 1
+        try:
+            os.close(os.open(_resend_path(approval_dir, aid), os.O_WRONLY | os.O_CREAT, 0o600))
+        except OSError:
+            pass
+    return n
+
+
 def create_approval(approval_dir, verb, args, summary, ttl, now=None):
     now = time.time() if now is None else now
     os.makedirs(approval_dir, mode=0o700, exist_ok=True)
@@ -362,10 +401,21 @@ def request_approval(policy, verb, args, summary, notify=None, approval_dir=None
     delivered = notify(title="Approve on the homelab?", body=summary,
                        data={"kind": "gateway-approval", "id": aid, "token": token, "url": cfg.get("url", "")})
     deadline = now() + ttl
+    resends, last_sent = 0, now()
     while now() < deadline:
         d = read_decision(approval_dir, aid)
         if d is not None:
             return d == "approve"
+        if os.path.exists(_resend_path(approval_dir, aid)):
+            try:
+                os.remove(_resend_path(approval_dir, aid))
+            except OSError:
+                pass
+            if resends < MAX_RESENDS and now() - last_sent >= RESEND_GAP_SECONDS:
+                # The same request and token again, so whichever copy the phone answers counts.
+                delivered = notify(title="Approve on the homelab?", body=summary,
+                                   data={"kind": "gateway-approval", "id": aid, "token": token, "url": cfg.get("url", "")}) or delivered
+                resends, last_sent = resends + 1, now()
         sleep(1)
     write_decision(approval_dir, aid, "deny")  # nobody answered: closed for good
     if not delivered:
@@ -513,6 +563,8 @@ class ApprovalHandler(BaseHTTPRequestHandler):
         self._reply(*(peek(self.approval_dir, aid, token) if aid else (404, {"error": "not found"})))
 
     def do_POST(self):
+        if re.fullmatch(r"/v1/approvals/resend(?:\?.*)?", self.path):
+            return self._reply(200, {"pending": request_resend(self.approval_dir)})
         aid = self._parts()
         if not aid:
             return self._reply(404, {"error": "not found"})

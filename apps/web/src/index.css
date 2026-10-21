@@ -475,7 +475,75 @@ input:focus-visible {
   animation: renki-flash 1.5s var(--renki-ease) both;
 }
 
+/*
+ * Starting a chat from the home screen (Home's NewChat), in two beats. First,
+ * on send: the dashboard lifts and blurs away while the message rises out of
+ * the composer as a bubble. Then, once the session exists, a view transition:
+ * that bubble flies to the top of the new chat, the composer (which sits in
+ * the same place in both) holds still, and the chat's header drops in.
+ */
+@keyframes renki-home-out {
+  to {
+    opacity: 0;
+    transform: translateY(-18px) scale(0.985);
+    filter: blur(6px);
+  }
+}
+.renki-home-out {
+  animation: renki-home-out 360ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  pointer-events: none;
+}
+
+@keyframes renki-bubble-rise {
+  from {
+    opacity: 0;
+    transform: translateY(32px) scale(0.92);
+    filter: blur(3px);
+  }
+  55% {
+    opacity: 1;
+    filter: none;
+  }
+}
+.renki-bubble-rise {
+  animation: renki-bubble-rise 460ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  transform-origin: bottom right;
+}
+
+/* The page underneath stays put; the chat fades in over it, so the sidebar never dims. */
+::view-transition-old(root) {
+  animation: none;
+}
+::view-transition-new(root) {
+  animation: renki-fade-in 300ms var(--renki-ease) 240ms both;
+}
+/* A little past its mark and back: it lands rather than stops. */
+::view-transition-group(renki-first-prompt) {
+  animation-duration: 640ms;
+  animation-timing-function: cubic-bezier(0.3, 1.25, 0.4, 1);
+}
+::view-transition-old(renki-first-prompt),
+::view-transition-new(renki-first-prompt) {
+  animation-duration: 640ms;
+  height: 100%;
+}
+::view-transition-group(renki-composer) {
+  animation-duration: 640ms;
+  animation-timing-function: var(--renki-ease);
+}
+@keyframes renki-drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+}
+::view-transition-new(renki-session-header) {
+  animation: renki-drop-in 480ms cubic-bezier(0.22, 1, 0.36, 1) 260ms both;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .renki-home-out,
+  .renki-bubble-rise,
   .renki-enter,
   .renki-stream-in,
   .renki-screen,

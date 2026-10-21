@@ -370,6 +370,8 @@ function MainColumn({
   managed: boolean;
 }) {
   const location = useLocation();
+  /** Arrived from the home screen, which brings the chat in with its own view transition. */
+  const fromHome = (location.state as { fromHome?: boolean } | null)?.fromHome === true;
   const navigate = useNavigate();
   // `?at=<anchor>&q=<query>` on a session URL: a search hit to scroll to.
   const jumpTo = useMemo(() => {
@@ -388,13 +390,14 @@ function MainColumn({
         </div>
       )}
       {/* Keyed by route so each page eases in as you arrive (see .renki-screen). */}
-      <div key={location.pathname} className="renki-screen min-h-0 flex-1 overflow-hidden">
+      {/* A chat started from the home screen arrives by its own view transition instead. */}
+      <div key={location.pathname} className={`${fromHome ? "" : "renki-screen "}min-h-0 flex-1 overflow-hidden`}>
         <Routes>
           <Route path="/stats" element={<StatsView />} />
           <Route path="/settings" element={<Settings onReset={onReset} managed={managed} />} />
           <Route
             path="/session/:id"
-            element={selected ? <SessionView key={selected} sessionId={selected} jumpTo={jumpTo} onJumped={clearJump} /> : null}
+            element={selected ? <SessionView key={selected} sessionId={selected} jumpTo={jumpTo} onJumped={clearJump} fromHome={fromHome} /> : null}
           />
           <Route path="*" element={<Home />}             />
         </Routes>

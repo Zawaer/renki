@@ -70,8 +70,11 @@ export function SessionView({
   sessionId,
   jumpTo = null,
   onJumped,
+  fromHome = false,
 }: {
   sessionId: string;
+  /** Started from the home screen, whose transition already brings the first message in. */
+  fromHome?: boolean;
   /** A message to scroll to once it renders — where a chat search hit landed. */
   jumpTo?: { anchor: string; query: string } | null;
   onJumped?: () => void;
@@ -264,7 +267,7 @@ export function SessionView({
     <div className="relative flex h-full">
     <div className="flex min-w-0 flex-1 flex-col">
       {/* Header */}
-      <div className="flex shrink-0 items-center justify-between gap-3 px-6 py-3">
+      <div className="flex shrink-0 items-center justify-between gap-3 px-6 py-3" style={{ viewTransitionName: "renki-session-header" }}>
         <div className="min-w-0">
           <div className="flex items-center gap-2.5">
             <span className="truncate text-[15px] font-medium tracking-tight text-(--renki-fg)">
@@ -393,9 +396,9 @@ export function SessionView({
           {rows.length > 0 && (
             // Crossfades in over the skeleton the first time content arrives;
             // a chat that opened with content already loaded just shows it.
-            <div key="content" className={`space-y-7 ${hadContentAtMount.current ? "" : "renki-fade"}`}>
+            <div key="content" className={`space-y-7 ${hadContentAtMount.current || fromHome ? "" : "renki-fade"}`}>
               {rows.map((item, i) => (
-                <TimelineRow key={i} item={item} animate={settledCount.current !== null && i >= settledCount.current} />
+                <TimelineRow key={i} item={item} first={i === 0} animate={settledCount.current !== null && i >= settledCount.current} />
               ))}
             </div>
           )}
@@ -621,12 +624,17 @@ function ResumeBanner({
  * a chat loads with don't — animating a whole transcript at once reads as a
  * flicker, not as motion.
  */
-function TimelineRow({ item, animate = false }: { item: TimelineItem; animate?: boolean }) {
+function TimelineRow({ item, animate = false, first = false }: { item: TimelineItem; animate?: boolean; first?: boolean }) {
   if (item.type === "prompt") {
     return (
       <div className={`${animate ? "renki-enter " : ""}group flex items-center justify-end gap-1`} data-anchor={`p:${item.promptId}`}>
         {item.text && <CopyButton text={item.text} label="Copy message" />}
-        <div className="max-w-[85%] rounded-2xl bg-(--renki-surface) px-4 py-3">
+        <div
+          className="max-w-[85%] rounded-2xl bg-(--renki-surface) px-4 py-3"
+          // The home screen's bubble flies here when a chat starts there (see Home's NewChat).
+          style={first ? { viewTransitionName: "renki-first-prompt" } : undefined}
+          data-first-prompt={first || undefined}
+        >
           {/* A pasted brief can be longer than the reply it asks for; clipping
               it keeps the answer on screen, and it's your own text — you know
               what it says. The copy button the wrapper adds is redundant with
@@ -1935,7 +1943,7 @@ function readFileAsAttachment(
  * omitted renders it read-only (timeline history). `siblings` is the whole
  * prompt's attachments, so the preview can step through its other images.
  */
-function AttachmentChip({
+export function AttachmentChip({
   attachment,
   siblings,
   onRemove,
@@ -2129,8 +2137,6 @@ export function Composer({
   // closing the tab shouldn't throw away a prompt in progress.
   const draftKey = sessionId ?? NEW_CHAT_DRAFT;
   const restored = useRef(loadDraft(draftKey));
-  /** Set once an async send went through and this composer is about to go: its draft must not be saved back. */
-  const sent = useRef(false);
   const [sending, setSending] = useState(false);
   const [text, setText] = useState(() => restored.current?.text ?? "");
   const [attachments, setAttachments] = useState<PendingAttachment[]>(() =>
@@ -2228,9 +2234,7 @@ export function Composer({
   // A closing tab doesn't reliably run the debounce, so flush on the way out
   // (and when switching sessions unmounts this composer).
   useEffect(() => {
-    const flush = () => {
-      if (!sent.current) saveDraft(draftKey, text, attachments.map(({ id: _id, ...a }) => a));
-    };
+    const flush = () => saveDraft(draftKey, text, attachments.map(({ id: _id, ...a }) => a));
     window.addEventListener("pagehide", flush);
     return () => {
       window.removeEventListener("pagehide", flush);
@@ -2321,24 +2325,21 @@ export function Composer({
           ? attachments.map(({ id: _id, ...a }) => a)
           : undefined,
     });
-    const reset = () => {
-      setText("");
-      setAttachments([]);
-      setAttachError(null);
-      setDraftNote(false);
-      clearDraft(draftKey);
-    };
-    if (!(result instanceof Promise)) return reset();
-    // Async (the home screen creating the session first): keep the text until it's
-    // through, so a failure doesn't eat the message. The caller shows the error.
+    const before = { text, attachments };
+    setText("");
+    setAttachments([]);
+    setAttachError(null);
+    setDraftNote(false);
+    clearDraft(draftKey);
+    if (!(result instanceof Promise)) return;
+    // Async (the home screen creating the session first): if that fails, the
+    // message comes back to be sent again. The caller shows the error.
     setSending(true);
-    result.then(
-      () => {
-        sent.current = true;
-        reset();
-      },
-      () => setSending(false),
-    );
+    result.catch(() => {
+      setText(before.text);
+      setAttachments(before.attachments);
+      setSending(false);
+    });
   }
 
   /** Reads and validates dropped/picked/pasted files, appending whatever's accepted. */
@@ -2507,7 +2508,8 @@ export function Composer({
 
   return (
     <div
-      className={sessionId ? "relative px-6 pb-3 pt-1" : "relative"}
+      className="relative px-6 pb-3 pt-1"
+      style={{ viewTransitionName: "renki-composer" }}
       onDragOver={(e) => {
         e.preventDefault();
         setDragOver(true);

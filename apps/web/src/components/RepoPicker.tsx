@@ -71,7 +71,7 @@ export function RepoPicker({
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="renki-enter absolute top-full left-0 z-50 mt-2 w-80 rounded-xl bg-(--renki-surface) p-1 text-xs shadow-(--renki-shadow-lg)">
+          <div className="renki-enter absolute bottom-full left-0 z-50 mb-2 w-80 rounded-xl bg-(--renki-surface) p-1 text-xs shadow-(--renki-shadow-lg)">
             <input
               autoFocus
               value={query}

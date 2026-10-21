@@ -1,4 +1,4 @@
-import type { Session, StatsBucket, StatsResponse } from "@renki/protocol";
+import type { Attachment, Session, StatsBucket, StatsResponse } from "@renki/protocol";
 import {
   activityGrid,
   formatCost,
@@ -24,7 +24,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { loadDeviceDefaults } from "../lib/composerPrefs.js";
 import { RepoPicker, useRepoChoices } from "./RepoPicker.js";
-import { Composer } from "./SessionView.js";
+import { AttachmentChip, Composer } from "./SessionView.js";
 import { Skeleton } from "./ui.js";
 
 type Range = "all" | "30d" | "7d" | "1d";
@@ -32,12 +32,35 @@ type Tab = "overview" | "models";
 
 const HEATMAP_WEEKS = 26;
 
+/** Resolves once `selector` matches (or after `timeoutMs`, so a slow render never hangs the transition). */
+function untilPresent(selector: string, timeoutMs = 1500): Promise<void> {
+  return new Promise((resolve) => {
+    if (document.querySelector(selector)) return resolve();
+    const done = () => {
+      observer.disconnect();
+      clearTimeout(timer);
+      resolve();
+    };
+    const observer = new MutationObserver(() => document.querySelector(selector) && done());
+    observer.observe(document.body, { childList: true, subtree: true });
+    const timer = setTimeout(done, timeoutMs);
+  });
+}
+
+/** How long the dashboard takes to step aside — the view transition waits for it. */
+const LEAVE_MS = 360;
+
 /**
  * Start a chat by just typing, like the Claude app: the session is created
  * when the first message is sent, as a repo-less chat unless a repo is picked
  * from the chip. Picking one the host hasn't cloned yet clones it first.
+ *
+ * Sending plays out as one motion: the dashboard lifts away and the message
+ * rises out of the composer as a bubble; once the session exists, a view
+ * transition carries that bubble to the top of the new chat while the
+ * composer stays put and the chat's header drops in (see index.css).
  */
-function NewChat({ initialRepoId }: { initialRepoId: string | null }) {
+function NewChat({ initialRepoId, onLeaving }: { initialRepoId: string | null; onLeaving: (leaving: boolean) => void }) {
   const { rest, realtime } = useClient();
   const navigate = useNavigate();
   const connection = useStoreValue(realtime.status);
@@ -55,9 +78,14 @@ function NewChat({ initialRepoId }: { initialRepoId: string | null }) {
   }, [initialRepoId, repos]);
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** The message on its way, shown as the bubble it's about to become. */
+  const [outgoing, setOutgoing] = useState<{ text: string; attachments: Attachment[] } | null>(null);
 
   async function start(text: string, opts: Parameters<typeof realtime.submitPrompt>[2]) {
     setError(null);
+    setOutgoing({ text, attachments: opts?.attachments ?? [] });
+    onLeaving(true);
+    const stepAside = new Promise((r) => setTimeout(r, LEAVE_MS));
     try {
       let target: { repoId: string; baseBranch: string } | null = null;
       if (repo) {
@@ -65,23 +93,61 @@ function NewChat({ initialRepoId }: { initialRepoId: string | null }) {
         const r = await resolveRepoChoice(rest, repo);
         target = { repoId: r.id, baseBranch: r.defaultBranch };
       }
-      setProgress(target ? "Getting the latest from GitHub…" : "Starting…");
+      if (target) setProgress("Getting the latest from GitHub…");
       // This browser's defaults, which the pickers above have just been writing to.
       const composer = loadDeviceDefaults();
       const session = await rest.createSession(target ? { ...target, composer } : { composer });
       realtime.takeControl(session.id);
       realtime.submitPrompt(session.id, text, opts);
-      // After the composer has seen the send go through and dropped its draft.
-      setTimeout(() => navigate(`/session/${encodeURIComponent(session.id)}`), 0);
+      await stepAside;
+      const go = () => navigate(`/session/${encodeURIComponent(session.id)}`, { state: { fromHome: true } });
+      if (document.startViewTransition && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        // The router commits inside a React transition, so the chat isn't on screen
+        // when navigate returns; the browser's "after" picture has to wait for it.
+        document.startViewTransition(() => {
+          go();
+          return untilPresent('[data-first-prompt]');
+        });
+      } else go();
     } catch (e) {
       setProgress(null);
+      setOutgoing(null);
+      onLeaving(false);
       setError(e instanceof Error ? e.message : "Couldn't start the session.");
       throw e;
     }
   }
 
   return (
-    <div className="mt-8">
+    <div className="shrink-0">
+      {outgoing && (
+        <div className="mx-auto w-full max-w-3xl px-6 pb-4">
+          <div className="flex justify-end">
+            {/* The same box TimelineRow draws, named the same, so the view transition can morph one into the other. */}
+            <div
+              className="renki-bubble-rise max-w-[85%] rounded-2xl bg-(--renki-surface) px-4 py-3"
+              style={{ viewTransitionName: "renki-first-prompt" }}
+            >
+              {outgoing.text && (
+                <div className="line-clamp-[14] whitespace-pre-wrap text-[14px] leading-relaxed text-(--renki-fg)">{outgoing.text}</div>
+              )}
+              {outgoing.attachments.length > 0 && (
+                <div className={`flex flex-wrap gap-1.5 ${outgoing.text ? "mt-2" : ""}`}>
+                  {outgoing.attachments.map((a, i) => (
+                    <AttachmentChip key={i} attachment={a} siblings={outgoing.attachments} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          {progress && (
+            <div className="renki-fade mt-2 flex items-center justify-end gap-1.5 text-xs text-(--renki-fg-muted)">
+              <span className="codicon codicon-loading codicon-modifier-spin text-[11px]" /> {progress}
+            </div>
+          )}
+        </div>
+      )}
+      {error && <div className="renki-enter mx-auto max-w-3xl px-6 pb-2 text-center text-xs text-(--renki-danger)">{error}</div>}
       <Composer
         sessionId={null}
         composer={null}
@@ -92,11 +158,8 @@ function NewChat({ initialRepoId }: { initialRepoId: string | null }) {
         onSend={start}
         busy={false}
         onStop={() => {}}
-        controls={<RepoPicker {...repos} value={repo} onChange={setRepo} disabled={progress !== null} />}
+        controls={<RepoPicker {...repos} value={repo} onChange={setRepo} disabled={outgoing !== null} />}
       />
-      {(progress || error) && (
-        <div className={`mt-1 text-center text-xs ${error ? "text-(--renki-danger)" : "text-(--renki-fg-muted)"}`}>{error ?? progress}</div>
-      )}
     </div>
   );
 }
@@ -112,6 +175,8 @@ export function Home() {
   const { rest, realtime } = useClient();
   const navigate = useNavigate();
   const { search } = useLocation();
+  /** A chat is being started: the dashboard steps aside for it. */
+  const [leaving, setLeaving] = useState(false);
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -163,15 +228,13 @@ export function Home() {
     : null;
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="flex h-full flex-col">
+      <div className={`min-h-0 flex-1 overflow-y-auto ${leaving ? "renki-home-out" : ""}`} aria-hidden={leaving || undefined}>
       <div className="mx-auto w-full max-w-2xl px-6 pt-16 pb-12">
         <h1 className="flex items-center gap-3 text-2xl font-semibold tracking-tight text-(--renki-fg)">
           <span className="codicon codicon-sparkle-filled text-[22px] text-(--renki-accent)" />
           {greeting()}
         </h1>
-
-        {/* Keyed on the query so "New" in the sidebar starts it over (and focuses it) even from here. */}
-        <NewChat key={search} initialRepoId={new URLSearchParams(search).get("repo")} />
 
         {attention.length > 0 && (
           <section className="renki-enter mt-8" aria-label="Needs your attention">
@@ -318,6 +381,11 @@ export function Home() {
           </div>
         )}
       </div>
+      </div>
+
+      {/* Where it sits in a chat, so starting one only has to move the message. Keyed on the
+          query so "New" in the sidebar starts it over (and focuses it) even from here. */}
+      <NewChat key={search} initialRepoId={new URLSearchParams(search).get("repo")} onLeaving={setLeaving} />
     </div>
   );
 }

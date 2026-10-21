@@ -70,6 +70,7 @@ import { FadeIn, PulseDot, Skeleton, animateLayout } from "../components/Motion"
 import { AgentsButton, AgentsSheet } from "../components/AgentsSheet";
 import { Sheet } from "../components/Sheet";
 import { FileSheet, type OpenFile } from "../components/FileSheet";
+import { SessionToolsSheet } from "../components/SessionToolsSheet";
 import { FileLinkContext, type FileLinkTarget } from "../lib/fileLinks";
 import { pickDocumentAttachments, pickImageAttachments, type PendingAttachment } from "../lib/attachments";
 import { loadDeviceDefaults, rememberDeviceDefaults } from "../lib/composerPrefs";
@@ -220,6 +221,8 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const [worktreePath, setWorktreePath] = useState<string | null>(null);
   /** Repo and branch as the session's row has them now — a session can be moved into a repo after it started (see the web's SessionView). */
   const [place, setPlace] = useState<{ repoName: string; branch: string | null } | null>(null);
+  /** The chat's title: what the header shows (repo and branch are already in the list, and take room the header doesn't have). */
+  const [title, setTitle] = useState<string | null>(null);
   /** False once the controller's last connection closed; it can't answer approvals then, so anyone may. */
   const [controllerOnline, setControllerOnline] = useState(true);
   useEffect(() => {
@@ -227,8 +230,10 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
     setResume(null);
     setWorktreePath(null);
     setPlace(null);
+    setTitle(null);
     return realtime.onSessionChanged((s) => {
       if (s.id !== sessionId) return;
+      setTitle(s.title);
       setResume(s.resume ?? null);
       setWorktreePath(s.worktreePath);
       setPlace({ repoName: s.repoName, branch: s.branch });
@@ -299,6 +304,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const agents = useMemo(() => agentMapOf(conv.timeline), [conv.timeline]);
   const [agentsOpen, setAgentsOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
 
   // Pop the keyboard to the composer as soon as this device gains control
   // (whether by taking it explicitly or via auto-claim on session creation).
@@ -373,8 +379,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle} numberOfLines={1}>
-            {repoName ?? "…"}
-            {branch ? `:${branch}` : ""}
+            {title || repoName || "…"}
           </Text>
           <Text style={styles.headerSub}>
             {connection !== "open" && conv.status !== null ? (
@@ -390,8 +395,9 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
             {loading ? "" : conv.controller ? (isController ? "" : ` · ${conv.controllerName ?? "other"}`) : " · unlocked"}
           </Text>
         </View>
-        <TouchableOpacity onPress={() => setExportOpen(true)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Export chat" style={{ paddingHorizontal: 4 }}>
-          <Ionicons name="download-outline" size={20} color={colors.dim} />
+        {/* Context window, Files, Changes and Export: rarely needed on a phone, so one button instead of four. */}
+        <TouchableOpacity onPress={() => setToolsOpen(true)} hitSlop={10} accessibilityRole="button" accessibilityLabel="More" style={{ paddingHorizontal: 4 }}>
+          <Ionicons name="ellipsis-horizontal" size={20} color={colors.dim} />
         </TouchableOpacity>
         <AgentsButton agents={agents} onPress={() => setAgentsOpen(true)} />
         {conv.status === "archived" ? (
@@ -702,7 +708,18 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
         styles={styles}
       />
 
-      <ExportSheet sessionId={sessionId} title={repoName ?? "This chat"} visible={exportOpen} onClose={() => setExportOpen(false)} colors={colors} />
+      <SessionToolsSheet
+        visible={toolsOpen}
+        onClose={() => setToolsOpen(false)}
+        onExport={() => {
+          setToolsOpen(false);
+          setExportOpen(true);
+        }}
+        sessionId={sessionId}
+        context={conv.context}
+        hasTree={hasTree}
+      />
+      <ExportSheet sessionId={sessionId} title={title || repoName || "This chat"} visible={exportOpen} onClose={() => setExportOpen(false)} colors={colors} />
 
       <ImagePreviewModal attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} />
       <FileSheet sessionId={sessionId} file={openFile} onClose={() => setOpenFile(null)} />

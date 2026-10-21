@@ -44,7 +44,7 @@ function failureText(err: unknown): string {
   return err instanceof Error ? err.message : "Couldn't load this file.";
 }
 
-function FileBody({ sessionId, file, colors }: { sessionId: string; file: OpenFile; colors: ThemeColors }) {
+export function FileBody({ sessionId, file, colors }: { sessionId: string; file: OpenFile; colors: ThemeColors }) {
   const { rest } = useClient();
   const { height, width } = useWindowDimensions();
   const styles = useMemo(() => makeStyles(colors), [colors]);

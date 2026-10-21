@@ -62,6 +62,7 @@ import { FileLinkContext, type FileLinkTarget } from "../lib/fileLinks.js";
 import { Markdown } from "./Markdown.js";
 import { AgentMapButton } from "./AgentMap.js";
 import { ExportDialog } from "./ExportDialog.js";
+import { markdownToPlainText } from "../lib/plainText.js";
 import { Button, Collapsible, CopyButton, InfoHint, Reveal, Skeleton, StatusBadge } from "./ui.js";
 
 export function SessionView({
@@ -939,7 +940,8 @@ function AssistantTurn({ turn, animate = false }: { turn: TurnView; animate?: bo
               )}
             </>
           )}
-          {replyText && <CopyButton text={replyText} label="Copy reply" className="ml-auto" />}
+          {/* Plain text, as it reads: pasted into a chat app, markdown syntax is just noise. */}
+          {replyText && <CopyButton text={markdownToPlainText(replyText)} label="Copy reply" className="ml-auto" />}
         </div>
       )}
       {turn.status === "error" && turn.interrupted && (

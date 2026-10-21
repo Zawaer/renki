@@ -22,3 +22,11 @@ describe("Markdown tables", () => {
     expect(screen.getByText("foo").tagName).toBe("CODE");
   });
 });
+
+describe("Markdown lists", () => {
+  it("prints bullets and numbers as text, so a copied selection keeps them", () => {
+    const { container } = render(<Markdown content={"3. three\n4. four\n\n- dot"} />);
+    const items = [...container.querySelectorAll("li")].map((li) => li.textContent);
+    expect(items).toEqual(["3. three", "4. four", "• dot"]);
+  });
+});

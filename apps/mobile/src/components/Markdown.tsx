@@ -1,4 +1,4 @@
-import { memo, type ReactElement, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, memo, type ReactElement, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Platform, ScrollView, StyleSheet, type TextStyle, View, type ViewStyle } from "react-native";
 import MarkdownDisplay, { MarkdownIt } from "react-native-markdown-display";
 import { radius, type ThemeColors, useTheme } from "../theme";
@@ -87,34 +87,53 @@ function columnWidths(table: MdNode): number[] {
   return widths;
 }
 
+/** Each column's final width: its measured width, stretched to fill a table narrower than the space it has. */
+const TableWidths = createContext<number[] | null>(null);
+
+/**
+ * Every width is an exact number, worked out from the space the table
+ * actually has: flex alone left the cells' text unwrapped and spilling past
+ * them, and the scroll content screen-wide, so there was nothing to scroll.
+ *
+ * The content also claims the touch for itself. The whole reply sits in a
+ * long-press Pressable (LongPressToRead), and on Android that Pressable taking
+ * the gesture kept the sideways swipe from ever reaching the table.
+ */
+function Table({ node, children, borderColor }: { node: MdNode; children: ReactNode; borderColor: string }) {
+  const [available, setAvailable] = useState(0);
+  const natural = columnWidths(node);
+  const total = natural.reduce((a, b) => a + b, 0);
+  const widths = available > total ? natural.map((w) => (w * available) / total) : natural;
+  return (
+    <View
+      style={{ borderWidth: 1, borderColor, borderRadius: 10, overflow: "hidden", marginTop: 2, marginBottom: 10 }}
+      onLayout={(e) => setAvailable(Math.floor(e.nativeEvent.layout.width - 2))}
+    >
+      <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false}>
+        <View style={{ width: Math.max(total, available) }} onStartShouldSetResponder={() => true}>
+          <TableWidths.Provider value={widths}>{children}</TableWidths.Provider>
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+function TableCell({ index, children }: { index: number; children: ReactNode }) {
+  const widths = useContext(TableWidths);
+  return <View style={{ width: widths?.[index] ?? COL_MIN, paddingHorizontal: CELL_PAD_X, paddingVertical: 8 }}>{children}</View>;
+}
+
 function makeTableRules(colors: ThemeColors): Record<string, RenderRule> {
-  const cell: RenderRule = (node, children, parents) => {
-    const table = parents.find((p) => p.type === "table");
-    const width = (table && columnWidths(table)[node.index]) || COL_MIN;
-    // Grow in proportion to the measured width, so a table narrower than the
-    // screen still fills it and every row keeps its columns aligned.
-    return (
-      <View
-        key={node.key}
-        style={{ minWidth: width, flexBasis: width, flexGrow: width, flexShrink: 0, paddingHorizontal: CELL_PAD_X, paddingVertical: 8 }}
-      >
-        {children}
-      </View>
-    );
-  };
+  const cell: RenderRule = (node, children) => (
+    <TableCell key={node.key} index={node.index}>
+      {children}
+    </TableCell>
+  );
   return {
     table: (node, children) => (
-      <View
-        key={node.key}
-        style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 10, overflow: "hidden", marginTop: 2, marginBottom: 10 }}
-      >
-        <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }}>
-          {/* The table's full width, stated: left to flex alone, the content
-              could come out screen-wide with the cells spilling past it, which
-              clips them and leaves nothing to scroll. */}
-          <View style={{ flexGrow: 1, minWidth: columnWidths(node).reduce((a, b) => a + b, 0) }}>{children}</View>
-        </ScrollView>
-      </View>
+      <Table key={node.key} node={node} borderColor={colors.border}>
+        {children}
+      </Table>
     ),
     thead: (node, children) => <View key={node.key}>{children}</View>,
     tbody: (node, children) => <View key={node.key}>{children}</View>,

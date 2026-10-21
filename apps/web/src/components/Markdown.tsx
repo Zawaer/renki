@@ -1,4 +1,4 @@
-import { type ComponentProps, memo } from "react";
+import { Children, cloneElement, type ComponentProps, isValidElement, memo, type ReactElement, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Collapsible } from "./ui.js";
@@ -97,15 +97,42 @@ function MarkdownLink(p: ComponentProps<"a">) {
   return <a className="text-(--renki-link) underline underline-offset-2 hover:opacity-80" target="_blank" rel="noreferrer" {...p} />;
 }
 
+/** Hands each list item its marker ("•", "3.") as a prop, so the item can print it as text. */
+function withMarkers(children: ReactNode, marker: (index: number) => string): ReactNode {
+  let i = 0;
+  return Children.map(children, (child) =>
+    isValidElement(child) ? cloneElement(child as ReactElement<{ "data-marker"?: string }>, { "data-marker": marker(i++) }) : child,
+  );
+}
+
 const components: Components = {
   h1: ({ node, ...p }) => <h1 className="text-base font-semibold text-(--renki-fg)" {...p} />,
   h2: ({ node, ...p }) => <h2 className="text-sm font-semibold text-(--renki-fg)" {...p} />,
   h3: ({ node, ...p }) => <h3 className="text-sm font-semibold text-(--renki-fg)" {...p} />,
   h4: ({ node, ...p }) => <h4 className="text-sm font-semibold text-(--renki-fg)" {...p} />,
   p: ({ node, ...p }) => <p className="leading-relaxed" {...p} />,
-  ul: ({ node, ...p }) => <ul className="list-disc space-y-1 pl-5 marker:text-(--renki-fg-muted)" {...p} />,
-  ol: ({ node, ...p }) => <ol className="list-decimal space-y-1 pl-5 marker:text-(--renki-fg-muted)" {...p} />,
-  li: ({ node, ...p }) => <li className="leading-relaxed [&>ul]:mt-1 [&>ol]:mt-1" {...p} />,
+  // Bullets and numbers are real text rather than CSS markers, so selecting a
+  // list and copying it keeps them: a ::marker never reaches the clipboard,
+  // and a numbered list pasted elsewhere came out as unnumbered lines.
+  ul: ({ node, children, ...p }) => (
+    <ul className="space-y-1" {...p}>
+      {withMarkers(children, () => "•")}
+    </ul>
+  ),
+  ol: ({ node, children, start, ...p }) => (
+    <ol className="space-y-1" start={start} {...p}>
+      {withMarkers(children, (i) => `${(start ?? 1) + i}.`)}
+    </ol>
+  ),
+  li: ({ node, children, ...p }) => {
+    const marker = (p as { "data-marker"?: string })["data-marker"];
+    return (
+      <li className="pl-5 leading-relaxed [&>ol]:mt-1 [&>p:first-of-type]:inline [&>ul]:mt-1" {...p}>
+        <span className="-ml-5 inline-block w-5 whitespace-pre text-(--renki-fg-muted) tabular-nums">{`${marker} `}</span>
+        {children}
+      </li>
+    );
+  },
   a: ({ node, ...p }) => <MarkdownLink {...p} />,
   strong: ({ node, ...p }) => <strong className="font-semibold text-(--renki-fg)" {...p} />,
   em: ({ node, ...p }) => <em className="italic" {...p} />,

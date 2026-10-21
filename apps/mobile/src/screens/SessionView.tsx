@@ -1488,6 +1488,16 @@ function useThinkingVerb(live: boolean): string {
  * underneath instead of as a floating card, which is easier to read and to
  * dismiss with a thumb.
  */
+/** "3h ago", kept current by its own once-a-minute tick rather than only when the chat redraws. */
+function Ago({ at, styles }: { at: number; styles: Styles }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => clearInterval(t);
+  }, []);
+  return <Text style={styles.meta}>· {formatAgo(at)}</Text>;
+}
+
 function TurnFooter({ turn, colors, styles }: { turn: TurnView; colors: ThemeColors; styles: Styles }) {
   const [open, setOpen] = useState(false);
   const rows: Array<[string, string]> = [];
@@ -1510,7 +1520,7 @@ function TurnFooter({ turn, colors, styles }: { turn: TurnView; colors: ThemeCol
           </TouchableOpacity>
         )}
         {/* Roughly when: enough to place a reply in a long-running chat. */}
-        {turn.endedAt != null && <Text style={styles.meta}>· {formatAgo(turn.endedAt)}</Text>}
+        {turn.endedAt != null && <Ago at={turn.endedAt} styles={styles} />}
         {/* One turn can answer several prompts — anything steered into it
             mid-flight — so this stays visible: it changes what the transcript
             above means, which a token count does not. */}

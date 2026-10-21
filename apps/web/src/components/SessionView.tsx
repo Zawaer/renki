@@ -751,6 +751,16 @@ function ModelChangeMarker({ model }: { model: string | null }) {
  * much of the window this conversation fills, and the active account's usage
  * limits — the two things that decide whether the next long prompt will run.
  */
+/** "3h ago", kept current by its own once-a-minute tick rather than only when the chat redraws. Exact time on hover. */
+function Ago({ at }: { at: number }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => clearInterval(t);
+  }, []);
+  return <span title={new Date(at).toLocaleString()}>{formatAgo(at)}</span>;
+}
+
 function ContextMeter({ context }: { context: ContextUsageView }) {
   const { rest } = useClient();
   const [open, setOpen] = useState(false);
@@ -929,9 +939,7 @@ function AssistantTurn({ turn, animate = false }: { turn: TurnView; animate?: bo
                   noise. */}
               <TurnDetails turn={turn} />
               {/* Roughly when, exact on hover: enough to place a reply in a long-running chat. */}
-              {turn.endedAt != null && (
-                <span title={new Date(turn.endedAt).toLocaleString()}>{formatAgo(turn.endedAt)}</span>
-              )}
+              {turn.endedAt != null && <Ago at={turn.endedAt} />}
               {/* One turn can answer several prompts — anything steered into it
                   mid-flight — so this stays visible: it changes what the
                   transcript above means, which a token count does not. */}

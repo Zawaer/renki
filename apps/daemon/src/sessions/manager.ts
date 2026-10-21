@@ -29,6 +29,7 @@ import { logger } from "../logger.js";
 import { findRepo } from "../repos.js";
 import { hasCapabilities, setCapabilities } from "../claude/capabilities.js";
 import { LiveClaudeSession } from "../claude/liveSession.js";
+import { copyTranscript } from "../claude/transcripts.js";
 import type { ResumePlan, ResumeReadiness } from "../accounts/resumePlan.js";
 import type { PermissionResolver, RateLimitHit, RunTurnResult } from "../claude/runner.js";
 import { derivePlaceholderTitle, generateSessionTitle } from "../claude/titler.js";
@@ -655,6 +656,73 @@ export class SessionManager {
   }
 
   /**
+   * Give a repo-less chat a repo after the fact — typically one it just made
+   * itself on GitHub. From here it's an ordinary repo session: its own
+   * worktree on a fresh branch from the repo's default branch, grouped under
+   * the repo, and homelab/Mac access by that repo's rules.
+   *
+   * The worktree is a new path, and Claude only resumes a transcript from the
+   * folder for the current cwd, so the transcript is copied across first —
+   * the conversation carries on with its full context, tool calls and all.
+   * The old chat folder stays (paths mentioned earlier in the chat still
+   * work) until the chat is permanently deleted.
+   *
+   * Only while nothing is running: the live `claude` process is closed so the
+   * next turn starts in the new cwd, under the new repo's access rules.
+   */
+  async attachRepo(id: string, repoId: string): Promise<Session> {
+    const session = this.getSession(id);
+    if (session.repoId) throw new SessionError("invalid_request", "This session is already in a repo.");
+    if (session.status === "archived" || session.status === "trashed") {
+      throw new SessionError("invalid_request", "Unarchive or restore the session first.");
+    }
+    if (session.status === "busy" || this.inflight.has(id) || (this.queues.get(id)?.length ?? 0) > 0) {
+      throw new SessionError("session_busy", "Wait for Claude to finish before moving this chat into a repo.");
+    }
+    if (session.hasPendingPermission) {
+      throw new SessionError("session_busy", "Answer the pending approval before moving this chat into a repo.");
+    }
+    const repo = await findRepo(this.config, repoId);
+    if (!repo) throw new SessionError("repo_not_found", `Unknown repo: ${repoId}`);
+
+    let created: { worktreePath: string; branch: string };
+    try {
+      created = await createWorktree(this.config, repo.path, id, repo.defaultBranch);
+    } catch (err) {
+      throw new SessionError(
+        "invalid_request",
+        `Couldn't check out ${repo.name}'s ${repo.defaultBranch} (an empty repo needs a first push): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    this.closeLive(id, "moved into a repo");
+    const claudeSessionId = this.getSession(id).claudeSessionId;
+    const carried = claudeSessionId
+      ? await copyTranscript(claudeSessionId, session.worktreePath, created.worktreePath).catch((err) => {
+          logger.warn("transcript copy failed during attach", { id, err: String(err) });
+          return false;
+        })
+      : false;
+
+    this.patch(id, {
+      repoId: repo.id,
+      repoName: repo.name,
+      baseBranch: repo.defaultBranch,
+      branch: created.branch,
+      worktreePath: created.worktreePath,
+    });
+    // Without its transcript the next turn falls back to a fresh conversation
+    // handed the chat as text (see runOneTurn) — say so rather than surprise.
+    const note =
+      carried || !claudeSessionId
+        ? `Moved into ${repo.name}, on ${created.branch} from ${repo.defaultBranch}. Files made before stay in ${session.worktreePath}.`
+        : `Moved into ${repo.name}, on ${created.branch}, but Claude's copy of the conversation didn't come along; the next turn carries on from this chat's history instead.`;
+    this.events.append(id, { kind: "notice", text: note, level: carried || !claudeSessionId ? "info" : "warn" });
+    logger.info("session attached to repo", { id, repo: repo.name, branch: created.branch, carried });
+    return this.getSession(id);
+  }
+
+  /**
    * Move a session to the trash — the ordinary "delete".
    *
    * Think of it as **archive plus a timer**: the worktree and branch are torn
@@ -842,9 +910,10 @@ export class SessionManager {
    * only ever inside <data>/chats.
    */
   private async removeChatFolder(session: Session): Promise<void> {
-    if (session.repoId || !session.worktreePath) return;
+    // By id rather than worktreePath: a chat moved into a repo (attachRepo) keeps its old folder too.
     const chats = resolve(this.config.dataDir, "chats") + sep;
-    const target = resolve(session.worktreePath);
+    const target = resolve(chats, session.id);
+    if (!existsSync(target)) return;
     if (!target.startsWith(chats)) {
       logger.warn("not removing a chat folder outside the chats directory", { id: session.id, target });
       return;

@@ -1,5 +1,5 @@
 import { activeSessions, displayBranch, formatPurgeCountdown, formatResumeAt, groupByRepo, trashedSessions } from "@renki/client-core";
-import type { Repo, Session } from "@renki/protocol";
+import type { AttachRepoRequest, GithubRepo, Repo, Session } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, FlatList, Keyboard, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
@@ -119,6 +119,13 @@ export function SessionList({
     refresh();
   }
 
+  /** Repo-less chat → repo session; errors are the sheet's to show. */
+  async function attachRepo(id: string, target: AttachRepoRequest) {
+    await rest.attachRepo(id, target);
+    refresh();
+    onSelect(id);
+  }
+
   const active = activeSessions(sessions);
   // Grouped by repo, same as the web sidebar: the repo IS the folder, and a
   // flat list stopped being readable once several repos had sessions running.
@@ -177,6 +184,7 @@ export function SessionList({
                 statusColor={statusColor}
                 onSelect={() => onSelect(s.id)}
                 onArchive={() => archive(s.id)}
+                onAttachRepo={s.repoId ? undefined : (target) => attachRepo(s.id, target)}
                 onRename={(title) => rename(s.id, title)}
                 onDelete={() => del(s.id)}
               />
@@ -259,6 +267,7 @@ function Row({
   onSelect,
   onArchive,
   onUnarchive,
+  onAttachRepo,
   onRename,
   onDelete,
   onRestore,
@@ -272,6 +281,8 @@ function Row({
   onArchive?: () => void;
   /** Passed only for an archived row. */
   onUnarchive?: () => void;
+  /** Passed only for an active repo-less chat. */
+  onAttachRepo?: (target: AttachRepoRequest) => Promise<void>;
   onRename: (title: string) => void;
   onDelete: () => void;
   /** Both passed only for a row in the trash. */
@@ -281,6 +292,7 @@ function Row({
   const [actionsOpen, setActionsOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const [attaching, setAttaching] = useState(false);
   const [draft, setDraft] = useState(session.title ?? session.repoName);
 
   const inTrash = session.status === "trashed";
@@ -403,6 +415,18 @@ function Row({
             <Ionicons name="create-outline" size={18} color={colors.text} />
             <Text style={styles.sheetRowText}>Edit title</Text>
           </TouchableOpacity>
+          {onAttachRepo && (
+            <TouchableOpacity
+              style={styles.sheetRow}
+              onPress={() => {
+                setActionsOpen(false);
+                setAttaching(true);
+              }}
+            >
+              <Ionicons name="git-branch-outline" size={18} color={colors.text} />
+              <Text style={styles.sheetRowText}>Move into repo…</Text>
+            </TouchableOpacity>
+          )}
           {onRestore && (
             <TouchableOpacity
               style={styles.sheetRow}
@@ -429,6 +453,10 @@ function Row({
         </View>
       </Sheet>
 
+      {onAttachRepo && (
+        <AttachRepoSheet visible={attaching} onClose={() => setAttaching(false)} onAttach={onAttachRepo} colors={colors} styles={styles} />
+      )}
+
       <Sheet visible={renaming} onClose={() => setRenaming(false)} title="Rename session" colors={colors}>
         <View style={styles.formBody}>
           <TextInput style={styles.input} value={draft} onChangeText={setDraft} autoFocus onSubmitEditing={commitRename} />
@@ -443,6 +471,100 @@ function Row({
         </View>
       </Sheet>
     </>
+  );
+}
+
+/**
+ * Move a repo-less chat into a repo: one already on the host, or one from
+ * GitHub (usually the repo the chat just made), which the daemon clones first.
+ */
+function AttachRepoSheet({
+  visible,
+  onClose,
+  onAttach,
+  colors,
+  styles,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onAttach: (target: AttachRepoRequest) => Promise<void>;
+  colors: ThemeColors;
+  styles: Styles;
+}) {
+  const { rest } = useClient();
+  const [repos, setRepos] = useState<Repo[]>([]);
+  const [github, setGithub] = useState<GithubRepo[]>([]);
+  /** A local repo id, or a GitHub owner/name. */
+  const [picked, setPicked] = useState<AttachRepoRequest | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    setPicked(null);
+    setError(null);
+    rest.listRepos().then(setRepos).catch((e) => setError(String(e)));
+    // GitHub is optional: without a login the list is just the host's repos.
+    rest
+      .listGithubRepos()
+      .then((res) => setGithub(res.repos))
+      .catch(() => setGithub([]));
+  }, [visible, rest]);
+
+  const here = new Set(repos.map((r) => r.name.toLowerCase()));
+  const items: { key: string; target: AttachRepoRequest; name: string; sub: string }[] = [
+    ...repos.map((r) => ({ key: `l:${r.id}`, target: { repoId: r.id }, name: r.name, sub: r.defaultBranch })),
+    ...github
+      .filter((g) => !here.has(g.name.toLowerCase()))
+      .map((g) => ({ key: `g:${g.fullName}`, target: { github: g.fullName }, name: g.fullName, sub: "GitHub · cloned first" })),
+  ];
+  const keyOf = (t: AttachRepoRequest | null) => (t?.repoId ? `l:${t.repoId}` : t?.github ? `g:${t.github}` : null);
+
+  async function move() {
+    if (!picked) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onAttach(picked);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't move this chat into the repo.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Sheet visible={visible} onClose={onClose} title="Move into a repo" colors={colors}>
+      <View style={styles.formBody}>
+        <Text style={styles.rowSub}>
+          The chat carries on in its own branch of the repo, with the conversation intact. Files made so far stay where they are.
+        </Text>
+        <FlatList
+          data={items}
+          keyExtractor={(i) => i.key}
+          style={styles.repoList}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={[styles.repoRow, keyOf(picked) === item.key && styles.repoRowSelected]}
+              onPress={() => setPicked(item.target)}
+            >
+              <Text style={styles.repoName}>{item.name}</Text>
+              <Text style={styles.rowSub}>{item.sub}</Text>
+            </TouchableOpacity>
+          )}
+        />
+        {error && <Text style={styles.error}>{error}</Text>}
+        <View style={styles.modalActions}>
+          <TouchableOpacity style={styles.textBtn} onPress={onClose}>
+            <Text style={styles.link}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.newBtn, (!picked || busy) && styles.disabled]} disabled={!picked || busy} onPress={move}>
+            <Text style={styles.newBtnText}>{busy ? "Moving…" : "Move"}</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Sheet>
   );
 }
 

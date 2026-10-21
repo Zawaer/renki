@@ -559,6 +559,72 @@ describe("unarchive", () => {
   });
 });
 
+describe("attachRepo", () => {
+  /** Claude's project folder for a cwd, under the test's CLAUDE_CONFIG_DIR — mirrors claude/transcripts.ts. */
+  function projectDir(claudeDir: string, cwd: string): string {
+    return resolve(claudeDir, "projects", cwd.replace(/[^a-zA-Z0-9]/g, "-"));
+  }
+
+  it("moves a chat into a repo on a fresh worktree, carrying Claude's transcript along", async () => {
+    const { manager, config, db, repoId } = setup();
+    const claudeDir = resolve(config.dataDir, "claude-home");
+    vi.stubEnv("CLAUDE_CONFIG_DIR", claudeDir);
+    try {
+      const chat = await manager.createSession({});
+      db.update(sessions).set({ claudeSessionId: "conv-1" }).where(eq(sessions.id, chat.id)).run();
+      mkdirSync(resolve(projectDir(claudeDir, chat.worktreePath), "conv-1"), { recursive: true });
+      writeFileSync(resolve(projectDir(claudeDir, chat.worktreePath), "conv-1.jsonl"), "{}\n");
+      writeFileSync(resolve(projectDir(claudeDir, chat.worktreePath), "conv-1", "agent.jsonl"), "{}\n");
+
+      const moved = await manager.attachRepo(chat.id, repoId);
+      expect(moved).toMatchObject({ repoId, baseBranch: "main", claudeSessionId: "conv-1" });
+      expect(moved.worktreePath).not.toBe(chat.worktreePath);
+      expect(existsSync(resolve(moved.worktreePath, "README.md"))).toBe(true);
+      expect(await branches(config, repoId)).toContain(moved.branch);
+      expect(readFileSync(resolve(projectDir(claudeDir, moved.worktreePath), "conv-1.jsonl"), "utf8")).toBe("{}\n");
+      expect(existsSync(resolve(projectDir(claudeDir, moved.worktreePath), "conv-1", "agent.jsonl"))).toBe(true);
+      // The old folder stays, so paths from earlier in the chat still resolve.
+      expect(existsSync(chat.worktreePath)).toBe(true);
+      expect(manager.events.read(chat.id).at(-1)).toMatchObject({ kind: "notice", level: "info" });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("warns when Claude's transcript couldn't come along", async () => {
+    const { manager, config, db, repoId } = setup();
+    vi.stubEnv("CLAUDE_CONFIG_DIR", resolve(config.dataDir, "claude-home"));
+    try {
+      const chat = await manager.createSession({});
+      db.update(sessions).set({ claudeSessionId: "gone" }).where(eq(sessions.id, chat.id)).run();
+      await manager.attachRepo(chat.id, repoId);
+      expect(manager.events.read(chat.id).at(-1)).toMatchObject({ kind: "notice", level: "warn" });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("removes the old chat folder too on a permanent delete", async () => {
+    const { manager, repoId } = setup();
+    const chat = await manager.createSession({});
+    const moved = await manager.attachRepo(chat.id, repoId);
+    await manager.purgeSession(chat.id);
+    expect(existsSync(chat.worktreePath)).toBe(false);
+    expect(existsSync(moved.worktreePath)).toBe(false);
+  });
+
+  it("refuses a session already in a repo, a busy one, and an unknown repo", async () => {
+    const { manager, db, repoId } = setup();
+    const s = await newSession(manager, repoId);
+    await expect(manager.attachRepo(s.id, repoId)).rejects.toMatchObject({ code: "invalid_request" });
+
+    const chat = await manager.createSession({});
+    await expect(manager.attachRepo(chat.id, "nope")).rejects.toMatchObject({ code: "repo_not_found" });
+    db.update(sessions).set({ status: "busy" }).where(eq(sessions.id, chat.id)).run();
+    await expect(manager.attachRepo(chat.id, repoId)).rejects.toMatchObject({ code: "session_busy" });
+  });
+});
+
 describe("trash", () => {
   /**
    * The bin holds the transcript, not the code. Keeping worktrees open for a

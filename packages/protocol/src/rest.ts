@@ -148,6 +148,19 @@ export const RenameSessionResponse = z.object({
 export type RenameSessionResponse = z.infer<typeof RenameSessionResponse>;
 
 /**
+ * Move a repo-less chat into a repo (see SessionManager.attachRepo): one
+ * already on the host by `repoId`, or `github` (owner/name or a URL), which
+ * the daemon clones first if it isn't there yet.
+ */
+export const AttachRepoRequest = z
+  .object({
+    repoId: z.string().min(1).optional(),
+    github: z.string().min(1).optional(),
+  })
+  .refine((r) => (r.repoId ? 1 : 0) + (r.github ? 1 : 0) === 1, { message: "Give exactly one of repoId or github." });
+export type AttachRepoRequest = z.infer<typeof AttachRepoRequest>;
+
+/**
  * Repins one or more of a session's composer settings. Omitted fields keep
  * their current value, so a client that only changed the effort picker sends
  * only `effortKey` and can't clobber a model someone picked on another device.

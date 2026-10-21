@@ -317,7 +317,7 @@ export function NewSessionDialog({
  * there otherwise means an SSH session — the exact thing that stops you
  * starting work from a phone.
  */
-function GithubBrowser({
+export function GithubBrowser({
   gh,
   query,
   onQuery,

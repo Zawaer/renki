@@ -11,6 +11,7 @@ import {
   ExportOptions,
   RegisterPushTokenRequest,
   RenameSessionRequest,
+  AttachRepoRequest,
   UpdateSessionComposerRequest,
   type Session,
   SwitchAccountRequest,
@@ -382,6 +383,23 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues });
     try {
       return { session: manager.renameSession(req.params.id, parsed.data.title) };
+    } catch (err) {
+      return sendSessionError(reply, err);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/sessions/:id/attach-repo", async (req, reply) => {
+    const parsed = AttachRepoRequest.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues });
+    let repoId = parsed.data.repoId;
+    if (parsed.data.github) {
+      const outcome = await cloneGithubRepo(config, parsed.data.github);
+      if (!outcome.ok) return reply.code(400).send({ error: "invalid_request", message: outcome.message });
+      repoId = (await scanRepos(config)).find((r) => r.name === outcome.dirName)?.id;
+      if (!repoId) return reply.code(500).send({ error: "internal", message: "Cloned, but the repo didn't appear under the repos root." });
+    }
+    try {
+      return { session: await manager.attachRepo(req.params.id, repoId!) };
     } catch (err) {
       return sendSessionError(reply, err);
     }

@@ -3,6 +3,7 @@ import type { Session } from "@renki/protocol";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { clearComposerPrefs, clearDraft } from "../lib/composerPrefs.js";
 import { useClient } from "../lib/client.js";
+import { AttachRepoDialog } from "./AttachRepoDialog.js";
 import { ExportDialog } from "./ExportDialog.js";
 import { NewSessionDialog } from "./NewSessionDialog.js";
 import { Button, Eyebrow, Reveal, SessionGlyph, Skeleton } from "./ui.js";
@@ -37,6 +38,7 @@ export function SessionList({
   const [showArchived, setShowArchived] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
   const [exporting, setExporting] = useState<Session | null>(null);
+  const [attaching, setAttaching] = useState<Session | null>(null);
 
   const refresh = useCallback(() => {
     rest
@@ -174,6 +176,8 @@ export function SessionList({
     onRename: (title: string) => rename(s.id, title),
     onDelete: () => del(s.id),
     onExport: () => setExporting(s),
+    // Only a live repo-less chat can be moved into a repo.
+    onAttachRepo: !s.repoId && s.status !== "archived" && s.status !== "trashed" ? () => setAttaching(s) : undefined,
   });
 
   return (
@@ -337,6 +341,18 @@ export function SessionList({
         <ExportDialog sessionId={exporting.id} title={exporting.title || exporting.repoName} onClose={() => setExporting(null)} />
       )}
 
+      {attaching && (
+        <AttachRepoDialog
+          session={attaching}
+          onClose={() => setAttaching(null)}
+          onAttached={(session) => {
+            setAttaching(null);
+            refresh();
+            onSelect(session.id);
+          }}
+        />
+      )}
+
       {creating && (
         <NewSessionDialog
           initialRepoId={creating.repoId}
@@ -379,6 +395,7 @@ function Row({
   onArchive,
   onUnarchive,
   onExport,
+  onAttachRepo,
   onRename,
   onDelete,
   onRestore,
@@ -390,6 +407,7 @@ function Row({
   onArchive?: () => void;
   onUnarchive?: () => void;
   onExport: () => void;
+  onAttachRepo?: () => void;
   onRename: (title: string) => void;
   onDelete: () => void;
   /** Both passed only for a row in the trash, which offers those two instead of archive/delete. */
@@ -546,6 +564,17 @@ function Row({
                   className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-fg) hover:bg-(--renki-hover)"
                 >
                   <span className="codicon codicon-edit" /> Edit title
+                </button>
+              )}
+              {onAttachRepo && (
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onAttachRepo();
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-fg) hover:bg-(--renki-hover)"
+                >
+                  <span className="codicon codicon-repo" /> Move into repo…
                 </button>
               )}
               {onPurge ? (

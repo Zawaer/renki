@@ -21,6 +21,7 @@ import type {
   ListSessionsResponse,
   PullBranchResponse,
   RenameSessionResponse,
+  AttachRepoRequest,
   UpdateSessionComposerRequest,
   UpdateSessionComposerResponse,
   RestoreSessionResponse,
@@ -129,6 +130,12 @@ export class RestClient {
   /** Manual rename — permanently takes title ownership away from the auto-titler, even if it hasn't upgraded the placeholder yet. */
   async renameSession(sessionId: string, title: string): Promise<Session> {
     const res = await this.post<RenameSessionResponse>(`/sessions/${encodeURIComponent(sessionId)}/rename`, { title });
+    return res.session;
+  }
+
+  /** Move a repo-less chat into a repo: one on the host by id, or `{ github: "owner/name" }`, cloned first if needed. */
+  async attachRepo(sessionId: string, target: AttachRepoRequest): Promise<Session> {
+    const res = await this.post<{ session: Session }>(`/sessions/${encodeURIComponent(sessionId)}/attach-repo`, target);
     return res.session;
   }
 

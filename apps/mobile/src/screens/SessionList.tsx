@@ -8,7 +8,7 @@ import { FadeIn, Skeleton } from "../components/Motion";
 import { Sheet } from "../components/Sheet";
 import { useClient } from "../lib/client";
 import { ExportSheet } from "../components/ExportSheet";
-import { loadDeviceDefaults } from "../lib/composerPrefs";
+import { NewChatSheet } from "../components/NewChatSheet";
 import { radius, statusColorFor, type ThemeColors, useTheme, withAlpha } from "../theme";
 import { AccountsBar } from "./AccountsBar";
 
@@ -226,24 +226,28 @@ export function SessionList({
       </FadeIn>
       )}
 
+      {/* The quick way in, like the Claude app's: tap and type. */}
+      <TouchableOpacity style={styles.askBar} onPress={() => setCreating(true)} activeOpacity={0.8}>
+        <Ionicons name="chatbubble-outline" size={16} color={colors.faint} />
+        <Text style={styles.askBarText}>Ask Claude anything…</Text>
+      </TouchableOpacity>
+
       <AccountsBar />
 
-      <NewSessionModal
+      <NewChatSheet
         visible={creating}
         colors={colors}
-        styles={styles}
         onClose={() => setCreating(false)}
-        onCreated={(s) => {
-          // Dismiss this modal's own keyboard (title/branch fields) before
-          // navigating into SessionView's composer — closing a Modal that
-          // still owns the soft keyboard while mounting a new TextInput
-          // underneath can leave Android's IME stuck, so the new composer
-          // doesn't respond to a tap until the screen is revisited.
+        onStarted={(id) => {
+          // Dismiss the sheet's own keyboard before navigating into
+          // SessionView's composer — closing a Modal that still owns the soft
+          // keyboard while mounting a new TextInput underneath can leave
+          // Android's IME stuck, so the new composer doesn't respond to a tap
+          // until the screen is revisited.
           Keyboard.dismiss();
           setCreating(false);
           refresh();
-          realtime.takeControl(s.id);
-          onSelect(s.id);
+          onSelect(id);
         }}
       />
     </View>
@@ -568,158 +572,6 @@ function AttachRepoSheet({
   );
 }
 
-function NewSessionModal({
-  visible,
-  onClose,
-  onCreated,
-  colors,
-  styles,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  onCreated: (s: Session) => void;
-  colors: ThemeColors;
-  styles: Styles;
-}) {
-  const { rest } = useClient();
-  const [repos, setRepos] = useState<Repo[]>([]);
-  /** null = "No repo" (a plain scratch dir, just for chatting) — a real repo's id is never empty/null. */
-  const [repoId, setRepoId] = useState<string | null>(null);
-  const [baseBranch, setBaseBranch] = useState("");
-  const [title, setTitle] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Sheet stays mounted the whole time (visible just toggles it) so its open/
-  // close animation has something to animate — so unlike a conditionally-
-  // rendered modal, state needs an explicit reset on each open instead of
-  // getting a fresh mount for free, and the repo list is re-fetched every
-  // open rather than only once, in case a repo was added since the last time.
-  useEffect(() => {
-    if (!visible) return;
-    setRepoId(null);
-    setBaseBranch("");
-    setTitle("");
-    setBusy(false);
-    setError(null);
-    rest.listRepos().then(setRepos).catch((e) => setError(String(e)));
-  }, [visible, rest]);
-
-  /** Create button: check the base branch against origin first, and confirm via Alert if it's behind. */
-  async function create() {
-    if (!repoId) return submit();
-    setBusy(true);
-    setError(null);
-    try {
-      const status = await rest.getBranchStatus(repoId, baseBranch);
-      if (status.hasRemote && status.behind > 0) {
-        setBusy(false);
-        Alert.alert(
-          "Pull latest changes?",
-          `${baseBranch} is ${status.behind} commit${status.behind === 1 ? "" : "s"} behind origin/${baseBranch}.`,
-          [
-            { text: "Skip", style: "cancel", onPress: () => submit() },
-            { text: "Pull latest", style: "default", onPress: () => pullAndSubmit() },
-          ],
-        );
-        return;
-      }
-    } catch {
-      // Best-effort check — if it fails (offline, no remote, etc.) just proceed to create.
-    }
-    await submit();
-  }
-
-  async function submit() {
-    setBusy(true);
-    setError(null);
-    try {
-      // The one place this device's defaults are read: they're copied onto the
-      // new session, which owns them from here on. Changing a default later
-      // never reaches back into a session that already exists.
-      const composer = await loadDeviceDefaults();
-      onCreated(
-        await rest.createSession(
-          repoId
-            ? { repoId, baseBranch, title: title.trim() || undefined, composer }
-            : { title: title.trim() || undefined, composer },
-        ),
-      );
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create.");
-      setBusy(false);
-    }
-  }
-
-  async function pullAndSubmit() {
-    setBusy(true);
-    setError(null);
-    try {
-      await rest.pullBranch(repoId!, baseBranch);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to pull.");
-      setBusy(false);
-      return;
-    }
-    await submit();
-  }
-
-  return (
-    <Sheet visible={visible} onClose={onClose} title="New session" colors={colors}>
-      <View style={styles.formBody}>
-        <Text style={styles.label}>Repository</Text>
-        <TouchableOpacity
-          style={[styles.repoRow, repoId === null && styles.repoRowSelected]}
-          onPress={() => {
-            setRepoId(null);
-            setBaseBranch("");
-          }}
-        >
-          <Text style={styles.repoName}>No repo (just chat)</Text>
-        </TouchableOpacity>
-        <FlatList
-          data={repos}
-          keyExtractor={(r) => r.id}
-          style={styles.repoList}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={[styles.repoRow, repoId === item.id && styles.repoRowSelected]}
-              onPress={() => {
-                setRepoId(item.id);
-                setBaseBranch(item.defaultBranch);
-              }}
-            >
-              <Text style={styles.repoName}>{item.name}</Text>
-              <Text style={styles.rowSub}>{item.defaultBranch}</Text>
-            </TouchableOpacity>
-          )}
-        />
-        {repoId !== null && (
-          <>
-            <Text style={styles.label}>Base branch</Text>
-            <TextInput style={styles.input} value={baseBranch} onChangeText={setBaseBranch} autoCapitalize="none" />
-          </>
-        )}
-        <Text style={styles.label}>Title (optional)</Text>
-        <TextInput style={styles.input} value={title} onChangeText={setTitle} />
-        {error && <Text style={styles.error}>{error}</Text>}
-        <View style={styles.modalActions}>
-          <TouchableOpacity style={styles.textBtn} onPress={onClose}>
-            <Text style={styles.link}>Cancel</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.newBtn, ((repoId !== null && !baseBranch) || busy) && styles.disabled]}
-            disabled={(repoId !== null && !baseBranch) || busy}
-            onPress={create}
-          >
-            <Text style={styles.newBtnText}>{busy ? "Creating…" : "Create"}</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Sheet>
-  );
-}
-
 type Styles = ReturnType<typeof makeStyles>;
 
 const makeStyles = (colors: ThemeColors) =>
@@ -800,7 +652,6 @@ const makeStyles = (colors: ThemeColors) =>
     repoRow: { padding: 12, borderRadius: radius.sm, backgroundColor: colors.inset, marginVertical: 3 },
     repoRowSelected: { backgroundColor: withAlpha(colors.accent, 0.16) },
     repoName: { color: colors.text, fontSize: 14, fontWeight: "600" },
-    label: { color: colors.dim, fontSize: 12, marginTop: 10, marginBottom: 2 },
     input: {
       backgroundColor: colors.inset,
       borderRadius: radius.sm,
@@ -810,6 +661,18 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: 15,
     },
     error: { color: colors.danger, fontSize: 13, marginTop: 6 },
+    askBar: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      marginHorizontal: 12,
+      marginBottom: 8,
+      backgroundColor: colors.inset,
+      borderRadius: radius.pill,
+      paddingHorizontal: 16,
+      paddingVertical: 13,
+    },
+    askBarText: { color: colors.faint, fontSize: 15 },
     modalActions: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 16, marginTop: 14 },
   });
 

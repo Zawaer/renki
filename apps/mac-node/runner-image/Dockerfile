@@ -26,7 +26,8 @@ RUN mkdir -p /opt/android-cmdline-tools \
 # ESP-IDF, for ESP32 firmware jobs: the same version as on the Mac, tools for
 # the esp32s3 only to keep the image small. Jobs run `. /opt/esp-idf/export.sh`
 # first. Builds here are unsigned; the Mac signs app images with the user's key
-# afterwards (signEspImages), which never enters this VM.
+# afterwards (signEspImages), which never enters this VM. The component
+# manager writes its lock into IDF_TOOLS_PATH, so that one folder is the runner's.
 ARG IDF_VERSION=v5.5.6
 RUN apt-get update \
  && apt-get install -y --no-install-recommends cmake ninja-build python3-venv python3-pip libusb-1.0-0 flex bison gperf wget ccache \
@@ -35,7 +36,8 @@ RUN apt-get update \
  && git clone -q --depth 1 -b "$IDF_VERSION" --recursive --shallow-submodules https://github.com/espressif/esp-idf.git /opt/esp-idf \
  && IDF_TOOLS_PATH=/opt/espressif /opt/esp-idf/install.sh esp32s3 \
  && rm -rf /opt/espressif/dist \
- && chmod -R a+rX /opt/esp-idf /opt/espressif
+ && chmod -R a+rX /opt/esp-idf /opt/espressif \
+ && install -d -o 1000 -g 1000 /opt/espressif/root_managed_components
 
 # The runner user: no sudo, no password. Its home is the persistent volume.
 RUN usermod -l runner -d /home/runner -m node && groupmod -n runner node \

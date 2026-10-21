@@ -559,6 +559,25 @@ describe("unarchive", () => {
   });
 });
 
+describe("closeOrphanedMacBuilds", () => {
+  it("closes a build the restart left running, and leaves finished ones alone", async () => {
+    const { manager } = setup();
+    const chat = await manager.createSession({});
+    const base = { kind: "mac_build" as const, toolUseId: null, job: "fw", detail: null, startedAt: 1, endedAt: null };
+    manager.events.append(chat.id, { ...base, buildId: "b_open", state: "running", phase: "Building" });
+    manager.events.append(chat.id, { ...base, buildId: "b_done", state: "running", phase: "Building" });
+    manager.events.append(chat.id, { ...base, buildId: "b_done", state: "succeeded", phase: "Succeeded", endedAt: 2 });
+
+    manager.closeOrphanedMacBuilds();
+    const builds = manager.events.read(chat.id).filter((e) => e.kind === "mac_build");
+    expect(builds.at(-1)).toMatchObject({ buildId: "b_open", state: "failed", phase: "Stopped" });
+    expect(builds.filter((e) => e.kind === "mac_build" && e.buildId === "b_done")).toHaveLength(2);
+
+    manager.closeOrphanedMacBuilds(); // nothing left open: a second boot adds nothing
+    expect(manager.events.read(chat.id).filter((e) => e.kind === "mac_build")).toHaveLength(builds.length);
+  });
+});
+
 describe("attachRepo", () => {
   /** Claude's project folder for a cwd, under the test's CLAUDE_CONFIG_DIR — mirrors claude/transcripts.ts. */
   function projectDir(claudeDir: string, cwd: string): string {

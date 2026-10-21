@@ -83,6 +83,26 @@ export class EventLog {
     return [...open].map(([key, sessionId]) => ({ sessionId, requestId: key.slice(sessionId.length + 1) }));
   }
 
+  /**
+   * Mac builds whose last word in the log is still "running": the daemon
+   * restarted while they ran, which stops them on the Mac too, and nothing
+   * will ever report how they ended. Each with its last mac_build event.
+   */
+  openMacBuilds(): Array<{ sessionId: string; last: Extract<EventPayload, { kind: "mac_build" }> }> {
+    const rows = this.db
+      .select({ sessionId: events.sessionId, data: events.data })
+      .from(events)
+      .where(eq(events.kind, "mac_build"))
+      .orderBy(asc(events.sessionId), asc(events.seq))
+      .all();
+    const last = new Map<string, { sessionId: string; last: Extract<EventPayload, { kind: "mac_build" }> }>();
+    for (const r of rows) {
+      const e = JSON.parse(r.data) as Extract<EventPayload, { kind: "mac_build" }>;
+      last.set(`${r.sessionId}\0${e.buildId}`, { sessionId: r.sessionId, last: e });
+    }
+    return [...last.values()].filter((b) => b.last.state === "running");
+  }
+
   /** One event by its seq, or null — how a lazily replayed attachment is fetched back. */
   get(sessionId: string, seq: number): SessionEvent | null {
     const row = this.db

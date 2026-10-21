@@ -214,6 +214,24 @@ export class SessionManager {
    * clean shutdown marks sessions idle first, and a background agent asks
    * between turns anyway. Denied, since the tool call never ran.
    */
+  /**
+   * Close the Mac builds a restart cut off. The build only lived in the old
+   * daemon's memory, and the Mac stops a build nobody waits for, so without
+   * this its card would say "running" (or "waiting for the Mac") for good.
+   */
+  closeOrphanedMacBuilds(): void {
+    for (const { sessionId, last } of this.events.openMacBuilds()) {
+      this.events.append(sessionId, {
+        ...last,
+        state: "failed",
+        phase: "Stopped",
+        detail: "Renki restarted while this build ran, which stopped it on the Mac. Start it again.",
+        endedAt: Date.now(),
+      });
+      logger.info("closed a Mac build the restart cut off", { sessionId, buildId: last.buildId });
+    }
+  }
+
   closeStalePermissions(): void {
     for (const { sessionId, requestId } of this.events.openPermissionRequests()) {
       this.events.append(sessionId, { kind: "permission_resolved", requestId, decision: "deny", byDeviceId: null });

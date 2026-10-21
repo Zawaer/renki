@@ -203,7 +203,7 @@ describe("SessionView", () => {
     renderSession(sessionId, events);
 
     expect(screen.getByText("Nothing here yet")).toBeInTheDocument();
-    expect(screen.getByText("Nobody is in control")).toBeInTheDocument();
+    expect(screen.getByText("No one has control")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Take control" })).toBeInTheDocument();
   });
 
@@ -439,7 +439,7 @@ describe("SessionView control label", () => {
       ev(sid, { kind: "status_changed", status: "idle" }),
       ev(sid, { kind: "control_changed", controller: "phone-1", controllerName: "Phone" }),
     ]);
-    expect(screen.getByText("Phone is in control — you're watching")).toBeInTheDocument();
+    expect(screen.getByText("Phone has control")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Take control" })).toBeInTheDocument();
   });
 });

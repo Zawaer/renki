@@ -311,8 +311,8 @@ export function SessionView({
             <span className="inline-flex items-center gap-1.5 text-xs font-medium text-(--renki-fg-muted)">
               <span className={`codicon ${conv.controller ? "codicon-eye" : "codicon-unlock"} text-[13px]`} />
               {conv.controller
-                ? `${conv.controllerName ?? conv.controller} is in control — you're watching`
-                : "Nobody is in control"}
+                ? `${conv.controllerName ?? conv.controller} has control`
+                : "No one has control"}
             </span>
           )}
           {conv.status !== null && !isController && status !== "trashed" && status !== "archived" && (

@@ -25,3 +25,4 @@ export * from "./turnLayout.js";
 export * from "./fileLinks.js";
 export * from "./search.js";
 export * from "./gatewayApproval.js";
+export * from "./repoChoices.js";

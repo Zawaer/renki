@@ -13,19 +13,93 @@ import {
   type AttentionReason,
   intensity,
   streaks,
+  resolveRepoChoice,
+  type RepoChoice,
   sumRecent,
   tokensInPerspective,
   totalTokens,
 } from "@renki/client-core";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useClient } from "../lib/client.js";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { useClient, useStoreValue } from "../lib/client.js";
+import { loadDeviceDefaults } from "../lib/composerPrefs.js";
+import { RepoPicker, useRepoChoices } from "./RepoPicker.js";
+import { Composer } from "./SessionView.js";
 import { Skeleton } from "./ui.js";
 
 type Range = "all" | "30d" | "7d" | "1d";
 type Tab = "overview" | "models";
 
 const HEATMAP_WEEKS = 26;
+
+/**
+ * Start a chat by just typing, like the Claude app: the session is created
+ * when the first message is sent, as a repo-less chat unless a repo is picked
+ * from the chip. Picking one the host hasn't cloned yet clones it first.
+ */
+function NewChat({ initialRepoId }: { initialRepoId: string | null }) {
+  const { rest, realtime } = useClient();
+  const navigate = useNavigate();
+  const connection = useStoreValue(realtime.status);
+  const repos = useRepoChoices();
+  const [repo, setRepo] = useState<RepoChoice | null>(null);
+  // The sidebar's per-repo "+" lands here with that repo picked.
+  const preselected = useRef(false);
+  useEffect(() => {
+    if (preselected.current || !initialRepoId || !repos.choices) return;
+    const match = repos.choices.find((c) => c.local?.id === initialRepoId);
+    if (match && repos.github) {
+      preselected.current = true;
+      setRepo(match);
+    }
+  }, [initialRepoId, repos]);
+  const [progress, setProgress] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function start(text: string, opts: Parameters<typeof realtime.submitPrompt>[2]) {
+    setError(null);
+    try {
+      let target: { repoId: string; baseBranch: string } | null = null;
+      if (repo) {
+        if (!repo.local) setProgress(`Cloning ${repo.fullName}…`);
+        const r = await resolveRepoChoice(rest, repo);
+        target = { repoId: r.id, baseBranch: r.defaultBranch };
+      }
+      setProgress(target ? "Getting the latest from GitHub…" : "Starting…");
+      // This browser's defaults, which the pickers above have just been writing to.
+      const composer = loadDeviceDefaults();
+      const session = await rest.createSession(target ? { ...target, composer } : { composer });
+      realtime.takeControl(session.id);
+      realtime.submitPrompt(session.id, text, opts);
+      // After the composer has seen the send go through and dropped its draft.
+      setTimeout(() => navigate(`/session/${encodeURIComponent(session.id)}`), 0);
+    } catch (e) {
+      setProgress(null);
+      setError(e instanceof Error ? e.message : "Couldn't start the session.");
+      throw e;
+    }
+  }
+
+  return (
+    <div className="mt-8">
+      <Composer
+        sessionId={null}
+        composer={null}
+        disabled={connection !== "open"}
+        loading={false}
+        reason="Connecting to the daemon…"
+        placeholder="Describe a task or ask a question"
+        onSend={start}
+        busy={false}
+        onStop={() => {}}
+        controls={<RepoPicker {...repos} value={repo} onChange={setRepo} disabled={progress !== null} />}
+      />
+      {(progress || error) && (
+        <div className={`mt-1 text-center text-xs ${error ? "text-(--renki-danger)" : "text-(--renki-fg-muted)"}`}>{error ?? progress}</div>
+      )}
+    </div>
+  );
+}
 
 /**
  * The home screen — what you see with no session open. A greeting and one
@@ -37,6 +111,7 @@ const HEATMAP_WEEKS = 26;
 export function Home() {
   const { rest, realtime } = useClient();
   const navigate = useNavigate();
+  const { search } = useLocation();
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -94,6 +169,9 @@ export function Home() {
           <span className="codicon codicon-sparkle-filled text-[22px] text-(--renki-accent)" />
           {greeting()}
         </h1>
+
+        {/* Keyed on the query so "New" in the sidebar starts it over (and focuses it) even from here. */}
+        <NewChat key={search} initialRepoId={new URLSearchParams(search).get("repo")} />
 
         {attention.length > 0 && (
           <section className="renki-enter mt-8" aria-label="Needs your attention">
@@ -157,7 +235,7 @@ export function Home() {
           <div className="mt-8 rounded-xl bg-(--renki-surface) p-6 shadow-(--renki-shadow-xs)">
             <div className="text-sm font-medium text-(--renki-fg)">Nothing to show yet</div>
             <div className="mt-1 text-xs text-(--renki-fg-muted)">
-              Start a session from the sidebar and send a prompt — your activity, streaks and spend will show up here.
+              Send a message above to start a session — your activity, streaks and spend will show up here.
             </div>
           </div>
         )}

@@ -502,7 +502,7 @@ export function SessionView({
           // You sent something: show it, even if you'd scrolled up.
           stickToBottom.current = true;
           setAtBottom(true);
-          return realtime.submitPrompt(sessionId, text, opts);
+          realtime.submitPrompt(sessionId, text, opts);
         }}
         busy={isController && status === "busy"}
         onStop={() => realtime.interrupt(sessionId)}
@@ -2083,7 +2083,10 @@ function ImagePreviewDialog({
   );
 }
 
-function Composer({
+/** Where the home screen's composer keeps its draft — it has no session yet. */
+const NEW_CHAT_DRAFT = "__new";
+
+export function Composer({
   sessionId,
   composer,
   disabled,
@@ -2092,8 +2095,11 @@ function Composer({
   onSend,
   busy,
   onStop,
+  placeholder,
+  controls,
 }: {
-  sessionId: string;
+  /** Null on the home screen: the session is only created when the first message is sent. */
+  sessionId: string | null;
   /** What the SESSION is pinned to, pushed by the daemon; null until the first push. */
   composer: SessionComposer | null;
   /** Can't send right now (no control, archived, trashed, or still loading). */
@@ -2109,16 +2115,23 @@ function Composer({
       permissionMode?: PermissionModeKey;
       attachments?: Attachment[];
     },
-  ) => void;
+  ) => void | Promise<void>;
   busy: boolean;
   onStop: () => void;
+  placeholder?: string;
+  /** Extra pickers after the permission one (the home screen's repo picker). */
+  controls?: React.ReactNode;
 }) {
   const { rest, realtime } = useClient();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Restore whatever was half-typed for THIS session — switching sessions or
   // closing the tab shouldn't throw away a prompt in progress.
-  const restored = useRef(loadDraft(sessionId));
+  const draftKey = sessionId ?? NEW_CHAT_DRAFT;
+  const restored = useRef(loadDraft(draftKey));
+  /** Set once an async send went through and this composer is about to go: its draft must not be saved back. */
+  const sent = useRef(false);
+  const [sending, setSending] = useState(false);
   const [text, setText] = useState(() => restored.current?.text ?? "");
   const [attachments, setAttachments] = useState<PendingAttachment[]>(() =>
     (restored.current?.attachments ?? []).map((a) => ({ ...a, id: crypto.randomUUID() })),
@@ -2208,20 +2221,22 @@ function Composer({
   // Persist the in-progress prompt, debounced so a fast typist isn't writing
   // to storage on every keystroke.
   useEffect(() => {
-    const id = setTimeout(() => saveDraft(sessionId, text, attachments.map(({ id: _id, ...a }) => a)), 250);
+    const id = setTimeout(() => saveDraft(draftKey, text, attachments.map(({ id: _id, ...a }) => a)), 250);
     return () => clearTimeout(id);
-  }, [sessionId, text, attachments]);
+  }, [draftKey, text, attachments]);
 
   // A closing tab doesn't reliably run the debounce, so flush on the way out
   // (and when switching sessions unmounts this composer).
   useEffect(() => {
-    const flush = () => saveDraft(sessionId, text, attachments.map(({ id: _id, ...a }) => a));
+    const flush = () => {
+      if (!sent.current) saveDraft(draftKey, text, attachments.map(({ id: _id, ...a }) => a));
+    };
     window.addEventListener("pagehide", flush);
     return () => {
       window.removeEventListener("pagehide", flush);
       flush();
     };
-  }, [sessionId, text, attachments]);
+  }, [draftKey, text, attachments]);
 
   // supportedModels() already includes its own "Default (recommended)" entry
   // (first in the list) — no need for our own placeholder on top of it. Once
@@ -2275,13 +2290,13 @@ function Composer({
    */
   function pin(patch: Parameters<typeof rememberDeviceDefaults>[0]) {
     rememberDeviceDefaults(patch);
-    void rest.updateSessionComposer(sessionId, patch).catch(() => {});
+    if (sessionId) void rest.updateSessionComposer(sessionId, patch).catch(() => {});
   }
 
   function setPermissionMode(next: PermissionModeKey) {
     setPermissionModeState(next);
     pin({ permissionMode: next });
-    if (busy) realtime.setPermissionMode(sessionId, next);
+    if (busy && sessionId) realtime.setPermissionMode(sessionId, next);
   }
 
   function setModel(next: string) {
@@ -2296,8 +2311,8 @@ function Composer({
 
   function send() {
     const t = text.trim();
-    if ((!t && attachments.length === 0) || disabled) return;
-    onSend(t, {
+    if ((!t && attachments.length === 0) || disabled || sending) return;
+    const result = onSend(t, {
       model: model || undefined,
       maxThinkingTokens: effort?.maxThinkingTokens ?? undefined,
       permissionMode,
@@ -2306,11 +2321,24 @@ function Composer({
           ? attachments.map(({ id: _id, ...a }) => a)
           : undefined,
     });
-    setText("");
-    setAttachments([]);
-    setAttachError(null);
-    setDraftNote(false);
-    clearDraft(sessionId);
+    const reset = () => {
+      setText("");
+      setAttachments([]);
+      setAttachError(null);
+      setDraftNote(false);
+      clearDraft(draftKey);
+    };
+    if (!(result instanceof Promise)) return reset();
+    // Async (the home screen creating the session first): keep the text until it's
+    // through, so a failure doesn't eat the message. The caller shows the error.
+    setSending(true);
+    result.then(
+      () => {
+        sent.current = true;
+        reset();
+      },
+      () => setSending(false),
+    );
   }
 
   /** Reads and validates dropped/picked/pasted files, appending whatever's accepted. */
@@ -2479,7 +2507,7 @@ function Composer({
 
   return (
     <div
-      className="relative px-6 pb-3 pt-1"
+      className={sessionId ? "relative px-6 pb-3 pt-1" : "relative"}
       onDragOver={(e) => {
         e.preventDefault();
         setDragOver(true);
@@ -2599,7 +2627,7 @@ function Composer({
                 ? reason
                 : busy
                   ? "Add to what Claude is doing…"
-                  : "Reply to Claude…"
+                  : (placeholder ?? "Reply to Claude…")
             }
             className="block max-h-48 w-full resize-none bg-transparent px-3 pt-2.5 pb-1 text-[14px] leading-relaxed text-(--renki-fg) outline-none [field-sizing:content] placeholder:text-(--renki-fg-muted)"
           />
@@ -2621,7 +2649,7 @@ function Composer({
               size="icon"
               disabled={typingDisabled}
               onClick={() => fileInputRef.current?.click()}
-              title="Attach images, PDFs, or text files"
+              title="Attach images, PDFs, text files or zips"
               className="h-7 w-7"
             >
               <span className="codicon codicon-add" />
@@ -2634,6 +2662,7 @@ function Composer({
               />
               {openMenu === "mode" && menuPanel("start")}
             </div>
+            {controls}
             {/* The empty stretch between the pickers belongs to the text box:
                 clicking it focuses the input, like clicking above it does.
                 mousedown + preventDefault so focus never leaves for the div. */}
@@ -2684,7 +2713,7 @@ function Composer({
                   onClick={send}
                   aria-label="Send"
                   title={loading ? "Loading… you can send in a moment" : "Send (Enter)"}
-                  disabled={disabled || (!text.trim() && attachments.length === 0)}
+                  disabled={disabled || sending || (!text.trim() && attachments.length === 0)}
                   className="grid h-8 w-8 place-items-center rounded-full bg-(--renki-accent) text-(--renki-accent-fg) transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <span className="codicon codicon-arrow-up text-base" />
@@ -2701,7 +2730,7 @@ function Composer({
   );
 }
 
-function PickerButton({
+export function PickerButton({
   label,
   open,
   onToggle,

@@ -1,11 +1,11 @@
 import { activeSessions, displayBranch, formatPurgeCountdown, groupByRepo, trashedSessions } from "@renki/client-core";
 import type { Session } from "@renki/protocol";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { clearComposerPrefs, clearDraft } from "../lib/composerPrefs.js";
 import { useClient } from "../lib/client.js";
 import { AttachRepoDialog } from "./AttachRepoDialog.js";
 import { ExportDialog } from "./ExportDialog.js";
-import { NewSessionDialog } from "./NewSessionDialog.js";
 import { Button, Eyebrow, Reveal, SessionGlyph, Skeleton } from "./ui.js";
 
 /**
@@ -33,7 +33,7 @@ export function SessionList({
   const { rest, realtime } = useClient();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [creating, setCreating] = useState<{ repoId?: string } | null>(null);
+  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
   const [showArchived, setShowArchived] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
@@ -184,7 +184,7 @@ export function SessionList({
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between px-4 pt-3 pb-2">
         <span className="text-sm font-semibold tracking-tight text-(--renki-fg)">Sessions</span>
-        <Button variant="primary" size="sm" onClick={() => setCreating({})}>
+        <Button variant="primary" size="sm" onClick={() => navigate(`/?new=${Date.now()}`)}>
           <span className="codicon codicon-add" /> New
         </Button>
       </div>
@@ -252,7 +252,7 @@ export function SessionList({
                 </button>
                 {g.repoId && (
                   <button
-                    onClick={() => setCreating({ repoId: g.repoId ?? undefined })}
+                    onClick={() => navigate(`/?${new URLSearchParams({ repo: g.repoId!, new: String(Date.now()) })}`)}
                     title={`New session in ${g.name}`}
                     className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-(--renki-fg-muted) opacity-0 transition-opacity group-hover/hdr:opacity-100 hover:bg-(--renki-hover) hover:text-(--renki-fg) focus-visible:opacity-100"
                   >
@@ -353,18 +353,6 @@ export function SessionList({
         />
       )}
 
-      {creating && (
-        <NewSessionDialog
-          initialRepoId={creating.repoId}
-          onClose={() => setCreating(null)}
-          onCreated={(session) => {
-            setCreating(null);
-            refresh();
-            realtime.takeControl(session.id);
-            onSelect(session.id);
-          }}
-        />
-      )}
     </div>
   );
 }

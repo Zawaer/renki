@@ -1,9 +1,13 @@
+import { execFile } from "node:child_process";
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
+import { promisify } from "node:util";
 import { simpleGit } from "simple-git";
 import type { Config } from "../config.js";
 import { logger } from "../logger.js";
 import { shortId } from "../ids.js";
+
+const run = promisify(execFile);
 
 /**
  * Git worktree management — the heart of "painless parallelism per repo".
@@ -34,13 +38,45 @@ export async function createWorktree(
   const worktreePath = resolve(config.worktreesDir, sessionId);
   const git = simpleGit(repoPath);
 
+  const from = await latestBase(repoPath, baseBranch);
+
   // `worktree add -b <branch> <path> <base>`: create <branch> from <base> and
   // check it out into a brand-new directory. Fails loudly if the branch already
   // exists or the path is occupied — which is what we want (no silent reuse).
-  await git.raw(["worktree", "add", "-b", branch, worktreePath, baseBranch]);
+  // --no-track: branching from origin/<base> would otherwise make that its upstream.
+  await git.raw(["worktree", "add", "--no-track", "-b", branch, worktreePath, from]);
 
-  logger.info("created worktree", { repoPath, worktreePath, branch, baseBranch });
+  logger.info("created worktree", { repoPath, worktreePath, branch, baseBranch, from });
   return { worktreePath, branch };
+}
+
+/**
+ * What a new session branches from: `<base>` as it is on GitHub, fetched just
+ * now. The host's own checkout is usually days behind and nobody works in it,
+ * so asking "pull first?" every time was only noise. The local branch still
+ * wins when it has commits origin doesn't (unpushed work stays), and when the
+ * fetch fails (offline, no remote) — then it's simply what's on disk.
+ */
+export async function latestBase(repoPath: string, baseBranch: string): Promise<string> {
+  const git = simpleGit({ baseDir: repoPath, timeout: { block: 30_000 } });
+  try {
+    await git.raw(["fetch", "--quiet", "origin", baseBranch]);
+  } catch (err) {
+    logger.warn("fetch before branching failed; using the local branch", { repoPath, baseBranch, err: String(err) });
+    return baseBranch;
+  }
+  const remote = `refs/remotes/origin/${baseBranch}`;
+  const hasLocal = await git
+    .raw(["rev-parse", "--verify", "--quiet", `refs/heads/${baseBranch}`])
+    .then((out) => out.trim().length > 0)
+    .catch(() => false);
+  if (!hasLocal) return `origin/${baseBranch}`;
+  // Exit 0 = the local branch is contained in origin's, i.e. merely behind (or equal).
+  // execFile rather than simple-git, which reports a quiet non-zero exit as success.
+  const behindOnly = await run("git", ["merge-base", "--is-ancestor", `refs/heads/${baseBranch}`, remote], { cwd: repoPath })
+    .then(() => true)
+    .catch(() => false);
+  return behindOnly ? `origin/${baseBranch}` : baseBranch;
 }
 
 /**

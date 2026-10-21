@@ -1,7 +1,7 @@
 import type { GithubRepo, Repo, Session } from "@renki/protocol";
 import { useEffect, useState } from "react";
 import { useClient } from "../lib/client.js";
-import { GithubBrowser } from "./NewSessionDialog.js";
+import { GithubBrowser } from "./GithubBrowser.js";
 import { Button, Select } from "./ui.js";
 
 /** Sentinel that opens the GitHub browser instead of selecting anything. */

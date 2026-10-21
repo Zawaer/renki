@@ -1194,7 +1194,7 @@ function Block({
     return <ThinkingBlock block={block} live={turnRunning && block.endedAtMs == null} colors={colors} styles={styles} />;
   }
   return (
-    <LongPressToRead title="Claude's reply" text={block.text}>
+    <LongPressToRead title="Claude's reply" text={block.text} markdown>
       <StreamingMarkdown content={block.text} streaming={turnRunning && block.endedAtMs == null} />
     </LongPressToRead>
   );

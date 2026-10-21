@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useMemo, useState } from "react
 import { Modal, Pressable, ScrollView, Share, StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { type ThemeColors, useTheme } from "../theme";
+import { markdownToPlainText } from "./Markdown";
 
 /**
  * Long-press a message to read it in a plain full-screen view, where its text
@@ -35,18 +36,21 @@ export function TextReaderProvider({ children }: { children: React.ReactNode }) 
 export function LongPressToRead({
   title,
   text,
+  markdown = false,
   style,
   children,
 }: {
   title: string;
   text: string;
+  /** The text is markdown: the reader shows (and shares) it as plain text, the way it reads. */
+  markdown?: boolean;
   style?: StyleProp<ViewStyle>;
   children: React.ReactNode;
 }) {
   const open = useContext(ReaderContext);
   if (!text.trim()) return <View style={style}>{children}</View>;
   return (
-    <Pressable style={style} delayLongPress={350} onLongPress={() => open({ title, text })}>
+    <Pressable style={style} delayLongPress={350} onLongPress={() => open({ title, text: markdown ? markdownToPlainText(text) : text })}>
       {children}
     </Pressable>
   );

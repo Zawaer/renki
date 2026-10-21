@@ -94,7 +94,10 @@ function makeTableRules(colors: ThemeColors): Record<string, RenderRule> {
     // Grow in proportion to the measured width, so a table narrower than the
     // screen still fills it and every row keeps its columns aligned.
     return (
-      <View key={node.key} style={{ flexBasis: width, flexGrow: width, flexShrink: 0, paddingHorizontal: CELL_PAD_X, paddingVertical: 8 }}>
+      <View
+        key={node.key}
+        style={{ minWidth: width, flexBasis: width, flexGrow: width, flexShrink: 0, paddingHorizontal: CELL_PAD_X, paddingVertical: 8 }}
+      >
         {children}
       </View>
     );
@@ -105,8 +108,11 @@ function makeTableRules(colors: ThemeColors): Record<string, RenderRule> {
         key={node.key}
         style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 10, overflow: "hidden", marginTop: 2, marginBottom: 10 }}
       >
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }}>
-          <View style={{ flexGrow: 1 }}>{children}</View>
+        <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }}>
+          {/* The table's full width, stated: left to flex alone, the content
+              could come out screen-wide with the cells spilling past it, which
+              clips them and leaves nothing to scroll. */}
+          <View style={{ flexGrow: 1, minWidth: columnWidths(node).reduce((a, b) => a + b, 0) }}>{children}</View>
         </ScrollView>
       </View>
     ),
@@ -225,6 +231,96 @@ export const Markdown = memo(function Markdown({
     </MD>
   );
 });
+
+type MdToken = { type: string; tag: string; content: string; info: string; markup: string; hidden: boolean; attrGet(name: string): string | null; children: MdToken[] | null };
+
+/**
+ * A reply as plain text, for copying and sharing: what it reads as, not its
+ * markdown source. Pasted into WhatsApp or a mail, "> " quote markers, **bold**
+ * stars and table pipes are noise. Lists keep their bullets and numbers, a
+ * link keeps its URL after the text, a table becomes one line per row.
+ */
+export function markdownToPlainText(md: string): string {
+  const tokens = parser.parse(md, {}) as MdToken[];
+  let out = "";
+  const lists: { ordered: boolean; n: number }[] = [];
+  let cellsInRow = 0;
+  const inline = (children: MdToken[]): string => {
+    let text = "";
+    let href: string | null = null;
+    let linkText = "";
+    for (const t of children) {
+      let piece = "";
+      if (t.type === "text" || t.type === "code_inline") piece = t.content;
+      else if (t.type === "softbreak" || t.type === "hardbreak") piece = "\n";
+      else if (t.type === "link_open") {
+        href = t.attrGet("href");
+        linkText = "";
+        continue;
+      } else if (t.type === "link_close") {
+        // A bare URL (linkify) already is its text; anything else keeps the URL after it.
+        if (href && href !== linkText && !href.startsWith("#")) text += ` (${href})`;
+        href = null;
+        continue;
+      } else if (t.type === "image") piece = t.content;
+      if (href) linkText += piece;
+      text += piece;
+    }
+    return text;
+  };
+  for (const t of tokens) {
+    switch (t.type) {
+      case "bullet_list_open":
+        lists.push({ ordered: false, n: 0 });
+        break;
+      case "ordered_list_open":
+        lists.push({ ordered: true, n: Number(t.attrGet("start") ?? 1) - 1 });
+        break;
+      case "bullet_list_close":
+      case "ordered_list_close":
+        lists.pop();
+        if (lists.length === 0) out += "\n";
+        break;
+      case "list_item_open": {
+        const list = lists[lists.length - 1]!;
+        list.n += 1;
+        out += "  ".repeat(lists.length - 1) + (list.ordered ? `${list.n}. ` : "• ");
+        break;
+      }
+      case "inline":
+        out += inline(t.children ?? []);
+        break;
+      case "paragraph_close":
+        // In a tight list the paragraph is hidden: one line per item.
+        out += t.hidden ? "\n" : lists.length > 0 ? "\n" : "\n\n";
+        break;
+      case "heading_close":
+        out += "\n\n";
+        break;
+      case "fence":
+      case "code_block":
+        out += t.content.replace(/\n$/, "") + "\n\n";
+        break;
+      case "hr":
+        out += "———\n\n";
+        break;
+      case "tr_open":
+        cellsInRow = 0;
+        break;
+      case "th_open":
+      case "td_open":
+        if (cellsInRow++ > 0) out += " · ";
+        break;
+      case "tr_close":
+        out += "\n";
+        break;
+      case "table_close":
+        out += "\n";
+        break;
+    }
+  }
+  return out.replace(/\n{3,}/g, "\n\n").trim();
+}
 
 /** Split markdown into blocks at blank lines — but never inside a ``` fence, which would break the code block apart. */
 function splitBlocks(text: string): string[] {

@@ -4,6 +4,7 @@ import {
   estimateTokens,
   formatCost,
   formatTokenCount,
+  formatAgo,
   formatTurnDuration,
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS_PER_PROMPT,
@@ -927,6 +928,10 @@ function AssistantTurn({ turn, animate = false }: { turn: TurnView; animate?: bo
                   the real breakdown. On the footer of every turn they were just
                   noise. */}
               <TurnDetails turn={turn} />
+              {/* Roughly when, exact on hover: enough to place a reply in a long-running chat. */}
+              {turn.endedAt != null && (
+                <span title={new Date(turn.endedAt).toLocaleString()}>{formatAgo(turn.endedAt)}</span>
+              )}
               {/* One turn can answer several prompts — anything steered into it
                   mid-flight — so this stays visible: it changes what the
                   transcript above means, which a token count does not. */}

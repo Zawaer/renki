@@ -88,6 +88,8 @@ export type TurnView = {
   status: "running" | "done" | "error";
   costUsd: number | null;
   durationMs: number | null;
+  /** When the turn finished (its result's timestamp), for the reply's "2d ago". */
+  endedAt: number | null;
   errorMessage: string | null;
   /** Real usage from the SDK's result message — only known once the turn finishes. */
   inputTokens: number | null;
@@ -447,6 +449,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
         status: e.ok ? "done" : "error",
         costUsd: e.costUsd,
         durationMs: e.durationMs,
+        endedAt: e.ts,
         errorMessage: e.errorMessage,
         inputTokens: e.inputTokens,
         outputTokens: e.outputTokens,
@@ -786,6 +789,7 @@ function emptyTurn(turnId: string): TurnView {
     status: "running",
     costUsd: null,
     durationMs: null,
+    endedAt: null,
     errorMessage: null,
     inputTokens: null,
     outputTokens: null,

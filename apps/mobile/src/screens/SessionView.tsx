@@ -7,6 +7,7 @@ import {
   estimateTokens,
   formatCost,
   formatTokenCount,
+  formatAgo,
   formatTurnDuration,
   MAX_ATTACHMENTS_PER_PROMPT,
   parseAskUserQuestion,
@@ -1508,6 +1509,8 @@ function TurnFooter({ turn, colors, styles }: { turn: TurnView; colors: ThemeCol
             <Ionicons name={open ? "information-circle" : "information-circle-outline"} size={14} color={colors.faint} />
           </TouchableOpacity>
         )}
+        {/* Roughly when: enough to place a reply in a long-running chat. */}
+        {turn.endedAt != null && <Text style={styles.meta}>· {formatAgo(turn.endedAt)}</Text>}
         {/* One turn can answer several prompts — anything steered into it
             mid-flight — so this stays visible: it changes what the transcript
             above means, which a token count does not. */}

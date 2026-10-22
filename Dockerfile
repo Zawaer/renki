@@ -77,8 +77,12 @@ FROM node:20-bookworm-slim AS runtime
 # session against your mounted repos. python3: sessions run inside this
 # container (not the host), so a Claude session's own Bash tool calls need it
 # on PATH too, same as it'd be on a normal dev machine.
+# poppler-utils (pdftotext, pdftoppm) and pip/venv: sessions run here and
+# read PDFs often; without them a fetched PDF was unreadable and there was no
+# way to install a library to try.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git ca-certificates python3 openssh-client \
+      poppler-utils python3-pip python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 # Your repos are bind-mounted from the host, so they're owned by your host

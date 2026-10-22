@@ -77,13 +77,21 @@ FROM node:20-bookworm-slim AS runtime
 # session against your mounted repos. python3: sessions run inside this
 # container (not the host), so a Claude session's own Bash tool calls need it
 # on PATH too, same as it'd be on a normal dev machine.
-# poppler-utils (pdftotext, pdftoppm) and pip/venv: sessions run here and
-# read PDFs often; without them a fetched PDF was unreadable and there was no
-# way to install a library to try.
+# The rest is the everyday toolbox a session reaches for, picked from what
+# past sessions' commands failed on ("command not found"): process tools
+# (ps, pkill, free), jq, file, archives, sqlite3, ripgrep, network checks,
+# PDFs (poppler: pdftotext, pdftoppm; tesseract for scanned ones, Finnish and
+# English), images and HTTP for Python, ffmpeg, and pip/venv to install
+# anything else.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git ca-certificates python3 openssh-client \
-      poppler-utils python3-pip python3-venv \
-    && rm -rf /var/lib/apt/lists/*
+      procps jq file zip unzip xz-utils sqlite3 ripgrep \
+      iproute2 dnsutils iputils-ping \
+      poppler-utils tesseract-ocr tesseract-ocr-fin tesseract-ocr-eng \
+      python3-pip python3-venv python3-pil python3-requests \
+      ffmpeg \
+    && rm -rf /var/lib/apt/lists/* \
+    && corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 # Your repos are bind-mounted from the host, so they're owned by your host
 # user, not by this container's root — git 2.35.2+ refuses to touch a

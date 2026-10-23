@@ -1,4 +1,12 @@
-import { activeSessions, displayBranch, formatPurgeCountdown, formatResumeAt, groupByRepo, trashedSessions } from "@renki/client-core";
+import {
+  activeSessions,
+  displayBranch,
+  formatPurgeCountdown,
+  formatResumeAt,
+  groupByRepo,
+  trashedSessions,
+  unpushedBadge,
+} from "@renki/client-core";
 import type { AttachRepoRequest, GithubRepo, Repo, Session } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
@@ -306,7 +314,9 @@ function Row({
 
   function confirmDelete() {
     setActionsOpen(false);
-    Alert.alert("Move to trash?", "The transcript stays restorable for 30 days. The worktree and branch are cleaned up now.", [
+    const commits = session.unpushed?.commits ?? 0;
+    const unpushedNote = commits > 0 ? ` ${commits} commit${commits === 1 ? " isn't" : "s aren't"} on GitHub; the branch is kept for ${commits === 1 ? "it" : "them"}.` : "";
+    Alert.alert("Move to trash?", `The transcript stays restorable for 30 days. The worktree is cleaned up now.${unpushedNote}`, [
       { text: "Cancel", style: "cancel" },
       { text: "Move to trash", style: "destructive", onPress: onDelete },
     ]);
@@ -359,6 +369,9 @@ function Row({
             {branch ? ` · ${branch}` : ""}
           </Text>
         </View>
+        {unpushedBadge(session.unpushed) && (
+          <Text style={{ color: colors.busy, fontSize: 11, fontWeight: "700", fontVariant: ["tabular-nums"] }}>{unpushedBadge(session.unpushed)}</Text>
+        )}
         {session.controller && <Ionicons name="lock-closed" size={12} color={colors.accent} />}
         <TouchableOpacity
           style={styles.kebab}
@@ -392,7 +405,16 @@ function Row({
               style={styles.sheetRow}
               onPress={() => {
                 setActionsOpen(false);
-                onArchive();
+                const commits = session.unpushed?.commits ?? 0;
+                if (commits === 0) return onArchive();
+                Alert.alert(
+                  "Archive anyway?",
+                  `${commits} commit${commits === 1 ? " isn't" : "s aren't"} on GitHub yet. The branch is kept, so unarchiving brings ${commits === 1 ? "it" : "them"} back.`,
+                  [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Archive", onPress: onArchive },
+                  ],
+                );
               }}
             >
               <Ionicons name="archive-outline" size={18} color={colors.text} />

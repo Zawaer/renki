@@ -1,6 +1,9 @@
 import {
   classifyAttachment,
   EFFORT_LEVELS,
+  PUSH_PROMPT,
+  promptOptsFor,
+  unpushedSummary,
   estimateTokens,
   formatCost,
   formatTokenCount,
@@ -44,7 +47,7 @@ import {
   segmentImages,
   timelineWithSending,
 } from "@renki/client-core";
-import type { Account, AttachmentView, CapabilitiesResponse, SessionComposer, SessionResume } from "@renki/protocol";
+import type { Account, AttachmentView, CapabilitiesResponse, Session, SessionComposer, SessionResume } from "@renki/protocol";
 import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { hostOpenFile, isHosted } from "../lib/host.js";
@@ -99,6 +102,8 @@ export function SessionView({
   /** A turn paused on a usage limit, waiting to continue — also only on the snapshot. */
   const [resume, setResume] = useState<SessionResume | null>(null);
   const [title, setTitle] = useState<string | null>(null);
+  /** Commits and uncommitted files GitHub doesn't have yet (counted by the daemon after each turn). */
+  const [unpushed, setUnpushed] = useState<Session["unpushed"]>(null);
   /** The worktree's absolute path, so a reply's absolute file links can be mapped into it. */
   const [worktreePath, setWorktreePath] = useState<string | null>(null);
   /**
@@ -115,6 +120,7 @@ export function SessionView({
     setPurgeAt(null);
     setResume(null);
     setTitle(null);
+    setUnpushed(null);
     setWorktreePath(null);
     setPlace(null);
     return realtime.onSessionChanged((s) => {
@@ -122,6 +128,7 @@ export function SessionView({
       setPurgeAt(s.purgeAt ?? null);
       setResume(s.resume ?? null);
       setTitle(s.title);
+      setUnpushed(s.unpushed ?? null);
       setWorktreePath(s.worktreePath);
       setPlace({ repoName: s.repoName, branch: s.branch });
       setControllerOnline(s.controllerOnline ?? true);
@@ -485,6 +492,18 @@ export function SessionView({
         />
       )}
 
+      {unpushed && status !== "busy" && status !== "archived" && status !== "trashed" && (
+        <UnpushedBanner
+          unpushed={unpushed}
+          canPush={isController}
+          onPush={() => {
+            stickToBottom.current = true;
+            setAtBottom(true);
+            realtime.submitPrompt(sessionId, PUSH_PROMPT, promptOptsFor(conv.composer));
+          }}
+        />
+      )}
+
       <Composer
         sessionId={sessionId}
         composer={conv.composer}
@@ -575,6 +594,33 @@ function HeaderIconButton({ icon, label, active, onClick }: { icon: string; labe
  * might want instead: go now (you bought extra usage, or know better than the
  * numbers), or don't continue at all.
  */
+/**
+ * Work GitHub doesn't have yet, above the composer, like VS Code's source
+ * control count: easy to forget when Claude does the committing. Push asks
+ * Claude to do it, so it can merge with whatever changed on main first.
+ */
+function UnpushedBanner({
+  unpushed,
+  canPush,
+  onPush,
+}: {
+  unpushed: NonNullable<Session["unpushed"]>;
+  canPush: boolean;
+  onPush: () => void;
+}) {
+  return (
+    <div className="px-6 pb-2">
+      <div className="renki-enter mx-auto flex w-full max-w-3xl items-center gap-3 rounded-xl border border-(--renki-border) bg-(--renki-surface) px-3.5 py-2">
+        <span className="codicon codicon-cloud-upload shrink-0 text-(--renki-fg-muted)" />
+        <span className="min-w-0 flex-1 truncate text-[13px] text-(--renki-fg)">{unpushedSummary(unpushed)}</span>
+        <Button variant="ghost" size="sm" disabled={!canPush} onClick={onPush} title={canPush ? undefined : "Take control to push"}>
+          Push
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function ResumeBanner({
   resume,
   canAct,

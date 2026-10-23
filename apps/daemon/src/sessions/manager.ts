@@ -23,6 +23,7 @@ import type { DB } from "../db/index.js";
 import { compactions, sessions } from "../db/schema.js";
 import { EventLog } from "../events/log.js";
 import { chatAsContext, isLostConversation } from "../export/context.js";
+import { unpushedOf, type Unpushed } from "../git/unpushed.js";
 import { createWorktree, removeWorktree, restoreWorktree } from "../git/worktrees.js";
 import { newSessionId } from "../ids.js";
 import { logger } from "../logger.js";
@@ -177,6 +178,8 @@ export class SessionManager {
   private resolverFor: ((sessionId: string) => PermissionResolver) | null = null;
   /** sessionId -> the prompted turn running now, so a restart can continue it with the same settings. */
   private readonly inflight = new Map<string, SubmitPromptInput>();
+  /** What each session hasn't pushed, as last counted (see refreshUnpushed). Only non-empty entries. */
+  private readonly unpushed = new Map<string, Unpushed>();
   /** sessionId -> the user's zone Claude was last told about. In memory: after a restart Claude just hears it once more. */
   private readonly toldTimeZone = new Map<string, string>();
   /** Set by closeAll: a shutting-down daemon must not start resumed turns. */
@@ -586,13 +589,13 @@ export class SessionManager {
       .where(ne(sessions.status, "deleted"))
       .orderBy(desc(sessions.lastActivityAt))
       .all()
-      .map((row) => rowToSession(row, this.config.trashRetentionMs));
+      .map((row) => ({ ...rowToSession(row, this.config.trashRetentionMs), unpushed: this.unpushed.get(row.id) ?? null }));
   }
 
   getSession(id: string): Session {
     const row = this.db.select().from(sessions).where(eq(sessions.id, id)).get();
     if (!row || row.status === "deleted") throw new SessionError("session_not_found", `Unknown session: ${id}`);
-    return rowToSession(row, this.config.trashRetentionMs);
+    return { ...rowToSession(row, this.config.trashRetentionMs), unpushed: this.unpushed.get(id) ?? null };
   }
 
   async archiveSession(id: string): Promise<Session> {
@@ -737,6 +740,7 @@ export class SessionManager {
         : `Moved into ${repo.name}, on ${created.branch}, but Claude's copy of the conversation didn't come along; the next turn carries on from this chat's history instead.`;
     this.events.append(id, { kind: "notice", text: note, level: carried || !claudeSessionId ? "info" : "warn" });
     logger.info("session attached to repo", { id, repo: repo.name, branch: created.branch, carried });
+    this.refreshUnpushed(id);
     return this.getSession(id);
   }
 
@@ -922,7 +926,57 @@ export class SessionManager {
     // with the chat on a permanent delete (see removeChatFolder), not on archive or trash.
     if (!session.repoId) return;
     const repo = await findRepo(this.config, session.repoId);
-    if (repo && session.branch) await removeWorktree(repo.path, session.worktreePath, session.branch);
+    if (!repo || !session.branch) return;
+    // A branch with commits GitHub doesn't have is the only copy of that work:
+    // keep it, so unarchiving (which reuses a surviving branch) or a push can
+    // still get it back. Only the working tree goes.
+    const unpushed = await unpushedOf(session.worktreePath);
+    const keep = (unpushed?.commits ?? 0) > 0;
+    await removeWorktree(repo.path, session.worktreePath, session.branch, !keep);
+    this.unpushed.delete(session.id);
+    if (keep) {
+      const n = unpushed!.commits;
+      this.events.append(session.id, {
+        kind: "notice",
+        text: `Kept the branch ${session.branch}: it has ${n} commit${n === 1 ? "" : "s"} that ${n === 1 ? "isn't" : "aren't"} on GitHub. Unarchiving brings ${n === 1 ? "it" : "them"} back.`,
+        level: "warn",
+      });
+      logger.info("kept a branch with unpushed commits", { id: session.id, branch: session.branch, commits: n });
+    }
+  }
+
+  /**
+   * Re-count what this session hasn't pushed (see git/unpushed.ts) and tell
+   * clients if it changed. Runs whenever a session goes idle, so after every
+   * turn, and once for every session at startup.
+   */
+  refreshUnpushed(id: string): void {
+    let session: Session;
+    try {
+      session = this.getSession(id);
+    } catch {
+      return;
+    }
+    if (!session.repoId || session.status === "archived" || session.status === "trashed") {
+      if (this.unpushed.delete(id)) this.broadcast?.onSessionChanged(this.getSession(id));
+      return;
+    }
+    void unpushedOf(session.worktreePath).then((u) => {
+      const next = u && (u.commits > 0 || u.changedFiles > 0) ? u : null;
+      const prev = this.unpushed.get(id) ?? null;
+      if (prev?.commits === next?.commits && prev?.changedFiles === next?.changedFiles) return;
+      if (next) this.unpushed.set(id, next);
+      else this.unpushed.delete(id);
+      try {
+        this.broadcast?.onSessionChanged(this.getSession(id));
+      } catch {
+        // deleted meanwhile
+      }
+    });
+  }
+
+  refreshAllUnpushed(): void {
+    for (const s of this.listSessions()) this.refreshUnpushed(s.id);
   }
 
   /** Where this session's zip attachments are unpacked — outside its folder, so they never show up as changes in a repo. */
@@ -1746,6 +1800,8 @@ export class SessionManager {
       .where(eq(sessions.id, id))
       .run();
     this.broadcast?.onSessionChanged(this.getSession(id));
+    // A turn just ended (or the session came back): its commits may have changed.
+    if (fields.status === "idle" || fields.status === "error") this.refreshUnpushed(id);
   }
 }
 

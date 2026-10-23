@@ -1,4 +1,4 @@
-import { activeSessions, displayBranch, formatPurgeCountdown, groupByRepo, trashedSessions } from "@renki/client-core";
+import { activeSessions, displayBranch, formatPurgeCountdown, groupByRepo, trashedSessions, unpushedBadge, unpushedSummary } from "@renki/client-core";
 import type { Session } from "@renki/protocol";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -95,6 +95,8 @@ export function SessionList({
   }
 
   async function archive(id: string) {
+    const commits = sessions.find((s) => s.id === id)?.unpushed?.commits ?? 0;
+    if (commits > 0 && !confirm(`${commits} commit${commits === 1 ? " isn't" : "s aren't"} on GitHub yet. Archive anyway? The branch is kept, so unarchiving brings ${commits === 1 ? "it" : "them"} back.`)) return;
     try {
       await rest.archiveSession(id);
     } catch (err) {
@@ -116,7 +118,9 @@ export function SessionList({
    * month, the worktree and branch are not — they go now, as with archiving.
    */
   async function del(id: string) {
-    if (!confirm("Move to trash? The transcript stays restorable for 30 days. The worktree and branch are cleaned up now."))
+    const commits = sessions.find((s) => s.id === id)?.unpushed?.commits ?? 0;
+    const unpushedNote = commits > 0 ? ` ${commits} commit${commits === 1 ? " isn't" : "s aren't"} on GitHub; the branch is kept for ${commits === 1 ? "it" : "them"}.` : "";
+    if (!confirm(`Move to trash? The transcript stays restorable for 30 days. The worktree is cleaned up now.${unpushedNote}`))
       return;
     await rest.trashSession(id);
     onDeleted(id);
@@ -472,6 +476,11 @@ function Row({
               branch && (
                 <span className="hidden max-w-24 truncate font-mono text-[10px] text-(--renki-fg-muted) @min-[15rem]:inline">{branch}</span>
               )
+            )}
+            {unpushedBadge(session.unpushed) && (
+              <span className="font-mono text-[10px] text-(--renki-warning)" title={unpushedSummary(session.unpushed!)}>
+                {unpushedBadge(session.unpushed)}
+              </span>
             )}
             {session.controller && (
               <span className="codicon codicon-lock-small text-(--renki-fg-muted)" title="A device holds control" />

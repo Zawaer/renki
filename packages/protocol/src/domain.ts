@@ -170,6 +170,12 @@ export const Session = z.object({
   mergeMeta: MergeConflictMeta.nullable().optional(),
   /** Set while a rate-limited turn is waiting to be continued; absent/null otherwise. */
   resume: SessionResume.nullable().optional(),
+  /**
+   * What this session's working tree holds that GitHub doesn't: commits no
+   * remote branch contains, and uncommitted changed files. Null or absent when
+   * there's nothing (or no repo, or it hasn't been checked yet).
+   */
+  unpushed: z.object({ commits: z.number().int(), changedFiles: z.number().int() }).nullable().optional(),
 });
 export type Session = z.infer<typeof Session>;
 

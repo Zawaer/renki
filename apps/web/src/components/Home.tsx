@@ -470,7 +470,9 @@ function AttentionBadge({ reason, resumeAt }: { reason: AttentionReason; resumeA
       ? { icon: "codicon-shield", tone: "text-(--renki-danger)", label: "Needs approval" }
       : reason === "error"
         ? { icon: "codicon-error", tone: "text-(--renki-danger)", label: "Failed" }
-        : { icon: "codicon-debug-pause", tone: "text-(--renki-warning)", label: resumeAt ? formatResumeAt(resumeAt) : "Paused" };
+        : reason === "paused"
+          ? { icon: "codicon-debug-pause", tone: "text-(--renki-warning)", label: resumeAt ? formatResumeAt(resumeAt) : "Paused" }
+          : { icon: "codicon-cloud-upload", tone: "text-(--renki-warning)", label: "Not pushed" };
   return (
     <span className={`inline-flex shrink-0 items-center gap-1.5 text-xs font-medium ${tone}`}>
       <span className={`codicon ${icon} text-[13px]`} />

@@ -559,6 +559,56 @@ describe("unarchive", () => {
   });
 });
 
+describe("unpushed work", () => {
+  const gitEnv = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@e", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@e" };
+  async function commitIn(dir: string, file: string) {
+    const { execFileSync } = await import("node:child_process");
+    writeFileSync(resolve(dir, file), "x");
+    execFileSync("git", ["add", file], { cwd: dir, env: gitEnv });
+    execFileSync("git", ["commit", "-qm", `add ${file}`], { cwd: dir, env: gitEnv });
+  }
+  /** Give the test repo a remote that has main, as a real checkout from GitHub would. */
+  async function withRemote(config: Config, repoId: string) {
+    const { execFileSync } = await import("node:child_process");
+    const repo = resolve(config.reposRoot, repoId);
+    const bare = resolve(config.dataDir, "origin.git");
+    execFileSync("git", ["init", "-q", "--bare", bare]);
+    execFileSync("git", ["remote", "add", "origin", bare], { cwd: repo });
+    execFileSync("git", ["push", "-q", "origin", "main"], { cwd: repo, env: gitEnv });
+  }
+
+  it("keeps a branch with unpushed commits when archiving, and unarchive brings them back", async () => {
+    const { manager, config, repoId } = setup();
+    await withRemote(config, repoId);
+    const s = await newSession(manager, repoId);
+    await commitIn(s.worktreePath, "work.txt");
+    await manager.archiveSession(s.id);
+    expect(await branches(config, repoId)).toContain(s.branch);
+    expect(manager.events.read(s.id).find((e) => e.kind === "notice")).toMatchObject({ text: expect.stringMatching(/Kept the branch/), level: "warn" });
+
+    await manager.unarchiveSession(s.id);
+    expect(existsSync(resolve(s.worktreePath, "work.txt"))).toBe(true);
+  });
+
+  it("still deletes a branch with nothing unpushed", async () => {
+    const { manager, config, repoId } = setup();
+    await withRemote(config, repoId);
+    const s = await newSession(manager, repoId);
+    await manager.archiveSession(s.id);
+    expect(await branches(config, repoId)).not.toContain(s.branch);
+  });
+
+  it("counts commits and changed files, and reports them on the session", async () => {
+    const { manager, config, repoId } = setup();
+    await withRemote(config, repoId);
+    const s = await newSession(manager, repoId);
+    await commitIn(s.worktreePath, "a.txt");
+    writeFileSync(resolve(s.worktreePath, "b.txt"), "dirty");
+    manager.refreshUnpushed(s.id);
+    await vi.waitFor(() => expect(manager.getSession(s.id).unpushed).toEqual({ commits: 1, changedFiles: 1 }));
+  });
+});
+
 describe("closeOrphanedMacBuilds", () => {
   it("closes a build the restart left running, and leaves finished ones alone", async () => {
     const { manager } = setup();

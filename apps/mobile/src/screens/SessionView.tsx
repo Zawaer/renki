@@ -34,6 +34,9 @@ import {
   attachmentSource,
   type StepSummary,
   formatResumeAt,
+  PUSH_PROMPT,
+  promptOptsFor,
+  unpushedSummary,
   groupTurnBlocks,
   isBulkyToolPayload,
   turnFileChanges,
@@ -44,7 +47,7 @@ import {
   backgroundTasksOf,
   timelineWithSending,
 } from "@renki/client-core";
-import type { AttachmentView, CapabilitiesResponse, SessionResume } from "@renki/protocol";
+import type { AttachmentView, CapabilitiesResponse, Session, SessionResume } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -225,6 +228,8 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const [place, setPlace] = useState<{ repoName: string; branch: string | null } | null>(null);
   /** The chat's title: what the header shows (repo and branch are already in the list, and take room the header doesn't have). */
   const [title, setTitle] = useState<string | null>(null);
+  /** Commits and uncommitted files GitHub doesn't have yet (counted by the daemon after each turn). */
+  const [unpushed, setUnpushed] = useState<Session["unpushed"]>(null);
   /** False once the controller's last connection closed; it can't answer approvals then, so anyone may. */
   const [controllerOnline, setControllerOnline] = useState(true);
   useEffect(() => {
@@ -233,9 +238,11 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
     setWorktreePath(null);
     setPlace(null);
     setTitle(null);
+    setUnpushed(null);
     return realtime.onSessionChanged((s) => {
       if (s.id !== sessionId) return;
       setTitle(s.title);
+      setUnpushed(s.unpushed ?? null);
       setResume(s.resume ?? null);
       setWorktreePath(s.worktreePath);
       setPlace({ repoName: s.repoName, branch: s.branch });
@@ -559,6 +566,26 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
             </View>
           )}
         </View>
+        </FadeIn>
+      )}
+
+      {/* Work GitHub doesn't have yet. Push asks Claude to do it, so it can merge with main first. */}
+      {unpushed && status !== "busy" && status !== "archived" && status !== "trashed" && (
+        <FadeIn>
+          <View style={styles.resumeWrap}>
+            <Ionicons name="cloud-upload-outline" size={20} color={colors.dim} />
+            <Text style={[styles.resumeTitle, { flex: 1 }]} numberOfLines={2}>
+              {unpushedSummary(unpushed)}
+            </Text>
+            {isController && (
+              <TouchableOpacity
+                style={styles.resumeNowBtn}
+                onPress={() => realtime.submitPrompt(sessionId, PUSH_PROMPT, promptOptsFor(conv.composer))}
+              >
+                <Text style={styles.resumeNowText}>Push</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </FadeIn>
       )}
 

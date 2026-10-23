@@ -355,24 +355,25 @@ export function flattenAgents(nodes: AgentNode[]): AgentNode[] {
   return nodes.flatMap((n) => [n, ...flattenAgents(n.children)]);
 }
 
-export type AttentionReason = "permission" | "paused" | "error";
+export type AttentionReason = "permission" | "paused" | "error" | "unpushed";
 
 /**
  * Why a session needs you, if it does: waiting on an approval, paused on a
- * usage limit, or stopped on an error. Null for sessions that are fine — idle,
- * working, archived or in the trash.
+ * usage limit, stopped on an error, or holding commits GitHub doesn't have.
+ * Null for sessions that are fine — idle, working, archived or in the trash.
  */
 export function attentionReason(s: Session): AttentionReason | null {
   if (s.status === "archived" || s.status === "trashed" || s.status === "deleted") return null;
   if (s.hasPendingPermission) return "permission";
   if (s.resume && s.status !== "busy") return "paused";
   if (s.status === "error") return "error";
+  if ((s.unpushed?.commits ?? 0) > 0) return "unpushed";
   return null;
 }
 
 /** Sessions needing you, most urgent first (approvals, then errors, then pauses), newest within each. */
 export function sessionsNeedingAttention(sessions: Session[]): { session: Session; reason: AttentionReason }[] {
-  const rank: Record<AttentionReason, number> = { permission: 0, error: 1, paused: 2 };
+  const rank: Record<AttentionReason, number> = { permission: 0, error: 1, paused: 2, unpushed: 3 };
   return sessions
     .map((session) => ({ session, reason: attentionReason(session) }))
     .filter((x): x is { session: Session; reason: AttentionReason } => x.reason !== null)

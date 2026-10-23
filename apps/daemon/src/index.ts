@@ -37,6 +37,8 @@ async function main() {
   // Nothing from before this boot can be answered any more; clear those cards.
   manager.closeStalePermissions();
   manager.closeOrphanedMacBuilds();
+  // Every session's unpushed work, counted once now and after each turn from here on.
+  manager.refreshAllUnpushed();
   const broker = new PermissionBroker(config.permissionTimeoutMs);
   // Every flip between "nobody connected" and "someone is", for the hands-off stat.
   const devices = new DeviceRegistry((anyoneOnline) => {

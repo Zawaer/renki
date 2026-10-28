@@ -24,6 +24,7 @@ const config: Config = {
         signApks: "/Users/me/.matka/signing.properties",
       },
     },
+    F35: { rebuild: { description: "", command: "python train_c.py", timeoutMinutes: 60, artifacts: [] } },
   },
 };
 const manifest = [{ p: "mobile/a.ts", h: "a".repeat(40), x: false }];
@@ -128,6 +129,61 @@ describe("Runner", () => {
     const b = setup(CONTAINED);
     expect((await b.runner.run(args({ install: true }))).text).toMatch(/Installed/);
     expect(b.installs).toHaveLength(1);
+  });
+});
+
+describe("Runner queue", () => {
+  /** A wrapper whose `run` step blocks until released, recording which project ran. */
+  function gated() {
+    const ran: string[] = [];
+    const gates: Array<() => void> = [];
+    const wrapper: RunWrapper = async (a) => {
+      const out = (s: string) => ({ code: 0, stdout: Buffer.from(s), stderr: "" });
+      if (a[0] === "probe") return out(JSON.stringify(CONTAINED));
+      if (a[0] === "diff") return out("[]");
+      if (a[0] === "run") {
+        ran.push(a[1]!);
+        await new Promise<void>((r) => gates.push(r));
+      }
+      return out("");
+    };
+    const runner = new Runner(
+      config,
+      { wrapper, ensure: async () => null, stop: async () => {}, macAddress: "192.168.5.2" },
+      { fetchFiles: async () => Buffer.alloc(0), upload: async () => "", host: "renki.internal", port: 443 },
+      async () => ({ ok: true, text: "" }),
+    );
+    return { runner, ran, release: () => gates.shift()?.() };
+  }
+  const settle = () => new Promise((r) => setTimeout(r, 10));
+
+  it("runs one build at a time across projects, and says a waiting one is waiting", async () => {
+    const { runner, ran, release } = gated();
+    const heard: string[] = [];
+    const first = runner.run(args());
+    const second = runner.run({ ...args(), project: "F35", job: "rebuild" }, (phase) => heard.push(phase));
+    await settle();
+    expect(ran).toEqual(["matka"]);
+    expect(heard).toEqual(["Waiting for another build to finish"]);
+    release();
+    await first;
+    await settle();
+    expect(ran).toEqual(["matka", "F35"]);
+    release();
+    expect((await second).ok).toBe(true);
+  });
+
+  it("never starts a build stopped while it waits", async () => {
+    const { runner, ran, release } = gated();
+    const first = runner.run(args());
+    const abort = new AbortController();
+    const second = runner.run({ ...args(), project: "F35", job: "rebuild" }, () => {}, abort.signal);
+    abort.abort();
+    await settle();
+    release();
+    await first;
+    await second;
+    expect(ran).toEqual(["matka"]);
   });
 });
 

@@ -19,7 +19,8 @@ import type { MacManifestEntry } from "@renki/protocol";
 const run = promisify(execFile);
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
 const MAX_TREE_BYTES = 500 * 1024 * 1024;
-const JOB_TTL_MS = 2 * 60 * 60_000;
+// Room for a build to wait its turn on the Mac (one at a time, up to 60 min each) and then run.
+const JOB_TTL_MS = 4 * 60 * 60_000;
 const ARTIFACT_KEEP_MS = 3 * 24 * 60 * 60_000;
 export const MAX_ARTIFACT_BYTES = 600 * 1024 * 1024;
 export const MAX_ARTIFACTS_PER_JOB = 12;

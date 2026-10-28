@@ -58,10 +58,15 @@ const MAX_LOG = 20 * 1024 * 1024;
 const STOPPED: Result = { ok: false, text: "Stopped on the Mac: Renki no longer waits for this build." };
 
 /** Where a job has got to, for the session watching it: a phase, and the build's latest log line. */
+/** How often a job waiting its turn says so. Well inside the daemon's 70 minutes of allowed quiet. */
+const QUEUE_BEAT_MS = 5 * 60_000;
+
 export type Progress = (phase: string, detail?: string) => void;
 
 export class Runner {
-  private readonly locks = new Map<string, Promise<unknown>>();
+  private queue: Promise<unknown> = Promise.resolve();
+  /** Jobs running or waiting. */
+  private busy = 0;
 
   constructor(
     private readonly config: Config,
@@ -74,12 +79,30 @@ export class Runner {
     private readonly signEsp: (bin: string, key: string) => Promise<void> = (bin, key) => signEspImage(bin, key, config.espPython),
   ) {}
 
-  /** One job at a time per project: they share a mirror. */
+  /**
+   * One job at a time on this Mac, in the order they came. Two at once don't
+   * fit the VM: an Android release build peaks near 4.5 GB of its 8, and a
+   * CAD rebuild beside it pushed both into swap (2026-10-28). A waiting job
+   * says so every few minutes, which also tells the daemon the Mac is still
+   * there; one stopped while it waits never starts.
+   */
   run(args: MacArgs<"run">, progress: Progress = () => {}, signal?: AbortSignal): Promise<Result> {
-    const prev = this.locks.get(args.project);
-    if (prev) progress("Waiting for another build of this project");
-    const next = (prev ?? Promise.resolve()).then(() => this.runLocked(args, progress, signal)).catch((err) => ({ ok: false, text: `Failed on the Mac: ${err instanceof Error ? err.message : String(err)}` }));
-    this.locks.set(args.project, next);
+    const prev = this.queue;
+    let beat: NodeJS.Timeout | null = null;
+    if (this.busy) {
+      progress("Waiting for another build to finish");
+      beat = setInterval(() => progress("Waiting for another build to finish"), QUEUE_BEAT_MS);
+      beat.unref();
+    }
+    this.busy++;
+    const next = prev
+      .then(() => {
+        if (beat) clearInterval(beat);
+        return this.runLocked(args, progress, signal);
+      })
+      .catch((err) => ({ ok: false, text: `Failed on the Mac: ${err instanceof Error ? err.message : String(err)}` }))
+      .finally(() => this.busy--);
+    this.queue = next;
     return next;
   }
 

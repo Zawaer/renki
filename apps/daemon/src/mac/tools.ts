@@ -239,7 +239,8 @@ export function createMacMcpServer(
                 .call(
                   "run",
                   { jobId: id, project, job, manifest, ...(install ? { install } : {}), ...(serial ? { serial } : {}) },
-                  // The Mac enforces the job's own timeout (60 min at most); this only covers a Mac that vanished.
+                  // The Mac enforces the job's own timeout (60 min at most); this only covers a Mac gone quiet
+                  // (its progress, including "waiting for another build", restarts it).
                   70 * 60_000,
                   onProgress,
                 )

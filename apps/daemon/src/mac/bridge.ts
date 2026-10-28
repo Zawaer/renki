@@ -28,6 +28,8 @@ type Pending = {
   mac: string;
   settle: (r: MacResult) => void;
   timer: NodeJS.Timeout;
+  /** Starts `timer` over: each progress message does, so a build waiting its turn on the Mac isn't timed out. */
+  rearm: () => void;
   /** Set while its socket is gone and the call waits for the Mac to reconnect. */
   orphaned?: NodeJS.Timeout;
   onProgress?: (p: MacProgress) => void;
@@ -69,7 +71,11 @@ export class MacBridge {
     socket.on("error", (err) => logger.warn("mac socket error", { err: String(err) }));
   }
 
-  /** Run one verb on the Mac. `timeoutMs` covers the whole round trip; `onProgress` hears where a long call has got to. */
+  /**
+   * Run one verb on the Mac. `timeoutMs` is how long the Mac may go quiet:
+   * from the call, then from each progress message (the Mac enforces a build's
+   * own time limit). `onProgress` hears where a long call has got to.
+   */
   call(verb: MacVerb, args: Record<string, unknown>, timeoutMs: number, onProgress?: (p: MacProgress) => void): Promise<MacResult> {
     const c = this.current;
     if (!c) return Promise.resolve({ ok: false, text: MAC_OFFLINE });
@@ -81,14 +87,22 @@ export class MacBridge {
     }
     const id = randomUUID();
     return new Promise<MacResult>((resolve) => {
-      const timer = setTimeout(() => {
-        const p = this.pending.get(id);
-        if (p?.orphaned) clearTimeout(p.orphaned);
-        this.pending.delete(id);
-        resolve({ ok: false, text: `The Mac didn't answer within ${Math.round(timeoutMs / 1000)}s.` });
-      }, timeoutMs);
-      timer.unref?.();
-      this.pending.set(id, { socket: c.socket, verb, mac: c.name, settle: resolve, timer, onProgress });
+      const arm = () => {
+        const t = setTimeout(() => {
+          const p = this.pending.get(id);
+          if (p?.orphaned) clearTimeout(p.orphaned);
+          this.pending.delete(id);
+          resolve({ ok: false, text: `The Mac didn't answer within ${Math.round(timeoutMs / 1000)}s.` });
+        }, timeoutMs);
+        t.unref?.();
+        return t;
+      };
+      const entry: Pending = { socket: c.socket, verb, mac: c.name, settle: resolve, timer: arm(), onProgress, rearm: () => {} };
+      entry.rearm = () => {
+        clearTimeout(entry.timer);
+        entry.timer = arm();
+      };
+      this.pending.set(id, entry);
       c.socket.send(JSON.stringify({ type: "call", id, verb, args }));
     });
   }
@@ -146,6 +160,7 @@ export class MacBridge {
       case "progress": {
         const p = this.pending.get(parsed.id);
         if (!p || p.socket !== socket) return;
+        p.rearm();
         p.onProgress?.({ phase: parsed.phase, ...(parsed.detail ? { detail: parsed.detail } : {}) });
         return;
       }

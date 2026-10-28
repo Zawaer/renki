@@ -145,6 +145,20 @@ describe("MacBridge", () => {
     expect(bridge.status().connected).toBe(false);
   });
 
+  /** A build queued behind another on the Mac can wait longer than the timeout; its "waiting" heartbeats keep it alive. */
+  it("counts the timeout from the Mac's last progress, not from the call", async () => {
+    bridge = new MacBridge();
+    const s = attach("Mac", ["run"]);
+    const p = bridge.call("run", {}, 60);
+    const { id } = s.sent.at(-1);
+    for (let i = 0; i < 3; i++) {
+      await new Promise((r) => setTimeout(r, 40));
+      s.say({ type: "progress", id, phase: "Waiting for another build to finish" });
+    }
+    s.say({ type: "result", id, ok: true, text: "built" });
+    expect(await p).toEqual({ ok: true, text: "built" });
+  });
+
   it("times out a call nobody answers", async () => {
     bridge = new MacBridge();
     attach();

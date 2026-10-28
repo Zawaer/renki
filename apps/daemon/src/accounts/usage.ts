@@ -283,7 +283,7 @@ export class UsageReader implements UsageSource {
         this.errors.set(
           entry.email.toLowerCase(),
           rejected
-            ? "Sign-in expired — reconnect usage tracking for this account."
+            ? "Sign-in expired. Reconnect usage tracking for this account."
             : "Usage unavailable right now (claude.ai didn't answer).",
         );
       }

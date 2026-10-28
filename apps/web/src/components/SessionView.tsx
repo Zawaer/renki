@@ -770,10 +770,13 @@ function ResumeBanner({
   return (
     <div className="px-6 pb-2">
       <div className="renki-enter mx-auto flex w-full max-w-3xl items-center gap-3 rounded-xl border border-(--renki-border) bg-(--renki-surface) px-3.5 py-2.5">
-        <span className="codicon codicon-debug-pause shrink-0 text-(--renki-warning)" />
+        {/* A restart's resume isn't a pause on anything: the turn just carries on once Renki is back. */}
+        <span
+          className={`codicon shrink-0 ${resume.kind === "restart" ? "codicon-debug-restart text-(--renki-fg-muted)" : "codicon-debug-pause text-(--renki-warning)"}`}
+        />
         <div className="min-w-0 flex-1">
           <div className="text-[13px] font-medium text-(--renki-fg)">
-            Paused on a usage limit · {formatResumeAt(resume.at, now)}
+            {resume.kind === "restart" ? "Continuing after a restart" : "Paused on a usage limit"} · {formatResumeAt(resume.at, now)}
           </div>
           <div className="truncate text-xs text-(--renki-fg-muted)" title={resume.reason}>
             {resume.reason}

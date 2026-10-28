@@ -93,7 +93,7 @@ type ResumePrompt = {
  * The failure a turn cut off by a restart ends with. The notifier recognises
  * it and stays quiet: the turn continues by itself once the daemon is back.
  */
-export const RESTART_INTERRUPTED_MESSAGE = "Interrupted by a Renki restart — it continues automatically once the daemon is back.";
+export const RESTART_INTERRUPTED_MESSAGE = "Interrupted by a Renki restart. It continues by itself once Renki is back.";
 
 /** How a restart asks Claude to carry on, when the turn had already started. */
 export function restartContinueText(hadBackgroundAgents: boolean): string {
@@ -666,8 +666,8 @@ export class SessionManager {
       try {
         const { reusedBranch } = await restoreWorktree(repo.path, session.worktreePath, session.branch, session.baseBranch);
         note = reusedBranch
-          ? `Unarchived — back on ${session.branch}, with the commits it had.`
-          : `Unarchived — ${session.branch} starts fresh from ${session.baseBranch}; changes made before archiving aren't back.`;
+          ? `Unarchived. Back on ${session.branch}, with the commits it had.`
+          : `Unarchived. ${session.branch} starts fresh from ${session.baseBranch}, so changes made before archiving aren't back.`;
       } catch (err) {
         throw new SessionError("invalid_request", `Couldn't recreate the worktree: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -676,7 +676,7 @@ export class SessionManager {
       mkdirSync(session.worktreePath, { recursive: true });
       note = kept
         ? "Unarchived. This chat's folder is as archiving left it: reinstall packages or rebuild if it cleared them."
-        : "Unarchived — files made in this chat's folder before archiving aren't back.";
+        : "Unarchived. Files made in this chat's folder before archiving aren't back.";
     }
 
     this.patch(id, { status: "idle" });
@@ -1172,7 +1172,7 @@ export class SessionManager {
   async submitPrompt(input: SubmitPromptInput): Promise<void> {
     const session = this.getSession(input.sessionId);
     if (session.status === "archived") throw new SessionError("session_archived", "Session is archived.");
-    if (session.status === "trashed") throw new SessionError("session_trashed", "Session is in the trash — restore it first.");
+    if (session.status === "trashed") throw new SessionError("session_trashed", "Session is in the trash. Restore it first.");
     if (session.controller !== input.deviceId)
       throw new SessionError("not_controller", "Only the controlling device can send prompts.");
     if (!input.text.trim() && !input.attachments?.length)
@@ -1183,7 +1183,7 @@ export class SessionManager {
     // own wait) if the limit is still in force.
     if (session.resume) {
       this.clearResume(input.sessionId);
-      this.events.append(input.sessionId, { kind: "notice", text: "Automatic resume cancelled — you sent a new message.", level: "info" });
+      this.events.append(input.sessionId, { kind: "notice", text: "Automatic resume cancelled: you sent a new message.", level: "info" });
     }
 
     if (session.status === "busy") {
@@ -1303,7 +1303,7 @@ export class SessionManager {
       logger.warn("claude transcript missing; starting a new conversation from the log", { id: input.sessionId, lost: resumeId });
       this.events.append(input.sessionId, {
         kind: "notice",
-        text: "Claude's copy of this conversation is gone — starting a new one, given this chat's history to carry on from.",
+        text: "Claude's copy of this conversation is gone. Starting a new one, given this chat's history to carry on from.",
         level: "warn",
       });
       this.closeLive(input.sessionId, "conversation lost");
@@ -1336,12 +1336,12 @@ export class SessionManager {
       // Deliberately not "switching account" — the switch may turn out to be
       // impossible (every login at its limit), and promising one we don't make
       // reads as a bug.
-      this.events.append(input.sessionId, { kind: "notice", text: "Usage limit hit — looking for another account…", level: "warn" });
+      this.events.append(input.sessionId, { kind: "notice", text: "Usage limit hit. Looking for another account…", level: "warn" });
       const sw = await this.autoSwitch.rateLimitSwitch();
       if (sw.switched) {
         this.events.append(input.sessionId, {
           kind: "notice",
-          text: `Switched account${sw.active ? ` (now #${sw.active})` : ""} — retrying.`,
+          text: `Switched account${sw.active ? ` (now #${sw.active})` : ""}. Retrying.`,
           level: "info",
         });
         // The running process may hold the exhausted account's credentials in
@@ -1549,7 +1549,7 @@ export class SessionManager {
     if (ready.proceed && ready.note) this.events.append(sessionId, { kind: "notice", text: ready.note, level: "info" });
     this.events.append(sessionId, {
       kind: "notice",
-      text: force ? "Continuing now, as requested." : state.kind === "restart" ? "Renki is back — continuing." : "Usage limit reset — continuing.",
+      text: force ? "Continuing now, as requested." : state.kind === "restart" ? "Renki is back. Continuing." : "Usage limit reset. Continuing.",
       level: "info",
     });
     logger.info("running scheduled resume", { sessionId, attempt: state.attempt + 1, force });
@@ -1972,7 +1972,7 @@ function resumeOf(row: typeof sessions.$inferSelect): Session["resume"] {
   if (row.resumeAt == null || !row.resumeState) return null;
   try {
     const state = JSON.parse(row.resumeState) as ResumeState;
-    return { at: row.resumeAt, reason: state.reason, attempt: state.attempt };
+    return { at: row.resumeAt, reason: state.reason, attempt: state.attempt, kind: state.kind ?? "limit" };
   } catch {
     return null;
   }

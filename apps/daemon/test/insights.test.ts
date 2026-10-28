@@ -77,7 +77,7 @@ describe("computeInsights", () => {
     const { db, addSession, add, turn } = setup();
     addSession("s1", "shop");
     turn("s1", MON, { ok: false, errorMessage: "You've hit your limit · resets 3pm" });
-    add("s1", MON + 1, { kind: "notice", text: "Switched account (now #2) — retrying.", level: "info" });
+    add("s1", MON + 1, { kind: "notice", text: "Switched account (now #2). Retrying.", level: "info" });
     add("s1", MON + 2, { kind: "notice", text: "Paused on a usage limit. Waiting. The turn will continue automatically then.", level: "warn" });
     add("s1", MON + 2 + 2 * H, { kind: "notice", text: "Usage limit reset — continuing.", level: "info" });
     add("s1", MON + 2 + 2 * H, { kind: "prompt_submitted", promptId: "p2", deviceId: "web_1", text: RESUME_CONTINUE_TEXT });

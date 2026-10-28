@@ -63,7 +63,7 @@ export async function githubStatus(): Promise<GithubStatus> {
       login: null,
       reason: missing
         ? "The GitHub CLI isn't installed in the daemon."
-        : "The daemon's GitHub CLI isn't logged in — see SETUP.md § Pushing to GitHub.",
+        : "The daemon's GitHub CLI isn't logged in. See SETUP.md § Pushing to GitHub.",
     };
   }
 }
@@ -109,7 +109,7 @@ export type CloneOutcome = { ok: true; dirName: string; alreadyPresent: boolean 
  */
 export async function cloneGithubRepo(config: Config, input: string): Promise<CloneOutcome> {
   const repoRef = parseRepoRef(input);
-  if (!repoRef) return { ok: false, message: `"${input}" isn't a GitHub repo — use owner/name or a github.com URL.` };
+  if (!repoRef) return { ok: false, message: `"${input}" isn't a GitHub repo. Use owner/name or a github.com URL.` };
 
   const dirName = cloneDirName(repoRef);
   const target = resolve(config.reposRoot, dirName);
@@ -128,7 +128,7 @@ export async function cloneGithubRepo(config: Config, input: string): Promise<Cl
     const msg = err instanceof Error ? err.message : String(err);
     logger.warn("clone failed", { repoRef, err: msg });
     if (/could not read Username|Authentication failed|403/i.test(msg))
-      return { ok: false, message: "GitHub refused the clone — the daemon's GitHub login can't see that repo." };
+      return { ok: false, message: "GitHub refused the clone: the daemon's GitHub login can't see that repo." };
     if (/not found|Repository not found|404/i.test(msg)) return { ok: false, message: `Couldn't find ${repoRef} on GitHub.` };
     return { ok: false, message: `Clone failed: ${msg.split("\n")[0]}` };
   }

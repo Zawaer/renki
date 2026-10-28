@@ -559,9 +559,11 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
       {resume && conv.status !== null && status !== "busy" && (
         <FadeIn>
         <View style={styles.resumeWrap}>
-          <Ionicons name="pause-circle" size={20} color={colors.busy} />
+          <Ionicons name={resume.kind === "restart" ? "refresh-circle" : "pause-circle"} size={20} color={resume.kind === "restart" ? colors.dim : colors.busy} />
           <View style={{ flex: 1 }}>
-            <Text style={styles.resumeTitle}>Paused · {formatResumeAt(resume.at)}</Text>
+            <Text style={styles.resumeTitle}>
+              {resume.kind === "restart" ? "Continuing after a restart" : "Paused"} · {formatResumeAt(resume.at)}
+            </Text>
             <Text style={styles.resumeReason} numberOfLines={2}>
               {resume.reason}
               {resume.attempt > 0 ? ` Attempt ${resume.attempt + 1}.` : ""}

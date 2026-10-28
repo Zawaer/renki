@@ -385,7 +385,8 @@ export function computeInsights(db: DB, tzName: string | undefined, now = Date.n
             pausedSince.set(row.sessionId, row.ts);
           }
         } else if (
-          text === "Usage limit reset — continuing." ||
+          // Matched by prefix: older logs say "reset — continuing.", newer "reset. Continuing."
+          text.startsWith("Usage limit reset") ||
           text === "Continuing now, as requested." ||
           text.startsWith("Automatic resume cancelled") ||
           text.startsWith("Still limited after")
@@ -394,7 +395,7 @@ export function computeInsights(db: DB, tzName: string | undefined, now = Date.n
           if (since != null) {
             pausedMs += row.ts - since;
             pausedSince.delete(row.sessionId);
-            if (text === "Usage limit reset — continuing.") resumedAfterPause = true;
+            if (text.startsWith("Usage limit reset")) resumedAfterPause = true;
           }
         } else {
           const sw = /^Switched account(?: \(now #(\d+)\))?/.exec(text);

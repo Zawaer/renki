@@ -649,6 +649,13 @@ describe("SessionView session snapshot", () => {
     push(realtime, session(null));
     expect(screen.queryByText(/Paused on a usage limit/)).not.toBeInTheDocument();
   });
+
+  it("says a turn a restart cut off is continuing, not paused on a limit", () => {
+    const { realtime } = renderSession("s1", [ev("s1", { kind: "status_changed", status: "idle" })]);
+    push(realtime, session({ at: Date.now(), reason: "Renki restarted while this was running.", attempt: 0, kind: "restart" }));
+    expect(screen.getByText(/Continuing after a restart/)).toBeInTheDocument();
+    expect(screen.queryByText(/usage limit/)).not.toBeInTheDocument();
+  });
 });
 
 describe("SessionView tidy transcript", () => {

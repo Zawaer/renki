@@ -456,7 +456,7 @@ function Row({
           className={`flex h-7 min-w-0 flex-1 items-center gap-2.5 pr-1 text-left ${session.status === "archived" || inTrash ? "opacity-70" : ""}`}
           title={`${session.title || session.repoName}${branch ? ` · ${session.repoName} · ${branch}` : ""}`}
         >
-          <SessionGlyph status={session.status} pendingPermission={session.hasPendingPermission} paused={!!session.resume} />
+          <SessionGlyph status={session.status} pendingPermission={session.hasPendingPermission} paused={!!session.resume && session.resume.kind !== "restart"} />
           <span
             className={`renki-fade-end min-w-0 flex-1 overflow-hidden text-[13px] whitespace-nowrap text-(--renki-fg) ${
               menuOpen ? "renki-fade-end-wide" : "group-hover:renki-fade-end-wide"

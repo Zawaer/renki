@@ -128,7 +128,7 @@ describe("why usage is missing", () => {
           ...SAMPLE.accounts[0],
           usage: null,
           usageStatus: "unavailable",
-          usageError: "Sign-in expired — reconnect usage tracking for this account.",
+          usageError: "Sign-in expired. Reconnect usage tracking for this account.",
         },
       ],
     });

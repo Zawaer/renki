@@ -107,6 +107,8 @@ export const SessionResume = z.object({
   reason: z.string(),
   /** How many automatic attempts have already failed on a limit (0 for the first wait). */
   attempt: z.number().int().nonnegative(),
+  /** "restart": continuing a turn a Renki restart cut off, not waiting on a limit. Absent from older daemons. */
+  kind: z.enum(["limit", "restart"]).optional(),
 });
 export type SessionResume = z.infer<typeof SessionResume>;
 

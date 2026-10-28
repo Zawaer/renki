@@ -730,8 +730,8 @@ describe("steering + turn_started", () => {
     const base = (fold(stream({ kind: "turn_started", turnId: "t", promptId: "p", trigger: "prompt" })).timeline[0] as Extract<TimelineItem, { type: "turn" }>).turn;
     expect(turnTriggerLabel(base)).toBeNull();
     expect(turnTriggerLabel({ ...base, trigger: null })).toBeNull();
-    expect(turnTriggerLabel({ ...base, trigger: "background_task" })).toMatch(/Background agent finished/);
-    expect(turnTriggerLabel({ ...base, trigger: "auto" })).toMatch(/continued/);
+    expect(turnTriggerLabel({ ...base, trigger: "background_task" })).toMatch(/After a background task finished/);
+    expect(turnTriggerLabel({ ...base, trigger: "auto" })).toMatch(/Continued/);
   });
 });
 

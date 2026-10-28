@@ -618,6 +618,12 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
       {replies && (
         <FadeIn>
           <View style={styles.repliesWrap}>
+            {replies.question && (
+              <Text style={[styles.toolStepLabel, styles.repliesQuestion]} numberOfLines={2}>
+                {replies.question}
+              </Text>
+            )}
+            <View style={styles.repliesButtons}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.repliesRow} keyboardShouldPersistTaps="handled">
               {replies.replies.map((r, i) => (
                 <TouchableOpacity
@@ -632,6 +638,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
             <TouchableOpacity onPress={() => setDismissedReplies(replies.turnId)} hitSlop={10} accessibilityLabel="Close">
               <Ionicons name="close" size={16} color={colors.faint} />
             </TouchableOpacity>
+            </View>
           </View>
         </FadeIn>
       )}
@@ -2213,7 +2220,9 @@ const makeStyles = (colors: ThemeColors) =>
     resumeNowText: { color: colors.accentFg, fontSize: 13, fontWeight: "700" },
     queueItem: { color: colors.faint, fontSize: 12 },
     backgroundWrap: { gap: 6, backgroundColor: colors.panel, borderRadius: radius.md, marginHorizontal: 14, marginBottom: 8, paddingHorizontal: 12, paddingVertical: 8 },
-    repliesWrap: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 14, marginBottom: 8 },
+    repliesWrap: { gap: 6, marginHorizontal: 14, marginBottom: 8 },
+    repliesQuestion: { color: colors.text },
+    repliesButtons: { flexDirection: "row", alignItems: "center", gap: 8 },
     repliesRow: { flexDirection: "row", gap: 8, alignItems: "center" },
     replyPill: { backgroundColor: colors.panel, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 6 },
     replyText: { color: colors.text, fontSize: 13, fontWeight: "600" },

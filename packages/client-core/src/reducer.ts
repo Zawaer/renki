@@ -807,8 +807,8 @@ function emptyTurn(turnId: string, ts: number): TurnView {
  * for an ordinary prompted turn. Shared by every client so the wording matches.
  */
 export function turnTriggerLabel(turn: TurnView): string | null {
-  if (turn.trigger === "background_task") return "Background agent finished — Claude's follow-up";
-  if (turn.trigger === "mac_build") return "Mac build finished — Claude's follow-up";
-  if (turn.trigger === "auto") return "Claude continued on its own";
+  if (turn.trigger === "background_task") return "After a background task finished";
+  if (turn.trigger === "mac_build") return "After a Mac build finished";
+  if (turn.trigger === "auto") return "Continued on its own";
   return null;
 }

@@ -504,6 +504,7 @@ export function SessionView({
 
       {replies && (
         <SuggestedReplies
+          question={replies.question}
           replies={replies.replies}
           canAct={isController}
           onPick={sendReply}
@@ -685,11 +686,13 @@ function BackgroundWorkRow({ work }: { work: BackgroundWork }) {
  * on it: the turn has already ended.
  */
 function SuggestedReplies({
+  question,
   replies,
   canAct,
   onPick,
   onDismiss,
 }: {
+  question: string | null;
   replies: string[];
   canAct: boolean;
   onPick: (text: string) => void;
@@ -698,7 +701,8 @@ function SuggestedReplies({
   return (
     <div className="px-6 pb-2" data-testid="suggested-replies">
       <div className="renki-enter mx-auto flex w-full max-w-3xl items-center gap-2 rounded-xl border border-(--renki-border) bg-(--renki-surface) px-3 py-2">
-        <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          {question && <span className="mr-1 text-[13px] text-(--renki-fg)">{question}</span>}
           {replies.map((r, i) => (
             <Button
               key={r}
@@ -1072,12 +1076,7 @@ function AssistantTurn({ turn, animate = false }: { turn: TurnView; animate?: bo
   return (
     <div className={`${animate ? "renki-enter " : ""}group space-y-3`} data-anchor={`t:${turn.turnId}`}>
       {label && (
-        <div className="flex items-center gap-1.5 text-[11px] font-medium text-(--renki-fg-muted)">
-          <span className="flex h-5 w-5 items-center justify-center rounded-md bg-(--renki-surface) ring-1 ring-(--renki-border) ring-inset">
-            <span className="codicon codicon-rocket text-[11px]" />
-          </span>
-          {label}
-        </div>
+        <div className="text-xs text-(--renki-fg-muted)">{label}</div>
       )}
       {steeredAfter(-1).map((p) => (
         <SteeredPrompt key={p.promptId} prompt={p} />

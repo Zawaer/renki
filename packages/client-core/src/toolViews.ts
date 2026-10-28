@@ -131,13 +131,18 @@ export function parseTodos(toolInput: unknown): TodoItemView[] | null {
 /** The daemon's one-tap answers tool (apps/daemon/src/claude/replies.ts). */
 export const SUGGEST_REPLIES_TOOL = "mcp__renki__suggest_replies";
 
-/** suggest_replies → its button labels, or null if the input doesn't match. At most three, as the daemon's schema allows. */
-export function parseSuggestedReplies(toolName: string, toolInput: unknown): string[] | null {
+/**
+ * suggest_replies → the question and its button labels, or null if the input
+ * doesn't match. At most three, as the daemon's schema allows. `question` is
+ * null on calls made before the tool asked for one.
+ */
+export function parseSuggestedReplies(toolName: string, toolInput: unknown): { question: string | null; replies: string[] } | null {
   if (toolName !== SUGGEST_REPLIES_TOOL || !toolInput || typeof toolInput !== "object") return null;
-  const replies = (toolInput as Record<string, unknown>).replies;
+  const { question, replies } = toolInput as Record<string, unknown>;
   if (!Array.isArray(replies)) return null;
   const labels = replies.flatMap((r) => (typeof r === "string" && r.trim() ? [r.trim()] : [])).slice(0, 3);
-  return labels.length > 0 ? labels : null;
+  if (labels.length === 0) return null;
+  return { question: typeof question === "string" && question.trim() ? question.trim() : null, replies: labels };
 }
 
 export type AskUserQuestionOptionView = { label: string; description: string; preview?: string };

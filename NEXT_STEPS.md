@@ -190,6 +190,24 @@ features. The throughline for everything below: shrink "found the repo" →
 
 ## 3. Deferred enhancements
 
+- [ ] **Sub-sessions: decided against for now (2026-10-28).** The idea, from
+      the Claude desktop app: a chat starts another chat (nested under it in
+      the sidebar) and hands it a task. Background subagents already cover the
+      common case, "look into X while I do Y" in the same repo, and run just
+      as fast (in parallel, same model and account). What they can't do:
+      - work in another repo: a subagent stays in its chat's checkout, so a
+        chat in one repo can't fix and push a bug it found in another;
+      - be steered mid-way: you can only stop one or wait for its answer;
+      - survive a restart: one dies with its chat's `claude` process, and only
+        work it already saved survives (its chat is resumed, it isn't);
+      - keep their own context: a long subagent's answer lands in the chat's.
+
+      Revisit if the cross-repo case keeps coming up ("this chat found a bug
+      in another repo"). If built, keep it small: Claude proposes a new chat
+      (repo + brief) through the normal approval card, Renki records the
+      parent link itself (Claude's memory of it proved unreliable), and the
+      parent doesn't wait on the child. No chat-to-chat messaging.
+
 - [x] **Mobile UI redesign + composer/navigation/persistence fixes.** Done,
       across several rounds of real-device testing: mobile's whole visual
       language moved from a flat, sharp-cornered VS Code Dark+ mirror to a

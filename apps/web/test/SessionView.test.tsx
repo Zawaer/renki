@@ -527,7 +527,7 @@ describe("SessionView steering + unprompted turns", () => {
     const after = steered.compareDocumentPosition(screen.getByText("Spawned the test agent, continuing."));
     expect(after & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    expect(screen.getByText(/Background agent finished/)).toBeTruthy();
+    expect(screen.getByText(/After a background task finished/)).toBeTruthy();
   });
 });
 

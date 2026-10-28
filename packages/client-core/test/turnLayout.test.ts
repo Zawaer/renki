@@ -228,7 +228,9 @@ describe("suggestedReplies", () => {
 
   it("offers the newest finished turn's replies, past notices after it", () => {
     const timeline = [turnItem([text("Deploy?"), suggest(["Yes, deploy", " ", "Not yet"])]), { type: "notice", text: "x", level: "info" } as TimelineItem];
-    expect(suggestedReplies(conv(timeline))).toEqual({ turnId: "t1", replies: ["Yes, deploy", "Not yet"] });
+    expect(suggestedReplies(conv(timeline))).toEqual({ turnId: "t1", question: null, replies: ["Yes, deploy", "Not yet"] });
+    const withQuestion = [turnItem([tool("mcp__renki__suggest_replies", { question: "Deploy now?", replies: ["Yes"] })])];
+    expect(suggestedReplies(conv(withQuestion))?.question).toBe("Deploy now?");
   });
 
   it("offers nothing once something else is sent, queued, or the turn worked on", () => {

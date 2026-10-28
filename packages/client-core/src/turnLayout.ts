@@ -245,7 +245,9 @@ export function turnActivity(turn: TurnView): string | null {
  * sent or queued: a suggestion answers the question just asked, never an
  * older one.
  */
-export function suggestedReplies(conv: Pick<ConversationState, "timeline" | "sendingPrompts" | "queuedPrompts">): { turnId: string; replies: string[] } | null {
+export function suggestedReplies(
+  conv: Pick<ConversationState, "timeline" | "sendingPrompts" | "queuedPrompts">,
+): { turnId: string; question: string | null; replies: string[] } | null {
   if (conv.sendingPrompts.length > 0 || conv.queuedPrompts.length > 0) return null;
   for (let i = conv.timeline.length - 1; i >= 0; i--) {
     const item = conv.timeline[i]!;
@@ -257,8 +259,8 @@ export function suggestedReplies(conv: Pick<ConversationState, "timeline" | "sen
     for (let j = turn.blocks.length - 1; j >= 0; j--) {
       const b = turn.blocks[j];
       if (b?.kind !== "tool_use") continue;
-      const replies = parseSuggestedReplies(b.toolName, b.toolInput);
-      return replies ? { turnId: turn.turnId, replies } : null;
+      const suggested = parseSuggestedReplies(b.toolName, b.toolInput);
+      return suggested ? { turnId: turn.turnId, ...suggested } : null;
     }
     return null;
   }

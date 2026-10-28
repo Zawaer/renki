@@ -241,9 +241,9 @@ export function turnActivity(turn: TurnView): string | null {
 
 /**
  * The one-tap answers to show under the conversation, or null. Only for the
- * newest turn, once it has finished cleanly, and only until anything else is
- * sent or queued: a suggestion answers the question just asked, never an
- * older one.
+ * newest prompted turn (unprompted ones after it don't count), once it has
+ * finished cleanly, and only until anything else is sent or queued: a
+ * suggestion answers the question just asked, never an older one.
  */
 export function suggestedReplies(
   conv: Pick<ConversationState, "timeline" | "sendingPrompts" | "queuedPrompts">,
@@ -254,15 +254,23 @@ export function suggestedReplies(
     if (item.type === "prompt") return null;
     if (item.type !== "turn") continue; // notices and the like don't answer anything
     const { turn } = item;
-    if (turn.status !== "done") return null;
-    // Only from the turn's last call: work after it means the question moved on.
-    for (let j = turn.blocks.length - 1; j >= 0; j--) {
-      const b = turn.blocks[j];
-      if (b?.kind !== "tool_use") continue;
-      const suggested = parseSuggestedReplies(b.toolName, b.toolInput);
-      return suggested ? { turnId: turn.turnId, ...suggested } : null;
-    }
+    const suggested = turn.status === "done" ? lastSuggestion(turn) : null;
+    if (suggested) return { turnId: turn.turnId, ...suggested };
+    // A turn nobody prompted (a background agent finishing, "continued on its
+    // own") doesn't answer the question before it, so look past it. These
+    // often start a second after the turn that asked.
+    if (turn.trigger === "background_task" || turn.trigger === "mac_build" || turn.trigger === "auto") continue;
     return null;
+  }
+  return null;
+}
+
+/** The turn's replies, if suggest_replies was its last call: work after it means the question moved on. */
+function lastSuggestion(turn: TurnView): { question: string | null; replies: string[] } | null {
+  for (let j = turn.blocks.length - 1; j >= 0; j--) {
+    const b = turn.blocks[j];
+    if (b?.kind !== "tool_use") continue;
+    return parseSuggestedReplies(b.toolName, b.toolInput);
   }
   return null;
 }

@@ -219,7 +219,10 @@ describe("turnTodos", () => {
 
 describe("suggestedReplies", () => {
   const suggest = (replies: unknown) => tool("mcp__renki__suggest_replies", { replies });
-  const turnItem = (blocks: BlockView[], status: TurnView["status"] = "done"): TimelineItem => ({ type: "turn", turn: { turnId: "t1", blocks, status } as TurnView });
+  const turnItem = (blocks: BlockView[], status: TurnView["status"] = "done", trigger: TurnView["trigger"] = "prompt"): TimelineItem => ({
+    type: "turn",
+    turn: { turnId: "t1", blocks, status, trigger } as TurnView,
+  });
   const conv = (timeline: TimelineItem[], extra: { sending?: number; queued?: number } = {}) => ({
     timeline,
     sendingPrompts: Array.from({ length: extra.sending ?? 0 }, () => ({}) as never),
@@ -240,6 +243,13 @@ describe("suggestedReplies", () => {
     expect(suggestedReplies(conv([asked], { queued: 1 }))).toBeNull();
     expect(suggestedReplies(conv([turnItem([suggest(["Yes"]), tool("Bash", {})])]))).toBeNull();
     expect(suggestedReplies(conv([turnItem([suggest(["Yes"])], "error")]))).toBeNull();
+  });
+
+  it("looks past turns nobody prompted, running or done, but not past a prompted one", () => {
+    const asked = turnItem([suggest(["Yes"])]);
+    expect(suggestedReplies(conv([asked, turnItem([tool("Bash", {})], "running", "background_task")]))?.replies).toEqual(["Yes"]);
+    expect(suggestedReplies(conv([asked, turnItem([text("done")], "done", "auto")]))?.replies).toEqual(["Yes"]);
+    expect(suggestedReplies(conv([asked, turnItem([text("x")], "done", "prompt")]))).toBeNull();
   });
 
   it("keeps the call out of the turn's steps", () => {

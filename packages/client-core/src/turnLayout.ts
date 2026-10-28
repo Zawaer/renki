@@ -255,7 +255,11 @@ export function suggestedReplies(
     if (item.type !== "turn") continue; // notices and the like don't answer anything
     const { turn } = item;
     const suggested = turn.status === "done" ? lastSuggestion(turn) : null;
-    if (suggested) return { turnId: turn.turnId, ...suggested };
+    // A message sent while Claude was working lives inside its turn, not as a
+    // prompt item; one sent after the question (or in a later turn) answers it.
+    const answered = turn.steeredPrompts.some((p) => !suggested || p.afterBlockIndex >= suggested.blockIndex);
+    if (answered) return null;
+    if (suggested) return { turnId: turn.turnId, question: suggested.question, replies: suggested.replies };
     // A turn nobody prompted (a background agent finishing, "continued on its
     // own") doesn't answer the question before it, so look past it. These
     // often start a second after the turn that asked.
@@ -266,11 +270,12 @@ export function suggestedReplies(
 }
 
 /** The turn's replies, if suggest_replies was its last call: work after it means the question moved on. */
-function lastSuggestion(turn: TurnView): { question: string | null; replies: string[] } | null {
+function lastSuggestion(turn: TurnView): { question: string | null; replies: string[]; blockIndex: number } | null {
   for (let j = turn.blocks.length - 1; j >= 0; j--) {
     const b = turn.blocks[j];
     if (b?.kind !== "tool_use") continue;
-    return parseSuggestedReplies(b.toolName, b.toolInput);
+    const suggested = parseSuggestedReplies(b.toolName, b.toolInput);
+    return suggested ? { ...suggested, blockIndex: j } : null;
   }
   return null;
 }

@@ -219,9 +219,16 @@ describe("turnTodos", () => {
 
 describe("suggestedReplies", () => {
   const suggest = (replies: unknown) => tool("mcp__renki__suggest_replies", { replies });
-  const turnItem = (blocks: BlockView[], status: TurnView["status"] = "done", trigger: TurnView["trigger"] = "prompt"): TimelineItem => ({
+  /** `steeredAfter`: the block index each message sent mid-turn landed after. */
+  const turnItem = (blocks: BlockView[], status: TurnView["status"] = "done", trigger: TurnView["trigger"] = "prompt", steeredAfter: number[] = []): TimelineItem => ({
     type: "turn",
-    turn: { turnId: "t1", blocks, status, trigger } as TurnView,
+    turn: {
+      turnId: "t1",
+      blocks,
+      status,
+      trigger,
+      steeredPrompts: steeredAfter.map((afterBlockIndex) => ({ promptId: "s", deviceId: "d", text: "Yes", afterBlockIndex })),
+    } as TurnView,
   });
   const conv = (timeline: TimelineItem[], extra: { sending?: number; queued?: number } = {}) => ({
     timeline,
@@ -250,6 +257,15 @@ describe("suggestedReplies", () => {
     expect(suggestedReplies(conv([asked, turnItem([tool("Bash", {})], "running", "background_task")]))?.replies).toEqual(["Yes"]);
     expect(suggestedReplies(conv([asked, turnItem([text("done")], "done", "auto")]))?.replies).toEqual(["Yes"]);
     expect(suggestedReplies(conv([asked, turnItem([text("x")], "done", "prompt")]))).toBeNull();
+  });
+
+  /** Tapping a reply while a background agent's turn runs sends it into that turn, not as a prompt item. */
+  it("offers nothing once a reply was sent while Claude was working", () => {
+    const asked = turnItem([suggest(["Yes"])]);
+    expect(suggestedReplies(conv([asked, turnItem([tool("Bash", {})], "running", "background_task", [0])]))).toBeNull();
+    expect(suggestedReplies(conv([asked, turnItem([], "running", "background_task", [-1])]))).toBeNull();
+    // Sent into the asking turn before it asked: the question still stands.
+    expect(suggestedReplies(conv([turnItem([text("x"), suggest(["Yes"])], "done", "prompt", [0])]))?.replies).toEqual(["Yes"]);
   });
 
   it("keeps the call out of the turn's steps", () => {

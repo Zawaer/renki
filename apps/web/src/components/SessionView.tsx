@@ -484,8 +484,8 @@ export function SessionView({
             <div className="text-[11px] text-(--renki-fg-muted)">
               {conv.queuedPrompts.length === 1
                 ? "1 message queued"
-                : `${conv.queuedPrompts.length} messages queued`}{" "}
-              — will send once the current turn finishes
+                : `${conv.queuedPrompts.length} messages queued`}
+              . Sends when this turn ends.
             </div>
             {conv.queuedPrompts.map((q) => (
               <div
@@ -542,9 +542,9 @@ export function SessionView({
         loading={conv.status === null}
         reason={
           status === "trashed"
-            ? "In the trash — restore it to keep the transcript"
+            ? "In the trash. Restore it to keep going."
             : status === "archived"
-              ? "Archived — unarchive it to keep going"
+              ? "Archived. Unarchive it to keep going."
               : !isController
                 ? "Take control to send prompts"
                 : ""
@@ -1177,7 +1177,7 @@ function SteeredPrompt({ prompt }: { prompt: SteeredPromptView }) {
         )}
         <div className="mt-1.5 flex items-center gap-1 text-[11px] text-(--renki-fg-muted)">
           <span className="codicon codicon-debug-step-into text-[11px]" /> Sent
-          while Claude was working — picked up mid-turn
+          while Claude was working
         </div>
       </div>
     </div>
@@ -1428,7 +1428,7 @@ function SubagentActivity({ subagent }: { subagent: SubagentView }) {
     <div className="ml-1 space-y-1 border-l border-(--renki-border)/60 pl-3">
       {subagent.taskDescription && (
         <div className="text-[12px] text-(--renki-fg-muted)">
-          {subagent.subagentType ?? "Subagent"} — {subagent.taskDescription}
+          {subagent.subagentType ?? "Subagent"} · {subagent.taskDescription}
         </div>
       )}
       {groupTurnBlocks(subagent.blocks).map((seg) => (

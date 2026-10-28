@@ -520,7 +520,7 @@ describe("SessionView steering + unprompted turns", () => {
 
     const steered = screen.getByTestId("steered-prompt");
     expect(steered.textContent).toContain("also add tests in a background agent");
-    expect(steered.textContent).toContain("picked up mid-turn");
+    expect(steered.textContent).toContain("Sent while Claude was working");
     // Order on screen: first block, then the steered prompt, then the second block.
     const all = screen.getByText("Starting the refactor.").compareDocumentPosition(steered);
     expect(all & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

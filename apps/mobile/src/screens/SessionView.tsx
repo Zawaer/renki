@@ -1263,7 +1263,7 @@ function SteeredPrompt({ prompt, styles }: { prompt: SteeredPromptView; styles: 
   return (
     <LongPressToRead title="Your message" text={prompt.text} style={[styles.promptWrap, styles.steeredWrap]}>
       {prompt.text.length > 0 && <Text style={styles.promptText}>{prompt.text}</Text>}
-      <Text style={styles.meta}>Sent while Claude was working · picked up mid-turn</Text>
+      <Text style={styles.meta}>Sent while Claude was working</Text>
     </LongPressToRead>
   );
 }

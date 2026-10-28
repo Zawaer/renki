@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cloneDirName, parseRepoRef } from "../src/github.js";
+import { cloneDirNames, parseRepoRef } from "../src/github.js";
 
 /**
  * `parseRepoRef` is the only thing standing between a string off the wire and
@@ -48,9 +48,9 @@ describe("parseRepoRef", () => {
   });
 });
 
-describe("cloneDirName", () => {
-  it("uses the repo's own name, not the owner's", () => {
-    expect(cloneDirName("Zawaer/about-me")).toBe("about-me");
-    expect(cloneDirName("solmuton/solmuton-website")).toBe("solmuton-website");
+describe("cloneDirNames", () => {
+  it("tries the repo's own name first, then owner-name for a clash", () => {
+    expect(cloneDirNames("Zawaer/about-me")).toEqual(["about-me", "Zawaer-about-me"]);
+    expect(cloneDirNames("WilmervH/solmuton-website")).toEqual(["solmuton-website", "WilmervH-solmuton-website"]);
   });
 });

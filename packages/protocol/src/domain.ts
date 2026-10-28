@@ -25,6 +25,8 @@ export const Repo = z.object({
   name: z.string().min(1),
   path: z.string().min(1),
   defaultBranch: z.string().min(1),
+  /** owner/name of its `origin` on GitHub, or null when it has none there. Absent from older daemons. */
+  remote: z.string().nullable().optional(),
 });
 export type Repo = z.infer<typeof Repo>;
 

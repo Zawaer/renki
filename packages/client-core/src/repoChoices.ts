@@ -5,8 +5,9 @@ import type { RestClient } from "./rest.js";
  * One row of the repo picker. The list is your GitHub repos, not the folders
  * the host happens to have checked out: `local` is the checkout when there is
  * one, and a repo without one is cloned the first time a session starts on it
- * (see resolveRepoChoice). Local repos that aren't on GitHub (or that the
- * daemon's login can't see) are listed too, after the rest.
+ * (see resolveRepoChoice). Folders that match no GitHub repo (a repo renamed
+ * since, or one never pushed) aren't offered while GitHub is connected; they
+ * are what's listed when it isn't.
  */
 export type RepoChoice = {
   key: string;
@@ -19,19 +20,19 @@ export type RepoChoice = {
   local: Repo | null;
 };
 
-/** GitHub's order (most recently pushed first), each matched to its checkout by name, the way clones are named. */
+/**
+ * GitHub's order (most recently pushed first), each matched to the checkout
+ * whose `origin` is that repo. A daemon too old to report origins is matched
+ * by folder name, the way clones are named.
+ */
 export function repoChoices(local: Repo[], github: GithubRepo[] | null): RepoChoice[] {
-  const byName = new Map(local.map((r) => [r.name.toLowerCase(), r]));
-  const matched = new Set<Repo>();
-  const out: RepoChoice[] = (github ?? []).map((g) => {
-    const repo = byName.get(g.name.toLowerCase()) ?? null;
-    if (repo) matched.add(repo);
+  if (!github) return local.map((r) => ({ key: `local:${r.id}`, label: r.name, description: null, isPrivate: false, fullName: null, local: r }));
+  const byRemote = new Map(local.filter((r) => r.remote).map((r) => [r.remote!.toLowerCase(), r]));
+  const byName = new Map(local.filter((r) => r.remote === undefined).map((r) => [r.name.toLowerCase(), r]));
+  return github.map((g) => {
+    const repo = byRemote.get(g.fullName.toLowerCase()) ?? byName.get(g.name.toLowerCase()) ?? null;
     return { key: `gh:${g.fullName}`, label: g.fullName, description: g.description, isPrivate: g.isPrivate, fullName: g.fullName, local: repo };
   });
-  for (const r of local) {
-    if (!matched.has(r)) out.push({ key: `local:${r.id}`, label: r.name, description: null, isPrivate: false, fullName: null, local: r });
-  }
-  return out;
 }
 
 /** Rows matching a search: label or description, case-insensitive. */

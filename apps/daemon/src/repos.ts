@@ -1,8 +1,11 @@
+import { execFile } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
+import { promisify } from "node:util";
 import type { Repo } from "@renki/protocol";
 import { simpleGit } from "simple-git";
 import type { Config } from "./config.js";
+import { parseRepoRef } from "./github.js";
 import { logger } from "./logger.js";
 
 /**
@@ -31,6 +34,7 @@ export async function scanRepos(config: Config): Promise<Repo[]> {
       name: entry.name,
       path,
       defaultBranch: await detectDefaultBranch(path),
+      remote: await originRepo(path),
     });
   }
 
@@ -65,6 +69,17 @@ async function detectDefaultBranch(repoPath: string): Promise<string> {
     /* detached or empty repo */
   }
   return "main";
+}
+
+/** owner/name of a checkout's `origin`, when that's on GitHub. What the picker matches it to GitHub by. */
+export async function originRepo(repoPath: string): Promise<string | null> {
+  // execFile, not simple-git: its failure path (no origin exits 1) waits on a timer.
+  try {
+    const { stdout } = await promisify(execFile)("git", ["-C", repoPath, "config", "--get", "remote.origin.url"]);
+    return parseRepoRef(stdout);
+  } catch {
+    return null; // no origin
+  }
 }
 
 function slug(name: string): string {

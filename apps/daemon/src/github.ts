@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { GithubRepo } from "@renki/protocol";
 import type { Config } from "./config.js";
+import { originRepo } from "./repos.js";
 import { logger } from "./logger.js";
 
 const run = promisify(execFile);
@@ -42,9 +43,14 @@ export function parseRepoRef(input: string): string | null {
   return name === "." || name === ".." ? null : s;
 }
 
-/** Directory name a clone of `owner/name` lands in — the repo's own name, as git would. */
-export function cloneDirName(repoRef: string): string {
-  return repoRef.split("/")[1]!;
+/**
+ * Directory names a clone of `owner/name` may land in: the repo's own name, as
+ * git would, then `owner-name` for when that one belongs to a different repo
+ * (two forks, or an org copy, share a name).
+ */
+export function cloneDirNames(repoRef: string): [string, string] {
+  const [owner, name] = repoRef.split("/") as [string, string];
+  return [name, `${owner}-${name}`];
 }
 
 export type GithubStatus = { available: boolean; login: string | null; reason: string | null };
@@ -69,56 +75,79 @@ export async function githubStatus(): Promise<GithubStatus> {
 }
 
 /**
- * The repos this login can see, most recently pushed first. Includes private
- * ones and anything from orgs the user belongs to, which is the point: the
- * list is here so you don't have to remember exact names.
+ * The repos this login can see, most recently pushed first: its own, ones
+ * it collaborates on, and its orgs'. Private ones too. The list is here so you
+ * don't have to remember exact names. (`gh repo list` was used before, but it
+ * only returns the login's own repos, so org and shared ones were missing.)
  */
 export async function listGithubRepos(limit = 200): Promise<GithubRepo[]> {
   const { stdout } = await run(
     "gh",
-    ["repo", "list", "--limit", String(limit), "--json", "nameWithOwner,description,isPrivate,isFork,pushedAt,defaultBranchRef"],
+    [
+      "api",
+      "--paginate",
+      "user/repos?per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member",
+      "--jq",
+      ".[] | {full_name, name, description, private, fork, pushed_at, default_branch}",
+    ],
     { timeout: 30_000, maxBuffer: 8 * 1024 * 1024 },
   );
-  const raw = JSON.parse(stdout) as Array<{
-    nameWithOwner: string;
-    description: string | null;
-    isPrivate: boolean;
-    isFork: boolean;
-    pushedAt: string | null;
-    defaultBranchRef: { name: string } | null;
-  }>;
-  return raw.map((r) => ({
-    fullName: r.nameWithOwner,
-    name: r.nameWithOwner.split("/")[1] ?? r.nameWithOwner,
-    description: r.description,
-    isPrivate: r.isPrivate,
-    isFork: r.isFork,
-    pushedAt: r.pushedAt,
-    defaultBranch: r.defaultBranchRef?.name ?? null,
-  }));
+  return stdout
+    .split("\n")
+    .filter((l) => l.trim())
+    .slice(0, limit)
+    .map((l) => {
+      const r = JSON.parse(l) as {
+        full_name: string;
+        name: string;
+        description: string | null;
+        private: boolean;
+        fork: boolean;
+        pushed_at: string | null;
+        default_branch: string | null;
+      };
+      return {
+        fullName: r.full_name,
+        name: r.name,
+        description: r.description,
+        isPrivate: r.private,
+        isFork: r.fork,
+        pushedAt: r.pushed_at,
+        defaultBranch: r.default_branch,
+      };
+    });
 }
 
 export type CloneOutcome = { ok: true; dirName: string; alreadyPresent: boolean } | { ok: false; message: string };
 
 /**
- * Clone `owner/name` into the repos root. Idempotent-ish: an existing
- * directory of that name is reported back rather than overwritten, since it's
- * far more likely to be the same project already cloned than something to
- * clobber. Shallow clones are deliberately NOT used — sessions branch, commit
+ * Clone `owner/name` into the repos root, or hand back the checkout already
+ * there. A directory counts as that checkout only when its `origin` is that
+ * repo: a folder of the same name from another owner, a renamed repo or no
+ * GitHub remote at all is left alone, and the clone goes to `owner-name`
+ * instead. Shallow clones are deliberately NOT used — sessions branch, commit
  * and merge against real history.
  */
 export async function cloneGithubRepo(config: Config, input: string): Promise<CloneOutcome> {
   const repoRef = parseRepoRef(input);
   if (!repoRef) return { ok: false, message: `"${input}" isn't a GitHub repo. Use owner/name or a github.com URL.` };
 
-  const dirName = cloneDirName(repoRef);
-  const target = resolve(config.reposRoot, dirName);
-  // Exact parent check, not a prefix one: "/repos-elsewhere" also starts with "/repos".
-  if (dirname(target) !== resolve(config.reposRoot)) return { ok: false, message: "Refusing to clone outside the repos root." };
-  if (existsSync(target)) {
-    logger.info("clone skipped; directory already exists", { repoRef, target });
-    return { ok: true, dirName, alreadyPresent: true };
+  let dirName: string | null = null;
+  for (const candidate of cloneDirNames(repoRef)) {
+    const path = resolve(config.reposRoot, candidate);
+    // Exact parent check, not a prefix one: "/repos-elsewhere" also starts with "/repos".
+    if (dirname(path) !== resolve(config.reposRoot)) return { ok: false, message: "Refusing to clone outside the repos root." };
+    if (!existsSync(path)) {
+      dirName = candidate;
+      break;
+    }
+    if ((await originRepo(path))?.toLowerCase() === repoRef.toLowerCase()) {
+      logger.info("clone skipped; already checked out", { repoRef, path });
+      return { ok: true, dirName: candidate, alreadyPresent: true };
+    }
   }
+  if (!dirName) return { ok: false, message: `Couldn't clone ${repoRef}: folders with its name already hold other repos.` };
+  const target = resolve(config.reposRoot, dirName);
 
   try {
     logger.info("cloning from github", { repoRef, target });

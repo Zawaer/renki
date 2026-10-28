@@ -2,6 +2,7 @@ import type { Options, Query, SDKMessage, SDKUserMessage } from "@anthropic-ai/c
 import type { EventPayload } from "@renki/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { InputChannel, LiveClaudeSession, type LiveSessionOptions } from "../src/claude/liveSession.js";
+import { renkiPromptAppend } from "../src/claude/systemPrompt.js";
 import type { RunTurnResult } from "../src/claude/runner.js";
 
 /**
@@ -143,6 +144,23 @@ describe("InputChannel", () => {
     ch.close();
     await done;
     expect(finished).toBe(true);
+  });
+});
+
+describe("LiveClaudeSession system prompt", () => {
+  /** Unset, the SDK sends an empty system prompt instead of Claude Code's. */
+  it("uses Claude Code's prompt, with Renki's addition when given", () => {
+    expect(makeLive().fake.options.systemPrompt).toEqual({ type: "preset", preset: "claude_code" });
+    expect(makeLive({ systemPromptAppend: "# Running inside Renki" }).fake.options.systemPrompt).toEqual({
+      type: "preset",
+      preset: "claude_code",
+      append: "# Running inside Renki",
+    });
+  });
+
+  it("says how long approvals wait", () => {
+    expect(renkiPromptAppend({ approvalTimeoutMs: 300_000 })).toContain("denied after 5 minutes");
+    expect(renkiPromptAppend({ approvalTimeoutMs: 60_000 })).toContain("denied after 1 minute with");
   });
 });
 

@@ -73,6 +73,8 @@ export type LiveSessionOptions = {
   model?: string;
   permissionMode?: PermissionMode;
   maxThinkingTokens?: number | null;
+  /** Renki's addition to Claude Code's system prompt (see ./systemPrompt.ts). */
+  systemPromptAppend?: string;
   /** If true, don't load ~/.claude settings so every gated tool asks the controller. */
   forcePermissionPrompts?: boolean;
   /** The CLI compacted this conversation's context (recorded for the stats). */
@@ -254,6 +256,8 @@ export class LiveClaudeSession {
 
     const options: Options = {
       cwd: opts.cwd,
+      // Claude Code's own prompt, as the CLI uses it: left out, the SDK sends an empty one.
+      systemPrompt: { type: "preset", preset: "claude_code", ...(opts.systemPromptAppend ? { append: opts.systemPromptAppend } : {}) },
       ...(opts.archiveDir ? { additionalDirectories: [opts.archiveDir] } : {}),
       settings: CLAUDE_SETTINGS,
       includePartialMessages: true,

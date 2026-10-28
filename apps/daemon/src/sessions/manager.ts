@@ -38,6 +38,7 @@ import { derivePlaceholderTitle, generateSessionTitle } from "../claude/titler.j
 import { EFFORT_LEVELS } from "@renki/client-core";
 import { SessionError } from "./errors.js";
 import { diskBytes, slimFolder, slimNotices, type SlimOutcome } from "./slim.js";
+import { renkiPromptAppend } from "../claude/systemPrompt.js";
 import { accountsNote } from "./accountsNote.js";
 import { hostTimeZone, timeZoneNote } from "./timeZoneNote.js";
 import { dueForPurge, purgeAtFor } from "./trash.js";
@@ -1815,6 +1816,7 @@ export class SessionManager {
       model: first.model,
       permissionMode: first.permissionMode,
       maxThinkingTokens: first.maxThinkingTokens,
+      systemPromptAppend: renkiPromptAppend({ approvalTimeoutMs: this.config.permissionTimeoutMs }),
       forcePermissionPrompts: this.config.forcePermissionPrompts,
       enableRtk: this.config.enableRtk,
       rtkBin: this.config.rtkBin,

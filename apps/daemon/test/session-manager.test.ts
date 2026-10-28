@@ -607,6 +607,83 @@ describe("unpushed work", () => {
     manager.refreshUnpushed(s.id);
     await vi.waitFor(() => expect(manager.getSession(s.id).unpushed).toEqual({ commits: 1, changedFiles: 1 }));
   });
+
+  /** What Claude does by hand to work in a second checkout: `git worktree add <worktrees>/<id>-<name>`. */
+  async function extraCheckout(config: Config, repoId: string, id: string, name: string) {
+    const { execFileSync } = await import("node:child_process");
+    const path = resolve(config.worktreesDir, `${id}-${name}`);
+    execFileSync("git", ["worktree", "add", "-q", "-b", `renki/${name}`, path, "main"], { cwd: resolve(config.reposRoot, repoId), env: gitEnv });
+    return path;
+  }
+
+  it("removes the checkouts Claude made next to the worktree when archiving, and says so", async () => {
+    const { manager, config, repoId } = setup();
+    await withRemote(config, repoId);
+    const s = await newSession(manager, repoId);
+    const extra = await extraCheckout(config, repoId, s.id, "other");
+    mkdirSync(resolve(extra, "node_modules"));
+    writeFileSync(resolve(config.reposRoot, repoId, ".git", "info", "exclude"), "node_modules/\n");
+
+    await manager.archiveSession(s.id);
+
+    expect(existsSync(extra)).toBe(false);
+    expect(await branches(config, repoId)).not.toContain("renki/other");
+    expect(manager.events.read(s.id).find((e) => e.kind === "notice")).toMatchObject({ text: expect.stringMatching(/Also removed .*-other/), level: "info" });
+  });
+
+  it("keeps an extra checkout with work not on GitHub, and warns in the transcript", async () => {
+    const { manager, config, repoId } = setup();
+    await withRemote(config, repoId);
+    const s = await newSession(manager, repoId);
+    const extra = await extraCheckout(config, repoId, s.id, "other");
+    await commitIn(extra, "work.txt");
+
+    await manager.archiveSession(s.id);
+
+    expect(existsSync(resolve(extra, "work.txt"))).toBe(true);
+    expect(await branches(config, repoId)).toContain("renki/other");
+    expect(manager.events.read(s.id).find((e) => e.kind === "notice")).toMatchObject({
+      text: `Left ${extra} in place: it has 1 commit that isn't on GitHub. Nothing in it was deleted.`,
+      level: "warn",
+    });
+  });
+
+  it("removes what an already-archived session left behind when it's trashed or purged", async () => {
+    const { manager, config, repoId } = setup();
+    await withRemote(config, repoId);
+    const trashed = await newSession(manager, repoId);
+    const purged = await newSession(manager, repoId);
+    await manager.archiveSession(trashed.id);
+    await manager.archiveSession(purged.id);
+    // Left behind by an archive from before extra checkouts were cleaned up.
+    const a = await extraCheckout(config, repoId, trashed.id, "a");
+    const b = await extraCheckout(config, repoId, purged.id, "b");
+
+    await manager.trashSession(trashed.id);
+    await manager.purgeSession(purged.id);
+
+    expect(existsSync(a)).toBe(false);
+    expect(existsSync(b)).toBe(false);
+  });
+
+  it("retries on boot for finished sessions only, and never touches orphans", async () => {
+    const { manager, config, repoId } = setup();
+    await withRemote(config, repoId);
+    const archived = await newSession(manager, repoId);
+    const live = await newSession(manager, repoId);
+    await manager.archiveSession(archived.id);
+    const leftover = await extraCheckout(config, repoId, archived.id, "left");
+    const inUse = await extraCheckout(config, repoId, live.id, "busy");
+    const orphan = resolve(config.worktreesDir, "idealo-agent");
+    mkdirSync(orphan);
+
+    await manager.cleanUpLeftoverWorktrees();
+
+    expect(existsSync(leftover)).toBe(false);
+    expect(existsSync(inUse)).toBe(true);
+    expect(existsSync(live.worktreePath)).toBe(true);
+    expect(existsSync(orphan)).toBe(true);
+  });
 });
 
 describe("closeOrphanedMacBuilds", () => {

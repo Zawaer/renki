@@ -8,6 +8,8 @@ import QRCode from "qrcode";
 import { loadConfig } from "./config.js";
 import { openDb } from "./db/index.js";
 import { migrateSessionIds } from "./db/migrateSessionIds.js";
+import { sessions } from "./db/schema.js";
+import { isFinished, listWorktreeFolders, unsavedWork } from "./git/leftovers.js";
 import { logger } from "./logger.js";
 import { scanRepos } from "./repos.js";
 import { checkTailscaleServeConflict, getTailscaleStatus } from "./tailscale.js";
@@ -33,6 +35,10 @@ const execFileAsync = promisify(execFile);
  *   renki prompt <sessionId> <text...> [--model <m>]
  *   renki transcript <sessionId>
  *   renki archive <sessionId>
+ *   renki worktrees
+ *     Every folder in the worktrees dir, the session it belongs to, and what
+ *     the daemon's boot cleanup does with it. Read-only, safe next to a
+ *     running daemon.
  *   renki merge <sourceSessionId> --into <targetBranch>
  *     Attempts a plain git merge of that session's branch into <targetBranch>
  *     in a scratch worktree. Clean -> fast-forwards <targetBranch>, no Claude
@@ -145,6 +151,25 @@ async function main() {
     );
   }
 
+  if (command === "worktrees") {
+    const rows = openDb(config).select({ id: sessions.id, status: sessions.status, worktreePath: sessions.worktreePath }).from(sessions).all();
+    for (const f of listWorktreeFolders(config.worktreesDir, rows)) {
+      if (f.owner.kind === "orphan") {
+        console.log(`${f.path}\tno session\tleft alone (report only)`);
+        continue;
+      }
+      const s = f.owner.session;
+      const what = f.owner.kind === "own" ? "its worktree" : "extra checkout";
+      let verdict = "in use";
+      if (isFinished(s.status)) {
+        const why = await unsavedWork(f.path);
+        verdict = why ? `kept: ${why}` : "removed at boot";
+      }
+      console.log(`${f.path}\t${s.id} ${s.status}, ${what}\t${verdict}`);
+    }
+    return;
+  }
+
   const db = openDb(config);
   await migrateSessionIds(config, db);
   const manager = new SessionManager(config, db);
@@ -245,7 +270,7 @@ async function main() {
 
     default:
       return fail(
-        "commands: token | repos | usage login|connect | new <repoId>|--plain | sessions | prompt <sessionId> <text> | transcript <sessionId> | archive <sessionId> | merge <sessionId> --into <branch>",
+        "commands: token | repos | usage login|connect | new <repoId>|--plain | sessions | prompt <sessionId> <text> | transcript <sessionId> | archive <sessionId> | worktrees | merge <sessionId> --into <branch>",
       );
   }
 }

@@ -23,6 +23,7 @@ import type { DB } from "../db/index.js";
 import { compactions, sessions } from "../db/schema.js";
 import { EventLog } from "../events/log.js";
 import { chatAsContext, isLostConversation } from "../export/context.js";
+import { cleanUpCheckouts, extraCheckoutsOf, isFinished, listWorktreeFolders } from "../git/leftovers.js";
 import { unpushedOf, type Unpushed } from "../git/unpushed.js";
 import { createWorktree, removeWorktree, restoreWorktree } from "../git/worktrees.js";
 import { newSessionId } from "../ids.js";
@@ -601,9 +602,11 @@ export class SessionManager {
   async archiveSession(id: string): Promise<Session> {
     this.closeLive(id, "archived");
     this.clearResume(id);
-    await this.cleanUpWorkdir(this.getSession(id)).catch((err) =>
+    const session = this.getSession(id);
+    await this.cleanUpWorkdir(session).catch((err) =>
       logger.warn("workdir cleanup failed during archive", { id, err: String(err) }),
     );
+    await this.cleanUpLeftovers(session, "archive");
     this.patch(id, { status: "archived", controller: null });
     this.events.append(id, { kind: "status_changed", status: "archived" });
     this.events.append(id, { kind: "control_changed", controller: null, controllerName: null });
@@ -781,6 +784,8 @@ export class SessionManager {
         logger.warn("workdir cleanup failed during trash", { id, err: String(err) }),
       );
     }
+    // Either way, whatever that teardown missed or failed to remove.
+    await this.cleanUpLeftovers(session, "trash");
     this.patch(id, {
       status: "trashed",
       trashedAt: Date.now(),
@@ -841,6 +846,7 @@ export class SessionManager {
         logger.warn("workdir cleanup failed during delete", { id, err: String(err) }),
       );
     }
+    await this.cleanUpLeftovers(session, "delete");
     await this.removeChatFolder(session).catch((err) =>
       logger.warn("chat folder removal failed during delete", { id, err: String(err) }),
     );
@@ -942,6 +948,61 @@ export class SessionManager {
         level: "warn",
       });
       logger.info("kept a branch with unpushed commits", { id: session.id, branch: session.branch, commits: n });
+    }
+  }
+
+  /**
+   * What the worktree teardown leaves in the worktrees folder: checkouts Claude
+   * made next to the session's worktree (`<id>-<name>`), and the worktree
+   * itself if its teardown failed or its repo is gone. Each goes only if
+   * everything in it is on a remote (see git/leftovers.ts); the rest stays, and
+   * the transcript says what and why. A purge has no transcript left to tell,
+   * so there it's the log, and the next boot's report.
+   */
+  private async cleanUpLeftovers(session: Session, during: "archive" | "trash" | "delete"): Promise<void> {
+    const paths = extraCheckoutsOf(this.config.worktreesDir, session);
+    const own = resolve(session.worktreePath);
+    if (session.repoId && own.startsWith(resolve(this.config.worktreesDir) + sep) && existsSync(own)) paths.unshift(own);
+    if (paths.length === 0) return;
+    const { removed, kept } = await cleanUpCheckouts(paths);
+    const extras = removed.filter((p) => p !== own);
+    if (extras.length > 0) logger.info("removed checkouts left next to a session's worktree", { id: session.id, during, paths: extras });
+    for (const k of kept) logger.warn("left a checkout in place", { id: session.id, during, path: k.path, why: k.why });
+    if (during === "delete") return;
+    if (extras.length > 0) {
+      const names = extras.map((p) => p.slice(p.lastIndexOf(sep) + 1)).join(", ");
+      this.events.append(session.id, {
+        kind: "notice",
+        text: `Also removed ${names}: ${extras.length === 1 ? "a checkout" : "checkouts"} made in this session, with everything in ${extras.length === 1 ? "it" : "them"} on GitHub.`,
+        level: "info",
+      });
+    }
+    for (const k of kept) {
+      this.events.append(session.id, { kind: "notice", text: `Left ${k.path} in place: ${k.why}. Nothing in it was deleted.`, level: "warn" });
+    }
+  }
+
+  /**
+   * On boot: retry that cleanup for every folder in the worktrees dir that
+   * belongs to a finished session (archived, trashed or deleted), under the
+   * same rule, and report the folders no session owns. Those are only
+   * reported, never removed: with no session to say what they are, one may be
+   * the only copy of something.
+   */
+  async cleanUpLeftoverWorktrees(): Promise<void> {
+    const rows = () => this.db.select({ id: sessions.id, status: sessions.status, worktreePath: sessions.worktreePath }).from(sessions).all();
+    const folders = listWorktreeFolders(this.config.worktreesDir, rows());
+    const orphans = folders.filter((f) => f.owner.kind === "orphan").map((f) => f.path);
+    if (orphans.length > 0) logger.warn("folders in the worktrees dir that no session owns; left alone", { paths: orphans });
+    for (const f of folders) {
+      if (f.owner.kind === "orphan") continue;
+      const owner = f.owner.session.id;
+      // Re-read: an unarchive may have started since the scan, and that tree is in use again.
+      const status = rows().find((r) => r.id === owner)?.status;
+      if (!status || !isFinished(status)) continue;
+      const { removed, kept } = await cleanUpCheckouts([f.path]);
+      if (removed.length > 0) logger.info("removed a folder a finished session left behind", { id: owner, status, path: f.path });
+      for (const k of kept) logger.warn("a finished session left this folder behind; kept it", { id: owner, status, path: k.path, why: k.why });
     }
   }
 

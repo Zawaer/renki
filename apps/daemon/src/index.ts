@@ -39,6 +39,8 @@ async function main() {
   manager.closeOrphanedMacBuilds();
   // Every session's unpushed work, counted once now and after each turn from here on.
   manager.refreshAllUnpushed();
+  // Folders finished sessions left in the worktrees dir: retried here, orphans only reported.
+  void manager.cleanUpLeftoverWorktrees().catch((err) => logger.warn("leftover worktree cleanup failed", { err: String(err) }));
   const broker = new PermissionBroker(config.permissionTimeoutMs);
   // Every flip between "nobody connected" and "someone is", for the hands-off stat.
   const devices = new DeviceRegistry((anyoneOnline) => {

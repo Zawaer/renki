@@ -1480,6 +1480,21 @@ describe("resuming after a usage limit", () => {
     expect(sw.planResume).toHaveBeenCalledWith({ model: "opus", hit: limited.rateLimit, attempt: 0 });
   });
 
+  /** A subagent's limit message read as "everything is spent" to a session that didn't know there were other accounts. */
+  it("tells a session about account rotation once, before its first prompt", async () => {
+    const { manager, repoId } = setup();
+    manager.setAutoSwitch(autoSwitch({ rotatingAccounts: 2 }));
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+    runTurn.mockResolvedValue(okTurn);
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p1", text: "hi", resolvePermission: noopResolve });
+    await vi.waitFor(() => expect(manager.getSession(s.id).status).toBe("idle"));
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p2", text: "again", resolvePermission: noopResolve });
+    await vi.waitFor(() => expect(runTurn).toHaveBeenCalledTimes(2));
+    expect(texts()[0]).toMatch(/^<renki-context>Renki runs you on one of 2 Claude accounts[\s\S]*<\/renki-context>\n\nhi$/);
+    expect(texts()[1]).toBe("again");
+  });
+
   it("re-sends the original prompt when the turn got nowhere", async () => {
     const { manager, s } = await pausedSession();
     runTurn.mockResolvedValueOnce(okTurn);

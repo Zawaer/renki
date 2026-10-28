@@ -38,6 +38,7 @@ import { derivePlaceholderTitle, generateSessionTitle } from "../claude/titler.j
 import { EFFORT_LEVELS } from "@renki/client-core";
 import { SessionError } from "./errors.js";
 import { diskBytes, slimFolder, slimNotices, type SlimOutcome } from "./slim.js";
+import { accountsNote } from "./accountsNote.js";
 import { hostTimeZone, timeZoneNote } from "./timeZoneNote.js";
 import { dueForPurge, purgeAtFor } from "./trash.js";
 
@@ -62,6 +63,8 @@ export type RateLimitAutoSwitch = {
   prepareResume: (model: string | null) => Promise<ResumeReadiness>;
   /** Tells the shared account service (when there is one) which account was refused. */
   reportLimit?: (hit: RateLimitHit | null) => Promise<void>;
+  /** How many accounts sessions get rotated between (0 with rotation off) — see accountsNote. */
+  rotatingAccounts?: number;
 };
 
 /**
@@ -184,6 +187,8 @@ export class SessionManager {
   private readonly unpushed = new Map<string, Unpushed>();
   /** sessionId -> the user's zone Claude was last told about. In memory: after a restart Claude just hears it once more. */
   private readonly toldTimeZone = new Map<string, string>();
+  /** Sessions that have heard about account rotation since the daemon started — see accountsNote. */
+  private readonly toldAccounts = new Set<string>();
   /** Set by closeAll: a shutting-down daemon must not start resumed turns. */
   private stopping = false;
   /** Sessions inside runResume's readiness check, so the timer and "Continue now" can't both start the turn. */
@@ -820,6 +825,7 @@ export class SessionManager {
     this.pendingPermissions.delete(id);
     this.queues.delete(id);
     this.toldTimeZone.delete(id);
+    this.toldAccounts.delete(id);
     const trashed = this.getSession(id);
     logger.info("session trashed", { id, purgeAt: trashed.purgeAt });
     return trashed;
@@ -1189,7 +1195,7 @@ export class SessionManager {
     if (session.status === "busy") {
       const live = this.live.get(input.sessionId);
       if (live && live.busy && !live.isClosed) {
-        live.steer({ prompt: this.timeZonePrefix(input) + input.text, attachments: input.attachments, promptId: input.promptId });
+        live.steer({ prompt: this.contextPrefix(input) + input.text, attachments: input.attachments, promptId: input.promptId });
         this.events.append(input.sessionId, {
           kind: "prompt_submitted",
           promptId: input.promptId,
@@ -1233,11 +1239,19 @@ export class SessionManager {
     }
   }
 
-  /** A note on the user's time zone to put before this prompt, when Claude hasn't heard it yet — empty otherwise. */
-  private timeZonePrefix(input: SubmitPromptInput): string {
+  /** Notes on account rotation and the user's time zone to put before this prompt, when Claude hasn't heard them yet — empty otherwise. */
+  private contextPrefix(input: SubmitPromptInput): string {
+    let prefix = "";
+    if (!this.toldAccounts.has(input.sessionId)) {
+      const note = accountsNote(this.autoSwitch?.rotatingAccounts ?? 0);
+      if (note) {
+        this.toldAccounts.add(input.sessionId);
+        prefix += note;
+      }
+    }
     const { note, told } = timeZoneNote(input.timeZone, hostTimeZone(), this.toldTimeZone.get(input.sessionId));
     if (told) this.toldTimeZone.set(input.sessionId, told);
-    return note ?? "";
+    return prefix + (note ?? "");
   }
 
   /** Runs exactly one Claude turn for an already-idle session. `paused` means it stopped on a limit and a resume is scheduled. */
@@ -1277,7 +1291,7 @@ export class SessionManager {
     this.promptedTurns.add(input.sessionId);
     this.inflight.set(input.sessionId, input);
     let resumeId = session.claudeSessionId;
-    const prompt = this.timeZonePrefix(input) + input.text;
+    const prompt = this.contextPrefix(input) + input.text;
     const runOnce = (continuing = false) =>
       this.liveFor(input.sessionId, session.worktreePath, resumeId, input).runTurn({
         // A retry after the turn got partway carries on from the transcript

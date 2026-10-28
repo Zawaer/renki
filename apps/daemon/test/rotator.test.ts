@@ -248,6 +248,17 @@ describe("AccountRotator.evaluate (via tick)", () => {
   });
 });
 
+describe("AccountRotator.rotatingAccounts", () => {
+  it("counts the accounts it last listed, and none with rotation off", async () => {
+    const { rotator } = setup({ accounts: [account({ number: 1, active: true }), account({ number: 2, email: "b@x" })] });
+    expect(rotator.rotatingAccounts).toBe(0); // nothing listed yet
+    await rotator.tick();
+    expect(rotator.rotatingAccounts).toBe(2);
+    (rotator as any).enabled = false;
+    expect(rotator.rotatingAccounts).toBe(0);
+  });
+});
+
 describe("AccountRotator.rateLimitSwitch", () => {
   const spent = { fiveHour: { pct: 100, resetsAt: null }, sevenDay: { pct: 76, resetsAt: null }, extra: null };
   const roomy = { fiveHour: { pct: 34, resetsAt: null }, sevenDay: { pct: 34, resetsAt: null }, extra: null };

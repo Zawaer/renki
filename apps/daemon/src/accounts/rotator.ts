@@ -51,6 +51,8 @@ export class AccountRotator {
   private preferredEmail: string | null = null;
   /** Continue a rate-limited turn once a limit resets — see planResume/prepareResume. */
   private autoResume = true;
+  /** How many accounts cswap listed last time anything asked — see rotatingAccounts. */
+  private accountCount = 0;
 
   constructor(
     private readonly config: Config,
@@ -112,6 +114,7 @@ export class AccountRotator {
   /** cswap accounts with real usage merged in from the usage reader, by email. */
   private async mergedAccounts(): Promise<{ activeAccountNumber: number | null; accounts: Account[] }> {
     const { activeAccountNumber, accounts } = await this.cswap.list();
+    this.accountCount = accounts.length;
     if (!this.usage.configured) return { activeAccountNumber, accounts };
     const byEmail = await this.usage.usageByEmail();
     const connected = new Set(this.usage.connectedEmails());
@@ -202,6 +205,15 @@ export class AccountRotator {
     if (email) this.usage.reportLimit(email, hit);
   }
 
+  /**
+   * How many accounts a session can count on being moved between: 0 with
+   * rotation off. Cached from the last listing (every tick refreshes it) so a
+   * prompt can read it without waiting on cswap.
+   */
+  get rotatingAccounts(): number {
+    return this.enabled ? this.accountCount : 0;
+  }
+
   get autoResumeEnabled(): boolean {
     return this.autoResume;
   }
@@ -278,6 +290,9 @@ export class AccountRotator {
   start(): void {
     this.timer = setInterval(() => void this.tick(), this.config.rotation.pollMs);
     this.timer.unref();
+    // Count the accounts now rather than a whole poll from now: the first
+    // prompts after a restart read it (rotatingAccounts).
+    void this.mergedAccounts().catch(() => {});
     logger.info("account rotation timer started", { enabled: this.enabled, threshold: this.threshold });
   }
 

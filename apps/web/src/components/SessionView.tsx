@@ -424,6 +424,15 @@ export function SessionView({
               {rows.map((item, i) => (
                 <TimelineRow key={i} item={item} first={i === 0} animate={settledCount.current !== null && i >= settledCount.current} />
               ))}
+              {replies && (
+                <SuggestedReplies
+                  question={replies.question}
+                  replies={replies.replies}
+                  canAct={isController}
+                  onPick={sendReply}
+                  onDismiss={() => setDismissedReplies(replies.turnId)}
+                />
+              )}
             </div>
           )}
         </div>
@@ -501,16 +510,6 @@ export function SessionView({
       )}
 
       {background.length > 0 && <BackgroundWorkBar work={background} />}
-
-      {replies && (
-        <SuggestedReplies
-          question={replies.question}
-          replies={replies.replies}
-          canAct={isController}
-          onPick={sendReply}
-          onDismiss={() => setDismissedReplies(replies.turnId)}
-        />
-      )}
 
       {resume && conv.status !== null && status !== "busy" && (
         <ResumeBanner
@@ -681,9 +680,10 @@ function BackgroundWorkRow({ work }: { work: BackgroundWork }) {
 
 /**
  * One-tap answers to the question Claude's last reply ended on (its
- * suggest_replies call). A pick is sent as your next message, exactly as
- * labelled; typing anything else, or the X, puts the card away. Nothing waits
- * on it: the turn has already ended.
+ * suggest_replies call), shown at the end of the transcript right under that
+ * reply. A pick is sent as your next message, exactly as labelled; typing
+ * anything else, or the X, puts the card away. Nothing waits on it: the turn
+ * has already ended.
  */
 function SuggestedReplies({
   question,
@@ -699,32 +699,30 @@ function SuggestedReplies({
   onDismiss: () => void;
 }) {
   return (
-    <div className="px-6 pb-2" data-testid="suggested-replies">
-      <div className="renki-enter mx-auto flex w-full max-w-3xl items-center gap-2 rounded-xl border border-(--renki-border) bg-(--renki-surface) px-3 py-2">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          {question && <span className="mr-1 text-[13px] text-(--renki-fg)">{question}</span>}
-          {replies.map((r, i) => (
-            <Button
-              key={r}
-              variant={i === 0 ? "primary" : "default"}
-              size="sm"
-              disabled={!canAct}
-              onClick={() => onPick(r)}
-              title={canAct ? (i === 0 ? "Send (⌘Enter)" : "Send") : "Take control to answer"}
-            >
-              {r}
-            </Button>
-          ))}
-        </div>
-        <button
-          type="button"
-          onClick={onDismiss}
-          aria-label="Close"
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-(--renki-fg-muted) transition-colors hover:bg-(--renki-hover) hover:text-(--renki-fg)"
-        >
-          <span className="codicon codicon-close text-[13px]" />
-        </button>
+    <div className="renki-enter relative rounded-xl border border-(--renki-border) bg-(--renki-surface) px-4 py-3" data-testid="suggested-replies">
+      {question && <div className="mb-2.5 pr-7 text-[13px] text-(--renki-fg)">{question}</div>}
+      <div className="flex flex-wrap items-center gap-2 pr-7">
+        {replies.map((r, i) => (
+          <Button
+            key={r}
+            variant={i === 0 ? "primary" : "default"}
+            size="sm"
+            disabled={!canAct}
+            onClick={() => onPick(r)}
+            title={canAct ? (i === 0 ? "Send (⌘Enter)" : "Send") : "Take control to answer"}
+          >
+            {r}
+          </Button>
+        ))}
       </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Close"
+        className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-md text-(--renki-fg-muted) transition-colors hover:bg-(--renki-hover) hover:text-(--renki-fg)"
+      >
+        <span className="codicon codicon-close text-[13px]" />
+      </button>
     </div>
   );
 }

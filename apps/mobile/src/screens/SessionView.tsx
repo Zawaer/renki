@@ -492,6 +492,19 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
           )}
           ItemSeparatorComponent={TimelineGap}
           ListFooterComponent={TimelineAnchor}
+          // The list is inverted, so its header sits at the bottom, right under the newest reply.
+          ListHeaderComponent={
+            replies ? (
+              <SuggestedReplies
+                question={replies.question}
+                replies={replies.replies}
+                onPick={(r) => realtime.submitPrompt(sessionId, r, promptOptsFor(conv.composer))}
+                onDismiss={() => setDismissedReplies(replies.turnId)}
+                colors={colors}
+                styles={styles}
+              />
+            ) : null
+          }
           style={styles.timeline}
           contentContainerStyle={styles.timelineContent}
           onScroll={onTimelineScroll}
@@ -613,35 +626,6 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
             ))}
             {background.length > 3 && <Text style={styles.meta}>{background.length - 3} more</Text>}
           </TouchableOpacity>
-        </FadeIn>
-      )}
-
-      {/* One-tap answers (the turn's suggest_replies call): a tap sends the label as your next message. */}
-      {replies && (
-        <FadeIn>
-          <View style={styles.repliesWrap}>
-            {replies.question && (
-              <Text style={[styles.toolStepLabel, styles.repliesQuestion]} numberOfLines={2}>
-                {replies.question}
-              </Text>
-            )}
-            <View style={styles.repliesButtons}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.repliesRow} keyboardShouldPersistTaps="handled">
-              {replies.replies.map((r, i) => (
-                <TouchableOpacity
-                  key={r}
-                  style={i === 0 ? styles.resumeNowBtn : styles.replyPill}
-                  onPress={() => realtime.submitPrompt(sessionId, r, promptOptsFor(conv.composer))}
-                >
-                  <Text style={i === 0 ? styles.resumeNowText : styles.replyText}>{r}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            <TouchableOpacity onPress={() => setDismissedReplies(replies.turnId)} hitSlop={10} accessibilityLabel="Close">
-              <Ionicons name="close" size={16} color={colors.faint} />
-            </TouchableOpacity>
-            </View>
-          </View>
         </FadeIn>
       )}
 
@@ -999,6 +983,43 @@ function TimelineGap() {
  * Nothing to see — it's there so maintainVisibleContentPosition always has a
  * view past the newest row to anchor on, even when that row is the only one.
  */
+/** One-tap answers to the question the newest reply ended on (its suggest_replies call): a tap sends the label as your next message. */
+function SuggestedReplies({
+  question,
+  replies,
+  onPick,
+  onDismiss,
+  colors,
+  styles,
+}: {
+  question: string | null;
+  replies: string[];
+  onPick: (text: string) => void;
+  onDismiss: () => void;
+  colors: ThemeColors;
+  styles: Styles;
+}) {
+  return (
+    <FadeIn>
+      <View style={styles.repliesWrap}>
+        <View style={styles.repliesHead}>
+          <Text style={[styles.toolStepLabel, styles.repliesQuestion]}>{question ?? ""}</Text>
+          <TouchableOpacity onPress={onDismiss} hitSlop={10} accessibilityLabel="Close">
+            <Ionicons name="close" size={16} color={colors.faint} />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.repliesRow}>
+          {replies.map((r, i) => (
+            <TouchableOpacity key={r} style={i === 0 ? styles.resumeNowBtn : styles.replyPill} onPress={() => onPick(r)}>
+              <Text style={i === 0 ? styles.resumeNowText : styles.replyText}>{r}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+    </FadeIn>
+  );
+}
+
 function TimelineAnchor() {
   return null;
 }
@@ -2222,10 +2243,10 @@ const makeStyles = (colors: ThemeColors) =>
     resumeNowText: { color: colors.accentFg, fontSize: 13, fontWeight: "700" },
     queueItem: { color: colors.faint, fontSize: 12 },
     backgroundWrap: { gap: 6, backgroundColor: colors.panel, borderRadius: radius.md, marginHorizontal: 14, marginBottom: 8, paddingHorizontal: 12, paddingVertical: 8 },
-    repliesWrap: { gap: 6, marginHorizontal: 14, marginBottom: 8 },
-    repliesQuestion: { color: colors.text },
-    repliesButtons: { flexDirection: "row", alignItems: "center", gap: 8 },
-    repliesRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+    repliesWrap: { gap: 10, marginTop: 14, padding: 12, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
+    repliesHead: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
+    repliesQuestion: { flex: 1, color: colors.text },
+    repliesRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, alignItems: "center" },
     replyPill: { backgroundColor: colors.panel, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 6 },
     replyText: { color: colors.text, fontSize: 13, fontWeight: "600" },
     allowBtn: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: 20, paddingVertical: 10 },

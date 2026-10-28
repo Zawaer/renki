@@ -370,7 +370,8 @@ export type BackgroundWork = {
  * turn that started them ends they're easy to lose in the middle of a reply,
  * so clients pin them above the composer while they run. A task whose process
  * died reports itself stopped (the daemon closes them when Claude's process
- * ends), so these really are running. Mac builds have their own row.
+ * ends), so these really are running. Mac builds have their own row, and
+ * servers left running on purpose are skipped.
  */
 export function backgroundWorkOf(timeline: TimelineItem[]): BackgroundWork[] {
   const out: BackgroundWork[] = [];
@@ -380,7 +381,7 @@ export function backgroundWorkOf(timeline: TimelineItem[]): BackgroundWork[] {
       const isAgent = AGENT_TOOL_NAMES.has(b.toolName);
       const path = [...ancestors, b.toolUseId];
       const inBackground = (b.toolInput as { run_in_background?: unknown } | null)?.run_in_background === true;
-      if (inBackground && !b.backgroundTask && !b.macBuild) {
+      if (inBackground && !b.backgroundTask && !b.macBuild && !(!isAgent && isServer(b.toolInput))) {
         const steps = b.subagent?.blocks.filter((x) => x?.kind === "tool_use") ?? [];
         const newest = steps[steps.length - 1];
         const input = (b.toolInput ?? {}) as { description?: unknown };
@@ -400,6 +401,24 @@ export function backgroundWorkOf(timeline: TimelineItem[]): BackgroundWork[] {
   };
   for (const item of timeline) if (item.type === "turn") walk(item.turn.blocks, []);
   return out;
+}
+
+/**
+ * A backgrounded command that serves something until it's stopped: a dev or
+ * preview server. Those run for the rest of the session on purpose, so
+ * pinning them above the composer only gets in the way. They still show in
+ * the transcript and the background tasks panel.
+ */
+const SERVER_COMMAND =
+  /\bhttp\.server\b|\b(?:vite|next|astro|nuxt|http-server|live-server|serve|uvicorn|gunicorn|webpack-dev-server)\b|\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:dev|start|serve|preview)\b|\bflask\s+run\b|\bmanage\.py\s+runserver\b|--port\b/;
+const SERVER_DESCRIPTION = /\bserv(?:e|es|er|ing)\b.*\bport\b|\b(?:dev|preview|web|http|static) server\b/i;
+
+function isServer(toolInput: unknown): boolean {
+  const input = (toolInput ?? {}) as { command?: unknown; description?: unknown };
+  return (
+    (typeof input.command === "string" && SERVER_COMMAND.test(input.command)) ||
+    (typeof input.description === "string" && SERVER_DESCRIPTION.test(input.description))
+  );
 }
 
 export type AgentNode = {

@@ -282,7 +282,7 @@ describe("backgroundWorkOf", () => {
       toolUseId: "tu_a",
       subagent: { blocks: [tool("Bash", { command: "ls" }), tool("Read", { file_path: "/x/a.ts" })], status: "running" } as never,
     });
-    const command = tool("Bash", { command: "npm run dev", description: "Start the dev server", run_in_background: true }, { toolUseId: "tu_c" });
+    const command = tool("Bash", { command: "npm test -- --watch", description: "Watch the tests", run_in_background: true }, { toolUseId: "tu_c" });
     const finished = tool("Agent", { description: "Done one", run_in_background: true }, { backgroundTask: { status: "completed", summary: "ok" } as never });
     const work = backgroundWorkOf([turnItem([agent, command, finished, tool("Bash", { command: "ls" })])]);
     expect(work.map((w) => [w.kind, w.label, w.steps])).toEqual([
@@ -297,5 +297,15 @@ describe("backgroundWorkOf", () => {
     const inner = tool("Agent", { description: "Inner", run_in_background: true }, { toolUseId: "tu_in" });
     const outer = tool("Agent", { description: "Outer" }, { toolUseId: "tu_out", subagent: { blocks: [inner], status: "done" } as never });
     expect(backgroundWorkOf([turnItem([outer])]).map((w) => w.path)).toEqual([["tu_out", "tu_in"]]);
+  });
+
+  it("leaves out servers left running on purpose", () => {
+    const servers = [
+      tool("Bash", { command: "cd viewer && python3 -m http.server 3123", description: "Serve the 3D viewer on port 3123", run_in_background: true }),
+      tool("Bash", { command: "pnpm dev", run_in_background: true }),
+      tool("Bash", { command: "./run.sh", description: "Start the preview server", run_in_background: true }),
+    ];
+    const build = tool("Bash", { command: "pnpm build", description: "Build the app", run_in_background: true });
+    expect(backgroundWorkOf([turnItem([...servers, build])]).map((w) => w.label)).toHaveLength(1);
   });
 });

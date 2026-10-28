@@ -37,6 +37,7 @@ import type { PermissionResolver, RateLimitHit, RunTurnResult } from "../claude/
 import { derivePlaceholderTitle, generateSessionTitle } from "../claude/titler.js";
 import { EFFORT_LEVELS } from "@renki/client-core";
 import { SessionError } from "./errors.js";
+import { diskBytes, slimFolder, slimNotices, type SlimOutcome } from "./slim.js";
 import { hostTimeZone, timeZoneNote } from "./timeZoneNote.js";
 import { dueForPurge, purgeAtFor } from "./trash.js";
 
@@ -611,6 +612,7 @@ export class SessionManager {
     this.events.append(id, { kind: "status_changed", status: "archived" });
     this.events.append(id, { kind: "control_changed", controller: null, controllerName: null });
     this.pendingPermissions.delete(id);
+    this.startSlimming(id);
     logger.info("session archived", { id });
     return this.getSession(id);
   }
@@ -637,6 +639,7 @@ export class SessionManager {
       throw new SessionError("invalid_request", "A merge-conflict session can't be unarchived: its merge is gone. Start the merge again instead.");
     }
 
+    await this.slimmed(id);
     let note: string;
     if (session.repoId) {
       const repo = await findRepo(this.config, session.repoId);
@@ -654,7 +657,7 @@ export class SessionManager {
       const kept = existsSync(session.worktreePath);
       mkdirSync(session.worktreePath, { recursive: true });
       note = kept
-        ? "Unarchived — this chat's folder is as you left it."
+        ? "Unarchived. This chat's folder is as archiving left it: reinstall packages or rebuild if it cleared them."
         : "Unarchived — files made in this chat's folder before archiving aren't back.";
     }
 
@@ -786,6 +789,7 @@ export class SessionManager {
     }
     // Either way, whatever that teardown missed or failed to remove.
     await this.cleanUpLeftovers(session, "trash");
+    if (session.status !== "archived") this.startSlimming(id);
     this.patch(id, {
       status: "trashed",
       trashedAt: Date.now(),
@@ -837,6 +841,7 @@ export class SessionManager {
    */
   async purgeSession(id: string): Promise<void> {
     const session = this.getSession(id);
+    await this.slimmed(id);
     this.closeLive(id, "deleted");
     this.clearResume(id);
     // Archived and trashed repo sessions already had their worktree torn down; a repo-less chat's folder
@@ -928,8 +933,8 @@ export class SessionManager {
   /** Tear down a session's on-disk working directory: a git worktree for a repo session, or just the plain scratch dir. */
   private async cleanUpWorkdir(session: Session): Promise<void> {
     // A repo-less chat's folder is left alone: there's no branch or remote behind it, so it can hold the
-    // only copy of everything Claude made there (research, notes, scripts), and it can be large. It goes
-    // with the chat on a permanent delete (see removeChatFolder), not on archive or trash.
+    // only copy of everything Claude made there (research, notes, scripts). Archive only clears what can be
+    // had again (see slim); the rest goes with the chat on a permanent delete (see removeChatFolder).
     if (!session.repoId) return;
     const repo = await findRepo(this.config, session.repoId);
     if (!repo || !session.branch) return;
@@ -980,6 +985,44 @@ export class SessionManager {
     for (const k of kept) {
       this.events.append(session.id, { kind: "notice", text: `Left ${k.path} in place: ${k.why}. Nothing in it was deleted.`, level: "warn" });
     }
+  }
+
+  /** Archive and trash return before a big folder is cleared; anything about to touch it waits here first. */
+  private readonly slimming = new Map<string, Promise<void>>();
+
+  async slimmed(id: string): Promise<void> {
+    await this.slimming.get(id);
+  }
+
+  private startSlimming(id: string): void {
+    if (this.slimming.has(id)) return;
+    const job = this.slim(id)
+      .catch((err) => logger.warn("slimming failed", { id, err: String(err) }))
+      .finally(() => this.slimming.delete(id));
+    this.slimming.set(id, job);
+  }
+
+  /**
+   * Clear what an archived session doesn't need and can be had again (see
+   * slim.ts): the bulk in its chat folder, and its Mac build artifacts. A
+   * repo session's chat folder is the one it had before attachRepo, if any.
+   * The transcript says what went, what stayed and what failed.
+   */
+  private async slim(id: string): Promise<void> {
+    const chat = resolve(this.config.dataDir, "chats", id);
+    const outcome: SlimOutcome = existsSync(chat) ? await slimFolder(chat) : { removed: [], kept: [], failed: [] };
+    const artifacts = resolve(this.config.dataDir, "mac-artifacts", id);
+    if (existsSync(artifacts)) {
+      const bytes = await diskBytes(artifacts);
+      await rm(artifacts, { recursive: true, force: true })
+        .then(() => outcome.removed.push({ path: artifacts, what: "Mac build artifacts", bytes }))
+        .catch((err) => outcome.failed.push({ path: artifacts, error: String(err) }));
+    }
+    const freed = outcome.removed.reduce((n, r) => n + r.bytes, 0);
+    if (outcome.removed.length + outcome.kept.length + outcome.failed.length > 0) {
+      logger.info("slimmed an archived session", { id, freed, removed: outcome.removed.map((r) => r.path), kept: outcome.kept, failed: outcome.failed });
+    }
+    for (const n of slimNotices(outcome, chat)) this.events.append(id, { kind: "notice", ...n });
   }
 
   /**

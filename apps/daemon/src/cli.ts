@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { promisify } from "node:util";
 import { parseArgs } from "node:util";
@@ -10,6 +11,7 @@ import { openDb } from "./db/index.js";
 import { migrateSessionIds } from "./db/migrateSessionIds.js";
 import { sessions } from "./db/schema.js";
 import { isFinished, listWorktreeFolders, unsavedWork } from "./git/leftovers.js";
+import { formatBytes, slimFolder } from "./sessions/slim.js";
 import { logger } from "./logger.js";
 import { scanRepos } from "./repos.js";
 import { checkTailscaleServeConflict, getTailscaleStatus } from "./tailscale.js";
@@ -39,6 +41,9 @@ const execFileAsync = promisify(execFile);
  *     Every folder in the worktrees dir, the session it belongs to, and what
  *     the daemon's boot cleanup does with it. Read-only, safe next to a
  *     running daemon.
+ *   renki slim <sessionId>
+ *     What archiving would clear out of that session's chat folder, and what
+ *     it would keep. Read-only.
  *   renki merge <sourceSessionId> --into <targetBranch>
  *     Attempts a plain git merge of that session's branch into <targetBranch>
  *     in a scratch worktree. Clean -> fast-forwards <targetBranch>, no Claude
@@ -170,6 +175,17 @@ async function main() {
     return;
   }
 
+  if (command === "slim") {
+    const id = rest[0];
+    if (!id) return fail("usage: renki slim <sessionId>");
+    const chat = join(config.dataDir, "chats", id);
+    const { removed, kept } = await slimFolder(chat, { dryRun: true });
+    for (const r of removed) console.log(`remove\t${formatBytes(r.bytes)}\t${r.what}\t${r.path}`);
+    for (const k of kept) console.log(`keep\t\t${k.why}\t${k.path}`);
+    console.log(`would free ${formatBytes(removed.reduce((n, r) => n + r.bytes, 0))} (plus ${join(config.dataDir, "mac-artifacts", id)}, if there)`);
+    return;
+  }
+
   const db = openDb(config);
   await migrateSessionIds(config, db);
   const manager = new SessionManager(config, db);
@@ -270,7 +286,7 @@ async function main() {
 
     default:
       return fail(
-        "commands: token | repos | usage login|connect | new <repoId>|--plain | sessions | prompt <sessionId> <text> | transcript <sessionId> | archive <sessionId> | worktrees | merge <sessionId> --into <branch>",
+        "commands: token | repos | usage login|connect | new <repoId>|--plain | sessions | prompt <sessionId> <text> | transcript <sessionId> | archive <sessionId> | worktrees | slim <sessionId> | merge <sessionId> --into <branch>",
       );
   }
 }

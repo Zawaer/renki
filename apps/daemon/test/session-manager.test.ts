@@ -557,6 +557,30 @@ describe("unarchive", () => {
     const s = await newSession(manager, repoId);
     await expect(manager.unarchiveSession(s.id)).rejects.toMatchObject({ code: "invalid_request" });
   });
+
+  /** An archived chat should cost its transcript and the files only it has, not gigabytes of installs and builds. */
+  it("clears a chat's installs and Mac build artifacts on archive, keeps its own files, and says what it freed", async () => {
+    const { manager, config } = setup();
+    const chat = await manager.createSession({});
+    const dep = resolve(chat.worktreePath, "app", "node_modules", "dep");
+    mkdirSync(dep, { recursive: true });
+    writeFileSync(resolve(dep, "index.js"), "x".repeat(8192));
+    writeFileSync(resolve(chat.worktreePath, "notes.md"), "mine");
+    const apk = resolve(config.dataDir, "mac-artifacts", chat.id, "job1");
+    mkdirSync(apk, { recursive: true });
+    writeFileSync(resolve(apk, "app-debug.apk"), "x".repeat(8192));
+
+    await manager.archiveSession(chat.id);
+    await manager.slimmed(chat.id);
+
+    expect(existsSync(resolve(chat.worktreePath, "app", "node_modules"))).toBe(false);
+    expect(existsSync(resolve(config.dataDir, "mac-artifacts", chat.id))).toBe(false);
+    expect(readFileSync(resolve(chat.worktreePath, "notes.md"), "utf8")).toBe("mine");
+    expect(manager.events.read(chat.id).find((e) => e.kind === "notice")).toMatchObject({
+      text: expect.stringMatching(/^Archiving freed \d+ KB: node_modules \(app\/node_modules\); Mac build artifacts \(/),
+      level: "info",
+    });
+  });
 });
 
 describe("unpushed work", () => {
@@ -919,7 +943,7 @@ describe("a repo-less chat's folder", () => {
     await manager.archiveSession(chat.id);
     await manager.unarchiveSession(chat.id);
     const notice = manager.events.read(chat.id).find((e) => e.kind === "notice" && e.text.startsWith("Unarchived"));
-    expect(notice && notice.kind === "notice" && notice.text).toMatch(/as you left it/);
+    expect(notice && notice.kind === "notice" && notice.text).toMatch(/as archiving left it/);
   });
 
   it("is removed, for good, only when the chat is deleted permanently", async () => {

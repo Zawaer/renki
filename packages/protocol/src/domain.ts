@@ -180,6 +180,13 @@ export const Session = z.object({
    * there's nothing (or no repo, or it hasn't been checked yet).
    */
   unpushed: z.object({ commits: z.number().int(), changedFiles: z.number().int() }).nullable().optional(),
+  /**
+   * How many commits on GitHub's `baseBranch` this session's branch doesn't
+   * have, when it also has commits of its own (so it can't just be moved up
+   * to date before the next turn, which happens on its own otherwise). Null
+   * or absent when it's current, or that's all it would take.
+   */
+  behind: z.object({ commits: z.number().int() }).nullable().optional(),
 });
 export type Session = z.infer<typeof Session>;
 

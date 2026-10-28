@@ -23,6 +23,18 @@ export function unpushedBadge(u: Unpushed | null | undefined): string | null {
 export const PUSH_PROMPT =
   "Push this chat's work to main on GitHub. Commit anything uncommitted first. If main has moved on, rebase onto it and resolve any conflicts, then push and tell me what went up.";
 
+/** "3 commits behind main", for the banner that offers to pull them in. */
+export function behindSummary(commits: number, base: string | null): string {
+  return `${commits} commit${commits === 1 ? "" : "s"} behind ${base ?? "main"}`;
+}
+
+/**
+ * What the Pull button sends Claude. Only shown when the branch has commits of
+ * its own: one that doesn't is fast-forwarded by the daemon before each turn.
+ */
+export const PULL_PROMPT =
+  "Bring this branch up to date with main on GitHub. Fetch, then rebase onto origin/main (or merge, if this branch is already on GitHub) and resolve any conflicts. Don't push. Tell me what came in.";
+
 /** The session's own composer settings, as submitPrompt takes them, for a prompt sent by a button. */
 export function promptOptsFor(composer: Session["composer"] | null | undefined) {
   const effort = EFFORT_LEVELS.find((e) => e.key === composer?.effortKey);

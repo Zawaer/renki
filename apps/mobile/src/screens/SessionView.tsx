@@ -35,6 +35,8 @@ import {
   type StepSummary,
   formatResumeAt,
   PUSH_PROMPT,
+  PULL_PROMPT,
+  behindSummary,
   promptOptsFor,
   unpushedSummary,
   groupTurnBlocks,
@@ -242,6 +244,8 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const [title, setTitle] = useState<string | null>(null);
   /** Commits and uncommitted files GitHub doesn't have yet (counted by the daemon after each turn). */
   const [unpushed, setUnpushed] = useState<Session["unpushed"]>(null);
+  /** Commits on GitHub's base branch this branch lacks, when it can't simply be moved up to them. */
+  const [behind, setBehind] = useState<{ commits: number; base: string | null } | null>(null);
   /** False once the controller's last connection closed; it can't answer approvals then, so anyone may. */
   const [controllerOnline, setControllerOnline] = useState(true);
   useEffect(() => {
@@ -251,10 +255,12 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
     setPlace(null);
     setTitle(null);
     setUnpushed(null);
+    setBehind(null);
     return realtime.onSessionChanged((s) => {
       if (s.id !== sessionId) return;
       setTitle(s.title);
       setUnpushed(s.unpushed ?? null);
+      setBehind(s.behind ? { commits: s.behind.commits, base: s.baseBranch } : null);
       setResume(s.resume ?? null);
       setWorktreePath(s.worktreePath);
       setPlace({ repoName: s.repoName, branch: s.branch });
@@ -594,6 +600,26 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
             </View>
           )}
         </View>
+        </FadeIn>
+      )}
+
+      {/* Main moved on and this branch has commits of its own, so it wasn't caught up on its own. Pull asks Claude to. */}
+      {behind && conv.status !== null && status !== "busy" && status !== "archived" && status !== "trashed" && (
+        <FadeIn>
+          <View style={styles.resumeWrap}>
+            <Ionicons name="cloud-download-outline" size={20} color={colors.dim} />
+            <Text style={[styles.resumeTitle, { flex: 1 }]} numberOfLines={2}>
+              {behindSummary(behind.commits, behind.base)}
+            </Text>
+            {isController && (
+              <TouchableOpacity
+                style={styles.resumeNowBtn}
+                onPress={() => realtime.submitPrompt(sessionId, PULL_PROMPT, promptOptsFor(conv.composer))}
+              >
+                <Text style={styles.resumeNowText}>Pull</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </FadeIn>
       )}
 

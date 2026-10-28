@@ -25,6 +25,7 @@ import { EventLog } from "../events/log.js";
 import { chatAsContext, isLostConversation } from "../export/context.js";
 import { cleanUpCheckouts, extraCheckoutsOf, isFinished, listWorktreeFolders } from "../git/leftovers.js";
 import { unpushedOf, type Unpushed } from "../git/unpushed.js";
+import { baseStatusOf, catchUpWithBase } from "../git/baseSync.js";
 import { createWorktree, removeWorktree, restoreWorktree } from "../git/worktrees.js";
 import { newSessionId } from "../ids.js";
 import { logger } from "../logger.js";
@@ -186,6 +187,10 @@ export class SessionManager {
   private readonly inflight = new Map<string, SubmitPromptInput>();
   /** What each session hasn't pushed, as last counted (see refreshUnpushed). Only non-empty entries. */
   private readonly unpushed = new Map<string, Unpushed>();
+  /** How far behind its base each session's branch is, when it has commits of its own too (see refreshUnpushed). Only non-zero entries. */
+  private readonly behind = new Map<string, number>();
+  /** sessionId -> how far behind its base Claude was last told the branch is (see catchUpNote), so the note isn't repeated every turn. */
+  private readonly toldBehind = new Map<string, number>();
   /** sessionId -> the user's zone Claude was last told about. In memory: after a restart Claude just hears it once more. */
   private readonly toldTimeZone = new Map<string, string>();
   /** Sessions that have heard about account rotation since the daemon started — see accountsNote. */
@@ -615,13 +620,18 @@ export class SessionManager {
       .where(ne(sessions.status, "deleted"))
       .orderBy(desc(sessions.lastActivityAt))
       .all()
-      .map((row) => ({ ...rowToSession(row, this.config.trashRetentionMs), unpushed: this.unpushed.get(row.id) ?? null }));
+      .map((row) => ({ ...rowToSession(row, this.config.trashRetentionMs), unpushed: this.unpushed.get(row.id) ?? null, behind: this.behindOf(row.id) }));
   }
 
   getSession(id: string): Session {
     const row = this.db.select().from(sessions).where(eq(sessions.id, id)).get();
     if (!row || row.status === "deleted") throw new SessionError("session_not_found", `Unknown session: ${id}`);
-    return { ...rowToSession(row, this.config.trashRetentionMs), unpushed: this.unpushed.get(id) ?? null };
+    return { ...rowToSession(row, this.config.trashRetentionMs), unpushed: this.unpushed.get(id) ?? null, behind: this.behindOf(id) };
+  }
+
+  private behindOf(id: string): { commits: number } | null {
+    const n = this.behind.get(id);
+    return n ? { commits: n } : null;
   }
 
   async archiveSession(id: string): Promise<Session> {
@@ -1087,21 +1097,40 @@ export class SessionManager {
       return;
     }
     if (!session.repoId || session.status === "archived" || session.status === "trashed") {
-      if (this.unpushed.delete(id)) this.broadcast?.onSessionChanged(this.getSession(id));
+      const had = this.behind.delete(id);
+      if (this.unpushed.delete(id) || had) this.broadcast?.onSessionChanged(this.getSession(id));
       return;
     }
-    void unpushedOf(session.worktreePath).then((u) => {
+    const base = session.baseBranch;
+    void Promise.all([unpushedOf(session.worktreePath), base ? baseStatusOf(session.worktreePath, base) : null]).then(([u, b]) => {
       const next = u && (u.commits > 0 || u.changedFiles > 0) ? u : null;
       const prev = this.unpushed.get(id) ?? null;
-      if (prev?.commits === next?.commits && prev?.changedFiles === next?.changedFiles) return;
+      // Behind with nothing of its own is caught up before the next turn anyway, so not worth a banner.
+      const behind = b && b.ahead > 0 ? b.behind : 0;
+      if (prev?.commits === next?.commits && prev?.changedFiles === next?.changedFiles && (this.behind.get(id) ?? 0) === behind) return;
       if (next) this.unpushed.set(id, next);
       else this.unpushed.delete(id);
+      if (behind > 0) this.behind.set(id, behind);
+      else this.behind.delete(id);
       try {
         this.broadcast?.onSessionChanged(this.getSession(id));
       } catch {
         // deleted meanwhile
       }
     });
+  }
+
+  /** refreshUnpushed for this session and every other one in its repo. */
+  private refreshRepo(id: string): void {
+    let repoId: string | null;
+    try {
+      repoId = this.getSession(id).repoId;
+    } catch {
+      return;
+    }
+    this.refreshUnpushed(id);
+    if (!repoId) return;
+    for (const s of this.listSessions()) if (s.repoId === repoId && s.id !== id) this.refreshUnpushed(s.id);
   }
 
   refreshAllUnpushed(): void {
@@ -1240,6 +1269,31 @@ export class SessionManager {
     }
   }
 
+  /**
+   * Bring the session's branch up to date with GitHub's base branch before a
+   * turn, when that's a plain fast-forward (see git/baseSync.ts), and tell
+   * Claude, since files it read earlier may have changed. When it can't be
+   * done safely, Claude hears how far behind it is instead (once per count),
+   * and decides.
+   */
+  private async catchUpNote(session: Session): Promise<string> {
+    if (!session.repoId || !session.baseBranch || session.purpose === "merge_conflict") return "";
+    const base = session.baseBranch;
+    const result = await catchUpWithBase(session.worktreePath, base);
+    const plural = (n: number) => `${n} commit${n === 1 ? "" : "s"}`;
+    if (result.kind === "updated") {
+      this.events.append(session.id, { kind: "notice", text: `Updated to the latest ${base}: ${plural(result.commits)} from elsewhere.`, level: "info" });
+      return `[Renki: before this message, this branch was fast-forwarded to origin/${base}, bringing in ${plural(result.commits)} from other sessions or people. Files you read earlier may have changed.]\n\n`;
+    }
+    if (result.kind !== "behind") this.toldBehind.delete(session.id);
+    if (result.kind === "behind" && this.toldBehind.get(session.id) !== result.commits) {
+      this.toldBehind.set(session.id, result.commits);
+      const why = result.why === "diverged" ? "it has commits of its own" : "uncommitted changes here touch the incoming files";
+      return `[Renki: this branch is ${plural(result.commits)} behind origin/${base}, and couldn't be fast-forwarded because ${why}. Bring it up to date first if this task depends on recent work there.]\n\n`;
+    }
+    return "";
+  }
+
   /** Notes on account rotation and the user's time zone to put before this prompt, when Claude hasn't heard them yet — empty otherwise. */
   private contextPrefix(input: SubmitPromptInput): string {
     let prefix = "";
@@ -1292,7 +1346,7 @@ export class SessionManager {
     this.promptedTurns.add(input.sessionId);
     this.inflight.set(input.sessionId, input);
     let resumeId = session.claudeSessionId;
-    const prompt = this.contextPrefix(input) + input.text;
+    const prompt = (await this.catchUpNote(session)) + this.contextPrefix(input) + input.text;
     const runOnce = (continuing = false) =>
       this.liveFor(input.sessionId, session.worktreePath, resumeId, input).runTurn({
         // A retry after the turn got partway carries on from the transcript
@@ -1938,8 +1992,9 @@ export class SessionManager {
       .where(eq(sessions.id, id))
       .run();
     this.broadcast?.onSessionChanged(this.getSession(id));
-    // A turn just ended (or the session came back): its commits may have changed.
-    if (fields.status === "idle" || fields.status === "error") this.refreshUnpushed(id);
+    // A turn just ended (or the session came back): its commits may have changed,
+    // and a push or fetch from it moves where its siblings in the repo stand too.
+    if (fields.status === "idle" || fields.status === "error") this.refreshRepo(id);
   }
 }
 

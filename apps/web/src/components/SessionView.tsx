@@ -2,6 +2,8 @@ import {
   classifyAttachment,
   EFFORT_LEVELS,
   PUSH_PROMPT,
+  PULL_PROMPT,
+  behindSummary,
   promptOptsFor,
   unpushedSummary,
   estimateTokens,
@@ -109,6 +111,8 @@ export function SessionView({
   const [title, setTitle] = useState<string | null>(null);
   /** Commits and uncommitted files GitHub doesn't have yet (counted by the daemon after each turn). */
   const [unpushed, setUnpushed] = useState<Session["unpushed"]>(null);
+  /** Commits on GitHub's base branch this branch lacks, when it can't simply be moved up to them (see the daemon's catchUpNote). */
+  const [behind, setBehind] = useState<{ commits: number; base: string | null } | null>(null);
   /** The worktree's absolute path, so a reply's absolute file links can be mapped into it. */
   const [worktreePath, setWorktreePath] = useState<string | null>(null);
   /**
@@ -126,6 +130,7 @@ export function SessionView({
     setResume(null);
     setTitle(null);
     setUnpushed(null);
+    setBehind(null);
     setWorktreePath(null);
     setPlace(null);
     return realtime.onSessionChanged((s) => {
@@ -134,6 +139,7 @@ export function SessionView({
       setResume(s.resume ?? null);
       setTitle(s.title);
       setUnpushed(s.unpushed ?? null);
+      setBehind(s.behind ? { commits: s.behind.commits, base: s.baseBranch } : null);
       setWorktreePath(s.worktreePath);
       setPlace({ repoName: s.repoName, branch: s.branch });
       setControllerOnline(s.controllerOnline ?? true);
@@ -520,11 +526,27 @@ export function SessionView({
         />
       )}
 
+      {behind && conv.status !== null && status !== "busy" && status !== "archived" && status !== "trashed" && (
+        <GitBanner
+          icon="codicon-cloud-download"
+          text={behindSummary(behind.commits, behind.base)}
+          action="Pull"
+          canAct={isController}
+          onAction={() => {
+            stickToBottom.current = true;
+            setAtBottom(true);
+            realtime.submitPrompt(sessionId, PULL_PROMPT, promptOptsFor(conv.composer));
+          }}
+        />
+      )}
+
       {unpushed && conv.status !== null && status !== "busy" && status !== "archived" && status !== "trashed" && (
-        <UnpushedBanner
-          unpushed={unpushed}
-          canPush={isController}
-          onPush={() => {
+        <GitBanner
+          icon="codicon-cloud-upload"
+          text={unpushedSummary(unpushed)}
+          action="Push"
+          canAct={isController}
+          onAction={() => {
             stickToBottom.current = true;
             setAtBottom(true);
             realtime.submitPrompt(sessionId, PUSH_PROMPT, promptOptsFor(conv.composer));
@@ -727,22 +749,26 @@ function SuggestedReplies({
   );
 }
 
-function UnpushedBanner({
-  unpushed,
-  canPush,
-  onPush,
+function GitBanner({
+  icon,
+  text,
+  action,
+  canAct,
+  onAction,
 }: {
-  unpushed: NonNullable<Session["unpushed"]>;
-  canPush: boolean;
-  onPush: () => void;
+  icon: string;
+  text: string;
+  action: string;
+  canAct: boolean;
+  onAction: () => void;
 }) {
   return (
     <div className="px-6 pb-2">
       <div className="renki-enter mx-auto flex w-full max-w-3xl items-center gap-3 rounded-xl border border-(--renki-border) bg-(--renki-surface) px-3.5 py-2">
-        <span className="codicon codicon-cloud-upload shrink-0 text-(--renki-fg-muted)" />
-        <span className="min-w-0 flex-1 truncate text-[13px] text-(--renki-fg)">{unpushedSummary(unpushed)}</span>
-        <Button variant="ghost" size="sm" disabled={!canPush} onClick={onPush} title={canPush ? undefined : "Take control to push"}>
-          Push
+        <span className={`codicon ${icon} shrink-0 text-(--renki-fg-muted)`} />
+        <span className="min-w-0 flex-1 truncate text-[13px] text-(--renki-fg)">{text}</span>
+        <Button variant="ghost" size="sm" disabled={!canAct} onClick={onAction} title={canAct ? undefined : `Take control to ${action.toLowerCase()}`}>
+          {action}
         </Button>
       </div>
     </div>

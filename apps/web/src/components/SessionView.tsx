@@ -942,8 +942,9 @@ function ModelChangeMarker({ model }: { model: string | null }) {
  */
 /**
  * The context meter in the header, which opens to the fuller picture: how
- * much of the window this conversation fills, and the active account's usage
- * limits — the two things that decide whether the next long prompt will run.
+ * much of the window this conversation fills, and every account's usage
+ * limits (the one in use first). With rotation, the next turn may well run on
+ * another account, so its headroom matters as much as the active one's.
  */
 /** "3h ago", kept current by its own once-a-minute tick rather than only when the chat redraws. Exact time on hover. */
 function Ago({ at }: { at: number }) {
@@ -958,7 +959,7 @@ function Ago({ at }: { at: number }) {
 function ContextMeter({ context }: { context: ContextUsageView }) {
   const { rest } = useClient();
   const [open, setOpen] = useState(false);
-  const [account, setAccount] = useState<Account | null | undefined>(undefined);
+  const [accounts, setAccounts] = useState<Account[] | undefined>(undefined);
   const pct = Math.max(0, Math.min(100, Math.round(context.percentage)));
   const tone = pct >= 90 ? "bg-(--renki-danger)" : pct >= 70 ? "bg-(--renki-warning)" : "bg-(--renki-accent)";
 
@@ -967,8 +968,8 @@ function ContextMeter({ context }: { context: ContextUsageView }) {
     let live = true;
     rest
       .listAccounts()
-      .then((r) => live && setAccount(r.accounts.find((a) => a.active) ?? null))
-      .catch(() => live && setAccount(null));
+      .then((r) => live && setAccounts([...r.accounts].sort((a, b) => Number(b.active) - Number(a.active))))
+      .catch(() => live && setAccounts([]));
     return () => {
       live = false;
     };
@@ -991,7 +992,7 @@ function ContextMeter({ context }: { context: ContextUsageView }) {
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="renki-enter absolute top-full right-0 z-20 mt-2 w-80 max-w-[calc(100vw-2rem)] space-y-3 rounded-xl border border-(--renki-border) bg-(--renki-surface) p-3.5 text-xs shadow-(--renki-shadow-md)">
+          <div className="renki-enter absolute top-full right-0 z-20 mt-2 max-h-[calc(100vh-5rem)] w-80 max-w-[calc(100vw-2rem)] space-y-3 overflow-y-auto rounded-xl border border-(--renki-border) bg-(--renki-surface) p-3.5 text-xs shadow-(--renki-shadow-md)">
             <div>
               <div className="flex items-baseline justify-between gap-2">
                 <span className="font-medium text-(--renki-fg)">Context window</span>
@@ -1007,17 +1008,29 @@ function ContextMeter({ context }: { context: ContextUsageView }) {
               )}
             </div>
             <div className="border-t border-(--renki-border)/60 pt-3">
-              <div className="mb-2 flex items-baseline justify-between gap-2">
-                <span className="font-medium text-(--renki-fg)">Usage limits</span>
-                {account && <span className="truncate text-(--renki-fg-muted)">{account.email}</span>}
-              </div>
-              {account === undefined ? (
+              <div className="mb-2 font-medium text-(--renki-fg)">Usage limits</div>
+              {accounts === undefined ? (
                 <Skeleton className="h-10 w-full" />
-              ) : account?.usage ? (
-                <UsageLimits usage={account.usage} />
+              ) : accounts.length === 0 ? (
+                <div className="text-(--renki-fg-muted)">Usage isn't available. Connect it under Settings, Accounts.</div>
               ) : (
-                <div className="text-(--renki-fg-muted)">
-                  {account?.usageError ?? "Usage isn't available — connect it under Settings → Accounts."}
+                <div className="space-y-3">
+                  {accounts.map((a) => (
+                    <div key={a.number}>
+                      <div className="mb-1.5 flex items-center gap-1.5">
+                        <span className="truncate text-(--renki-fg-muted)">{a.email}</span>
+                        {/* Only worth saying when there's another account it isn't. */}
+                        {a.active && accounts.length > 1 && (
+                          <span className="shrink-0 rounded-md bg-(--renki-bg-inset) px-1.5 py-px text-[10px] text-(--renki-fg)">In use</span>
+                        )}
+                      </div>
+                      {a.usage ? (
+                        <UsageLimits usage={a.usage} />
+                      ) : (
+                        <div className="text-(--renki-fg-muted)">{a.usageError ?? "No usage figures for this account."}</div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

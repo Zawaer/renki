@@ -161,16 +161,16 @@ function Meter({ pct: raw, colors, small = false }: { pct: number; colors: Theme
   );
 }
 
-/** How full the conversation is, and the account's usage limits — the web's context meter popover. */
+/** How full the conversation is, and every account's usage limits, the one in use first: the web's context meter popover. */
 function ContextView({ context, colors, styles }: { context: ContextUsageView | null; colors: ThemeColors; styles: Styles }) {
   const { rest } = useClient();
-  const [account, setAccount] = useState<Account | null | undefined>(undefined);
+  const [accounts, setAccounts] = useState<Account[] | undefined>(undefined);
   useEffect(() => {
     let live = true;
     rest
       .listAccounts()
-      .then((r) => live && setAccount(r.accounts.find((a) => a.active) ?? null))
-      .catch(() => live && setAccount(null));
+      .then((r) => live && setAccounts([...r.accounts].sort((a, b) => Number(b.active) - Number(a.active))))
+      .catch(() => live && setAccounts([]));
     return () => {
       live = false;
     };
@@ -188,13 +188,25 @@ function ContextView({ context, colors, styles }: { context: ContextUsageView | 
       ) : (
         <Text style={styles.note}>Not known yet: it's reported after the first turn.</Text>
       )}
-      <Text style={[styles.label, { marginTop: 18 }]}>Usage limits{account ? ` · ${account.email}` : ""}</Text>
-      {account === undefined ? (
+      <Text style={[styles.label, { marginTop: 18 }]}>Usage limits</Text>
+      {accounts === undefined ? (
         <ActivityIndicator color={colors.dim} style={{ marginTop: 8 }} />
-      ) : account?.usage ? (
-        <UsageLimits usage={account.usage} colors={colors} />
+      ) : accounts.length === 0 ? (
+        <Text style={styles.note}>Usage isn't available. Connect it under Settings, Accounts.</Text>
       ) : (
-        <Text style={styles.note}>No usage figures for this account.</Text>
+        accounts.map((a, i) => (
+          <View key={a.number} style={i > 0 ? { marginTop: 14 } : undefined}>
+            <Text style={styles.accountEmail} numberOfLines={1}>
+              {a.email}
+              {a.active && accounts.length > 1 ? "  ·  In use" : ""}
+            </Text>
+            {a.usage ? (
+              <UsageLimits usage={a.usage} colors={colors} />
+            ) : (
+              <Text style={styles.note}>{a.usageError ?? "No usage figures for this account."}</Text>
+            )}
+          </View>
+        ))
       )}
     </ScrollView>
   );
@@ -363,6 +375,7 @@ function makeStyles(colors: ThemeColors) {
     backText: { color: colors.dim, fontSize: 13 },
     label: { color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 8 },
     note: { color: colors.dim, fontSize: 13, paddingVertical: 8, paddingHorizontal: 6 },
+    accountEmail: { color: colors.dim, fontSize: 13, marginBottom: 6 },
     entry: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 11, paddingHorizontal: 6, borderRadius: radius.sm },
     entryText: { flex: 1, color: colors.text, fontSize: 14 },
     status: { width: 14, fontFamily: mono, fontSize: 12, fontWeight: "700" },

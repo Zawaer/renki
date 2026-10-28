@@ -869,6 +869,25 @@ describe("SessionView suggested replies", () => {
   });
 });
 
+describe("SessionView background work", () => {
+  const started = [
+    ev("s1", { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "dig in" }),
+    ev("s1", { kind: "assistant_block", turnId: "t1", blockIndex: 0, blockKind: "tool_use", text: null, toolUseId: "tu_a", toolName: "Agent", toolInput: { description: "Battery drain history", subagent_type: "general-purpose", run_in_background: true } }),
+    ev("s1", { kind: "tool_result", turnId: "t1", toolUseId: "tu_a", ok: true, summary: "launched" }),
+    ev("s1", { kind: "turn_result", turnId: "t1", promptId: "p1", ok: true, costUsd: 0, durationMs: 1, errorMessage: null, inputTokens: 1, outputTokens: 1 }),
+  ];
+
+  it("pins an agent still running after its turn ended above the composer", () => {
+    renderSession("s1", started);
+    expect(screen.getByTestId("background-work").textContent).toContain("Battery drain history");
+  });
+
+  it("drops it once it reports, stopped included", () => {
+    renderSession("s1", [...started, ev("s1", { kind: "background_task", taskId: "bg1", toolUseId: "tu_a", status: "stopped", summary: "Stopped" })]);
+    expect(screen.queryByTestId("background-work")).not.toBeInTheDocument();
+  });
+});
+
 describe("SessionView workspace panel", () => {
   const repoSession = () => [
     ev("s1", { kind: "session_created", repoId: "r", repoName: "shopping-tool", baseBranch: "main", branch: "renki/abc", worktreePath: "/w" }),

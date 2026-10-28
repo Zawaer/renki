@@ -729,6 +729,27 @@ describe("closeOrphanedMacBuilds", () => {
   });
 });
 
+describe("closeOrphanedBackgroundTasks", () => {
+  it("stops background work the restart cut off, and leaves finished and foreground calls alone", async () => {
+    const { manager } = setup();
+    const chat = await manager.createSession({});
+    const call = (toolUseId: string, toolInput: Record<string, unknown>) =>
+      manager.events.append(chat.id, { kind: "assistant_block", turnId: "t1", blockIndex: 0, blockKind: "tool_use", text: null, toolUseId, toolName: "Agent", toolInput });
+    call("tu_open", { description: "dig", run_in_background: true });
+    call("tu_done", { description: "dug", run_in_background: true });
+    call("tu_fg", { description: "inline" });
+    manager.events.append(chat.id, { kind: "background_task", taskId: "bg", toolUseId: "tu_done", status: "completed", summary: "ok" });
+
+    manager.closeOrphanedBackgroundTasks();
+    const closed = manager.events.read(chat.id).filter((e) => e.kind === "background_task");
+    expect(closed.at(-1)).toMatchObject({ toolUseId: "tu_open", status: "stopped" });
+    expect(closed).toHaveLength(2);
+
+    manager.closeOrphanedBackgroundTasks(); // a second boot adds nothing
+    expect(manager.events.read(chat.id).filter((e) => e.kind === "background_task")).toHaveLength(2);
+  });
+});
+
 describe("attachRepo", () => {
   /** Claude's project folder for a cwd, under the test's CLAUDE_CONFIG_DIR — mirrors claude/transcripts.ts. */
   function projectDir(claudeDir: string, cwd: string): string {

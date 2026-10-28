@@ -336,6 +336,57 @@ function taskView(b: ToolBlock): BackgroundTaskView {
   };
 }
 
+/** One agent or command still running in the background, for the strip above the composer. */
+export type BackgroundWork = {
+  toolUseId: string;
+  /** From the outermost agent down to this call: what "show in transcript" opens. */
+  path: string[];
+  kind: "agent" | "command";
+  label: string;
+  /** What it's doing right now — an agent's newest step — or null. */
+  current: string | null;
+  /** Steps an agent has taken so far; null for a command. */
+  steps: number | null;
+  startedAtMs: number | null;
+};
+
+/**
+ * Background agents and commands with no outcome yet, oldest first. Once the
+ * turn that started them ends they're easy to lose in the middle of a reply,
+ * so clients pin them above the composer while they run. A task whose process
+ * died reports itself stopped (the daemon closes them when Claude's process
+ * ends), so these really are running. Mac builds have their own row.
+ */
+export function backgroundWorkOf(timeline: TimelineItem[]): BackgroundWork[] {
+  const out: BackgroundWork[] = [];
+  const walk = (blocks: BlockView[], ancestors: string[]) => {
+    for (const b of blocks) {
+      if (b?.kind !== "tool_use") continue;
+      const isAgent = AGENT_TOOL_NAMES.has(b.toolName);
+      const path = [...ancestors, b.toolUseId];
+      const inBackground = (b.toolInput as { run_in_background?: unknown } | null)?.run_in_background === true;
+      if (inBackground && !b.backgroundTask && !b.macBuild) {
+        const steps = b.subagent?.blocks.filter((x) => x?.kind === "tool_use") ?? [];
+        const newest = steps[steps.length - 1];
+        const input = (b.toolInput ?? {}) as { description?: unknown };
+        const described = describeTool(b.toolName, b.toolInput);
+        out.push({
+          toolUseId: b.toolUseId,
+          path,
+          kind: isAgent ? "agent" : "command",
+          label: isAgent && typeof input.description === "string" && input.description ? input.description : (described.meta ?? described.label),
+          current: newest?.kind === "tool_use" ? describeTool(newest.toolName, newest.toolInput).label : null,
+          steps: isAgent ? (b.agentUsage?.toolUses ?? steps.length) : null,
+          startedAtMs: b.startedAtMs ?? null,
+        });
+      }
+      if (b.subagent) walk(b.subagent.blocks, isAgent ? path : ancestors);
+    }
+  };
+  for (const item of timeline) if (item.type === "turn") walk(item.turn.blocks, []);
+  return out;
+}
+
 export type AgentNode = {
   toolUseId: string;
   /** The subagent type — "Explore", "general-purpose" — or "Agent" when unnamed. */

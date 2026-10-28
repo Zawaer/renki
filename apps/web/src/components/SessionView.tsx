@@ -45,6 +45,8 @@ import {
   turnActivity,
   turnTodos,
   suggestedReplies,
+  backgroundWorkOf,
+  type BackgroundWork,
   modelFullName,
   modelMenuLabel,
   segmentImages,
@@ -54,7 +56,7 @@ import type { Account, AttachmentView, CapabilitiesResponse, Session, SessionCom
 import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { hostOpenFile, isHosted } from "../lib/host.js";
-import { revealPending, useToolReveal } from "../lib/toolReveal.js";
+import { revealPending, revealToolUse, useToolReveal } from "../lib/toolReveal.js";
 import {
   clearDraft,
   loadDeviceDefaults,
@@ -239,6 +241,7 @@ export function SessionView({
   const suggestion = useMemo(() => suggestedReplies(conv), [conv.timeline, conv.sendingPrompts, conv.queuedPrompts]);
   const replies =
     suggestion && suggestion.turnId !== dismissedReplies && status !== "archived" && status !== "trashed" ? suggestion : null;
+  const background = useMemo(() => backgroundWorkOf(conv.timeline), [conv.timeline]);
   const sendReply = (text: string) => {
     stickToBottom.current = true;
     setAtBottom(true);
@@ -497,6 +500,8 @@ export function SessionView({
         </div>
       )}
 
+      {background.length > 0 && <BackgroundWorkBar work={background} />}
+
       {replies && (
         <SuggestedReplies
           replies={replies.replies}
@@ -623,6 +628,56 @@ function HeaderIconButton({ icon, label, active, onClick }: { icon: string; labe
  * control count: easy to forget when Claude does the committing. Push asks
  * Claude to do it, so it can merge with whatever changed on main first.
  */
+/** How many rows the background strip shows before it just counts the rest. */
+const BACKGROUND_ROWS = 3;
+
+/**
+ * Agents and commands still running in the background, pinned above the
+ * composer. Once the turn that started them ends they sit mid-reply with only
+ * a small spinner, easy to miss under a long answer, and the session reads
+ * "Idle" meanwhile. A row opens its agent in the transcript.
+ */
+function BackgroundWorkBar({ work }: { work: BackgroundWork[] }) {
+  const shown = work.slice(-BACKGROUND_ROWS);
+  const hidden = work.length - shown.length;
+  return (
+    <div className="px-6 pb-2" data-testid="background-work">
+      <div className="renki-enter mx-auto w-full max-w-3xl rounded-xl border border-(--renki-border) bg-(--renki-surface) px-1.5 py-1">
+        {shown.map((w) => (
+          <BackgroundWorkRow key={w.toolUseId} work={w} />
+        ))}
+        {hidden > 0 && (
+          <div className="px-2 py-1 text-xs text-(--renki-fg-muted)">
+            {hidden} more in the agent map
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BackgroundWorkRow({ work }: { work: BackgroundWork }) {
+  const elapsed = useElapsedSeconds(work.startedAtMs);
+  return (
+    <button
+      type="button"
+      onClick={() => revealToolUse(work.path)}
+      title="Show in transcript"
+      className="flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-(--renki-hover)"
+    >
+      <span className="codicon codicon-loading codicon-modifier-spin shrink-0 text-[13px] text-(--renki-fg-muted)" />
+      <span className="shrink-0 text-(--renki-fg-muted)">{work.kind === "agent" ? "Agent" : "Command"}</span>
+      <span className="min-w-0 truncate text-(--renki-fg)">{work.label}</span>
+      {work.current && <span className="hidden min-w-0 truncate text-xs text-(--renki-fg-muted) sm:inline">{work.current}</span>}
+      <span className="ml-auto shrink-0 text-xs tabular-nums text-(--renki-fg-muted)">
+        {[work.steps != null ? `${work.steps} ${work.steps === 1 ? "step" : "steps"}` : null, elapsed != null ? formatTurnDuration(elapsed * 1000) : null]
+          .filter(Boolean)
+          .join(" · ")}
+      </span>
+    </button>
+  );
+}
+
 /**
  * One-tap answers to the question Claude's last reply ended on (its
  * suggest_replies call). A pick is sent as your next message, exactly as

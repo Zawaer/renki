@@ -237,6 +237,24 @@ export class SessionManager {
     }
   }
 
+  /**
+   * Close the background agents and commands a restart cut off. They died
+   * with the old daemon's `claude` processes and will never report, so
+   * without this the clients would show them running for good.
+   */
+  closeOrphanedBackgroundTasks(): void {
+    for (const { sessionId, toolUseId } of this.events.openBackgroundTasks()) {
+      this.events.append(sessionId, {
+        kind: "background_task",
+        taskId: toolUseId,
+        toolUseId,
+        status: "stopped",
+        summary: "Renki restarted while this ran, which stopped it.",
+      });
+      logger.info("closed a background task the restart cut off", { sessionId, toolUseId });
+    }
+  }
+
   closeStalePermissions(): void {
     for (const { sessionId, requestId } of this.events.openPermissionRequests()) {
       this.events.append(sessionId, { kind: "permission_resolved", requestId, decision: "deny", byDeviceId: null });

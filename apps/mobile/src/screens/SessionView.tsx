@@ -43,6 +43,8 @@ import {
   turnActivity,
   turnTodos,
   suggestedReplies,
+  backgroundWorkOf,
+  type BackgroundWork,
   modelFullName,
   modelMenuLabel,
   segmentImages,
@@ -326,6 +328,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   /** Commands sent to run in the background (the web's agent map lists them too). */
   const commands = useMemo(() => backgroundTasksOf(conv.timeline).filter((t) => t.kind === "command"), [conv.timeline]);
   const [agentsOpen, setAgentsOpen] = useState(false);
+  const background = useMemo(() => backgroundWorkOf(conv.timeline), [conv.timeline]);
   const [exportOpen, setExportOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
 
@@ -596,6 +599,18 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
               </TouchableOpacity>
             )}
           </View>
+        </FadeIn>
+      )}
+
+      {/* Background agents and commands still running, pinned here so they aren't lost mid-reply once the turn ends. */}
+      {background.length > 0 && (
+        <FadeIn>
+          <TouchableOpacity style={styles.backgroundWrap} activeOpacity={0.7} onPress={() => setAgentsOpen(true)}>
+            {background.slice(-3).map((w) => (
+              <BackgroundWorkRow key={w.toolUseId} work={w} colors={colors} styles={styles} />
+            ))}
+            {background.length > 3 && <Text style={styles.meta}>{background.length - 3} more</Text>}
+          </TouchableOpacity>
         </FadeIn>
       )}
 
@@ -1884,6 +1899,22 @@ function DiffView({ view, colors, styles }: { view: EditToolView; colors: ThemeC
   );
 }
 
+function BackgroundWorkRow({ work, colors, styles }: { work: BackgroundWork; colors: ThemeColors; styles: Styles }) {
+  const elapsed = useElapsedSeconds(work.startedAtMs);
+  const stats = [work.steps != null ? `${work.steps} ${work.steps === 1 ? "step" : "steps"}` : null, elapsed != null ? formatTurnDuration(elapsed * 1000) : null]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <View style={styles.turnStatus}>
+      <ActivityIndicator size="small" color={colors.faint} />
+      <Text style={[styles.toolStepLabel, { flex: 1 }]} numberOfLines={1}>
+        {work.kind === "agent" ? "Agent" : "Command"} · {work.label}
+      </Text>
+      {stats.length > 0 && <Text style={styles.meta}>{stats}</Text>}
+    </View>
+  );
+}
+
 /**
  * The turn's task list, once, as Claude last wrote it — ticking off in place
  * instead of repeating with every update. Open while the turn runs, so where
@@ -2181,6 +2212,7 @@ const makeStyles = (colors: ThemeColors) =>
     resumeNowBtn: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 6 },
     resumeNowText: { color: colors.accentFg, fontSize: 13, fontWeight: "700" },
     queueItem: { color: colors.faint, fontSize: 12 },
+    backgroundWrap: { gap: 6, backgroundColor: colors.panel, borderRadius: radius.md, marginHorizontal: 14, marginBottom: 8, paddingHorizontal: 12, paddingVertical: 8 },
     repliesWrap: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 14, marginBottom: 8 },
     repliesRow: { flexDirection: "row", gap: 8, alignItems: "center" },
     replyPill: { backgroundColor: colors.panel, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 6 },

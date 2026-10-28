@@ -280,6 +280,17 @@ describe("LiveClaudeSession background agents", () => {
     expect(live.busy).toBe(false);
   });
 
+  it("closes background work still running when the process ends, since it will never report back", async () => {
+    const { live, fake, events } = makeLive();
+    await fake.emit({ type: "system", subtype: "task_started", task_id: "bg1", tool_use_id: "tu-agent", description: "x" } as never);
+    await fake.emit({ type: "system", subtype: "task_started", task_id: "w1", description: "watcher" } as never);
+    await fake.emit({ type: "system", subtype: "background_tasks_changed", tasks: [{ task_id: "bg1", task_type: "agent", description: "x" }, { task_id: "w1", task_type: "watch", description: "w" }] } as never);
+    await fake.end();
+    const closed = events.filter((e) => e.kind === "background_task");
+    expect(closed).toEqual([expect.objectContaining({ taskId: "bg1", toolUseId: "tu-agent", status: "stopped" })]);
+    expect(live.backgroundTaskCount).toBe(0);
+  });
+
   /**
    * A subagent's messages arrive whole, never streamed. Numbering only
    * advanced on streamed blocks, so every one of them was index 0 and each

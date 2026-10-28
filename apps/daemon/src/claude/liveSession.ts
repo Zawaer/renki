@@ -211,6 +211,8 @@ export class LiveClaudeSession {
   private readonly agentTracking = new Map<string, BlockTracking>();
   /** Live background tasks as last reported by the CLI (REPLACE semantics on background_tasks_changed). */
   private backgroundTasks = new Set<string>();
+  /** task id -> the tool call that started it, so a task cut off by the process ending can be closed on its own row. */
+  private readonly taskToolUse = new Map<string, string>();
   /** tool_use id -> when that agent's progress was last logged, so agent_progress stays a trickle (see AGENT_PROGRESS_EVERY_MS). */
   private readonly agentProgressAt = new Map<string, number>();
   private lastTurnId: string | null = null;
@@ -628,6 +630,7 @@ export class LiveClaudeSession {
           // a later turn or while idle, so the event carries no turnId; see
           // background_task's own doc comment in events.ts for why.
           this.backgroundTasks.delete(message.task_id);
+          this.taskToolUse.delete(message.task_id);
           this.taskFinishedSinceResult = true;
           const usage = message.usage;
           if (message.tool_use_id) this.agentProgressAt.delete(message.tool_use_id);
@@ -639,6 +642,8 @@ export class LiveClaudeSession {
             summary: message.summary,
             ...(usage ? { usage: { tokens: usage.total_tokens, toolUses: usage.tool_uses, durationMs: usage.duration_ms } } : {}),
           });
+        } else if (message.subtype === "task_started") {
+          if (message.tool_use_id) this.taskToolUse.set(message.task_id, message.tool_use_id);
         } else if (message.subtype === "task_progress") {
           // A running agent's spend, for the agent map. The CLI reports it
           // after every step; logging each would bloat a long agent's log for
@@ -816,7 +821,15 @@ export class LiveClaudeSession {
       });
       this.settleAutoTurn(failure);
     }
+    // Background work dies with the process and will never report back. Say
+    // so, or the clients would show it running forever.
+    for (const taskId of this.backgroundTasks) {
+      const toolUseId = this.taskToolUse.get(taskId);
+      if (!toolUseId) continue; // watchers and the like: nothing on screen to close
+      this.opts.emit({ kind: "background_task", taskId, toolUseId, status: "stopped", summary: `Stopped: Claude's process ended (${reason}).` });
+    }
     this.backgroundTasks.clear();
+    this.taskToolUse.clear();
     this.opts.onClosed?.(reason);
   }
 }

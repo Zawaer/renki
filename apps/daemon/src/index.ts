@@ -37,6 +37,7 @@ async function main() {
   // Nothing from before this boot can be answered any more; clear those cards.
   manager.closeStalePermissions();
   manager.closeOrphanedMacBuilds();
+  manager.closeOrphanedBackgroundTasks();
   // Every session's unpushed work, counted once now and after each turn from here on.
   manager.refreshAllUnpushed();
   // Folders finished sessions left in the worktrees dir: retried here, orphans only reported.

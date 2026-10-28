@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { EventPayload, RepoStatsBucket, SessionEvent, StatsBucket, StatsResponse } from "@renki/protocol";
-import { and, asc, eq, gt, inArray, max, ne } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, like, max, ne, or } from "drizzle-orm";
 import type { DB } from "../db/index.js";
 import { events, sessions } from "../db/schema.js";
 import { ChatSearch } from "./search.js";
@@ -101,6 +101,35 @@ export class EventLog {
       last.set(`${r.sessionId}\0${e.buildId}`, { sessionId: r.sessionId, last: e });
     }
     return [...last.values()].filter((b) => b.last.state === "running");
+  }
+
+  /**
+   * Background agents and commands, in any session, that never reported how
+   * they ended. At boot every one of them is dead: they ran inside a `claude`
+   * process, and none outlives the daemon. Only rows that can matter are read:
+   * calls sent to the background, and the outcomes that close them.
+   */
+  openBackgroundTasks(): Array<{ sessionId: string; toolUseId: string }> {
+    const rows = this.db
+      .select({ sessionId: events.sessionId, kind: events.kind, data: events.data })
+      .from(events)
+      .where(
+        or(
+          eq(events.kind, "background_task"),
+          and(eq(events.kind, "assistant_block"), like(events.data, '%"run_in_background":true%')),
+        ),
+      )
+      .orderBy(asc(events.sessionId), asc(events.seq))
+      .all();
+    const open = new Map<string, { sessionId: string; toolUseId: string }>();
+    for (const r of rows) {
+      const e = JSON.parse(r.data) as { toolUseId?: string | null; toolInput?: { run_in_background?: unknown } | null };
+      if (!e.toolUseId) continue;
+      const key = `${r.sessionId}\0${e.toolUseId}`;
+      if (r.kind === "background_task") open.delete(key);
+      else if (e.toolInput?.run_in_background === true) open.set(key, { sessionId: r.sessionId, toolUseId: e.toolUseId });
+    }
+    return [...open.values()];
   }
 
   /** One event by its seq, or null — how a lazily replayed attachment is fetched back. */

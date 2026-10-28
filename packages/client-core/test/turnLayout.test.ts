@@ -1,7 +1,7 @@
 import type { Session } from "@renki/protocol";
 import { describe, expect, it } from "vitest";
 import type { BlockView, TimelineItem, TurnView } from "../src/reducer.js";
-import { agentMapOf, backgroundTasksOf, flattenAgents, groupTurnBlocks, segmentImages, sessionsNeedingAttention, suggestedReplies, summarizeSteps, turnActivity, turnFileChanges, turnTodos } from "../src/turnLayout.js";
+import { agentMapOf, backgroundTasksOf, backgroundWorkOf, flattenAgents, groupTurnBlocks, segmentImages, sessionsNeedingAttention, suggestedReplies, summarizeSteps, turnActivity, turnFileChanges, turnTodos } from "../src/turnLayout.js";
 
 const tool = (toolName: string, toolInput: unknown, extra: Partial<Extract<BlockView, { kind: "tool_use" }>> = {}): BlockView => ({
   kind: "tool_use",
@@ -243,5 +243,31 @@ describe("suggestedReplies", () => {
   it("keeps the call out of the turn's steps", () => {
     const segs = groupTurnBlocks([tool("Bash", {}), text("Deploy?"), suggest(["Yes"])]);
     expect(segs.map((s) => (s.kind === "block" ? s.block.kind : "group"))).toEqual(["tool_use", "text"]);
+  });
+});
+
+describe("backgroundWorkOf", () => {
+  const turnItem = (blocks: BlockView[]): TimelineItem => ({ type: "turn", turn: { turnId: "t1", blocks, status: "done" } as TurnView });
+
+  it("lists background agents and commands with no outcome yet, with what an agent is doing", () => {
+    const agent = tool("Agent", { description: "Battery history", run_in_background: true }, {
+      toolUseId: "tu_a",
+      subagent: { blocks: [tool("Bash", { command: "ls" }), tool("Read", { file_path: "/x/a.ts" })], status: "running" } as never,
+    });
+    const command = tool("Bash", { command: "npm run dev", description: "Start the dev server", run_in_background: true }, { toolUseId: "tu_c" });
+    const finished = tool("Agent", { description: "Done one", run_in_background: true }, { backgroundTask: { status: "completed", summary: "ok" } as never });
+    const work = backgroundWorkOf([turnItem([agent, command, finished, tool("Bash", { command: "ls" })])]);
+    expect(work.map((w) => [w.kind, w.label, w.steps])).toEqual([
+      ["agent", "Battery history", 2],
+      ["command", expect.any(String), null],
+    ]);
+    expect(work[0]!.current).toBe("Read");
+    expect(work[0]!.path).toEqual(["tu_a"]);
+  });
+
+  it("gives a nested agent's path through its parent", () => {
+    const inner = tool("Agent", { description: "Inner", run_in_background: true }, { toolUseId: "tu_in" });
+    const outer = tool("Agent", { description: "Outer" }, { toolUseId: "tu_out", subagent: { blocks: [inner], status: "done" } as never });
+    expect(backgroundWorkOf([turnItem([outer])]).map((w) => w.path)).toEqual([["tu_out", "tu_in"]]);
   });
 });

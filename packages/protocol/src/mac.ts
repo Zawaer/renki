@@ -211,5 +211,11 @@ export const MacStatus = z.object({
   since: z.number().nullable(),
   verbs: z.array(z.string()),
   jobs: z.record(z.string(), z.array(MacJobInfo)),
+  /**
+   * Build jobs out on the Mac right now. A build runs while its session sits
+   * idle, so "no session busy" doesn't mean a daemon restart is safe: it
+   * stops these. Absent from older daemons.
+   */
+  buildsRunning: z.number().int().optional(),
 });
 export type MacStatus = z.infer<typeof MacStatus>;

@@ -58,7 +58,8 @@ export class MacBridge {
 
   status(): MacStatus {
     const c = this.current;
-    return { connected: c !== null, name: c?.name ?? null, since: c?.since ?? null, verbs: c?.verbs ?? [], jobs: c?.jobs ?? {} };
+    const buildsRunning = [...this.pending.values()].filter((p) => p.verb === "run").length;
+    return { connected: c !== null, name: c?.name ?? null, since: c?.since ?? null, verbs: c?.verbs ?? [], jobs: c?.jobs ?? {}, buildsRunning };
   }
 
   /** A freshly upgraded `/mac/ws` socket. It counts as attached once it says hello. */

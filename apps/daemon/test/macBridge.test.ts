@@ -51,6 +51,19 @@ describe("MacBridge", () => {
     expect(bridge.status()).toMatchObject({ connected: true, name: "Toivo's Mac", verbs: ["devices", "screenshot", "shell"] });
   });
 
+  /** A build runs while its session is idle; a deploy checking only for busy sessions restarted the daemon under one. */
+  it("counts the builds out on the Mac, not other calls", async () => {
+    bridge = new MacBridge();
+    const s = attach("Mac", ["run", "devices"]);
+    const build = bridge.call("run", {}, 1000);
+    const { id } = s.sent.at(-1);
+    void bridge.call("devices", {}, 1000);
+    expect(bridge.status().buildsRunning).toBe(1);
+    s.say({ type: "result", id, ok: true, text: "built" });
+    await build;
+    expect(bridge.status().buildsRunning).toBe(0);
+  });
+
   it("passes a call's progress to its caller, and only from the socket it went out on", async () => {
     bridge = new MacBridge();
     const s = attach("Mac", ["run"]);

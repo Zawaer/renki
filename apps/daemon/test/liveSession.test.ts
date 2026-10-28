@@ -383,6 +383,12 @@ describe("LiveClaudeSession lifecycle", () => {
     const { fake } = makeLive({ resumeSessionId: "old-1", forcePermissionPrompts: true, model: "m1", permissionMode: "plan" });
     expect(fake.options).toMatchObject({ resume: "old-1", settingSources: [], model: "m1", permissionMode: "plan", forwardSubagentText: true, includePartialMessages: true });
   });
+
+  it("gives every session the suggest_replies tool, allowed without asking", () => {
+    const { fake } = makeLive();
+    expect(Object.keys(fake.options.mcpServers ?? {})).toEqual(["renki"]);
+    expect(fake.options.allowedTools).toEqual(["mcp__renki__suggest_replies"]);
+  });
 });
 
 describe("LiveClaudeSession steering", () => {

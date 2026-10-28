@@ -44,6 +44,7 @@ import {
   turnFileChanges,
   turnActivity,
   turnTodos,
+  suggestedReplies,
   modelFullName,
   modelMenuLabel,
   segmentImages,
@@ -232,6 +233,17 @@ export function SessionView({
 
   /** The timeline plus any message sent from here that the daemon hasn't confirmed yet (shown instantly). */
   const rows = useMemo(() => timelineWithSending(conv), [conv.timeline, conv.sendingPrompts, conv.queuedPrompts]);
+
+  /** One-tap answers to the question the newest turn ended on, unless closed with its X. */
+  const [dismissedReplies, setDismissedReplies] = useState<string | null>(null);
+  const suggestion = useMemo(() => suggestedReplies(conv), [conv.timeline, conv.sendingPrompts, conv.queuedPrompts]);
+  const replies =
+    suggestion && suggestion.turnId !== dismissedReplies && status !== "archived" && status !== "trashed" ? suggestion : null;
+  const sendReply = (text: string) => {
+    stickToBottom.current = true;
+    setAtBottom(true);
+    realtime.submitPrompt(sessionId, text, promptOptsFor(conv.composer));
+  };
 
   /** The Changes/Files side panel, if open. Remembered per browser, like the sidebar. */
   const [panel, setPanel] = useState<WorkspaceTab | null>(() => loadPanel());
@@ -485,6 +497,15 @@ export function SessionView({
         </div>
       )}
 
+      {replies && (
+        <SuggestedReplies
+          replies={replies.replies}
+          canAct={isController}
+          onPick={sendReply}
+          onDismiss={() => setDismissedReplies(replies.turnId)}
+        />
+      )}
+
       {resume && status !== "busy" && (
         <ResumeBanner
           resume={resume}
@@ -530,6 +551,7 @@ export function SessionView({
         }}
         busy={isController && status === "busy"}
         onStop={() => realtime.interrupt(sessionId)}
+        onQuickReply={replies && isController ? () => sendReply(replies.replies[0]!) : undefined}
       />
     </div>
       {shownPanel && hasFiles && (
@@ -601,6 +623,53 @@ function HeaderIconButton({ icon, label, active, onClick }: { icon: string; labe
  * control count: easy to forget when Claude does the committing. Push asks
  * Claude to do it, so it can merge with whatever changed on main first.
  */
+/**
+ * One-tap answers to the question Claude's last reply ended on (its
+ * suggest_replies call). A pick is sent as your next message, exactly as
+ * labelled; typing anything else, or the X, puts the card away. Nothing waits
+ * on it: the turn has already ended.
+ */
+function SuggestedReplies({
+  replies,
+  canAct,
+  onPick,
+  onDismiss,
+}: {
+  replies: string[];
+  canAct: boolean;
+  onPick: (text: string) => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="px-6 pb-2" data-testid="suggested-replies">
+      <div className="renki-enter mx-auto flex w-full max-w-3xl items-center gap-2 rounded-xl border border-(--renki-border) bg-(--renki-surface) px-3 py-2">
+        <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+          {replies.map((r, i) => (
+            <Button
+              key={r}
+              variant={i === 0 ? "primary" : "default"}
+              size="sm"
+              disabled={!canAct}
+              onClick={() => onPick(r)}
+              title={canAct ? (i === 0 ? "Send (⌘Enter)" : "Send") : "Take control to answer"}
+            >
+              {r}
+            </Button>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Close"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-(--renki-fg-muted) transition-colors hover:bg-(--renki-hover) hover:text-(--renki-fg)"
+        >
+          <span className="codicon codicon-close text-[13px]" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function UnpushedBanner({
   unpushed,
   canPush,
@@ -1925,7 +1994,7 @@ function AskUserQuestionCard({
   }
 
   return (
-    <div className="rounded-sm border-l-2 border-(--renki-warning) bg-(--renki-warning)/10 p-3">
+    <div className="rounded-xl border border-(--renki-border) bg-(--renki-surface) p-3.5">
       {view.questions.length > 1 && (
         <div className="mb-2 flex items-center gap-3 border-b border-(--renki-border) text-xs">
           {view.questions.map((q, i) => (
@@ -1934,7 +2003,7 @@ function AskUserQuestionCard({
               onClick={() => setActiveIndex(i)}
               className={`-mb-px border-b-2 pb-1.5 ${
                 i === activeIndex
-                  ? "border-(--renki-warning) text-(--renki-fg)"
+                  ? "border-(--renki-accent) text-(--renki-fg)"
                   : "border-transparent text-(--renki-fg-muted) hover:text-(--renki-fg)"
               }`}
             >
@@ -1952,9 +2021,9 @@ function AskUserQuestionCard({
               key={opt.label}
               disabled={!canAct}
               onClick={() => toggleOption(opt.label)}
-              className={`w-full rounded-sm border px-3 py-2 text-left transition disabled:cursor-not-allowed ${
+              className={`w-full rounded-lg border px-3 py-2 text-left transition disabled:cursor-not-allowed ${
                 isSelected
-                  ? "border-(--renki-warning) bg-(--renki-bg-elevated)"
+                  ? "border-(--renki-accent) bg-(--renki-bg-elevated)"
                   : "border-(--renki-border) bg-(--renki-bg-elevated)/40 hover:bg-(--renki-bg-elevated)"
               }`}
             >
@@ -1966,9 +2035,9 @@ function AskUserQuestionCard({
         <button
           disabled={!canAct}
           onClick={() => toggleOption(OTHER_OPTION)}
-          className={`w-full rounded-sm border px-3 py-2 text-left transition disabled:cursor-not-allowed ${
+          className={`w-full rounded-lg border px-3 py-2 text-left transition disabled:cursor-not-allowed ${
             activeSelected.includes(OTHER_OPTION)
-              ? "border-(--renki-warning) bg-(--renki-bg-elevated)"
+              ? "border-(--renki-accent) bg-(--renki-bg-elevated)"
               : "border-(--renki-border) bg-(--renki-bg-elevated)/40 hover:bg-(--renki-bg-elevated)"
           }`}
         >
@@ -1987,7 +2056,7 @@ function AskUserQuestionCard({
               })
             }
             placeholder="Type your answer…"
-            className="w-full rounded-sm border border-(--renki-border) bg-(--renki-bg) px-2 py-1.5 text-(--renki-fg)"
+            className="w-full rounded-lg border border-(--renki-border) bg-(--renki-bg) px-2 py-1.5 text-(--renki-fg)"
           />
         )}
       </div>
@@ -2204,6 +2273,7 @@ export function Composer({
   onStop,
   placeholder,
   controls,
+  onQuickReply,
 }: {
   /** Null on the home screen: the session is only created when the first message is sent. */
   sessionId: string | null;
@@ -2228,6 +2298,8 @@ export function Composer({
   placeholder?: string;
   /** Extra pickers after the permission one (the home screen's repo picker). */
   controls?: React.ReactNode;
+  /** ⌘/Ctrl+Enter with nothing typed: send the first suggested reply. */
+  onQuickReply?: () => void;
 }) {
   const { rest, realtime } = useClient();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -2718,7 +2790,8 @@ export function Composer({
               }
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                send();
+                if ((e.metaKey || e.ctrlKey) && onQuickReply && !text.trim() && attachments.length === 0) onQuickReply();
+                else send();
               }
             }}
             rows={1}

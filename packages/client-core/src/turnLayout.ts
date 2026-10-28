@@ -1,6 +1,6 @@
 import type { AgentUsage, AttachmentView, Session } from "@renki/protocol";
-import type { BlockView, TimelineItem, TurnView } from "./reducer.js";
-import { type EditToolView, type TodoItemView, describeTool, parseEditView, parseTodos } from "./toolViews.js";
+import type { BlockView, ConversationState, TimelineItem, TurnView } from "./reducer.js";
+import { type EditToolView, SUGGEST_REPLIES_TOOL, type TodoItemView, describeTool, parseEditView, parseSuggestedReplies, parseTodos } from "./toolViews.js";
 
 /**
  * How a turn's blocks are laid out on screen, shared by every client. DOM-free
@@ -59,6 +59,11 @@ export function groupTurnBlocks(blocks: BlockView[], breakAfter: ReadonlySet<num
 
   blocks.forEach((block, index) => {
     if (!block) return; // blocks are indexed by Claude's own numbering and can have holes
+    // Suggested replies render as buttons under the turn (see suggestedReplies), not as a step.
+    if (block.kind === "tool_use" && block.toolName === SUGGEST_REPLIES_TOOL) {
+      if (breakAfter.has(index)) flush();
+      return;
+    }
     if (groupable(block)) run.push({ index, block });
     else {
       flush();
@@ -232,6 +237,32 @@ export function turnTodos(turn: TurnView): TodoItemView[] | null {
 export function turnActivity(turn: TurnView): string | null {
   const t = turnTodos(turn)?.find((x) => x.status === "in_progress");
   return t ? (t.activeForm ?? t.content) : null;
+}
+
+/**
+ * The one-tap answers to show under the conversation, or null. Only for the
+ * newest turn, once it has finished cleanly, and only until anything else is
+ * sent or queued: a suggestion answers the question just asked, never an
+ * older one.
+ */
+export function suggestedReplies(conv: Pick<ConversationState, "timeline" | "sendingPrompts" | "queuedPrompts">): { turnId: string; replies: string[] } | null {
+  if (conv.sendingPrompts.length > 0 || conv.queuedPrompts.length > 0) return null;
+  for (let i = conv.timeline.length - 1; i >= 0; i--) {
+    const item = conv.timeline[i]!;
+    if (item.type === "prompt") return null;
+    if (item.type !== "turn") continue; // notices and the like don't answer anything
+    const { turn } = item;
+    if (turn.status !== "done") return null;
+    // Only from the turn's last call: work after it means the question moved on.
+    for (let j = turn.blocks.length - 1; j >= 0; j--) {
+      const b = turn.blocks[j];
+      if (b?.kind !== "tool_use") continue;
+      const replies = parseSuggestedReplies(b.toolName, b.toolInput);
+      return replies ? { turnId: turn.turnId, replies } : null;
+    }
+    return null;
+  }
+  return null;
 }
 
 export type FileChange = { filePath: string; added: number; removed: number; views: EditToolView[] };

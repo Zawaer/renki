@@ -1,7 +1,7 @@
 import type { Session } from "@renki/protocol";
 import { describe, expect, it } from "vitest";
 import type { BlockView, TimelineItem, TurnView } from "../src/reducer.js";
-import { agentMapOf, backgroundTasksOf, flattenAgents, groupTurnBlocks, segmentImages, sessionsNeedingAttention, summarizeSteps, turnActivity, turnFileChanges, turnTodos } from "../src/turnLayout.js";
+import { agentMapOf, backgroundTasksOf, flattenAgents, groupTurnBlocks, segmentImages, sessionsNeedingAttention, suggestedReplies, summarizeSteps, turnActivity, turnFileChanges, turnTodos } from "../src/turnLayout.js";
 
 const tool = (toolName: string, toolInput: unknown, extra: Partial<Extract<BlockView, { kind: "tool_use" }>> = {}): BlockView => ({
   kind: "tool_use",
@@ -214,5 +214,34 @@ describe("turnTodos", () => {
   it("is null without a task list, and activity is null with nothing in progress", () => {
     expect(turnTodos(turnOf([tool("Bash", {})]))).toBeNull();
     expect(turnActivity(turnOf([todoWrite([{ content: "Look", status: "completed" }])]))).toBeNull();
+  });
+});
+
+describe("suggestedReplies", () => {
+  const suggest = (replies: unknown) => tool("mcp__renki__suggest_replies", { replies });
+  const turnItem = (blocks: BlockView[], status: TurnView["status"] = "done"): TimelineItem => ({ type: "turn", turn: { turnId: "t1", blocks, status } as TurnView });
+  const conv = (timeline: TimelineItem[], extra: { sending?: number; queued?: number } = {}) => ({
+    timeline,
+    sendingPrompts: Array.from({ length: extra.sending ?? 0 }, () => ({}) as never),
+    queuedPrompts: Array.from({ length: extra.queued ?? 0 }, () => ({}) as never),
+  });
+
+  it("offers the newest finished turn's replies, past notices after it", () => {
+    const timeline = [turnItem([text("Deploy?"), suggest(["Yes, deploy", " ", "Not yet"])]), { type: "notice", text: "x", level: "info" } as TimelineItem];
+    expect(suggestedReplies(conv(timeline))).toEqual({ turnId: "t1", replies: ["Yes, deploy", "Not yet"] });
+  });
+
+  it("offers nothing once something else is sent, queued, or the turn worked on", () => {
+    const asked = turnItem([suggest(["Yes"])]);
+    expect(suggestedReplies(conv([asked, { type: "prompt", promptId: "p2", deviceId: "d", text: "Yes" }]))).toBeNull();
+    expect(suggestedReplies(conv([asked], { sending: 1 }))).toBeNull();
+    expect(suggestedReplies(conv([asked], { queued: 1 }))).toBeNull();
+    expect(suggestedReplies(conv([turnItem([suggest(["Yes"]), tool("Bash", {})])]))).toBeNull();
+    expect(suggestedReplies(conv([turnItem([suggest(["Yes"])], "error")]))).toBeNull();
+  });
+
+  it("keeps the call out of the turn's steps", () => {
+    const segs = groupTurnBlocks([tool("Bash", {}), text("Deploy?"), suggest(["Yes"])]);
+    expect(segs.map((s) => (s.kind === "block" ? s.block.kind : "group"))).toEqual(["tool_use", "text"]);
   });
 });

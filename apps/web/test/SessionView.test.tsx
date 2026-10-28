@@ -838,6 +838,37 @@ describe("SessionView tidy transcript", () => {
   });
 });
 
+describe("SessionView suggested replies", () => {
+  const asked = (replies: string[]) => [
+    ev("s1", { kind: "control_changed", controller: "d1", controllerName: "Web" }),
+    ev("s1", { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "fix it" }),
+    ev("s1", { kind: "assistant_block", turnId: "t1", blockIndex: 0, blockKind: "text", text: "Fixed. Want me to deploy?", toolUseId: null, toolName: null, toolInput: null }),
+    ev("s1", { kind: "assistant_block", turnId: "t1", blockIndex: 1, blockKind: "tool_use", text: null, toolUseId: "tu_r", toolName: "mcp__renki__suggest_replies", toolInput: { replies } }),
+    ev("s1", { kind: "tool_result", turnId: "t1", toolUseId: "tu_r", ok: true, summary: "shown" }),
+    ev("s1", { kind: "turn_result", turnId: "t1", promptId: "p1", ok: true, costUsd: 0, durationMs: 1, errorMessage: null, inputTokens: 1, outputTokens: 1 }),
+  ];
+
+  it("shows the replies as buttons, not as a step, and sends the one picked", () => {
+    const { realtime } = renderSession("s1", asked(["Yes, deploy", "Not yet"]));
+    const sent: string[] = [];
+    realtime.submitPrompt = ((_id: string, text: string) => void sent.push(text)) as typeof realtime.submitPrompt;
+    expect(screen.queryByText("Suggested replies")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Not yet" }));
+    expect(sent).toEqual(["Not yet"]);
+  });
+
+  it("puts the card away with its X", () => {
+    renderSession("s1", asked(["Yes, deploy"]));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByTestId("suggested-replies")).not.toBeInTheDocument();
+  });
+
+  it("is gone once the next message is sent", () => {
+    renderSession("s1", [...asked(["Yes, deploy"]), ev("s1", { kind: "prompt_submitted", promptId: "p2", deviceId: "d1", text: "something else" })]);
+    expect(screen.queryByTestId("suggested-replies")).not.toBeInTheDocument();
+  });
+});
+
 describe("SessionView workspace panel", () => {
   const repoSession = () => [
     ev("s1", { kind: "session_created", repoId: "r", repoName: "shopping-tool", baseBranch: "main", branch: "renki/abc", worktreePath: "/w" }),

@@ -42,6 +42,7 @@ import {
   turnFileChanges,
   turnActivity,
   turnTodos,
+  suggestedReplies,
   modelFullName,
   modelMenuLabel,
   segmentImages,
@@ -207,6 +208,13 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
 
   const isController = conv.controller === config.deviceId;
   const status = conv.status ?? "idle";
+  /** One-tap answers to the question the newest turn ended on, unless closed with its X. */
+  const [dismissedReplies, setDismissedReplies] = useState<string | null>(null);
+  const suggestion = useMemo(() => suggestedReplies(conv), [conv.timeline, conv.sendingPrompts, conv.queuedPrompts]);
+  const replies =
+    suggestion && suggestion.turnId !== dismissedReplies && isController && status !== "archived" && status !== "trashed"
+      ? suggestion
+      : null;
   // Sending mid-turn queues the prompt on the daemon, same as Enter on the web.
   const canSend = isController;
   /** The daemon hasn't reported yet: typing and attaching are fine meanwhile; only sending waits. */
@@ -587,6 +595,28 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
                 <Text style={styles.resumeNowText}>Push</Text>
               </TouchableOpacity>
             )}
+          </View>
+        </FadeIn>
+      )}
+
+      {/* One-tap answers (the turn's suggest_replies call): a tap sends the label as your next message. */}
+      {replies && (
+        <FadeIn>
+          <View style={styles.repliesWrap}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.repliesRow} keyboardShouldPersistTaps="handled">
+              {replies.replies.map((r, i) => (
+                <TouchableOpacity
+                  key={r}
+                  style={i === 0 ? styles.resumeNowBtn : styles.replyPill}
+                  onPress={() => realtime.submitPrompt(sessionId, r, promptOptsFor(conv.composer))}
+                >
+                  <Text style={i === 0 ? styles.resumeNowText : styles.replyText}>{r}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity onPress={() => setDismissedReplies(replies.turnId)} hitSlop={10} accessibilityLabel="Close">
+              <Ionicons name="close" size={16} color={colors.faint} />
+            </TouchableOpacity>
           </View>
         </FadeIn>
       )}
@@ -2151,6 +2181,10 @@ const makeStyles = (colors: ThemeColors) =>
     resumeNowBtn: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 6 },
     resumeNowText: { color: colors.accentFg, fontSize: 13, fontWeight: "700" },
     queueItem: { color: colors.faint, fontSize: 12 },
+    repliesWrap: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 14, marginBottom: 8 },
+    repliesRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+    replyPill: { backgroundColor: colors.panel, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 6 },
+    replyText: { color: colors.text, fontSize: 13, fontWeight: "600" },
     allowBtn: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: 20, paddingVertical: 10 },
     allowText: { color: colors.accentFg, fontWeight: "700" },
     denyBtn: { backgroundColor: withAlpha(colors.danger, 0.14), borderRadius: radius.pill, paddingHorizontal: 20, paddingVertical: 10 },

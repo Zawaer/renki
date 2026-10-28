@@ -71,6 +71,13 @@ const Env = z.object({
    */
   RENKI_ENABLE_RTK: z.string().optional(),
   /**
+   * When "1"/"true", a session whose branch is behind GitHub's base branch,
+   * with nothing of its own, is fast-forwarded before its next turn (see
+   * git/baseSync.ts). Off, it only shows how far behind it is, with a Pull
+   * button.
+   */
+  RENKI_AUTO_PULL: z.string().optional(),
+  /**
    * Comma-separated repos whose sessions may use the `homelab` gateway command (see
    * docs/homelab-gateway.md); `@plain` = repo-less sessions. Unset = every session may.
    * Set but empty = none. Read from the daemon's own environment, which sessions can't edit.
@@ -144,6 +151,7 @@ export type Config = {
   host: string;
   forcePermissionPrompts: boolean;
   enableRtk: boolean;
+  autoPull: boolean;
   rtkBin: string;
   /** Repos allowed to use the homelab command; null = not enforced. See claude/homelabGuard.ts. */
   homelabRepos: string[] | null;
@@ -239,6 +247,7 @@ export function loadConfig(): Config {
     host: env.RENKI_HOST,
     forcePermissionPrompts: env.RENKI_FORCE_PERMISSION_PROMPTS === "1" || env.RENKI_FORCE_PERMISSION_PROMPTS === "true",
     enableRtk: env.RENKI_ENABLE_RTK === "1" || env.RENKI_ENABLE_RTK === "true",
+    autoPull: env.RENKI_AUTO_PULL === "1" || env.RENKI_AUTO_PULL === "true",
     rtkBin: env.RENKI_RTK_BIN,
     homelabRepos: parseHomelabRepos(env.RENKI_HOMELAB_REPOS),
     macRepos: parseHomelabRepos(env.RENKI_MAC_REPOS),

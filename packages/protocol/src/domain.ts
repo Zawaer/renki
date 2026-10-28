@@ -182,9 +182,9 @@ export const Session = z.object({
   unpushed: z.object({ commits: z.number().int(), changedFiles: z.number().int() }).nullable().optional(),
   /**
    * How many commits on GitHub's `baseBranch` this session's branch doesn't
-   * have, when it also has commits of its own (so it can't just be moved up
-   * to date before the next turn, which happens on its own otherwise). Null
-   * or absent when it's current, or that's all it would take.
+   * have. With the daemon's auto-pull on, only when it also has commits of
+   * its own: one that doesn't is moved up to date before its next turn.
+   * Null or absent when it's current.
    */
   behind: z.object({ commits: z.number().int() }).nullable().optional(),
 });

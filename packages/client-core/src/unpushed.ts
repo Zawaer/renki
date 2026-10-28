@@ -28,10 +28,7 @@ export function behindSummary(commits: number, base: string | null): string {
   return `${commits} commit${commits === 1 ? "" : "s"} behind ${base ?? "main"}`;
 }
 
-/**
- * What the Pull button sends Claude. Only shown when the branch has commits of
- * its own: one that doesn't is fast-forwarded by the daemon before each turn.
- */
+/** What the Pull button sends Claude, so it can resolve conflicts with the branch's own commits on the way. */
 export const PULL_PROMPT =
   "Bring this branch up to date with main on GitHub. Fetch, then rebase onto origin/main (or merge, if this branch is already on GitHub) and resolve any conflicts. Don't push. Tell me what came in.";
 

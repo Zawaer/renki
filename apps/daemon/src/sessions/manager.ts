@@ -1105,8 +1105,8 @@ export class SessionManager {
     void Promise.all([unpushedOf(session.worktreePath), base ? baseStatusOf(session.worktreePath, base) : null]).then(([u, b]) => {
       const next = u && (u.commits > 0 || u.changedFiles > 0) ? u : null;
       const prev = this.unpushed.get(id) ?? null;
-      // Behind with nothing of its own is caught up before the next turn anyway, so not worth a banner.
-      const behind = b && b.ahead > 0 ? b.behind : 0;
+      // With auto-pull, behind with nothing of its own is caught up before the next turn anyway, so not worth a banner.
+      const behind = b && (b.ahead > 0 || !this.config.autoPull) ? b.behind : 0;
       if (prev?.commits === next?.commits && prev?.changedFiles === next?.changedFiles && (this.behind.get(id) ?? 0) === behind) return;
       if (next) this.unpushed.set(id, next);
       else this.unpushed.delete(id);
@@ -1271,15 +1271,15 @@ export class SessionManager {
 
   /**
    * Bring the session's branch up to date with GitHub's base branch before a
-   * turn, when that's a plain fast-forward (see git/baseSync.ts), and tell
-   * Claude, since files it read earlier may have changed. When it can't be
-   * done safely, Claude hears how far behind it is instead (once per count),
-   * and decides.
+   * turn, when auto-pull is on and that's a plain fast-forward (see
+   * git/baseSync.ts), and tell Claude, since files it read earlier may have
+   * changed. Otherwise Claude hears how far behind it is instead (once per
+   * count), and decides. A worktree Claude moved off its branch is left be.
    */
   private async catchUpNote(session: Session): Promise<string> {
-    if (!session.repoId || !session.baseBranch || session.purpose === "merge_conflict") return "";
+    if (!session.repoId || !session.baseBranch || !session.branch || session.purpose === "merge_conflict") return "";
     const base = session.baseBranch;
-    const result = await catchUpWithBase(session.worktreePath, base);
+    const result = await catchUpWithBase(session.worktreePath, base, session.branch, this.config.autoPull);
     const plural = (n: number) => `${n} commit${n === 1 ? "" : "s"}`;
     if (result.kind === "updated") {
       this.events.append(session.id, { kind: "notice", text: `Updated to the latest ${base}: ${plural(result.commits)} from elsewhere.`, level: "info" });
@@ -1288,8 +1288,11 @@ export class SessionManager {
     if (result.kind !== "behind") this.toldBehind.delete(session.id);
     if (result.kind === "behind" && this.toldBehind.get(session.id) !== result.commits) {
       this.toldBehind.set(session.id, result.commits);
-      const why = result.why === "diverged" ? "it has commits of its own" : "uncommitted changes here touch the incoming files";
-      return `[Renki: this branch is ${plural(result.commits)} behind origin/${base}, and couldn't be fast-forwarded because ${why}. Bring it up to date first if this task depends on recent work there.]\n\n`;
+      const why =
+        result.why === "off"
+          ? ""
+          : `, and couldn't be fast-forwarded because ${result.why === "diverged" ? "it has commits of its own" : "uncommitted changes here touch the incoming files"}`;
+      return `[Renki: this branch is ${plural(result.commits)} behind origin/${base}${why}. Bring it up to date first if this task depends on recent work there.]\n\n`;
     }
     return "";
   }

@@ -111,7 +111,7 @@ export function SessionView({
   const [title, setTitle] = useState<string | null>(null);
   /** Commits and uncommitted files GitHub doesn't have yet (counted by the daemon after each turn). */
   const [unpushed, setUnpushed] = useState<Session["unpushed"]>(null);
-  /** Commits on GitHub's base branch this branch lacks, when it can't simply be moved up to them (see the daemon's catchUpNote). */
+  /** Commits on GitHub's base branch this branch lacks, unless the daemon catches it up on its own (see its catchUpNote). */
   const [behind, setBehind] = useState<{ commits: number; base: string | null } | null>(null);
   /** The worktree's absolute path, so a reply's absolute file links can be mapped into it. */
   const [worktreePath, setWorktreePath] = useState<string | null>(null);

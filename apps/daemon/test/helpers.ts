@@ -40,6 +40,7 @@ export function makeTestConfig(overrides: Partial<Config> = {}): Config {
     host: "127.0.0.1",
     forcePermissionPrompts: false,
     enableRtk: false,
+    autoPull: false,
     rtkBin: "rtk",
     expoPushUrl: "https://example.invalid/push",
     rotation: {

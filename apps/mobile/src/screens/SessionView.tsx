@@ -244,7 +244,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const [title, setTitle] = useState<string | null>(null);
   /** Commits and uncommitted files GitHub doesn't have yet (counted by the daemon after each turn). */
   const [unpushed, setUnpushed] = useState<Session["unpushed"]>(null);
-  /** Commits on GitHub's base branch this branch lacks, when it can't simply be moved up to them. */
+  /** Commits on GitHub's base branch this branch lacks, unless the daemon catches it up on its own. */
   const [behind, setBehind] = useState<{ commits: number; base: string | null } | null>(null);
   /** False once the controller's last connection closed; it can't answer approvals then, so anyone may. */
   const [controllerOnline, setControllerOnline] = useState(true);
@@ -603,7 +603,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
         </FadeIn>
       )}
 
-      {/* Main moved on and this branch has commits of its own, so it wasn't caught up on its own. Pull asks Claude to. */}
+      {/* Main moved on and this branch wasn't caught up automatically. Pull asks Claude to do it. */}
       {behind && conv.status !== null && status !== "busy" && status !== "archived" && status !== "trashed" && (
         <FadeIn>
           <View style={styles.resumeWrap}>

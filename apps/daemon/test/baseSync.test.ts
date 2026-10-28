@@ -53,14 +53,14 @@ function moveMain(originPath: string): void {
 describe("catchUpWithBase", () => {
   it("does nothing when the branch is current", async () => {
     const { localPath } = setup();
-    expect(await catchUpWithBase(localPath, "main")).toEqual({ kind: "current" });
+    expect(await catchUpWithBase(localPath, "main", "renki/abc", true)).toEqual({ kind: "current" });
   });
 
   it("fast-forwards a branch with nothing of its own, keeping unrelated local edits", async () => {
     const { originPath, localPath } = setup();
     moveMain(originPath);
     writeFileSync(join(localPath, "other.txt"), "mine\n");
-    expect(await catchUpWithBase(localPath, "main")).toEqual({ kind: "updated", commits: 1 });
+    expect(await catchUpWithBase(localPath, "main", "renki/abc", true)).toEqual({ kind: "updated", commits: 1 });
     expect(readFileSync(join(localPath, "file.txt"), "utf8")).toBe("v2\n");
     expect(readFileSync(join(localPath, "other.txt"), "utf8")).toBe("mine\n");
   });
@@ -70,16 +70,38 @@ describe("catchUpWithBase", () => {
     writeFileSync(join(localPath, "other.txt"), "mine\n");
     git(localPath, "commit", "-am", "own work");
     moveMain(originPath);
-    expect(await catchUpWithBase(localPath, "main")).toEqual({ kind: "behind", commits: 1, why: "diverged" });
+    expect(await catchUpWithBase(localPath, "main", "renki/abc", true)).toEqual({ kind: "behind", commits: 1, why: "diverged" });
     expect(readFileSync(join(localPath, "file.txt"), "utf8")).toBe("v1\n");
     expect(await baseStatusOf(localPath, "main")).toEqual({ behind: 1, ahead: 1 });
+  });
+
+  it("only reports how far behind it is with auto-pull off", async () => {
+    const { originPath, localPath } = setup();
+    moveMain(originPath);
+    expect(await catchUpWithBase(localPath, "main", "renki/abc", false)).toEqual({ kind: "behind", commits: 1, why: "off" });
+    expect(readFileSync(join(localPath, "file.txt"), "utf8")).toBe("v1\n");
+  });
+
+  it("leaves a worktree parked off its branch where it is", async () => {
+    const { originPath, localPath } = setup();
+    moveMain(originPath);
+    git(localPath, "checkout", "--detach", "HEAD");
+    expect(await catchUpWithBase(localPath, "main", "renki/abc", true)).toEqual({ kind: "elsewhere" });
+    expect(readFileSync(join(localPath, "file.txt"), "utf8")).toBe("v1\n");
+  });
+
+  it("leaves a worktree mid-merge where it is", async () => {
+    const { originPath, localPath } = setup();
+    moveMain(originPath);
+    writeFileSync(join(localPath, ".git", "MERGE_HEAD"), "0000000000000000000000000000000000000000\n");
+    expect(await catchUpWithBase(localPath, "main", "renki/abc", true)).toEqual({ kind: "elsewhere" });
   });
 
   it("won't overwrite an uncommitted edit to a file main changed", async () => {
     const { originPath, localPath } = setup();
     moveMain(originPath);
     writeFileSync(join(localPath, "file.txt"), "editing\n");
-    expect(await catchUpWithBase(localPath, "main")).toEqual({ kind: "behind", commits: 1, why: "local_changes" });
+    expect(await catchUpWithBase(localPath, "main", "renki/abc", true)).toEqual({ kind: "behind", commits: 1, why: "local_changes" });
     expect(readFileSync(join(localPath, "file.txt"), "utf8")).toBe("editing\n");
   });
 });

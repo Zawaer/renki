@@ -1,7 +1,8 @@
 import { basename } from "node:path";
 import { DaemonToMac, MacVerbArgs, type MacToDaemon } from "@renki/protocol";
 import { Adb, type Result, saveResponse } from "./adb.js";
-import { jobInfo, loadConfig } from "./config.js";
+import { watch } from "node:fs";
+import { CONFIG_PATH, jobInfo, loadConfig } from "./config.js";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Runner, putFile } from "./runner.js";
@@ -112,6 +113,43 @@ function startBuild(id: string, args: unknown): Promise<Result> {
   builds.set(id, { abort, result: null });
   return runner.run(parsed.data, progressSender(id, sendNow), abort.signal);
 }
+function sendHello(): void {
+  sendNow({ type: "hello", name: config.name, version: VERSION, verbs: config.verbs, ...(runner ? { jobs: jobInfo(config) } : {}) });
+}
+
+/**
+ * Pick up jobs added to (or changed in) mac-node.json without a restart, so
+ * adding one is just an edit. Only the jobs, and the verbs that follow from
+ * them, change in place: a build already running keeps the job it started
+ * with, and the daemon takes a second hello as the new list. Anything else
+ * (url, token, the VM) still needs the agent restarted. A file that doesn't
+ * parse is reported and ignored, keeping the jobs that work.
+ */
+function watchJobs(): void {
+  let timer: NodeJS.Timeout | null = null;
+  const reload = () => {
+    timer = null;
+    let next: ReturnType<typeof loadConfig>;
+    try {
+      next = loadConfig();
+    } catch (err) {
+      log(`mac-node.json changed but can't be used, keeping the old jobs: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    if (JSON.stringify(next.jobs) === JSON.stringify(config.jobs)) return;
+    config.jobs = next.jobs;
+    config.verbs = next.verbs;
+    log(`reloaded jobs from mac-node.json: ${Object.entries(config.jobs).map(([p, j]) => `${p} (${Object.keys(j).join(", ")})`).join("; ") || "none"}`);
+    sendHello();
+  };
+  // Watch the folder, not the file: editors save by replacing it, which ends a watch on the file itself.
+  watch(dirname(CONFIG_PATH), (_event, name) => {
+    if (name !== basename(CONFIG_PATH)) return;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(reload, 500);
+  }).unref();
+}
+
 let lastHeard = 0;
 let backoffMs = 1000;
 let retry: NodeJS.Timeout | null = null;
@@ -150,7 +188,7 @@ async function connect(): Promise<void> {
   ws.addEventListener("open", () => {
     lastHeard = Date.now();
     backoffMs = 1000;
-    send({ type: "hello", name: config.name, version: VERSION, verbs: config.verbs, ...(runner ? { jobs: jobInfo(config) } : {}) });
+    sendHello();
     status({ state: "connected", detail: `${config.name} → ${new URL(config.url).host}`, verbs: config.verbs });
     log(`connected to ${config.url} as ${config.name}; verbs: ${config.verbs.join(", ")}`);
   });
@@ -253,4 +291,5 @@ function shutdown(): void {
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
 
+watchJobs();
 void connect();

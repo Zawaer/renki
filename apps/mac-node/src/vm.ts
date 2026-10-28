@@ -162,6 +162,22 @@ export class BuildVm {
     return exec(this.cfg.docker, ["--context", this.context, ...args], { timeoutMs, input });
   }
 
+  /**
+   * Each image is ~7 GB, and an update used to leave the old one (plus its
+   * build cache) behind until the VM's disk filled and the next build failed
+   * mid-extract (2026-10-28). Once the container runs on `keep`, the others
+   * can go. Best-effort: a failure here costs disk, not the build.
+   */
+  private async dropOldImages(keep: string): Promise<void> {
+    const ls = await this.docker(["image", "ls", "--format", "{{.Repository}}:{{.Tag}}", "renki-runner"], 20_000);
+    const old = ls.out.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("renki-runner:") && l !== keep);
+    if (old.length) {
+      this.log(`removing old runner images: ${old.join(", ")}`);
+      await this.docker(["image", "rm", ...old], 120_000);
+    }
+    await this.docker(["builder", "prune", "-af"], 120_000);
+  }
+
   private async bringUp(): Promise<string | null> {
     const { profile, colima } = this.cfg;
     // 1. The VM: created with no shared folders and no port forwarding. A running
@@ -241,6 +257,7 @@ export class BuildVm {
       if (r.code !== 0) return `Couldn't start the build container: ${r.out.trim()}`;
       const prep = await this.wrapper(["prepare"]);
       if (prep.code !== 0) return `Preparing the Android SDK failed: ${prep.stderr.trim()}`;
+      await this.dropOldImages(image);
     }
     this.log("build VM ready");
     return null;

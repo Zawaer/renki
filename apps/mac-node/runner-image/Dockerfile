@@ -39,6 +39,13 @@ RUN apt-get update \
  && chmod -R a+rX /opt/esp-idf /opt/espressif \
  && install -d -o 1000 -g 1000 /opt/espressif/root_managed_components
 
+# What OpenCascade (build123d's CAD kernel, for F35's rebuild job) loads even
+# when nothing is drawn. Its own layer, after ESP-IDF, so adding it didn't
+# invalidate that one.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libgl1 libglu1-mesa libegl1 libx11-6 libxrender1 libxext6 libxi6 libfontconfig1 libfreetype6 \
+ && rm -rf /var/lib/apt/lists/*
+
 # The runner user: no sudo, no password. Its home is the persistent volume.
 RUN usermod -l runner -d /home/runner -m node && groupmod -n runner node \
  && mkdir -p /home/runner/work && chown -R 1000:1000 /home/runner

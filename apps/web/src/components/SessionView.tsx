@@ -512,7 +512,7 @@ export function SessionView({
         />
       )}
 
-      {resume && status !== "busy" && (
+      {resume && conv.status !== null && status !== "busy" && (
         <ResumeBanner
           resume={resume}
           // Anyone may act once the lock has lapsed — see the daemon's resumeAction.
@@ -521,7 +521,7 @@ export function SessionView({
         />
       )}
 
-      {unpushed && status !== "busy" && status !== "archived" && status !== "trashed" && (
+      {unpushed && conv.status !== null && status !== "busy" && status !== "archived" && status !== "trashed" && (
         <UnpushedBanner
           unpushed={unpushed}
           canPush={isController}

@@ -556,7 +556,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
         </FadeIn>
       ))}
 
-      {resume && status !== "busy" && (
+      {resume && conv.status !== null && status !== "busy" && (
         <FadeIn>
         <View style={styles.resumeWrap}>
           <Ionicons name="pause-circle" size={20} color={colors.busy} />
@@ -583,7 +583,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
       )}
 
       {/* Work GitHub doesn't have yet. Push asks Claude to do it, so it can merge with main first. */}
-      {unpushed && status !== "busy" && status !== "archived" && status !== "trashed" && (
+      {unpushed && conv.status !== null && status !== "busy" && status !== "archived" && status !== "trashed" && (
         <FadeIn>
           <View style={styles.resumeWrap}>
             <Ionicons name="cloud-upload-outline" size={20} color={colors.dim} />

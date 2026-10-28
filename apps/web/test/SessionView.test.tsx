@@ -609,6 +609,17 @@ describe("SessionView session snapshot", () => {
     flushSync(() => (realtime as unknown as { onMessage(raw: string): void }).onMessage(JSON.stringify({ type: "session", session: s })));
   }
 
+  it("holds the push banner back until the chat has loaded, so it can't flash and vanish", () => {
+    const loading = renderSession("s1", []);
+    push(loading.realtime, { ...session(null), unpushed: { commits: 0, changedFiles: 7 } });
+    expect(screen.queryByText("7 uncommitted files")).not.toBeInTheDocument();
+    cleanupRoots();
+
+    const loaded = renderSession("s1", [ev("s1", { kind: "status_changed", status: "idle" })]);
+    push(loaded.realtime, { ...session(null), unpushed: { commits: 0, changedFiles: 7 } });
+    expect(screen.getByText("7 uncommitted files")).toBeInTheDocument();
+  });
+
   it("names the browser tab after the open session, following renames", () => {
     const { realtime } = renderSession("s1", [ev("s1", { kind: "status_changed", status: "idle" })]);
     push(realtime, { ...session(null), title: "Fix login bug" });

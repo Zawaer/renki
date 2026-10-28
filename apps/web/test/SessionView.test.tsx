@@ -703,6 +703,33 @@ describe("SessionView tidy transcript", () => {
     expect(screen.getByText("Run the tests")).toBeInTheDocument();
   });
 
+  const todoWrite = (i: number, todos: { content: string; status: string; activeForm?: string }[]) =>
+    ev("s1", { kind: "assistant_block", turnId: "t1", blockIndex: i, blockKind: "tool_use", text: null, toolUseId: `tu_${i}`, toolName: "TodoWrite", toolInput: { todos } });
+
+  it("shows the task list once, at its latest, with what's in progress on the status line", () => {
+    renderSession("s1", [
+      ...start,
+      todoWrite(0, [{ content: "Look around", status: "in_progress", activeForm: "Looking around" }, { content: "Fix it", status: "pending" }]),
+      result(0),
+      bash(1, { command: "ls" }),
+      result(1),
+      todoWrite(2, [{ content: "Look around", status: "completed" }, { content: "Fix it", status: "in_progress", activeForm: "Fixing it" }]),
+      result(2),
+    ]);
+    const tasks = screen.getByTestId("turn-tasks");
+    expect(tasks.textContent).toContain("1 of 2 done");
+    expect(screen.getAllByText("Look around")).toHaveLength(1);
+    expect(screen.getByTestId("turn-status").textContent).toContain("Fixing it");
+    expect(screen.getByRole("button", { name: /Updated tasks, ran 1 command/ })).toBeInTheDocument();
+  });
+
+  it("folds the task list to its count once the turn ends", () => {
+    renderSession("s1", [...start, todoWrite(0, [{ content: "Look around", status: "completed" }]), result(0), finish()]);
+    expect(screen.getByTestId("turn-tasks").textContent).toContain("1 of 1 done");
+    expect(screen.getByRole("button", { name: /Tasks/ })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByTestId("turn-status")).not.toBeInTheDocument();
+  });
+
   it("lists the files a finished turn changed, with line counts", () => {
     renderSession("s1", [
       ...start,

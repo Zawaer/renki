@@ -1,7 +1,7 @@
 import type { Session } from "@renki/protocol";
 import { describe, expect, it } from "vitest";
 import type { BlockView, TimelineItem, TurnView } from "../src/reducer.js";
-import { agentMapOf, backgroundTasksOf, flattenAgents, groupTurnBlocks, segmentImages, sessionsNeedingAttention, summarizeSteps, turnFileChanges } from "../src/turnLayout.js";
+import { agentMapOf, backgroundTasksOf, flattenAgents, groupTurnBlocks, segmentImages, sessionsNeedingAttention, summarizeSteps, turnActivity, turnFileChanges, turnTodos } from "../src/turnLayout.js";
 
 const tool = (toolName: string, toolInput: unknown, extra: Partial<Extract<BlockView, { kind: "tool_use" }>> = {}): BlockView => ({
   kind: "tool_use",
@@ -29,9 +29,17 @@ describe("groupTurnBlocks", () => {
     expect(segs.map((s) => s.kind)).toEqual(["block", "block", "block", "block"]);
   });
 
-  it("never folds an agent, a plan or a task list", () => {
-    const segs = groupTurnBlocks([tool("Bash", {}), tool("Agent", { description: "Explore" }), tool("Bash", {})]);
-    expect(segs.map((s) => s.kind)).toEqual(["block", "block", "block"]);
+  it("never folds an agent or a plan", () => {
+    const segs = groupTurnBlocks([tool("Bash", {}), tool("Agent", { description: "Explore" }), tool("Bash", {}), tool("ExitPlanMode", { plan: "x" })]);
+    expect(segs.map((s) => s.kind)).toEqual(["block", "block", "block", "block"]);
+  });
+
+  it("folds task list updates in with the steps around them", () => {
+    const segs = groupTurnBlocks([tool("Bash", {}), tool("TodoWrite", { todos: [] }), tool("Bash", {})]);
+    expect(segs).toHaveLength(1);
+    const group = segs[0]!;
+    if (group.kind !== "group") throw new Error("expected group");
+    expect(group.summary.text).toBe("Ran 2 commands, updated tasks");
   });
 
   it("breaks a run where a steered prompt renders", () => {
@@ -185,5 +193,26 @@ describe("agentMapOf", () => {
     expect(map[0]!.children.map((c) => [c.label, c.type, c.status])).toEqual([["Check docs", "Explore", "stopped"]]);
     expect(map[1]!.summary).toBeNull();
     expect(flattenAgents(map)).toHaveLength(3);
+  });
+});
+
+describe("turnTodos", () => {
+  const todoWrite = (todos: { content: string; status: string; activeForm?: string }[]) => tool("TodoWrite", { todos });
+  const turnOf = (blocks: BlockView[]) => ({ blocks } as TurnView);
+
+  it("is the newest task list the turn wrote", () => {
+    const turn = turnOf([
+      todoWrite([{ content: "Look", status: "in_progress" }]),
+      tool("Bash", {}),
+      todoWrite([{ content: "Look", status: "completed" }, { content: "Fix", status: "in_progress", activeForm: "Fixing" }]),
+      text("ok"),
+    ]);
+    expect(turnTodos(turn)?.map((t) => t.status)).toEqual(["completed", "in_progress"]);
+    expect(turnActivity(turn)).toBe("Fixing");
+  });
+
+  it("is null without a task list, and activity is null with nothing in progress", () => {
+    expect(turnTodos(turnOf([tool("Bash", {})]))).toBeNull();
+    expect(turnActivity(turnOf([todoWrite([{ content: "Look", status: "completed" }])]))).toBeNull();
   });
 });

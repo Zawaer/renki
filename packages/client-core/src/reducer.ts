@@ -88,6 +88,8 @@ export type TurnView = {
   status: "running" | "done" | "error";
   costUsd: number | null;
   durationMs: number | null;
+  /** When the turn's first event arrived, for the running turn's clock. */
+  startedAt: number;
   /** When the turn finished (its result's timestamp), for the reply's "2d ago". */
   endedAt: number | null;
   errorMessage: string | null;
@@ -342,7 +344,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       return s;
 
     case "turn_started":
-      s.timeline = updateTurn(s.timeline, e.turnId, (turn) => ({
+      s.timeline = updateTurn(s.timeline, e.turnId, e.ts, (turn) => ({
         ...turn,
         promptId: turn.promptId ?? e.promptId,
         trigger: e.trigger,
@@ -393,7 +395,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
     }
 
     case "assistant_delta":
-      s.timeline = updateTurn(s.timeline, subagentTurnId(s.timeline, e.turnId, e.parentToolUseId), (turn) => ({
+      s.timeline = updateTurn(s.timeline, subagentTurnId(s.timeline, e.turnId, e.parentToolUseId), e.ts, (turn) => ({
         ...turn,
         blocks: e.parentToolUseId
           ? updateSubagentBlocks(turn.blocks, e.parentToolUseId, (sub) => applyDelta(sub, e.blockIndex, e.blockKind, e.text, e.ts))
@@ -402,7 +404,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       return s;
 
     case "assistant_block":
-      s.timeline = updateTurn(s.timeline, subagentTurnId(s.timeline, e.turnId, e.parentToolUseId), (turn) => ({
+      s.timeline = updateTurn(s.timeline, subagentTurnId(s.timeline, e.turnId, e.parentToolUseId), e.ts, (turn) => ({
         ...turn,
         blocks: e.parentToolUseId
           ? updateSubagentBlocks(
@@ -416,7 +418,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       return s;
 
     case "tool_result":
-      s.timeline = updateTurn(s.timeline, subagentTurnId(s.timeline, e.turnId, e.toolUseId), (turn) => ({
+      s.timeline = updateTurn(s.timeline, subagentTurnId(s.timeline, e.turnId, e.toolUseId), e.ts, (turn) => ({
         ...turn,
         blocks: applyToolResult(
           turn.blocks,
@@ -443,7 +445,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       // model_changed existed, where the turn's own result is the only place
       // the model was ever written down.
       if (e.model !== undefined) s.model = e.model;
-      s.timeline = updateTurn(s.timeline, e.turnId, (turn) => ({
+      s.timeline = updateTurn(s.timeline, e.turnId, e.ts, (turn) => ({
         ...turn,
         promptId: e.promptId,
         status: e.ok ? "done" : "error",
@@ -617,11 +619,12 @@ function containsToolUse(blocks: BlockView[], toolUseId: string): boolean {
 function updateTurn(
   timeline: TimelineItem[],
   turnId: string,
+  ts: number,
   fn: (turn: TurnView) => TurnView,
 ): TimelineItem[] {
   const idx = timeline.findIndex((it) => it.type === "turn" && it.turn.turnId === turnId);
   if (idx === -1) {
-    return [...timeline, { type: "turn", turn: fn(emptyTurn(turnId)) }];
+    return [...timeline, { type: "turn", turn: fn(emptyTurn(turnId, ts)) }];
   }
   const next = timeline.slice();
   const item = next[idx] as Extract<TimelineItem, { type: "turn" }>;
@@ -779,7 +782,7 @@ function patchToolBlock(timeline: TimelineItem[], toolUseId: string, fn: (b: Too
   return found ? next : null;
 }
 
-function emptyTurn(turnId: string): TurnView {
+function emptyTurn(turnId: string, ts: number): TurnView {
   return {
     turnId,
     promptId: null,
@@ -789,6 +792,7 @@ function emptyTurn(turnId: string): TurnView {
     status: "running",
     costUsd: null,
     durationMs: null,
+    startedAt: ts,
     endedAt: null,
     errorMessage: null,
     inputTokens: null,

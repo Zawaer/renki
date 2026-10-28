@@ -40,6 +40,8 @@ import {
   groupTurnBlocks,
   isBulkyToolPayload,
   turnFileChanges,
+  turnActivity,
+  turnTodos,
   modelFullName,
   modelMenuLabel,
   segmentImages,
@@ -1086,6 +1088,7 @@ function BackgroundTasksRow({
 function AssistantTurn({ turn, colors, styles }: { turn: TurnView; colors: ThemeColors; styles: Styles }) {
   const label = turnTriggerLabel(turn);
   const steeredAfter = (index: number) => turn.steeredPrompts.filter((p) => p.afterBlockIndex === index);
+  const todos = turnTodos(turn);
   return (
     <View style={styles.turn}>
       {label && <Text style={styles.meta}>{label}</Text>}
@@ -1108,8 +1111,9 @@ function AssistantTurn({ turn, colors, styles }: { turn: TurnView; colors: Theme
           </Fragment>
         );
       })}
+      {todos && <TurnTasks todos={todos} running={turn.status === "running"} colors={colors} styles={styles} />}
       {turn.status !== "running" && <FilesChanged changes={turnFileChanges(turn)} colors={colors} styles={styles} />}
-      {turn.status === "running" && <Text style={styles.running}>▍</Text>}
+      {turn.status === "running" && <TurnStatus turn={turn} colors={colors} styles={styles} />}
       {turn.status === "done" && <TurnFooter turn={turn} colors={colors} styles={styles} />}
       {turn.status === "error" &&
         (turn.interrupted ? (
@@ -1287,7 +1291,8 @@ function ToolStep({
   // Likewise a Mac build: its call returns at once, and the build reports on
   // until it ends — maybe after the turn has.
   const build = block.macBuild;
-  const richPayload = editView != null || todos != null || plan != null || block.subagent != null;
+  // A task list isn't opened unprompted: the turn shows its latest state at its foot.
+  const richPayload = editView != null || plan != null || block.subagent != null;
   const command = block.toolName === "Bash" ? ((block.toolInput as { command?: string } | null)?.command ?? null) : null;
   // Whole-file Writes and long scripts stay folded, even while running — see isBulkyToolPayload.
   const bulky = isBulkyToolPayload(editView, command);
@@ -1849,6 +1854,58 @@ function DiffView({ view, colors, styles }: { view: EditToolView; colors: ThemeC
   );
 }
 
+/**
+ * The turn's task list, once, as Claude last wrote it — ticking off in place
+ * instead of repeating with every update. Open while the turn runs, so where
+ * it stands shows without scrolling; folds to its count once it's done.
+ */
+function TurnTasks({ todos, running, colors, styles }: { todos: TodoItemView[]; running: boolean; colors: ThemeColors; styles: Styles }) {
+  const [open, setOpen] = useState(running);
+  const userToggled = useRef(false);
+  useEffect(() => {
+    if (!userToggled.current) setOpen(running);
+  }, [running]);
+  const done = todos.filter((t) => t.status === "completed").length;
+  return (
+    <View style={styles.filesCard}>
+      <TouchableOpacity
+        style={styles.toolStepHeader}
+        activeOpacity={0.7}
+        onPress={() => {
+          userToggled.current = true;
+          animateLayout();
+          setOpen((o) => !o);
+        }}
+      >
+        <Ionicons name="checkbox-outline" size={13} color={colors.faint} />
+        <Text style={[styles.toolStepLabel, { flex: 1 }]} numberOfLines={1}>
+          Tasks · {done} of {todos.length} done
+        </Text>
+        <Ionicons name={open ? "chevron-up" : "chevron-down"} size={12} color={colors.faint} />
+      </TouchableOpacity>
+      {open && (
+        <View style={{ paddingBottom: 6 }}>
+          <TodoChecklist todos={todos} colors={colors} styles={styles} />
+        </View>
+      )}
+    </View>
+  );
+}
+
+/** The running turn's last line: the task in progress, or just "Working", and how long the turn has run. */
+function TurnStatus({ turn, colors, styles }: { turn: TurnView; colors: ThemeColors; styles: Styles }) {
+  const elapsed = useElapsedSeconds(turn.startedAt);
+  return (
+    <View style={styles.turnStatus}>
+      <ActivityIndicator size="small" color={colors.faint} />
+      <Text style={[styles.meta, { flexShrink: 1 }]} numberOfLines={1}>
+        {turnActivity(turn) ?? "Working"}
+      </Text>
+      {elapsed != null && <Text style={styles.meta}>{formatTurnDuration(elapsed * 1000)}</Text>}
+    </View>
+  );
+}
+
 function TodoChecklist({ todos, colors, styles }: { todos: TodoItemView[]; colors: ThemeColors; styles: Styles }) {
   return (
     <View>
@@ -1988,7 +2045,7 @@ const makeStyles = (colors: ThemeColors) =>
     turn: { gap: 10 },
     thinkingWrap: { backgroundColor: withAlpha(colors.faint, 0.1), borderRadius: radius.md, padding: 12, gap: 4 },
     thinkingHeader: { color: colors.faint, fontSize: 11 },
-    running: { color: colors.dim, fontSize: 16 },
+    turnStatus: { flexDirection: "row", alignItems: "center", gap: 6 },
     meta: { color: colors.faint, fontSize: 11 },
     // A rule across the transcript where the model changed, so a reply's
     // author is never ambiguous when scrolling back through a session that

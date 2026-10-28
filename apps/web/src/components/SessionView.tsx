@@ -42,6 +42,8 @@ import {
   groupTurnBlocks,
   isBulkyToolPayload,
   turnFileChanges,
+  turnActivity,
+  turnTodos,
   modelFullName,
   modelMenuLabel,
   segmentImages,
@@ -942,6 +944,7 @@ function AssistantTurn({ turn, animate = false }: { turn: TurnView; animate?: bo
     [turn.blocks, turn.steeredPrompts],
   );
   const changes = useMemo(() => (running ? [] : turnFileChanges(turn)), [turn, running]);
+  const todos = useMemo(() => turnTodos(turn), [turn]);
   return (
     <div className={`${animate ? "renki-enter " : ""}group space-y-3`} data-anchor={`t:${turn.turnId}`}>
       {label && (
@@ -981,13 +984,9 @@ function AssistantTurn({ turn, animate = false }: { turn: TurnView; animate?: bo
           </Fragment>
         );
       })}
+      {todos && <TurnTasks todos={todos} running={running} />}
       {changes.length > 0 && <FilesChangedCard changes={changes} />}
-      {turn.status === "running" && (
-        <div className="flex items-center gap-2 text-xs text-(--renki-fg-muted)">
-          <span className="codicon codicon-loading codicon-modifier-spin" />
-          Working…
-        </div>
-      )}
+      {running && <TurnStatus turn={turn} />}
       {(turn.status !== "running" || replyText) && (
         <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11.5px] text-(--renki-fg-muted)">
           {turn.status === "done" && (
@@ -1149,8 +1148,9 @@ function ToolStep({
   // its live state — not the tool result or the turn — says whether it's done.
   const build = block.macBuild;
   const buildSeconds = useElapsedSeconds(build?.state === "running" ? build.startedAt : null);
+  // A task list isn't opened unprompted: the turn shows its latest state at its foot.
   const richPayload =
-    editView != null || todos != null || plan != null || block.subagent != null;
+    editView != null || plan != null || block.subagent != null;
   const command =
     block.toolName === "Bash"
       ? ((block.toolInput as { command?: string } | null)?.command ?? null)
@@ -1536,6 +1536,57 @@ function DiffView({ view }: { view: EditToolView }) {
           … {totalLines - MAX_DIFF_LINES_SHOWN} more lines
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The turn's task list, once, as Claude last wrote it — ticking off in place
+ * instead of repeating with every update. Open while the turn runs, so where
+ * it stands is visible without scrolling; folds to its count once it's done.
+ */
+function TurnTasks({ todos, running }: { todos: TodoItemView[]; running: boolean }) {
+  const [open, setOpen] = useState(running);
+  const userToggled = useRef(false);
+  useEffect(() => {
+    if (!userToggled.current) setOpen(running);
+  }, [running]);
+  const done = todos.filter((t) => t.status === "completed").length;
+  return (
+    <div className="rounded-xl border border-(--renki-border)/70 text-[13px]" data-testid="turn-tasks">
+      <button
+        type="button"
+        onClick={() => {
+          userToggled.current = true;
+          setOpen((o) => !o);
+        }}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-(--renki-fg-muted) transition-colors hover:text-(--renki-fg)"
+      >
+        <span>Tasks</span>
+        <span className="text-xs tabular-nums">
+          {done} of {todos.length} done
+        </span>
+        <span className={`codicon ${open ? "codicon-chevron-down" : "codicon-chevron-right"} ml-auto shrink-0 text-[12px]`} />
+      </button>
+      <Reveal open={open}>
+        <div className="-mt-1 pb-1">
+          <TodoChecklist todos={todos} />
+        </div>
+      </Reveal>
+    </div>
+  );
+}
+
+/** The running turn's last line: the task in progress, or just "Working", and how long the turn has run. */
+function TurnStatus({ turn }: { turn: TurnView }) {
+  const elapsed = useElapsedSeconds(turn.startedAt);
+  const activity = turnActivity(turn);
+  return (
+    <div className="flex min-w-0 items-center gap-2 text-xs text-(--renki-fg-muted)" data-testid="turn-status">
+      <span className="codicon codicon-loading codicon-modifier-spin shrink-0" />
+      <span className="truncate">{activity ?? "Working"}</span>
+      {elapsed != null && <span className="shrink-0 tabular-nums">{formatTurnDuration(elapsed * 1000)}</span>}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import type { AgentUsage, AttachmentView, Session } from "@renki/protocol";
 import type { BlockView, TimelineItem, TurnView } from "./reducer.js";
-import { type EditToolView, describeTool, parseEditView } from "./toolViews.js";
+import { type EditToolView, type TodoItemView, describeTool, parseEditView, parseTodos } from "./toolViews.js";
 
 /**
  * How a turn's blocks are laid out on screen, shared by every client. DOM-free
@@ -17,11 +17,13 @@ export type TurnSegment =
 
 /**
  * Tool calls that stay on their own line instead of folding into a group:
- * each is something to read (a plan, a task list, a question) or a unit of
- * work worth seeing by itself (an agent).
+ * each is something to read (a plan, a question) or a unit of work worth
+ * seeing by itself (an agent). The task list isn't one: every update folds in
+ * with the steps around it, and the turn shows its latest state once, at its
+ * foot (see turnTodos).
  */
 // A Mac build reports in for minutes after its call returns, so it keeps a row of its own like an agent.
-const STANDALONE_TOOLS = new Set(["Agent", "Task", "TodoWrite", "ExitPlanMode", "AskUserQuestion", "mcp__mac__mac_build"]);
+const STANDALONE_TOOLS = new Set(["Agent", "Task", "ExitPlanMode", "AskUserQuestion", "mcp__mac__mac_build"]);
 
 function groupable(b: BlockView): boolean {
   if (b.kind === "thinking") return true;
@@ -89,7 +91,7 @@ export type StepSummary = {
   current: string | null;
 };
 
-type Category = "command" | "edit" | "write" | "read" | "search" | "fetch" | "websearch" | "other";
+type Category = "command" | "edit" | "write" | "read" | "search" | "fetch" | "websearch" | "todo" | "other";
 
 function categoryOf(toolName: string): Category {
   switch (toolName) {
@@ -112,6 +114,8 @@ function categoryOf(toolName: string): Category {
       return "fetch";
     case "WebSearch":
       return "websearch";
+    case "TodoWrite":
+      return "todo";
     default:
       return "other";
   }
@@ -135,6 +139,8 @@ function phrase(cat: Category, n: number): string {
       return `fetched ${plural(n, "page", "pages")}`;
     case "websearch":
       return `searched the web ${n === 1 ? "once" : `${n} times`}`;
+    case "todo":
+      return "updated tasks";
     default:
       return `used ${plural(n, "tool", "tools")}`;
   }
@@ -201,6 +207,31 @@ export function summarizeSteps(blocks: BlockView[]): StepSummary {
   const parts = order.map((c) => phrase(c, counts.get(c) ?? 0));
   const text = parts.join(", ");
   return { text: text.charAt(0).toUpperCase() + text.slice(1), added, removed, failed, running, current };
+}
+
+/**
+ * The turn's task list as Claude last wrote it — each TodoWrite replaces the
+ * whole list, so the newest call is the state. Null when the turn never wrote
+ * one. Clients show it once, at the turn's foot, instead of once per update.
+ */
+export function turnTodos(turn: TurnView): TodoItemView[] | null {
+  for (let i = turn.blocks.length - 1; i >= 0; i--) {
+    const b = turn.blocks[i];
+    if (b?.kind !== "tool_use" || b.toolName !== "TodoWrite") continue;
+    const todos = parseTodos(b.toolInput);
+    if (todos) return todos;
+  }
+  return null;
+}
+
+/**
+ * What a running turn's status line says it's doing: the task in progress
+ * ("Slimming chat folders"), or null when there is none and the client falls
+ * back to a thinking verb.
+ */
+export function turnActivity(turn: TurnView): string | null {
+  const t = turnTodos(turn)?.find((x) => x.status === "in_progress");
+  return t ? (t.activeForm ?? t.content) : null;
 }
 
 export type FileChange = { filePath: string; added: number; removed: number; views: EditToolView[] };

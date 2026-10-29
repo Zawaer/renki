@@ -16,6 +16,8 @@ import {
   type Session,
   SwitchAccountRequest,
   UpdateRotationRequest,
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENTS_PER_PROMPT,
 } from "@renki/protocol";
 import { ExportError, exportChat } from "../export/index.js";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
@@ -109,7 +111,10 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
   // regardless of what auth decides.
   // Compress larger messages: a long session's replay is megabytes of JSON,
   // which deflates about 4x; tiny streaming deltas aren't worth the CPU.
-  await app.register(websocketPlugin, { options: { perMessageDeflate: { threshold: 1024 } } });
+  // A prompt with every attachment at its size cap is bigger than ws's 100 MiB
+  // default; going over that drops the socket instead of answering with an error.
+  const maxPayload = Math.ceil((MAX_ATTACHMENTS_PER_PROMPT * MAX_ATTACHMENT_BYTES * 4) / 3) + 16 * 1024 * 1024;
+  await app.register(websocketPlugin, { options: { perMessageDeflate: { threshold: 1024 }, maxPayload } });
 
   // Permissive CORS: single-user tool behind a token + tailnet, so we don't
   // need per-origin rules — the web/VS Code clients just need to reach it.

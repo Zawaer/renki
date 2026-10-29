@@ -38,6 +38,8 @@ import type { PermissionResolver, RateLimitHit, RunTurnResult } from "../claude/
 import { derivePlaceholderTitle, generateSessionTitle } from "../claude/titler.js";
 import { EFFORT_LEVELS } from "@renki/client-core";
 import { SessionError } from "./errors.js";
+import { shrinkImages } from "../claude/shrinkImages.js";
+import { attachmentBytes, MAX_PROMPT_ATTACHMENT_BYTES } from "@renki/protocol";
 import { diskBytes, slimFolder, slimNotices, type SlimOutcome } from "./slim.js";
 import { renkiPromptAppend } from "../claude/systemPrompt.js";
 import { accountsNote } from "./accountsNote.js";
@@ -1213,6 +1215,23 @@ export class SessionManager {
       throw new SessionError("not_controller", "Only the controlling device can send prompts.");
     if (!input.text.trim() && !input.attachments?.length)
       throw new SessionError("invalid_request", "Prompt text or at least one attachment is required.");
+
+    // Big images get shrunk here for the clients that can't do it themselves,
+    // then the whole message has to fit in one API request.
+    const { attachments, shrunk } = await shrinkImages(input.attachments);
+    input = { ...input, attachments };
+    const total = attachments?.reduce((sum, a) => sum + attachmentBytes(a), 0) ?? 0;
+    if (total > MAX_PROMPT_ATTACHMENT_BYTES)
+      throw new SessionError(
+        "invalid_request",
+        `Attachments are too large together (max ${MAX_PROMPT_ATTACHMENT_BYTES / (1024 * 1024)}MB per message).`,
+      );
+    if (shrunk > 0)
+      this.events.append(input.sessionId, {
+        kind: "notice",
+        text: `Shrank ${shrunk} large image${shrunk === 1 ? "" : "s"} to fit.`,
+        level: "info",
+      });
 
     // A new message takes over from a waiting resume: whatever it asks for is
     // what the user wants next, and it hits the same limit (and schedules its

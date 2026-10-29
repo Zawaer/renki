@@ -11,8 +11,12 @@ import {
   formatTokenCount,
   formatAgo,
   formatTurnDuration,
+  attachmentBytes,
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS_PER_PROMPT,
+  MAX_IMAGE_EDGE,
+  MAX_PROMPT_ATTACHMENT_BYTES,
+  SHRINK_IMAGE_ABOVE_BYTES,
   parseAskUserQuestion,
   parseEditView,
   parsePlan,
@@ -2172,31 +2176,71 @@ function AskUserQuestionCard({
 /** A picked attachment before it's sent — same wire shape as `Attachment` plus client-only bookkeeping. */
 type PendingAttachment = Attachment & { id: string };
 
-/** Reads a File into wire-format base64, or an error message if it's an unsupported type or too large. */
-function readFileAsAttachment(
+/**
+ * A big PNG/JPEG/WebP scaled to fit MAX_IMAGE_EDGE and re-encoded as JPEG, or
+ * null when it's small enough already (or the browser can't decode it — the
+ * daemon gets another go). GIFs are left alone, they may be animated.
+ */
+async function shrinkImage(file: File): Promise<Blob | null> {
+  if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) return null;
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+  } catch {
+    return null;
+  }
+  const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(bitmap.width, bitmap.height));
+  if (scale === 1 && file.size <= SHRINK_IMAGE_ABOVE_BYTES) return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#fff"; // JPEG has no transparency
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.85));
+  if (!blob || (scale === 1 && blob.size >= file.size)) return null;
+  return blob;
+}
+
+/** Reads a File into wire-format base64, or an error message if it's an unsupported type or too large. Big images come back shrunk. */
+async function readFileAsAttachment(
   file: File,
-): Promise<PendingAttachment | { error: string }> {
+): Promise<(PendingAttachment & { shrunk?: true }) | { error: string }> {
   const mediaType = classifyAttachment(file);
   if (!mediaType) {
-    return Promise.resolve({
+    return {
       error: `${file.name}: unsupported file type — reference it by its path in the prompt instead.`,
-    });
+    };
+  }
+  const shrunk = await shrinkImage(file);
+  if (shrunk) {
+    const data = await readBase64(shrunk);
+    if (data == null) return { error: `${file.name}: couldn't read file.` };
+    const name = file.name.replace(/\.[^.]*$/, "") + ".jpg";
+    return { id: crypto.randomUUID(), name, mediaType: "image/jpeg", data, shrunk: true };
   }
   if (file.size > MAX_ATTACHMENT_BYTES) {
-    return Promise.resolve({
+    return {
       error: `${file.name}: too large (max ${Math.floor(MAX_ATTACHMENT_BYTES / (1024 * 1024))}MB).`,
-    });
+    };
   }
+  const data = await readBase64(file);
+  if (data == null) return { error: `${file.name}: couldn't read file.` };
+  return { id: crypto.randomUUID(), name: file.name, mediaType, data };
+}
+
+/** A Blob as raw base64 (no `data:` prefix), or null if it can't be read. */
+function readBase64(blob: Blob): Promise<string | null> {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string; // "data:<mediaType>;base64,<data>"
-      const data = result.slice(result.indexOf(",") + 1);
-      resolve({ id: crypto.randomUUID(), name: file.name, mediaType, data });
+      resolve(result.slice(result.indexOf(",") + 1));
     };
-    reader.onerror = () =>
-      resolve({ error: `${file.name}: couldn't read file.` });
-    reader.readAsDataURL(file);
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(blob);
   });
 }
 
@@ -2409,6 +2453,7 @@ export function Composer({
   );
   const [draftNote, setDraftNote] = useState(restored.current?.attachmentsDropped ?? false);
   const [attachError, setAttachError] = useState<string | null>(null);
+  const [shrunkNote, setShrunkNote] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   /**
    * All three belong to the SESSION, not to this browser: they're pushed by
@@ -2594,6 +2639,7 @@ export function Composer({
     setText("");
     setAttachments([]);
     setAttachError(null);
+    setShrunkNote(null);
     setDraftNote(false);
     clearDraft(draftKey);
     if (!(result instanceof Promise)) return;
@@ -2623,19 +2669,40 @@ export function Composer({
     const results = await Promise.all(
       list.slice(0, room).map(readFileAsAttachment),
     );
-    const accepted = results.filter(
-      (r): r is PendingAttachment => !("error" in r),
-    );
     const errors = results
       .filter((r): r is { error: string } => "error" in r)
       .map((r) => r.error);
     if (list.length > room)
       errors.push(
-        `Only ${room} more attachment${room === 1 ? "" : "s"} allowed — dropped the rest.`,
+        `Only ${room} more attachment${room === 1 ? "" : "s"} allowed. Dropped the rest.`,
       );
+
+    // The whole message has to fit in one API request: keep files in order
+    // until the next one wouldn't fit.
+    let total = attachments.reduce((sum, a) => sum + attachmentBytes(a), 0);
+    const accepted: PendingAttachment[] = [];
+    let shrunk = 0;
+    for (const r of results) {
+      if ("error" in r) continue;
+      total += attachmentBytes(r);
+      if (total > MAX_PROMPT_ATTACHMENT_BYTES) {
+        errors.unshift(
+          `Attachments can be ${MAX_PROMPT_ATTACHMENT_BYTES / (1024 * 1024)}MB per message in total. Dropped ${r.name} and any after it.`,
+        );
+        break;
+      }
+      const { shrunk: wasShrunk, ...a } = r;
+      if (wasShrunk) shrunk++;
+      accepted.push(a);
+    }
 
     if (accepted.length > 0) setAttachments((prev) => [...prev, ...accepted]);
     setAttachError(errors[0] ?? null);
+    setShrunkNote(
+      shrunk > 0
+        ? `Shrank ${shrunk} large image${shrunk === 1 ? "" : "s"} to ${MAX_IMAGE_EDGE}px.`
+        : null,
+    );
   }
 
   function removeAttachment(id: string) {
@@ -2842,6 +2909,11 @@ export function Composer({
           {attachError && (
             <div className="px-3 pt-2 text-xs text-(--renki-danger)">
               {attachError}
+            </div>
+          )}
+          {shrunkNote && !attachError && attachments.length > 0 && (
+            <div className="flex items-center gap-1.5 px-3 pt-2 text-xs text-(--renki-fg-muted)">
+              <span className="codicon codicon-info text-[12px]" /> {shrunkNote}
             </div>
           )}
           {draftNote && !attachError && (

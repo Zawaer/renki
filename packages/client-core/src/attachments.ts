@@ -1,6 +1,13 @@
 import type { AttachmentMediaType } from "@renki/protocol";
 
-export { MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS_PER_PROMPT, type Attachment, type AttachmentMediaType } from "@renki/protocol";
+export {
+  attachmentBytes,
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENTS_PER_PROMPT,
+  MAX_IMAGE_EDGE,
+  MAX_PROMPT_ATTACHMENT_BYTES,
+  SHRINK_IMAGE_ABOVE_BYTES,
+  type Attachment, type AttachmentMediaType } from "@renki/protocol";
 
 /**
  * Extensions treated as plain text for attachment purposes even when the

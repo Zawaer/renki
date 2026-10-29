@@ -23,7 +23,26 @@ export type AttachmentMediaType = z.infer<typeof AttachmentMediaType>;
 export const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024;
 /** Base64 inflates ~4/3; bound the wire string itself as a cheap first check before decoding. */
 const MAX_ATTACHMENT_BASE64_LENGTH = Math.ceil(MAX_ATTACHMENT_BYTES / 3) * 4;
-export const MAX_ATTACHMENTS_PER_PROMPT = 8;
+export const MAX_ATTACHMENTS_PER_PROMPT = 20;
+/**
+ * Images are shrunk to fit this many pixels on their longest side (the web
+ * composer does it before upload, the daemon catches the rest). The API
+ * downscales anything this big anyway, and refuses larger ones outright once a
+ * request carries more than 20 images.
+ */
+export const MAX_IMAGE_EDGE = 2000;
+/** An image over this many bytes is re-encoded even if it's small enough in pixels. */
+export const SHRINK_IMAGE_ABOVE_BYTES = 1.5 * 1024 * 1024;
+/**
+ * All of one message's attachments together (decoded bytes). The API caps a
+ * whole request at 32 MB of base64, so this leaves room for the rest of it.
+ */
+export const MAX_PROMPT_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+
+/** An attachment's decoded size, from its base64 length. */
+export function attachmentBytes(a: { data: string }): number {
+  return Math.floor((a.data.length * 3) / 4);
+}
 
 /**
  * A file attached to a prompt. Sent inline as base64 over the WS `submit_prompt`

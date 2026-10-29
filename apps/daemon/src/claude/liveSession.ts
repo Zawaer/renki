@@ -9,7 +9,7 @@ import { unpackArchives } from "./archives.js";
 import { createRtkPreToolUseHook } from "./rtk.js";
 import { createHomelabGuardHook } from "./homelabGuard.js";
 import { MAC_FREE_TOOLS, MAC_SERVER, type MacCallIds, createMacApprovalHook } from "../mac/tools.js";
-import { RENKI_SERVER, SUGGEST_REPLIES_TOOL, createRepliesMcpServer } from "./replies.js";
+import { RENKI_SERVER, SUGGEST_REPLIES_TOOL, createRepliesMcpServer, createRepliesStopHook } from "./replies.js";
 import {
   type BlockTracking,
   type PermissionResolver,
@@ -270,7 +270,7 @@ export class LiveClaudeSession {
       ...(opts.model ? { model: opts.model } : {}),
       ...(opts.maxThinkingTokens != null ? { maxThinkingTokens: opts.maxThinkingTokens } : {}),
       ...(opts.forcePermissionPrompts ? { settingSources: [] } : {}),
-      ...(preToolUseHooks.length ? { hooks: { PreToolUse: preToolUseHooks } } : {}),
+      hooks: { ...(preToolUseHooks.length ? { PreToolUse: preToolUseHooks } : {}), PostToolUse: [createRepliesStopHook()] },
       mcpServers: { [RENKI_SERVER]: createRepliesMcpServer(), ...(opts.mac ? { [MAC_SERVER]: opts.mac.server } : {}) },
       allowedTools: [SUGGEST_REPLIES_TOOL, ...(opts.mac ? MAC_FREE_TOOLS : [])],
       // Route every permission decision through the current resolver. Only

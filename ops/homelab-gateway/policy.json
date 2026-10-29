@@ -10,12 +10,12 @@
         "scout"
       ]
     },
-    "shopping-tool": {
+    "pihi": {
       "mode": "deploy",
-      "dir": "shopping-tool",
+      "dir": "pihi",
       "git": true,
       "services": [
-        "shopping-tool"
+        "pihi"
       ]
     },
     "scout-tool": {

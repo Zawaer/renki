@@ -36,10 +36,11 @@ export type AccountUsageExtra = z.infer<typeof AccountUsageExtra>;
 
 /**
  * One limit window claude.ai reports, straight from its `limits` array. A plan
- * has more than the two Renki used to model: the 5-hour session window, a weekly
- * cap across all models, AND a separate weekly cap per premium model (Opus,
- * Fable), each with its own reset. Any of them can be the one that blocks you,
- * so all of them are shown.
+ * has more than the two Renki used to model: a weekly cap across all models, a
+ * separate weekly cap per premium model (Opus, Fable), and the 5-hour session
+ * window on plans that still have one (verified Ultra accounts don't since
+ * 30 Oct 2026). Any of them can be the one that blocks you, so all of them are
+ * shown, and none of them is assumed to be there.
  */
 export const AccountUsageLimit = z.object({
   /**
@@ -55,12 +56,13 @@ export const AccountUsageLimit = z.object({
   resetsAt: z.string().nullable(),
   /** claude.ai's own severity: "normal" | "warning" | "critical" (unknown values render as normal). */
   severity: z.string(),
-  /** True for the window currently being consumed — the 5-hour one while you work. */
+  /** True for the window currently being consumed — the 5-hour one while you work, when the plan has one. */
   isActive: z.boolean(),
 });
 export type AccountUsageLimit = z.infer<typeof AccountUsageLimit>;
 
 export const AccountUsage = z.object({
+  /** 0% with no reset on a plan without a 5-hour window; read `limits` to tell the two apart. */
   fiveHour: AccountUsageWindow,
   sevenDay: AccountUsageWindow,
   /**
@@ -72,6 +74,19 @@ export const AccountUsage = z.object({
   extra: AccountUsageExtra.nullable(),
 });
 export type AccountUsage = z.infer<typeof AccountUsage>;
+
+/**
+ * One line for an account's usage — "5h 8% · 7d 42% · Fable 0%" — naming only
+ * the windows the plan actually has, so a plan without a 5-hour window
+ * doesn't read as "5h 0%".
+ */
+export function usageSummary(usage: AccountUsage): string {
+  const short = (l: AccountUsageLimit) => (l.kind === "session" ? "5h" : l.kind === "weekly_all" ? "7d" : l.label);
+  const parts = usage.limits?.length
+    ? usage.limits.map((l) => `${short(l)} ${Math.round(l.pct)}%`)
+    : [`5h ${Math.round(usage.fiveHour.pct)}%`, `7d ${Math.round(usage.sevenDay.pct)}%`];
+  return parts.join(" · ");
+}
 
 /**
  * One organization a session key can see, with its current usage. A claude.ai

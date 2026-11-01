@@ -345,7 +345,7 @@ function AccountsSection() {
   return (
     <Card
       title="Claude accounts"
-      description="The Claude logins the daemon can run sessions as. One is active at a time. Connect usage tracking on an account to see its 5-hour and 7-day limits, and to let auto-switch move to whichever account still has headroom."
+      description="The Claude logins the daemon can run sessions as. One is active at a time. Connect usage tracking on an account to see its usage limits, and to let auto-switch move to whichever account still has headroom."
     >
       {!data ? (
         <div className="flex flex-col gap-2" aria-busy="true" aria-label="Loading accounts">
@@ -449,7 +449,7 @@ function RotationSettings({
         <div className="min-w-0">
           <div className="text-[13px] font-medium text-(--renki-fg)">Auto-switch accounts</div>
           <div className="mt-0.5 text-xs text-(--renki-fg-muted)">
-            When the active account's 5-hour or 7-day usage crosses the threshold, switch to one with headroom. Never mid-turn.
+            When the active account's usage crosses the threshold on any limit, switch to one with headroom. Never mid-turn.
           </div>
         </div>
         <Switch checked={rotation.enabled} disabled={busy} onChange={toggleEnabled} label="Auto-switch accounts" />

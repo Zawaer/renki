@@ -41,9 +41,10 @@ class HttpError extends Error {
 
 /**
  * Every limit window in claude.ai's `limits` array, labelled for display.
- * A plan has three at once — the 5-hour session window, a weekly cap across
- * all models, and a separate weekly cap for a premium model (`weekly_scoped`,
- * carrying `scope.model.display_name`) — and any of them can be what blocks
+ * A plan has up to three at once — a weekly cap across all models, a separate
+ * weekly cap for a premium model (`weekly_scoped`, carrying
+ * `scope.model.display_name`), and the 5-hour session window on plans that
+ * still have one (verified Ultra doesn't) — and any of them can be what blocks
  * the next prompt. Unknown kinds are kept rather than dropped, so a new window
  * type shows up as soon as the API reports it.
  */

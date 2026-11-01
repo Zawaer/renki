@@ -4,9 +4,10 @@ import type { AccountUsage, AccountUsageExtra, AccountUsageLimit } from "@renki/
 /**
  * A plan's usage, one card per window claude.ai actually reports.
  *
- * There are three at once — a 5-hour rolling session window, a weekly cap
- * across all models, and a separate weekly cap for a premium model like Opus
- * or Fable — and any one of them can be what stops the next prompt. Renki used
+ * Up to three at once — a weekly cap across all models, a separate weekly cap
+ * for a premium model like Opus or Fable, and a 5-hour rolling session window
+ * on plans that still have one (verified Ultra doesn't) — and any one of them
+ * can be what stops the next prompt. Renki used
  * to show only the first two, so a model-specific allowance running out was
  * invisible until a turn failed.
  *

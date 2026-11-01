@@ -4,7 +4,7 @@ import { createInterface } from "node:readline/promises";
 import { promisify } from "node:util";
 import { parseArgs } from "node:util";
 import { encodePairing } from "@renki/client-core";
-import type { SessionEvent } from "@renki/protocol";
+import { type AccountUsage, type SessionEvent, usageSummary } from "@renki/protocol";
 import QRCode from "qrcode";
 import { loadConfig } from "./config.js";
 import { openDb } from "./db/index.js";
@@ -103,11 +103,9 @@ async function main() {
   if (command === "usage") {
     const { UsageReader } = await import("./accounts/usage.js");
     const reader = new UsageReader(config.usageConfigPath, config.usageBaseUrl);
-    const printOrgs = (
-      orgs: { orgId: string; name: string; usage: { fiveHour: { pct: number }; sevenDay: { pct: number } } | null }[],
-    ) => {
+    const printOrgs = (orgs: { orgId: string; name: string; usage: AccountUsage | null }[]) => {
       for (const o of orgs) {
-        const u = o.usage ? `5h ${o.usage.fiveHour.pct}% · 7d ${o.usage.sevenDay.pct}%` : "no usage data";
+        const u = o.usage ? usageSummary(o.usage) : "no usage data";
         console.log(`${o.orgId}\t${u}\t${o.name}`);
       }
       console.log("\nConnect one with: renki usage connect <key> <orgId>");
@@ -141,7 +139,7 @@ async function main() {
       const orgId = rest[2];
       if (!key || !orgId) return fail("usage: renki usage connect <sessionKey> <orgId>  (list orgs: renki usage orgs <key>)");
       const id = await reader.addKey(key, orgId);
-      console.log(`connected ${id.email ?? "(email unknown)"} — 5h ${id.usage.fiveHour.pct}% · 7d ${id.usage.sevenDay.pct}%`);
+      console.log(`connected ${id.email ?? "(email unknown)"} — ${usageSummary(id.usage)}`);
       return;
     }
     if (rest[0] === "disconnect") {

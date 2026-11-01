@@ -1,4 +1,4 @@
-import type { UsageOrg } from "@renki/protocol";
+import { type UsageOrg, usageSummary } from "@renki/protocol";
 import { useState } from "react";
 import { useClient } from "../lib/client.js";
 
@@ -118,8 +118,7 @@ export function UsageConnect({
     );
   }
 
-  const fmt = (o: UsageOrg) =>
-    o.usage ? `5h ${Math.round(o.usage.fiveHour.pct)}% · 7d ${Math.round(o.usage.sevenDay.pct)}%` : "no usage data";
+  const fmt = (o: UsageOrg) => (o.usage ? usageSummary(o.usage) : "no usage data");
 
   return (
     <div className="w-full space-y-2 rounded-xl bg-(--renki-bg-inset)/70 p-3.5">

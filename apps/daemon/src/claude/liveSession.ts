@@ -497,12 +497,12 @@ export class LiveClaudeSession {
     if (!resolver) return { behavior: "deny", message: "No controller available." };
 
     this.opts.emit({ kind: "permission_request", requestId, turnId, toolName, toolInput: input });
-    const { decision, byDeviceId, updatedInput } = await resolver({ requestId, turnId, toolName, toolInput: input, signal });
+    const { decision, byDeviceId, updatedInput, message } = await resolver({ requestId, turnId, toolName, toolInput: input, signal });
     this.opts.emit({ kind: "permission_resolved", requestId, decision, byDeviceId });
 
     return decision === "allow"
       ? { behavior: "allow", updatedInput: updatedInput ?? input }
-      : { behavior: "deny", message: "Denied by controller." };
+      : { behavior: "deny", message: message ?? "Denied by controller." };
   }
 
   private async consume(): Promise<void> {

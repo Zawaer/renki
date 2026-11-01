@@ -91,7 +91,7 @@ describe("PermissionBroker", () => {
 
     await vi.advanceTimersByTimeAsync(TIMEOUT_MS);
 
-    await expect(promise).resolves.toEqual({ decision: "deny", byDeviceId: null });
+    await expect(promise).resolves.toEqual({ decision: "deny", byDeviceId: null, message: "No answer within 1 minute, so this was not run. The user may be away." });
     expect(broker.has("r_1")).toBe(false);
   });
 
@@ -100,6 +100,27 @@ describe("PermissionBroker", () => {
     broker.resolverFor("s_1")(fakeRequest("r_1")).catch(() => {});
     await vi.advanceTimersByTimeAsync(TIMEOUT_MS - 1);
     expect(broker.has("r_1")).toBe(true);
+  });
+
+  it("never times out a question: AskUserQuestion waits until answered", async () => {
+    const broker = new PermissionBroker(TIMEOUT_MS);
+    const promise = broker.resolverFor("s_1")(fakeRequest("r_1", { toolName: "AskUserQuestion" }));
+
+    await vi.advanceTimersByTimeAsync(TIMEOUT_MS * 60);
+    expect(broker.has("r_1")).toBe(true);
+
+    broker.answer("r_1", "allow", "d_phone", { questions: [], answers: {} });
+    await expect(promise).resolves.toMatchObject({ decision: "allow", byDeviceId: "d_phone" });
+  });
+
+  it("still settles a waiting question when Claude cancels it", async () => {
+    const broker = new PermissionBroker(TIMEOUT_MS);
+    const abort = new AbortController();
+    const promise = broker.resolverFor("s_1")({ ...fakeRequest("r_1", { toolName: "AskUserQuestion" }), signal: abort.signal });
+
+    abort.abort();
+    await expect(promise).resolves.toEqual({ decision: "deny", byDeviceId: null });
+    expect(broker.has("r_1")).toBe(false);
   });
 
   it("tracks multiple pending requests across different sessions independently", async () => {
@@ -117,7 +138,7 @@ describe("PermissionBroker", () => {
     await expect(p1).resolves.toEqual({ decision: "deny", byDeviceId: "d_web" });
 
     await vi.advanceTimersByTimeAsync(TIMEOUT_MS);
-    await expect(p2).resolves.toEqual({ decision: "deny", byDeviceId: null });
+    await expect(p2).resolves.toEqual({ decision: "deny", byDeviceId: null, message: "No answer within 1 minute, so this was not run. The user may be away." });
   });
 
   it("sessionOf returns undefined for a request that was never registered or already settled", () => {

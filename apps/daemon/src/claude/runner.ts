@@ -38,6 +38,8 @@ export type PermissionOutcome = {
   byDeviceId: string | null;
   /** Replaces the tool's original input on an "allow" (e.g. AskUserQuestion's answers). */
   updatedInput?: Record<string, unknown>;
+  /** What Claude is told on a deny that no one chose (e.g. a timeout). */
+  message?: string;
 };
 
 /** Caller-supplied policy: decide (possibly by asking a remote controller). */

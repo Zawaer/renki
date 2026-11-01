@@ -15,11 +15,15 @@ import type { PermissionOutcome, PermissionRequest } from "../claude/runner.js";
  * Safety net: if nobody answers within the timeout, we auto-DENY. A stuck
  * permission must never hang a session forever, and denying is the safe default
  * (Claude gets told "no" and can carry on or stop).
+ *
+ * AskUserQuestion is exempt: a question asks for the user's input rather than
+ * guarding a risky action, and the user may take a while over it. It waits
+ * until answered or until the turn is stopped.
  */
 export class PermissionBroker {
   private readonly pending = new Map<
     string,
-    { sessionId: string; settle: (o: PermissionOutcome) => void; timer: NodeJS.Timeout }
+    { sessionId: string; settle: (o: PermissionOutcome) => void; timer: NodeJS.Timeout | undefined }
   >();
 
   constructor(private readonly timeoutMs: number) {}
@@ -28,13 +32,21 @@ export class PermissionBroker {
   resolverFor(sessionId: string): (req: PermissionRequest) => Promise<PermissionOutcome> {
     return (req) =>
       new Promise<PermissionOutcome>((resolve) => {
-        const timer = setTimeout(() => {
-          this.pending.delete(req.requestId);
-          logger.warn("permission timed out; denying", { sessionId, requestId: req.requestId });
-          resolve({ decision: "deny", byDeviceId: null });
-        }, this.timeoutMs);
-        // Unref so a pending permission never keeps the process alive on its own.
-        timer.unref?.();
+        let timer: NodeJS.Timeout | undefined;
+        if (req.toolName !== "AskUserQuestion") {
+          const minutes = Math.max(1, Math.round(this.timeoutMs / 60_000));
+          timer = setTimeout(() => {
+            this.pending.delete(req.requestId);
+            logger.warn("permission timed out; denying", { sessionId, requestId: req.requestId });
+            resolve({
+              decision: "deny",
+              byDeviceId: null,
+              message: `No answer within ${minutes} minute${minutes === 1 ? "" : "s"}, so this was not run. The user may be away.`,
+            });
+          }, this.timeoutMs);
+          // Unref so a pending permission never keeps the process alive on its own.
+          timer.unref?.();
+        }
 
         this.pending.set(req.requestId, { sessionId, settle: resolve, timer });
 

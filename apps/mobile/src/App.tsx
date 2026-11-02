@@ -402,6 +402,8 @@ function Main({
       onOpenSettings={() => setShowSettings(true)}
       onOpenStats={() => setShowStats(true)}
       onOpenSearch={() => setShowSearch(true)}
+      hostsState={hostsState}
+      onHostsChange={onHostsChange}
     />
   );
   }

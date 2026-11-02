@@ -33,7 +33,11 @@ export async function pickImageAttachments(remaining: number): Promise<Array<Pen
     mediaTypes: ["images"],
     allowsMultipleSelection: true,
     selectionLimit: remaining,
-    quality: 1,
+    // Re-encoded at the web's shrink quality: a full-quality phone photo is
+    // several MB and eats the per-message budget for little visible gain.
+    // (Scaling down to MAX_IMAGE_EDGE as well needs an image module the
+    // installed app doesn't have yet.)
+    quality: 0.85,
   });
   if (result.canceled) return [];
 

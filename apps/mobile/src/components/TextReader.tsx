@@ -32,6 +32,11 @@ export function TextReaderProvider({ children }: { children: React.ReactNode }) 
   );
 }
 
+/** Opens text in the reader directly: for a button, where a long-press would be hidden (a code block's copy button). */
+export function useOpenReader(): (reading: Reading) => void {
+  return useContext(ReaderContext);
+}
+
 /** Wraps a message so a long-press opens it in the reader. Taps and scrolling pass through untouched. */
 export function LongPressToRead({
   title,

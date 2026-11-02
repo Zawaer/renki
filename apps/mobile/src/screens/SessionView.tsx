@@ -10,6 +10,8 @@ import {
   formatAgo,
   formatTurnDuration,
   MAX_ATTACHMENTS_PER_PROMPT,
+  MAX_PROMPT_ATTACHMENT_BYTES,
+  attachmentBytes,
   parseAskUserQuestion,
   describeTool,
   parseEditView,
@@ -56,7 +58,7 @@ import {
 } from "@renki/client-core";
 import type { AttachmentView, CapabilitiesResponse, Session, SessionResume } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
-import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -86,6 +88,8 @@ import { SessionToolsSheet } from "../components/SessionToolsSheet";
 import { FileLinkContext, type FileLinkTarget } from "../lib/fileLinks";
 import { pickDocumentAttachments, pickImageAttachments, type PendingAttachment } from "../lib/attachments";
 import { loadDeviceDefaults, rememberDeviceDefaults } from "../lib/composerPrefs";
+import { clearDraft, loadDraft, saveDraft } from "../lib/drafts";
+import { randomUUID } from "expo-crypto";
 import { useClient, useStoreValue } from "../lib/client";
 import { ExportSheet } from "../components/ExportSheet";
 import { useAndroidKeyboardResizeAnimation } from "../lib/useAndroidKeyboardResizeAnimation";
@@ -139,6 +143,36 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
     realtime.watch(sessionId);
     return () => realtime.unwatch(sessionId);
   }, [realtime, sessionId]);
+
+  // What you typed here and haven't sent comes back when you return (see lib/drafts).
+  // Nothing is saved until the stored draft has been read, so an empty composer can't overwrite it.
+  const draftLoaded = useRef(false);
+  const draftNow = useRef({ text: "", attachments: [] as PendingAttachment[] });
+  draftNow.current = { text, attachments };
+  useEffect(() => {
+    let cancelled = false;
+    draftLoaded.current = false;
+    void loadDraft(sessionId).then((draft) => {
+      if (cancelled) return;
+      if (draft) {
+        setText((t) => t || draft.text);
+        setAttachments((prev) => (prev.length > 0 ? prev : draft.attachments.map((a) => ({ ...a, id: randomUUID() }))));
+        if (draft.attachmentsDropped) setAttachError("Your draft's attachments were too large to keep. Attach them again.");
+      }
+      draftLoaded.current = true;
+    });
+    return () => {
+      cancelled = true;
+      if (!draftLoaded.current) return;
+      const { text: t, attachments: a } = draftNow.current;
+      saveDraft(sessionId, t, a.map(({ id: _id, ...rest }) => rest));
+    };
+  }, [sessionId]);
+  useEffect(() => {
+    if (!draftLoaded.current) return;
+    const id = setTimeout(() => saveDraft(sessionId, text, attachments.map(({ id: _id, ...a }) => a)), 250);
+    return () => clearTimeout(id);
+  }, [sessionId, text, attachments]);
 
   useAndroidKeyboardResizeAnimation();
 
@@ -362,12 +396,25 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
     setText("");
     setAttachments([]);
     setAttachError(null);
+    clearDraft(sessionId);
   }
 
   /** Appends whatever came back from a picker, surfacing the first error (if any) below the composer. */
   function addPicked(results: Array<PendingAttachment | { error: string }>) {
-    const accepted = results.filter((r): r is PendingAttachment => !("error" in r));
     const errors = results.filter((r): r is { error: string } => "error" in r).map((r) => r.error);
+    // The whole message has to fit in one API request: keep files in order
+    // until the next one wouldn't fit, as on the web.
+    let total = attachments.reduce((sum, a) => sum + attachmentBytes(a), 0);
+    const accepted: PendingAttachment[] = [];
+    for (const r of results) {
+      if ("error" in r) continue;
+      total += attachmentBytes(r);
+      if (total > MAX_PROMPT_ATTACHMENT_BYTES) {
+        errors.unshift(`Attachments can be ${MAX_PROMPT_ATTACHMENT_BYTES / (1024 * 1024)}MB per message in total. Dropped ${r.name} and any after it.`);
+        break;
+      }
+      accepted.push(r);
+    }
     if (accepted.length > 0) setAttachments((prev) => [...prev, ...accepted]);
     setAttachError(errors[0] ?? null);
   }
@@ -395,7 +442,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   }
 
   const selectedModel = capabilities.models.find((m) => m.value === model);
-  const modelLabel = selectedModel ? modelFullName(selectedModel) : "Default";
+  const modelLabel = selectedModel ? modelFullName(selectedModel) : model || "Default";
 
   return (
     <FileLinkContext.Provider value={fileLinks}>
@@ -778,14 +825,28 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
         visible={modelSheetOpen}
         onClose={() => setModelSheetOpen(false)}
         title="Select model"
-        options={capabilities.models.map((m) => {
-          const { title, subtitle } = modelMenuLabel(m);
-          return { key: m.value, label: title, description: subtitle };
-        })}
+        options={[
+          ...capabilities.models.map((m) => {
+            const { title, subtitle } = modelMenuLabel(m);
+            return { key: m.value, label: title, description: subtitle };
+          }),
+          // A model entered by ID stays visible, and ticked, while it's the pick.
+          ...(model && !selectedModel ? [{ key: model, label: model, description: "Entered by ID" }] : []),
+        ]}
         selectedKey={model}
         onSelect={setModel}
         colors={colors}
         styles={styles}
+        footer={
+          <CustomModelField
+            onUse={(id) => {
+              setModel(id);
+              setModelSheetOpen(false);
+            }}
+            colors={colors}
+            styles={styles}
+          />
+        }
       />
       <PickerSheet
         visible={effortSheetOpen}
@@ -844,6 +905,7 @@ function PickerSheet({
   onSelect,
   colors,
   styles,
+  footer,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -853,6 +915,8 @@ function PickerSheet({
   onSelect: (key: string) => void;
   colors: ThemeColors;
   styles: Styles;
+  /** Shown under the options, inside the scroll (the model sheet's "enter an ID" field). */
+  footer?: ReactNode;
 }) {
   return (
     <Sheet visible={visible} onClose={onClose} title={title} colors={colors}>
@@ -876,8 +940,41 @@ function PickerSheet({
             </TouchableOpacity>
           );
         })}
+        {footer}
       </ScrollView>
     </Sheet>
+  );
+}
+
+/** "Not listed? Enter a model ID": for a model the CLI doesn't list yet, as on the web. */
+function CustomModelField({ onUse, colors, styles }: { onUse: (id: string) => void; colors: ThemeColors; styles: Styles }) {
+  const [value, setValue] = useState("");
+  const id = value.trim();
+  const use = () => {
+    if (!id) return;
+    onUse(id);
+    setValue("");
+  };
+  return (
+    <View style={styles.customModel}>
+      <Text style={styles.pickerRowDesc}>Not listed? Enter a model ID:</Text>
+      <View style={styles.customModelRow}>
+        <TextInput
+          value={value}
+          onChangeText={setValue}
+          onSubmitEditing={use}
+          placeholder="claude-fable-5-1"
+          placeholderTextColor={colors.faint}
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="done"
+          style={styles.customModelInput}
+        />
+        <TouchableOpacity onPress={use} disabled={!id} style={[styles.customModelButton, !id && { opacity: 0.4 }]}>
+          <Text style={styles.customModelButtonText}>Use</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
@@ -1130,7 +1227,7 @@ function TimelineRowBody({
   if (item.type === "background_tasks") {
     return <BackgroundTasksRow tasks={item.tasks} colors={colors} styles={styles} />;
   }
-  return <AssistantTurn turn={item.turn} colors={colors} styles={styles} />;
+  return <AssistantTurn turn={item.turn} colors={colors} styles={styles} onPreview={onPreview} />;
 }
 
 /**
@@ -1213,7 +1310,17 @@ function BackgroundTasksRow({
   );
 }
 
-function AssistantTurn({ turn, colors, styles }: { turn: TurnView; colors: ThemeColors; styles: Styles }) {
+function AssistantTurn({
+  turn,
+  colors,
+  styles,
+  onPreview,
+}: {
+  turn: TurnView;
+  colors: ThemeColors;
+  styles: Styles;
+  onPreview: (a: Attachment) => void;
+}) {
   const label = turnTriggerLabel(turn);
   const steeredAfter = (index: number) => turn.steeredPrompts.filter((p) => p.afterBlockIndex === index);
   const todos = turnTodos(turn);
@@ -1221,7 +1328,7 @@ function AssistantTurn({ turn, colors, styles }: { turn: TurnView; colors: Theme
     <View style={styles.turn}>
       {label && <Text style={styles.meta}>{label}</Text>}
       {steeredAfter(-1).map((p) => (
-        <SteeredPrompt key={p.promptId} prompt={p} styles={styles} />
+        <SteeredPrompt key={p.promptId} prompt={p} colors={colors} styles={styles} onPreview={onPreview} />
       ))}
       {groupTurnBlocks(turn.blocks, new Set(turn.steeredPrompts.map((p) => p.afterBlockIndex))).map((seg) => {
         const last = seg.kind === "group" ? seg.items[seg.items.length - 1]!.index : seg.index;
@@ -1234,7 +1341,7 @@ function AssistantTurn({ turn, colors, styles }: { turn: TurnView; colors: Theme
             )}
             <ToolImages images={segmentImages(seg)} styles={styles} />
             {steeredAfter(last).map((p) => (
-              <SteeredPrompt key={p.promptId} prompt={p} styles={styles} />
+              <SteeredPrompt key={p.promptId} prompt={p} colors={colors} styles={styles} onPreview={onPreview} />
             ))}
           </Fragment>
         );
@@ -1340,10 +1447,27 @@ function FilesChanged({ changes, colors, styles }: { changes: FileChange[]; colo
 }
 
 /** A prompt sent while this turn was already running — shown inside the turn, where Claude picked it up. */
-function SteeredPrompt({ prompt, styles }: { prompt: SteeredPromptView; styles: Styles }) {
+function SteeredPrompt({
+  prompt,
+  colors,
+  styles,
+  onPreview,
+}: {
+  prompt: SteeredPromptView;
+  colors: ThemeColors;
+  styles: Styles;
+  onPreview: (a: Attachment) => void;
+}) {
   return (
     <LongPressToRead title="Your message" text={prompt.text} style={[styles.promptWrap, styles.steeredWrap]}>
       {prompt.text.length > 0 && <Text style={styles.promptText}>{prompt.text}</Text>}
+      {prompt.attachments && prompt.attachments.length > 0 && (
+        <View style={styles.attachRow}>
+          {prompt.attachments.map((a, i) => (
+            <AttachmentChip key={i} attachment={a} colors={colors} styles={styles} onPreview={onPreview} />
+          ))}
+        </View>
+      )}
       <Text style={styles.meta}>Sent while Claude was working</Text>
     </LongPressToRead>
   );
@@ -1499,17 +1623,24 @@ function ToolStep({
           ) : plan ? (
             <Markdown content={plan} />
           ) : (
-            <Text style={styles.toolBody}>{truncate(JSON.stringify(block.toolInput), 300)}</Text>
+            // A shell command reads as the command, anything else as indented JSON; as long as the web shows.
+            <Text style={styles.toolBody}>
+              {typeof (block.toolInput as { command?: unknown } | null)?.command === "string"
+                ? `$ ${truncate((block.toolInput as { command: string }).command, 800)}`
+                : truncate(JSON.stringify(block.toolInput, null, 2), 800)}
+            </Text>
           )}
           {block.result && (
             <Text style={[styles.toolBody, !block.result.ok && styles.errText]}>
               {block.result.ok ? "" : "error: "}
-              {truncate(block.result.summary, 300)}
+              {truncate(block.result.summary, 800)}
             </Text>
           )}
           {block.subagent && <SubagentActivity subagent={block.subagent} colors={colors} styles={styles} />}
           {block.backgroundTask && (
-            <Text style={styles.toolBody}>{truncate(block.backgroundTask.summary, 300)}</Text>
+            <Text style={styles.toolBody}>
+              {truncate(block.backgroundTask.summary, 800)}
+            </Text>
           )}
         </View>
       )}
@@ -2163,6 +2294,19 @@ const makeStyles = (colors: ThemeColors) =>
     attachName: { flex: 1, color: colors.text, fontSize: 11 },
     attachError: { color: colors.danger, fontSize: 12, paddingHorizontal: 16, paddingTop: 4 },
     pickerList: { paddingHorizontal: 14, gap: 8, paddingBottom: 8 },
+    customModel: { marginTop: 8, gap: 8, paddingHorizontal: 4 },
+    customModelRow: { flexDirection: "row", gap: 8 },
+    customModelInput: {
+      flex: 1,
+      color: colors.text,
+      fontSize: 14,
+      backgroundColor: colors.inset,
+      borderRadius: radius.md,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    customModelButton: { justifyContent: "center", paddingHorizontal: 16, borderRadius: radius.md, backgroundColor: colors.accent },
+    customModelButtonText: { color: colors.accentFg, fontSize: 14, fontWeight: "600" },
     pickerRow: {
       flexDirection: "row",
       alignItems: "center",

@@ -1,10 +1,12 @@
 import { createContext, memo, type ReactElement, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Platform, ScrollView, StyleSheet, type TextStyle, View, type ViewStyle } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { Platform, ScrollView, StyleSheet, Text, type TextStyle, TouchableOpacity, View, type ViewStyle } from "react-native";
 import MarkdownDisplay, { MarkdownIt } from "react-native-markdown-display";
 import { radius, type ThemeColors, useTheme } from "../theme";
 import { FadeIn } from "./Motion";
 import { parseFileLink } from "@renki/client-core";
 import { useFileLinkTarget } from "../lib/fileLinks";
+import { useOpenReader } from "./TextReader";
 
 /** A node of the lib's markdown AST, as handed to a render rule. */
 type MdNode = {
@@ -123,6 +125,33 @@ function TableCell({ index, children }: { index: number; children: ReactNode }) 
   return <View style={{ width: widths?.[index] ?? COL_MIN, paddingHorizontal: CELL_PAD_X, paddingVertical: 8 }}>{children}</View>;
 }
 
+/**
+ * Code blocks get a copy button that opens just the code in the reader, where
+ * it selects and copies like any Android text. Selecting it in place isn't an
+ * option (see TextReader), and long-pressing the reply copies the whole
+ * reply, not the command you wanted.
+ */
+function makeCodeRules(colors: ThemeColors, openReader: ReturnType<typeof useOpenReader>): Record<string, RenderRule> {
+  const code: RenderRule = (node, _children, _parent, styles, inheritedStyles = {}) => {
+    const text = (node.content ?? "").replace(/\n$/, "");
+    return (
+      <View key={node.key}>
+        <Text style={[inheritedStyles, styles[node.type], { paddingRight: 40 }]}>{text}</Text>
+        <TouchableOpacity
+          onPress={() => openReader({ title: "Code", text })}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel="Open code to copy"
+          style={{ position: "absolute", top: 8, right: 8, padding: 4 }}
+        >
+          <Ionicons name="copy-outline" size={15} color={colors.dim} />
+        </TouchableOpacity>
+      </View>
+    );
+  };
+  return { fence: code, code_block: code };
+}
+
 function makeTableRules(colors: ThemeColors): Record<string, RenderRule> {
   const cell: RenderRule = (node, children) => (
     <TableCell key={node.key} index={node.index}>
@@ -220,7 +249,8 @@ export const Markdown = memo(function Markdown({
   onLinkPress?: LinkPressHandler;
 }) {
   const colors = useTheme();
-  const rules = useMemo(() => makeTableRules(colors), [colors]);
+  const openReader = useOpenReader();
+  const rules = useMemo(() => ({ ...makeTableRules(colors), ...makeCodeRules(colors, openReader) }), [colors, openReader]);
   const fileTarget = useFileLinkTarget();
   // Every tap goes through here: a link to a file in the session's working
   // tree opens in the file sheet; any other local path is inert (the browser

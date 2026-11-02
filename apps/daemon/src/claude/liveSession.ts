@@ -9,7 +9,7 @@ import { unpackArchives } from "./archives.js";
 import { createRtkPreToolUseHook } from "./rtk.js";
 import { createHomelabGuardHook } from "./homelabGuard.js";
 import { MAC_FREE_TOOLS, MAC_SERVER, type MacCallIds, createMacApprovalHook } from "../mac/tools.js";
-import { RENKI_SERVER, SUGGEST_REPLIES_TOOL, createRepliesMcpServer, createRepliesStopHook } from "./replies.js";
+import { RENKI_SERVER, SUGGEST_REPLIES_TOOL, createRepliesGuardHook, createRepliesMcpServer, createRepliesStopHook, replyStateAfter } from "./replies.js";
 import {
   type BlockTracking,
   type PermissionResolver,
@@ -181,6 +181,8 @@ export class LiveClaudeSession {
   private readonly channel = new InputChannel();
   private readonly q: Query;
   private inflight: InflightTurn | null = null;
+  /** Whether the main thread wrote visible text since its last tool call (see createRepliesGuardHook). */
+  private replyWritten = false;
   private autoTurn: { turnId: string; promptId: string } | null = null;
   /** Prompts steered into the current turn, in delivery order — reported in its turn_result.promptIds. */
   private steered: string[] = [];
@@ -250,6 +252,7 @@ export class LiveClaudeSession {
       ...(opts.homelabBlocked ? [createHomelabGuardHook()] : []),
       ...(opts.mac ? [createMacApprovalHook(opts.mac.callIds)] : []),
       ...(opts.enableRtk ? [createRtkPreToolUseHook(opts.rtkBin ?? "rtk")] : []),
+      createRepliesGuardHook(() => this.replyWritten),
     ];
 
     if (opts.archiveDir) mkdirSync(opts.archiveDir, { recursive: true });
@@ -360,6 +363,7 @@ export class LiveClaudeSession {
       this._lastActivityAt = Date.now();
       // A notification pushed just before this would be folded into this turn.
       this.notifiedTrigger = null;
+      this.replyWritten = false;
       this.opts.emit({ kind: "turn_started", turnId, promptId: args.promptId, trigger: "prompt" });
       try {
         // `uuid` is our handle for cross-checking `result.user_message_uuid`
@@ -556,6 +560,7 @@ export class LiveClaudeSession {
     this.notifiedTrigger = null;
     logger.info("live session started an unprompted turn", { cwd: this.opts.cwd, turnId, trigger });
     this.opts.onAutoTurnStart?.(turnId, this.autoTurn.promptId);
+    this.replyWritten = false;
     this.opts.emit({ kind: "turn_started", turnId, promptId: this.autoTurn.promptId, trigger });
     return turnId;
   }
@@ -569,6 +574,7 @@ export class LiveClaudeSession {
       }
 
       case "stream_event": {
+        if (!message.parent_tool_use_id) this.replyWritten = replyStateAfter(message.event) ?? this.replyWritten;
         const turnId = this.turnFor(message.parent_tool_use_id);
         const t = this.trackingFor(message.parent_tool_use_id);
         handleStreamEvent(message.event, turnId, t.blockKinds, t.globalOffset, message.parent_tool_use_id, this.opts.emit, t.startedAt);

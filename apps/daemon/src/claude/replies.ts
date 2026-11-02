@@ -73,3 +73,42 @@ export function createRepliesStopHook(): HookCallbackMatcher {
     ],
   };
 }
+
+/**
+ * Refuses suggest_replies when no reply text was written since the last tool
+ * call. Claude sometimes answered in its thinking, which the user reads as a
+ * grey aside, or wrote its reply and then kept working, which turns that reply
+ * into mid-turn narration; either way the buttons sat under nothing. Told so,
+ * it writes the reply and calls again. Main thread only, like the stop hook.
+ */
+export function createRepliesGuardHook(hasReply: () => boolean): HookCallbackMatcher {
+  return {
+    matcher: SUGGEST_REPLIES_TOOL,
+    hooks: [
+      async (input): Promise<HookJSONOutput> => {
+        if (input.hook_event_name !== "PreToolUse" || input.tool_name !== SUGGEST_REPLIES_TOOL || input.agent_id) return { continue: true };
+        if (hasReply()) return { continue: true };
+        return {
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason:
+              "Not shown: there's no reply above the buttons. The user can't see your thinking, and text written before a tool call reads as progress. Write your reply now as plain text, explaining each choice, then call suggest_replies again.",
+          },
+        };
+      },
+    ],
+  };
+}
+
+/**
+ * Whether a main-thread stream event settles "is there a reply since the last
+ * tool call": true for visible text, false for a tool call other than
+ * suggest_replies, undefined for anything else.
+ */
+export function replyStateAfter(event: unknown): boolean | undefined {
+  const e = event as { type?: string; content_block?: { type?: string; name?: string }; delta?: { type?: string; text?: string } };
+  if (e.type === "content_block_start" && e.content_block?.type === "tool_use") return e.content_block.name === SUGGEST_REPLIES_TOOL ? undefined : false;
+  if (e.type === "content_block_delta" && e.delta?.type === "text_delta" && e.delta.text?.trim()) return true;
+  return undefined;
+}

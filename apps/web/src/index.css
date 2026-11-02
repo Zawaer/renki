@@ -291,7 +291,11 @@ input:focus-visible {
   animation: renki-alarm 2.4s ease-in-out infinite;
 }
 
-/* Skeleton placeholders: a slow sheen across an inset-toned block. */
+/*
+ * Skeleton placeholders: a slow sheen across a faint tint of the text colour.
+ * Tinting with the foreground (as the phone does) shows on every surface in
+ * both themes; the old inset tone was barely darker than the page in dark mode.
+ */
 @keyframes renki-shimmer {
   from {
     background-position: 200% 0;
@@ -304,9 +308,9 @@ input:focus-visible {
   border-radius: var(--radius-md);
   background: linear-gradient(
     90deg,
-    var(--renki-bg-inset) 0%,
-    color-mix(in oklab, var(--renki-bg-inset) 60%, var(--renki-hover)) 50%,
-    var(--renki-bg-inset) 100%
+    color-mix(in oklab, var(--renki-fg) 7%, transparent) 0%,
+    color-mix(in oklab, var(--renki-fg) 13%, transparent) 50%,
+    color-mix(in oklab, var(--renki-fg) 7%, transparent) 100%
   );
   background-size: 200% 100%;
   animation: renki-shimmer 1.8s ease-in-out infinite;

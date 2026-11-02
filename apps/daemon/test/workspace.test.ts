@@ -108,4 +108,16 @@ describe("listWorkspaceDir / readWorkspaceFile", () => {
     expect(await readWorkspaceFile(dir, "README.md")).toMatchObject({ content: "# demo\n", binary: false, truncated: false });
     expect(await readWorkspaceFile(dir, "logo.png")).toMatchObject({ content: null, binary: true });
   });
+
+  it("sends an image inline so the Files panel can show it; other binaries stay content-less", async () => {
+    const dir = repo();
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]);
+    writeFileSync(join(dir, "Photo.PNG"), png);
+    writeFileSync(join(dir, "blob.bin"), Buffer.from([0x00, 0x01]));
+
+    expect((await readWorkspaceFile(dir, "Photo.PNG")).image).toEqual({ mediaType: "image/png", data: png.toString("base64") });
+    const bin = await readWorkspaceFile(dir, "blob.bin");
+    expect(bin).toMatchObject({ binary: true, content: null });
+    expect(bin.image).toBeUndefined();
+  });
 });

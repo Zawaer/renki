@@ -1,7 +1,7 @@
 import { RestError, splitTokenLines, syntaxLanguageForPath, tokenize } from "@renki/client-core";
 import type { WorkspaceFileResponse } from "@renki/protocol";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, FlatList, Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
 import { useClient } from "../lib/client";
 import { FileLinkContext, useFileLinkTarget } from "../lib/fileLinks";
 import { radius, type ThemeColors, useTheme } from "../theme";
@@ -85,7 +85,16 @@ export function FileBody({ sessionId, file, colors }: { sessionId: string; file:
   let body: React.ReactNode;
   if (error) body = <Text style={styles.note}>{error}</Text>;
   else if (!data) body = <ActivityIndicator style={{ marginTop: 24 }} color={colors.dim} />;
-  else if (data.binary) body = <Text style={styles.note}>Binary file — nothing to show as text.</Text>;
+  else if (data.image) {
+    body = (
+      <Image
+        source={{ uri: `data:${data.image.mediaType};base64,${data.image.data}` }}
+        style={{ width: "100%", height: bodyHeight }}
+        resizeMode="contain"
+        accessibilityLabel={file.path}
+      />
+    );
+  } else if (data.binary) body = <Text style={styles.note}>Binary file, nothing to show as text.</Text>;
   else if (rendered) {
     body = (
       <ScrollView style={{ height: bodyHeight }} contentContainerStyle={styles.mdBody}>

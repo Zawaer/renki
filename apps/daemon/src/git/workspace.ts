@@ -24,6 +24,9 @@ import { simpleGit } from "simple-git";
 const MAX_BYTES = 512 * 1024;
 /** How much of a file to sniff for a NUL byte when deciding it's binary. */
 const SNIFF_BYTES = 8 * 1024;
+/** Images the Files panel shows, by extension, and the largest it's sent inline. */
+const IMAGE_TYPES: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" };
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 export class WorkspacePathError extends Error {}
 
@@ -188,6 +191,11 @@ export async function readWorkspaceFile(root: string, rel: string): Promise<Work
   const abs = await safePath(root, rel);
   const info = await stat(abs);
   if (!info.isFile()) throw new WorkspacePathError("Not a file.");
+  const mediaType = IMAGE_TYPES[rel.slice(rel.lastIndexOf(".") + 1).toLowerCase()];
+  if (mediaType && info.size <= MAX_IMAGE_BYTES) {
+    const data = (await readHead(abs, info.size)).toString("base64");
+    return { path: rel, size: info.size, content: null, binary: true, truncated: false, image: { mediaType, data } };
+  }
   const sniff = await readHead(abs, Math.min(info.size, SNIFF_BYTES));
   if (sniff.includes(0)) return { path: rel, size: info.size, content: null, binary: true, truncated: false };
   const truncated = info.size > MAX_BYTES;

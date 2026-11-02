@@ -357,8 +357,16 @@ function FilesTab({ sessionId, openRequest }: { sessionId: string; openRequest: 
           <PanelNote>{fileError}</PanelNote>
         ) : !file ? (
           <PanelSkeleton />
+        ) : file.image ? (
+          <div className="p-4">
+            <img
+              src={`data:${file.image.mediaType};base64,${file.image.data}`}
+              alt={openFile}
+              className="mx-auto max-h-[75vh] max-w-full rounded-md bg-[repeating-conic-gradient(var(--renki-surface)_0_25%,transparent_0_50%)] bg-size-[16px_16px] object-contain"
+            />
+          </div>
         ) : file.binary ? (
-          <PanelNote>Binary file — nothing to show as text.</PanelNote>
+          <PanelNote>Binary file, nothing to show as text.</PanelNote>
         ) : (
           <FileViewer key={openFile} path={openFile} content={file.content ?? ""} line={line} onOpenFile={open} />
         )}

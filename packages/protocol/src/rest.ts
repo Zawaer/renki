@@ -385,13 +385,18 @@ export const WorkspaceDirResponse = z.object({
 });
 export type WorkspaceDirResponse = z.infer<typeof WorkspaceDirResponse>;
 
-/** A file from the working tree. `content` is null for a binary file; `truncated` when it was cut at the size cap. */
+/**
+ * A file from the working tree. `content` is null for a binary file; `truncated` when it was cut at the size cap.
+ * `image` carries a PNG/JPEG/GIF/WebP inline (base64) so the Files panel can show it: clients fetch with an
+ * auth header, which a plain `<img src>` URL couldn't send.
+ */
 export const WorkspaceFileResponse = z.object({
   path: z.string(),
   size: z.number().int(),
   content: z.string().nullable(),
   binary: z.boolean(),
   truncated: z.boolean(),
+  image: z.object({ mediaType: z.string(), data: z.string() }).optional(),
 });
 export type WorkspaceFileResponse = z.infer<typeof WorkspaceFileResponse>;
 

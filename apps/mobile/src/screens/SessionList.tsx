@@ -12,9 +12,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, FlatList, Keyboard, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { FadeIn, Skeleton } from "../components/Motion";
+import { animateLayout, FadeIn, Skeleton } from "../components/Motion";
 import { Sheet } from "../components/Sheet";
 import { useClient } from "../lib/client";
+import { loadCollapsedGroups, saveCollapsedGroups } from "../lib/sessionListPrefs";
 import { ExportSheet } from "../components/ExportSheet";
 import { NewChatSheet } from "../components/NewChatSheet";
 import { radius, statusColorFor, type ThemeColors, useTheme, withAlpha } from "../theme";
@@ -24,10 +25,12 @@ export function SessionList({
   onSelect,
   onOpenSettings,
   onOpenStats,
+  onOpenSearch,
 }: {
   onSelect: (id: string) => void;
   onOpenSettings: () => void;
   onOpenStats: () => void;
+  onOpenSearch: () => void;
 }) {
   const colors = useTheme();
   const statusColor = statusColorFor(colors);
@@ -40,6 +43,10 @@ export function SessionList({
   const [loaded, setLoaded] = useState(lastSessions !== null);
   const [wasLoadedAtMount] = useState(lastSessions !== null);
   const [creating, setCreating] = useState(false);
+  // Folded repo groups, remembered on the device; Archived and Trash start folded every time, as on the web.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => lastCollapsed ?? new Set());
+  const [showArchived, setShowArchived] = useState(false);
+  const [showTrash, setShowTrash] = useState(false);
   const setSessions = useCallback((next: Session[] | ((prev: Session[]) => Session[])) => {
     setSessionsState((prev) => {
       const value = typeof next === "function" ? next(prev) : next;
@@ -65,6 +72,35 @@ export function SessionList({
     const t = setInterval(refresh, 30_000);
     return () => clearInterval(t);
   }, [refresh]);
+
+  useEffect(() => {
+    if (lastCollapsed) return;
+    let live = true;
+    loadCollapsedGroups().then((keys) => {
+      lastCollapsed = keys;
+      if (live) setCollapsed(keys);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  function toggleGroup(key: string) {
+    animateLayout();
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      lastCollapsed = next;
+      saveCollapsedGroups(next);
+      return next;
+    });
+  }
+
+  function toggleSection(set: (fn: (v: boolean) => boolean) => void) {
+    animateLayout();
+    set((v) => !v);
+  }
 
   useEffect(() => {
     const offChanged = realtime.onSessionChanged((session) => {
@@ -127,6 +163,26 @@ export function SessionList({
     refresh();
   }
 
+  function confirmEmptyTrash() {
+    const n = trashed.length;
+    Alert.alert(`Delete ${n} session${n === 1 ? "" : "s"} permanently?`, "Everything in the trash goes, transcripts too, with no undo.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Empty trash",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await rest.emptyTrash();
+          } catch (err) {
+            Alert.alert("Couldn't empty the trash", err instanceof Error ? err.message : "Try again in a moment.");
+          } finally {
+            refresh();
+          }
+        },
+      },
+    ]);
+  }
+
   /** Repo-less chat → repo session; errors are the sheet's to show. */
   async function attachRepo(id: string, target: AttachRepoRequest) {
     await rest.attachRepo(id, target);
@@ -146,6 +202,9 @@ export function SessionList({
       <View style={styles.header}>
         <Text style={styles.title}>Sessions</Text>
         <View style={styles.headerActions}>
+          <TouchableOpacity style={styles.iconBtn} onPress={onOpenSearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="search-outline" size={19} color={colors.dim} />
+          </TouchableOpacity>
           <TouchableOpacity style={styles.iconBtn} onPress={onOpenStats} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Ionicons name="stats-chart-outline" size={18} color={colors.dim} />
           </TouchableOpacity>
@@ -165,9 +224,12 @@ export function SessionList({
       <FadeIn enabled={!wasLoadedAtMount} distance={0} style={styles.list}>
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
         {active.length === 0 && <Text style={styles.empty}>No sessions yet.</Text>}
-        {groups.map((g) => (
+        {groups.map((g) => {
+          const isCollapsed = collapsed.has(g.key);
+          return (
           <View key={g.key}>
-            <View style={styles.groupHeader}>
+            <TouchableOpacity style={styles.groupHeader} activeOpacity={0.7} onPress={() => toggleGroup(g.key)}>
+              <Ionicons name={isCollapsed ? "chevron-forward" : "chevron-down"} size={13} color={colors.faint} />
               <Text style={styles.groupName} numberOfLines={1}>
                 {g.name}
               </Text>
@@ -182,8 +244,9 @@ export function SessionList({
                   <Text style={[styles.groupBadgeText, { color: colors.busy }]}>{g.busy} working</Text>
                 </View>
               ) : null}
-            </View>
-            {g.sessions.map((s) => (
+              {isCollapsed && <Text style={styles.count}>{g.sessions.length}</Text>}
+            </TouchableOpacity>
+            {!isCollapsed && g.sessions.map((s) => (
               <Row
                 key={s.id}
                 session={s}
@@ -198,10 +261,17 @@ export function SessionList({
               />
             ))}
           </View>
-        ))}
+          );
+        })}
 
-        {archived.length > 0 && <Text style={styles.sectionHeader}>Archived</Text>}
-        {archived.map((s) => (
+        {archived.length > 0 && (
+          <TouchableOpacity style={styles.sectionToggle} activeOpacity={0.7} onPress={() => toggleSection(setShowArchived)}>
+            <Ionicons name={showArchived ? "chevron-down" : "chevron-forward"} size={13} color={colors.faint} />
+            <Text style={styles.sectionHeader}>Archived</Text>
+            <Text style={styles.count}>{archived.length}</Text>
+          </TouchableOpacity>
+        )}
+        {showArchived && archived.map((s) => (
           <Row
             key={s.id}
             session={s}
@@ -215,8 +285,21 @@ export function SessionList({
           />
         ))}
 
-        {trashed.length > 0 && <Text style={styles.sectionHeader}>Trash</Text>}
-        {trashed.map((s) => (
+        {trashed.length > 0 && (
+          <View style={styles.sectionRow}>
+            <TouchableOpacity style={[styles.sectionToggle, styles.sectionToggleFill]} activeOpacity={0.7} onPress={() => toggleSection(setShowTrash)}>
+              <Ionicons name={showTrash ? "chevron-down" : "chevron-forward"} size={13} color={colors.faint} />
+              <Text style={styles.sectionHeader}>Trash</Text>
+              <Text style={styles.count}>{trashed.length}</Text>
+            </TouchableOpacity>
+            {showTrash && (
+              <TouchableOpacity style={styles.emptyBtn} onPress={confirmEmptyTrash} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={styles.emptyBtnText}>Empty trash</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+        {showTrash && trashed.map((s) => (
           <Row
             key={s.id}
             session={s}
@@ -643,10 +726,20 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: 11,
       textTransform: "uppercase",
       letterSpacing: 0.5,
+    },
+    sectionRow: { flexDirection: "row", alignItems: "center" },
+    sectionToggle: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
       paddingHorizontal: 4,
       paddingTop: 16,
       paddingBottom: 4,
     },
+    sectionToggleFill: { flex: 1 },
+    count: { color: colors.faint, fontSize: 11, marginLeft: "auto", fontVariant: ["tabular-nums"] },
+    emptyBtn: { marginLeft: 12, paddingHorizontal: 4, paddingTop: 16, paddingBottom: 4 },
+    emptyBtnText: { color: colors.danger, fontSize: 12, fontWeight: "600" },
     groupHeader: {
       flexDirection: "row",
       alignItems: "center",
@@ -700,6 +793,8 @@ const makeStyles = (colors: ThemeColors) =>
 
 /** The last session list seen this app run — see SessionList's state seed. */
 let lastSessions: Session[] | null = null;
+/** Folded groups, once read from storage, so a return to the list doesn't unfold and refold. */
+let lastCollapsed: Set<string> | null = null;
 
 /** Placeholder rows in the shape of the list, while the first fetch is out. */
 function ListSkeleton() {

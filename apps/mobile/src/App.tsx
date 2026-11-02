@@ -29,6 +29,7 @@ import { Screen } from "./components/Motion";
 import { answerFromNotification, registerForPush } from "./lib/push";
 import { Setup } from "./screens/Setup";
 import { Settings } from "./screens/Settings";
+import { SearchScreen } from "./screens/SearchScreen";
 import { SessionList } from "./screens/SessionList";
 import { SessionView } from "./screens/SessionView";
 import { StatsView } from "./screens/StatsView";
@@ -214,6 +215,7 @@ function Main({
   const [selected, setSelected] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showStats, setShowStats] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
   const selectedRef = useRef(setSelected);
   selectedRef.current = setSelected;
   const colors = useTheme();
@@ -252,10 +254,14 @@ function Main({
         setShowStats(false);
         return true;
       }
+      if (showSearch) {
+        setShowSearch(false);
+        return true;
+      }
       return false; // at the root session list — let Android exit/minimize as normal
     });
     return () => sub.remove();
-  }, [selected, showSettings, showStats]);
+  }, [selected, showSettings, showStats, showSearch]);
 
   // Register for push, and when a notification is tapped, open its session.
   useEffect(() => {
@@ -343,7 +349,7 @@ function Main({
 
   // Which screen is showing, and whether we got here by going deeper or back —
   // the entrance slides the matching way (see Screen).
-  const screenKey = selected ? `session:${selected}` : showSettings ? "settings" : showStats ? "stats" : "list";
+  const screenKey = selected ? `session:${selected}` : showSettings ? "settings" : showStats ? "stats" : showSearch ? "search" : "list";
   const depth = screenKey === "list" ? 0 : 1;
   const lastDepth = useRef(depth);
   const direction: "push" | "pop" = depth >= lastDepth.current ? "push" : "pop";
@@ -386,11 +392,16 @@ function Main({
     // A session opened from a stat comes back here: `selected` wins above, and showStats stays set.
     return <StatsView onBack={() => setShowStats(false)} onOpenSession={setSelected} />;
   }
+  if (showSearch) {
+    // Same as stats: a chat opened from a hit comes back to the results.
+    return <SearchScreen onBack={() => setShowSearch(false)} onOpenSession={setSelected} />;
+  }
   return (
     <SessionList
       onSelect={setSelected}
       onOpenSettings={() => setShowSettings(true)}
       onOpenStats={() => setShowStats(true)}
+      onOpenSearch={() => setShowSearch(true)}
     />
   );
   }

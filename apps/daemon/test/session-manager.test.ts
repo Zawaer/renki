@@ -14,6 +14,7 @@ import {
   MAX_QUEUED_PROMPTS,
   MAX_RESUME_ATTEMPTS,
   RESTART_INTERRUPTED_MESSAGE,
+  AUTO_LIMIT_CONTINUE_TEXT,
   RESUME_CONTINUE_TEXT,
   restartContinueText,
   SessionManager,
@@ -1650,6 +1651,37 @@ describe("resuming after a usage limit", () => {
     await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p1", text: "fix the bug", resolvePermission: noopResolve });
     expect(texts()).toEqual(["fix the bug", RESUME_CONTINUE_TEXT]);
     expect(manager.getSession(s.id).resume).toBeNull();
+  });
+
+  /** A session working on its own (a background agent reporting back) used to just stop on a limit. */
+  async function autoTurnHitsLimit(sw: ReturnType<typeof autoSwitch>) {
+    const ctx = setup();
+    ctx.manager.setAutoSwitch(sw);
+    ctx.manager.setPermissionResolverFactory(() => noopResolve);
+    const s = await newSession(ctx.manager, ctx.repoId);
+    ctx.manager.takeControl(s.id, "d1");
+    runTurn.mockResolvedValueOnce(okTurn);
+    await ctx.manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p1", text: "build it", resolvePermission: noopResolve });
+    const live = liveInstances.at(-1)!;
+    live.opts.onAutoTurnStart?.("t_auto", "auto_t_auto");
+    live.opts.onAutoTurnEnd?.(limited);
+    return { ...ctx, s, live };
+  }
+
+  it("an unprompted turn that hits a limit pauses until a reset instead of failing", async () => {
+    const { manager, s } = await autoTurnHitsLimit(autoSwitch());
+    await vi.waitFor(() => expect(manager.getSession(s.id).status).toBe("idle"));
+    expect(manager.getSession(s.id).resume).toMatchObject({ reason: "Waiting for the 5-hour limit to reset.", attempt: 0 });
+  });
+
+  it("an unprompted turn that hits a limit carries on at once on another account", async () => {
+    const sw = autoSwitch({ autoRetryEnabled: true, rateLimitSwitch: vi.fn(async () => ({ switched: true, active: 2 })) });
+    runTurn.mockReset();
+    const { manager, s, live } = await autoTurnHitsLimit(sw);
+    runTurn.mockResolvedValueOnce(okTurn);
+    await vi.waitFor(() => expect(texts()).toEqual(["build it", AUTO_LIMIT_CONTINUE_TEXT]), { timeout: 5_000 });
+    expect(live.closeReasons).toContain("account switched");
+    await vi.waitFor(() => expect(manager.getSession(s.id).resume).toBeNull());
   });
 
   it("isn't scheduled with auto-resume off", async () => {

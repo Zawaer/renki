@@ -79,8 +79,11 @@ export type RateLimitAutoSwitch = {
 type ResumeState = {
   reason: string;
   attempt: number;
-  /** "limit" (the default, for states written before restarts existed) waits for a reset; "restart" continues a turn a restart cut off. */
-  kind?: "limit" | "restart";
+  /**
+   * "limit" (the default, for states written before restarts existed) waits for a reset; "restart" continues a turn a restart cut off;
+   * "switched" continues an unprompted turn at once on the account a limit moved it to.
+   */
+  kind?: "limit" | "restart" | "switched";
   prompt: ResumePrompt;
   /** Prompts that were queued behind the turn, run after it — kept across a restart. */
   queued?: (ResumePrompt & { promptId: string })[];
@@ -123,6 +126,14 @@ export const MAX_RESUME_ATTEMPTS = 8;
  * so far; sending the prompt again would read as a new request to start over.
  */
 export const RESUME_CONTINUE_TEXT = "The usage limit is cleared now. Continue where you left off.";
+
+/**
+ * Continues an unprompted turn that stopped on a limit. Nothing records what
+ * it was doing, a message the user steered into it may still be unanswered,
+ * and its background agents died on the same limit.
+ */
+export const AUTO_LIMIT_CONTINUE_TEXT =
+  "A usage limit stopped your last turn, and any background agents still running then. That's cleared now. Continue where you left off, answer any message from the user you hadn't got to, and relaunch background agents that stopped on the limit.";
 
 /** Timers are re-armed in steps no longer than this, well inside setTimeout's ~24.8-day ceiling. */
 const MAX_TIMER_STEP_MS = 6 * 60 * 60_000;
@@ -1546,6 +1557,54 @@ export class SessionManager {
     return true;
   }
 
+  /**
+   * An unprompted turn (a background agent reporting back, Claude carrying on)
+   * stopped on a usage limit. Those used to just fail, so a session working
+   * through the night stopped dead even with another account free: the
+   * switch-and-retry and the wait-for-reset only ran for turns the user sent.
+   * Same handling here: move to an account with room and carry on now, or
+   * pause until a reset. Returns whether the session will continue.
+   */
+  private async continueAfterAutoLimit(sessionId: string, result: RunTurnResult): Promise<boolean> {
+    const auto = this.autoSwitch;
+    if (!auto) return false;
+    await auto.reportLimit?.(result.rateLimit ?? null).catch(() => {});
+    const row = this.db.select().from(sessions).where(eq(sessions.id, sessionId)).get();
+    if (!row) return false;
+    const prompt: ResumePrompt = { ...pinnedPrompt(row), text: AUTO_LIMIT_CONTINUE_TEXT };
+
+    if (auto.autoRetryEnabled) {
+      this.events.append(sessionId, { kind: "notice", text: "Usage limit hit. Looking for another account…", level: "warn" });
+      const sw = await auto.rateLimitSwitch();
+      if (this.isRetired(sessionId)) return false;
+      if (sw.switched) {
+        this.events.append(sessionId, { kind: "notice", text: `Switched account${sw.active ? ` (now #${sw.active})` : ""}.`, level: "info" });
+        // The running process may hold the spent account's credentials.
+        this.closeLive(sessionId, "account switched");
+        const state: ResumeState = { reason: "Switched account after a usage limit.", attempt: 0, kind: "switched", prompt };
+        const at = Date.now() + 1_000;
+        this.patch(sessionId, { resumeAt: at, resumeState: JSON.stringify(state) });
+        this.armResume(sessionId, at);
+        return true;
+      }
+      this.events.append(sessionId, { kind: "notice", text: sw.reason ?? "No other account available to switch to.", level: "warn" });
+    }
+
+    if (!auto.autoResumeEnabled) return false;
+    const plan = await auto.planResume({ model: prompt.model ?? null, hit: result.rateLimit ?? null, attempt: 0 });
+    if (this.isRetired(sessionId)) return false;
+    const state: ResumeState = { reason: plan.reason, attempt: 0, prompt };
+    this.patch(sessionId, { resumeAt: plan.at, resumeState: JSON.stringify(state) });
+    this.events.append(sessionId, {
+      kind: "notice",
+      text: `Paused on a usage limit. ${plan.reason} The turn will continue automatically then.`,
+      level: "warn",
+    });
+    this.armResume(sessionId, plan.at);
+    logger.info("resume scheduled after an unprompted turn hit a limit", { sessionId, at: new Date(plan.at).toISOString() });
+    return true;
+  }
+
   /** Did the turn answering `promptId` get anywhere (text or tool calls) before it failed? */
   private turnMadeProgress(sessionId: string, promptId: string): boolean {
     let inTurn = false;
@@ -1640,7 +1699,13 @@ export class SessionManager {
     if (ready.proceed && ready.note) this.events.append(sessionId, { kind: "notice", text: ready.note, level: "info" });
     this.events.append(sessionId, {
       kind: "notice",
-      text: force ? "Continuing now, as requested." : state.kind === "restart" ? "Renki is back. Continuing." : "Usage limit reset. Continuing.",
+      text: force
+        ? "Continuing now, as requested."
+        : state.kind === "restart"
+          ? "Renki is back. Continuing."
+          : state.kind === "switched"
+            ? "Continuing on the new account."
+            : "Usage limit reset. Continuing.",
       level: "info",
     });
     logger.info("running scheduled resume", { sessionId, attempt: state.attempt + 1, force });
@@ -1912,10 +1977,22 @@ export class SessionManager {
         // A prompted turn is about to run (it was waiting for this auto turn to
         // finish) — it owns the status from here.
         if (this.promptedTurns.has(sessionId)) return;
-        const status: SessionStatus = result.ok ? "idle" : "error";
-        this.patch(sessionId, { status });
-        this.events.append(sessionId, { kind: "status_changed", status });
-        this.drainQueue(sessionId);
+        const settle = (status: SessionStatus) => {
+          if (this.isRetired(sessionId) || this.promptedTurns.has(sessionId)) return;
+          this.patch(sessionId, { status });
+          this.events.append(sessionId, { kind: "status_changed", status });
+          this.drainQueue(sessionId);
+        };
+        if (!result.ok && result.rateLimited && !result.interrupted) {
+          void this.continueAfterAutoLimit(sessionId, result)
+            .catch((err) => {
+              logger.warn("could not continue an unprompted turn after a limit", { sessionId, err: String(err) });
+              return false;
+            })
+            .then((handled) => settle(handled ? "idle" : "error"));
+          return;
+        }
+        settle(result.ok ? "idle" : "error");
       },
       onClosed: () => {
         if (this.live.get(sessionId) === live) this.live.delete(sessionId);
@@ -2065,7 +2142,8 @@ function resumeOf(row: typeof sessions.$inferSelect): Session["resume"] {
   if (row.resumeAt == null || !row.resumeState) return null;
   try {
     const state = JSON.parse(row.resumeState) as ResumeState;
-    return { at: row.resumeAt, reason: state.reason, attempt: state.attempt, kind: state.kind ?? "limit" };
+    // A "switched" continuation is a limit resume that runs a second later; clients needn't tell them apart.
+    return { at: row.resumeAt, reason: state.reason, attempt: state.attempt, kind: state.kind === "restart" ? "restart" : "limit" };
   } catch {
     return null;
   }

@@ -1974,7 +1974,7 @@ export class SessionManager {
       model: first.model,
       permissionMode: first.permissionMode,
       maxThinkingTokens: first.maxThinkingTokens,
-      systemPromptAppend: renkiPromptAppend({ approvalTimeoutMs: this.config.permissionTimeoutMs }),
+      systemPromptAppend: renkiPromptAppend({ approvalTimeoutMs: this.config.permissionTimeoutMs, inRepo: Boolean(this.getSession(sessionId).repoId) }),
       forcePermissionPrompts: this.config.forcePermissionPrompts,
       enableRtk: this.config.enableRtk,
       rtkBin: this.config.rtkBin,

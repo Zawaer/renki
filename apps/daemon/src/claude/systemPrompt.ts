@@ -11,7 +11,7 @@
  * The CLI records the prompt on a conversation's first request and reuses it
  * until compaction, so a change here reaches new sessions, not running ones.
  */
-export function renkiPromptAppend(opts: { approvalTimeoutMs: number }): string {
+export function renkiPromptAppend(opts: { approvalTimeoutMs: number; inRepo: boolean }): string {
   const minutes = Math.max(1, Math.round(opts.approvalTimeoutMs / 60_000));
   return `# Running inside Renki
 
@@ -33,5 +33,22 @@ In a repo, you work in your own git worktree, on a branch cut for this session (
 ## Background agents
 Background agents outlive the turn that started them: their approvals still reach the user and their results arrive when they finish. If the user hands you a second, independent task mid-way through something, a background agent for it usually beats making them wait.
 
-While agents run, Renki adds their latest steps and the path to each one's transcript after the user's message. When the user asks what an agent is doing or how far along it is, answer from those steps, and read the end of its transcript if you need more. Don't guess from its side effects.`;
+While agents run, Renki adds their latest steps and the path to each one's transcript after the user's message. When the user asks what an agent is doing or how far along it is, answer from those steps, and read the end of its transcript if you need more. Don't guess from its side effects.${opts.inRepo ? "" : NO_REPO_STYLE}`;
 }
+
+/**
+ * Claude Code's own style (terse, bullets with bold leads) is written for
+ * reports on code work. A session with no repo is for advice, planning and
+ * explanations, where that reads as a wall of bullets; the user found the
+ * same answer far nicer as ChatGPT lays it out. Coding sessions keep theirs.
+ */
+const NO_REPO_STYLE = `
+
+## How to write in this session
+This session has no repo: it's for thinking things through, advice, planning and explanations, not code work. Write answers like a good short article, not a status report:
+- Open with the answer or the key idea, in a sentence or two of plain prose.
+- Give a longer answer a few sections with real Markdown headings (\`###\`), each opening with a short paragraph before any list.
+- Use lists for things that really are lists (steps, options, examples), not for every thought. Don't start every bullet with a bold phrase; keep bold for the one or two lines that matter most.
+- A small table works well for sorting things into categories or comparing options.
+- Close with what you'd actually do or recommend, in prose.
+A quick question still gets a quick answer: match the length to the question.`;

@@ -105,22 +105,25 @@ function withMarkers(children: ReactNode, marker: (index: number) => string): Re
   );
 }
 
+// Headings a step above body size, with more room above than below, so a
+// long reply's sections show at a glance instead of reading as one block.
+// (The top margin beats the container's space-y, which sits in :where().)
 const components: Components = {
-  h1: ({ node, ...p }) => <h1 className="text-base font-semibold text-(--renki-fg)" {...p} />,
-  h2: ({ node, ...p }) => <h2 className="text-sm font-semibold text-(--renki-fg)" {...p} />,
-  h3: ({ node, ...p }) => <h3 className="text-sm font-semibold text-(--renki-fg)" {...p} />,
-  h4: ({ node, ...p }) => <h4 className="text-sm font-semibold text-(--renki-fg)" {...p} />,
+  h1: ({ node, ...p }) => <h1 className="mt-6 text-[18px] leading-snug font-semibold text-(--renki-fg) first:mt-0" {...p} />,
+  h2: ({ node, ...p }) => <h2 className="mt-6 text-[16.5px] leading-snug font-semibold text-(--renki-fg) first:mt-0" {...p} />,
+  h3: ({ node, ...p }) => <h3 className="mt-5 text-[15.5px] leading-snug font-semibold text-(--renki-fg) first:mt-0" {...p} />,
+  h4: ({ node, ...p }) => <h4 className="mt-4 text-sm font-semibold text-(--renki-fg) first:mt-0" {...p} />,
   p: ({ node, ...p }) => <p className="leading-relaxed" {...p} />,
   // Bullets and numbers are real text rather than CSS markers, so selecting a
   // list and copying it keeps them: a ::marker never reaches the clipboard,
   // and a numbered list pasted elsewhere came out as unnumbered lines.
   ul: ({ node, children, ...p }) => (
-    <ul className="space-y-1" {...p}>
+    <ul className="space-y-1.5" {...p}>
       {withMarkers(children, () => "•")}
     </ul>
   ),
   ol: ({ node, children, start, ...p }) => (
-    <ol className="space-y-1" start={start} {...p}>
+    <ol className="space-y-1.5" start={start} {...p}>
       {withMarkers(children, (i) => `${(start ?? 1) + i}.`)}
     </ol>
   ),
@@ -178,7 +181,7 @@ export const Markdown = memo(function Markdown({
 }) {
   return (
     <div
-      className={`space-y-2.5 wrap-break-word text-[14px] leading-relaxed ${muted ? "text-(--renki-fg-muted)" : "text-(--renki-fg)"} ${
+      className={`space-y-3 wrap-break-word text-[14px] leading-relaxed ${muted ? "text-(--renki-fg-muted)" : "text-(--renki-fg)"} ${
         streaming ? "renki-stream-md" : ""
       }`}
     >

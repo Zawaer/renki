@@ -159,8 +159,11 @@ describe("LiveClaudeSession system prompt", () => {
   });
 
   it("says how long approvals wait", () => {
-    expect(renkiPromptAppend({ approvalTimeoutMs: 300_000 })).toContain("denied after 5 minutes");
-    expect(renkiPromptAppend({ approvalTimeoutMs: 60_000 })).toContain("denied after 1 minute with");
+    expect(renkiPromptAppend({ approvalTimeoutMs: 300_000, inRepo: true })).toContain("denied after 5 minutes");
+    expect(renkiPromptAppend({ approvalTimeoutMs: 60_000, inRepo: true })).toContain("denied after 1 minute with");
+    // Article-style writing is for sessions without a repo; coding sessions keep Claude Code's style.
+    expect(renkiPromptAppend({ approvalTimeoutMs: 60_000, inRepo: false })).toContain("## How to write in this session");
+    expect(renkiPromptAppend({ approvalTimeoutMs: 60_000, inRepo: true })).not.toContain("How to write");
   });
 });
 

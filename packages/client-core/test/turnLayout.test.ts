@@ -293,6 +293,25 @@ describe("backgroundWorkOf", () => {
     expect(work[0]!.path).toEqual(["tu_a"]);
   });
 
+  it("lists an agent resumed with SendMessage under its original task, until it reports back", () => {
+    const original = tool("Agent", { description: "Build 3D fly-through", run_in_background: true }, {
+      toolUseId: "tu_a",
+      result: { ok: true, summary: "Async agent launched successfully.\nagentId: ab39 (internal ID)" } as never,
+      backgroundTask: { status: "stopped", summary: "didn't finish" } as never,
+    });
+    const resume = tool("SendMessage", { to: "ab39", summary: "Resume build after restart", message: "Continue" }, {
+      toolUseId: "tu_r",
+      result: { ok: true, summary: JSON.stringify({ success: true, resumedAgentId: "ab39" }) } as never,
+      agentUsage: { tokens: 10, toolUses: 17, durationMs: 1000 },
+    });
+    const queued = tool("SendMessage", { to: "ab39", message: "Also this" }, {
+      result: { ok: true, summary: JSON.stringify({ success: true, message: "Message queued" }) } as never,
+    });
+    expect(backgroundWorkOf([turnItem([original, resume, queued])]).map((w) => [w.kind, w.label, w.steps])).toEqual([["agent", "Build 3D fly-through", 17]]);
+    const reported = { ...resume, backgroundTask: { status: "completed", summary: "done" } } as BlockView;
+    expect(backgroundWorkOf([turnItem([original, reported])])).toEqual([]);
+  });
+
   it("gives a nested agent's path through its parent", () => {
     const inner = tool("Agent", { description: "Inner", run_in_background: true }, { toolUseId: "tu_in" });
     const outer = tool("Agent", { description: "Outer" }, { toolUseId: "tu_out", subagent: { blocks: [inner], status: "done" } as never });

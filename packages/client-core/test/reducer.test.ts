@@ -386,6 +386,19 @@ describe("per-event folding", () => {
     expect(typeof turn.blocks[0].startedAtMs).toBe("number");
   });
 
+  it("closes an agent resumed with SendMessage when it reports under its own id, but not the stop that came before the resume", () => {
+    const events: EventPayload[] = [
+      { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "continue" },
+      { kind: "background_task", taskId: "ab39", toolUseId: null, status: "stopped", summary: "didn't finish before the previous session ended" },
+      { kind: "assistant_block", turnId: "t_1", blockIndex: 0, blockKind: "tool_use", text: null, toolUseId: "tu_r", toolName: "SendMessage", toolInput: { to: "ab39" } },
+      { kind: "tool_result", turnId: "t_1", toolUseId: "tu_r", ok: true, summary: JSON.stringify({ success: true, resumedAgentId: "ab39" }) },
+    ];
+    const blockOf = (s: ConversationState) => (s.timeline.find((it) => it.type === "turn") as any).turn.blocks[0];
+    expect(blockOf(fold(stream(...events))).backgroundTask).toBeUndefined();
+    const done = fold(stream(...events, { kind: "background_task", taskId: "ab39", toolUseId: null, status: "completed", summary: "built" }));
+    expect(blockOf(done).backgroundTask).toEqual({ status: "completed", summary: "built" });
+  });
+
   it("takes a foreground agent's usage from its tool_result", () => {
     const s = fold(stream(
       { kind: "prompt_submitted", promptId: "p1", deviceId: "d1", text: "research" },

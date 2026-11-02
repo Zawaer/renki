@@ -503,9 +503,12 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
 
     case "background_task": {
       const done = { status: e.status, summary: e.summary };
-      const found = e.toolUseId
-        ? patchToolBlock(s.timeline, e.toolUseId, (b) => ({ ...b, backgroundTask: done, ...(e.usage ? { agentUsage: e.usage } : {}) }))
-        : null;
+      const patch = (b: ToolUseBlock): ToolUseBlock => ({ ...b, backgroundTask: done, ...(e.usage ? { agentUsage: e.usage } : {}) });
+      // An agent resumed with SendMessage reports back under its own id (the
+      // task id), not always under the call that resumed it.
+      const found =
+        (e.toolUseId ? patchToolBlock(s.timeline, e.toolUseId, patch) : null) ??
+        patchBlocks(s.timeline, (b) => !b.backgroundTask && resumedAgentOf(b) === e.taskId, patch);
       if (found) {
         s.timeline = found;
         return s;
@@ -739,6 +742,22 @@ function updateSubagentBlocks(
  * subagent has nothing left to forward.
  */
 type ToolUseBlock = Extract<BlockView, { kind: "tool_use" }>;
+
+/**
+ * The agent a SendMessage call woke back up, from its result, or null. A
+ * message to an agent that's still running only queues; one to a finished or
+ * stopped agent resumes it in the background, with its progress reported
+ * under this call.
+ */
+export function resumedAgentOf(b: ToolUseBlock): string | null {
+  if (b.toolName !== "SendMessage" || !b.result?.ok || !b.result.summary) return null;
+  try {
+    const r = JSON.parse(b.result.summary) as { resumedAgentId?: unknown };
+    return typeof r.resumedAgentId === "string" ? r.resumedAgentId : null;
+  } catch {
+    return null;
+  }
+}
 type ToolResultView = NonNullable<Extract<BlockView, { kind: "tool_use" }>["result"]>;
 
 function applyToolResult(blocks: BlockView[], toolUseId: string, result: ToolResultView, agentUsage?: AgentUsage): BlockView[] {
@@ -764,11 +783,15 @@ function applyToolResult(blocks: BlockView[], toolUseId: string, result: ToolRes
  * back to a plain notice).
  */
 function patchToolBlock(timeline: TimelineItem[], toolUseId: string, fn: (b: ToolUseBlock) => ToolUseBlock): TimelineItem[] | null {
+  return patchBlocks(timeline, (b) => b.toolUseId === toolUseId, fn);
+}
+
+function patchBlocks(timeline: TimelineItem[], match: (b: ToolUseBlock) => boolean, fn: (b: ToolUseBlock) => ToolUseBlock): TimelineItem[] | null {
   let found = false;
   function patch(blocks: BlockView[]): BlockView[] {
     return blocks.map((b) => {
       if (b?.kind !== "tool_use") return b;
-      if (b.toolUseId === toolUseId) {
+      if (match(b)) {
         found = true;
         return fn(b);
       }

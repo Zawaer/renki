@@ -1,5 +1,5 @@
 import type { AgentUsage, AttachmentView, Session } from "@renki/protocol";
-import type { BlockView, ConversationState, TimelineItem, TurnView } from "./reducer.js";
+import { type BlockView, type ConversationState, type TimelineItem, type TurnView, resumedAgentOf } from "./reducer.js";
 import { type EditToolView, SUGGEST_REPLIES_TOOL, type TodoItemView, describeTool, parseEditView, parseSuggestedReplies, parseTodos } from "./toolViews.js";
 
 /**
@@ -375,22 +375,38 @@ export type BackgroundWork = {
  */
 export function backgroundWorkOf(timeline: TimelineItem[]): BackgroundWork[] {
   const out: BackgroundWork[] = [];
+  // What each agent was asked to do, by agent id, so one resumed with
+  // SendMessage keeps its name rather than the resume message's.
+  const agentTasks = new Map<string, string>();
+  const collect = (blocks: BlockView[]) => {
+    for (const b of blocks) {
+      if (b?.kind !== "tool_use") continue;
+      const id = AGENT_TOOL_NAMES.has(b.toolName) ? b.result?.summary?.match(/^agentId: (\w+)/m)?.[1] : undefined;
+      const description = (b.toolInput as { description?: unknown } | null)?.description;
+      if (id && typeof description === "string" && description) agentTasks.set(id, description);
+      if (b.subagent) collect(b.subagent.blocks);
+    }
+  };
+  for (const item of timeline) if (item.type === "turn") collect(item.turn.blocks);
+
   const walk = (blocks: BlockView[], ancestors: string[]) => {
     for (const b of blocks) {
       if (b?.kind !== "tool_use") continue;
-      const isAgent = AGENT_TOOL_NAMES.has(b.toolName);
+      const resumed = resumedAgentOf(b);
+      const isAgent = AGENT_TOOL_NAMES.has(b.toolName) || resumed != null;
       const path = [...ancestors, b.toolUseId];
-      const inBackground = (b.toolInput as { run_in_background?: unknown } | null)?.run_in_background === true;
+      const inBackground = (b.toolInput as { run_in_background?: unknown } | null)?.run_in_background === true || resumed != null;
       if (inBackground && !b.backgroundTask && !b.macBuild && !(!isAgent && isServer(b.toolInput))) {
         const steps = b.subagent?.blocks.filter((x) => x?.kind === "tool_use") ?? [];
         const newest = steps[steps.length - 1];
-        const input = (b.toolInput ?? {}) as { description?: unknown };
+        const input = (b.toolInput ?? {}) as { description?: unknown; summary?: unknown };
         const described = describeTool(b.toolName, b.toolInput);
+        const task = resumed != null ? (agentTasks.get(resumed) ?? input.summary) : input.description;
         out.push({
           toolUseId: b.toolUseId,
           path,
           kind: isAgent ? "agent" : "command",
-          label: isAgent && typeof input.description === "string" && input.description ? input.description : (described.meta ?? described.label),
+          label: isAgent && typeof task === "string" && task ? task : (described.meta ?? described.label),
           current: newest?.kind === "tool_use" ? describeTool(newest.toolName, newest.toolInput).label : null,
           steps: isAgent ? (b.agentUsage?.toolUses ?? steps.length) : null,
           startedAtMs: b.startedAtMs ?? null,

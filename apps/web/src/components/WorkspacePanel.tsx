@@ -95,7 +95,7 @@ function failureText(err: unknown): string {
     return "This needs a newer daemon — it will work once the daemon is updated.";
   }
   if (err instanceof RestError && err.code === "no_worktree") return "This session has no working tree anymore.";
-  return err instanceof Error ? err.message : "Couldn't load this.";
+  return (err instanceof Error && err.message) || "Couldn't load this.";
 }
 
 const STATUS_STYLE: Record<WorkspaceFileChange["status"], { label: string; tone: string; title: string }> = {
@@ -327,7 +327,20 @@ function FilesTab({ sessionId, openRequest }: { sessionId: string; openRequest: 
     rest
       .readWorkspaceFile(sessionId, openFile)
       .then((f) => live && setFile(f))
-      .catch((err) => live && setFileError(failureText(err)));
+      .catch(async (err) => {
+        // A link to a folder ("references/") lands here as a path that isn't a
+        // file: show that folder instead of an error.
+        if (err instanceof RestError && err.code === "invalid_path") {
+          const isDir = await rest.listWorkspaceDir(sessionId, openFile).then(() => true, () => false);
+          if (!live) return;
+          if (isDir) {
+            setDir(openFile);
+            setOpenFile(null);
+            return;
+          }
+        }
+        if (live) setFileError(failureText(err));
+      });
     return () => {
       live = false;
     };

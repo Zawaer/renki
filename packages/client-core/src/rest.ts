@@ -182,7 +182,10 @@ export class RestClient {
     });
     if (!res.ok) {
       const detail = await res.json().catch(() => ({}) as Record<string, unknown>);
-      throw new RestError(res.status, String(detail.error ?? "http_error"), String(detail.message ?? res.statusText));
+      // Never an empty message: over HTTP/2 there's no status text, and an
+      // empty error reads as "no error" (a panel waiting on it spins forever).
+      const message = [detail.message, detail.detail, res.statusText].find((m) => typeof m === "string" && m.trim());
+      throw new RestError(res.status, String(detail.error ?? "http_error"), String(message ?? `HTTP ${res.status}`));
     }
     const disposition = res.headers.get("content-disposition") ?? "";
     const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `chat.${opts.format === "pdf" ? "pdf" : "md"}`;

@@ -262,7 +262,10 @@ export class AccountRotator {
     const now = Date.now();
     const active = accounts.find((a) => a.active);
     const activeFree = active ? accountFreeAt(active, model, now) : null;
-    if (!active || !activeFree || activeFree.at <= now) return { proceed: true };
+    // With no active account (cswap lost track of it, see claimAnAccount),
+    // the turn would run on whatever credential is on disk, likely the spent
+    // one: claim a free account first, like a switch.
+    if (active && (!activeFree || activeFree.at <= now)) return { proceed: true };
 
     if (this.enabled) {
       const free = accounts.filter((a) => !a.active && accountFreeAt(a, model, now)?.at === now);
@@ -283,6 +286,7 @@ export class AccountRotator {
         }
       }
     }
+    if (!active) return { proceed: true };
     return { proceed: false, plan: planResume({ accounts, rotationEnabled: this.enabled, model, hit: null, attempt: 0, now }) };
   }
 

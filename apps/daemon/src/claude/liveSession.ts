@@ -43,9 +43,10 @@ import { projectDir } from "./transcripts.js";
  * they happen, even while the session is otherwise idle.
  *
  * Turns are still strictly serialized by the caller (SessionManager): exactly
- * one prompt is in flight at a time, so a `result` message always belongs to
- * the in-flight prompt (cross-checked against the SDK's `user_message_uuid`).
- * The one exception is an "auto turn" — the CLI starting a turn on its own,
+ * one prompt is in flight at a time. A `result` names the prompts its turn
+ * answered (`user_message_uuids`), and one that doesn't name ours ended a turn
+ * the CLI started itself, which must not close ours (see isOurResult). The
+ * other exception is an "auto turn" — the CLI starting a turn on its own,
  * e.g. the main agent reacting to a background task finishing. Those get a
  * synthetic promptId and are reported through `onAutoTurnStart/End` so the
  * manager can flip the session busy for their duration.
@@ -54,9 +55,8 @@ import { projectDir } from "./transcripts.js";
  * new turn. The CLI picks it up at its next tool-call boundary and answers it
  * within the running turn, which then ends with a single `result` — verified
  * against the real CLI. So steered prompts are tracked on the in-flight turn
- * and reported in its turn_result's `promptIds`. (The CLI neither echoes the
- * pushed message back nor sets `result.user_message_uuid` to anything we sent,
- * so there is no per-message acknowledgement to key off.)
+ * and reported in its turn_result's `promptIds`. (The CLI doesn't echo the
+ * pushed message back, so there is no per-message acknowledgement to key off.)
  *
  * Crash/restart recovery is unchanged from the resume-per-prompt days: the
  * conversation lives in the CLI's resumable transcript (`claudeSessionId`),
@@ -224,6 +224,8 @@ export class LiveClaudeSession {
   /** Running agents' latest steps, told to the main agent with each of the user's messages (see agentWatch.ts). */
   private readonly agentWatch = new AgentWatch();
   private lastTurnId: string | null = null;
+  /** The CLI has stamped a frame with the prompt it answers, so a `result` without one isn't ours (see isOurResult). */
+  private echoesPromptUuids = false;
   /**
    * The SDK's `total_cost_usd` is cumulative for the life of the process, not
    * the cost of one turn. Under resume-per-prompt that was the same thing —
@@ -577,6 +579,7 @@ export class LiveClaudeSession {
   }
 
   private handle(message: SDKMessage): void {
+    if ((message as { user_message_uuid?: string }).user_message_uuid) this.echoesPromptUuids = true;
     switch (message.type) {
       case "rate_limit_event": {
         const hit = rejectedRateLimit(message.rate_limit_info);
@@ -704,7 +707,25 @@ export class LiveClaudeSession {
     }
   }
 
+  /**
+   * Whether a `result` arriving during our prompt's turn is that turn's. The
+   * CLI runs turns of its own too: after a restart it reported a background
+   * shell the old process left behind, and that turn's empty `result` closed
+   * the resumed prompt's turn as a success. The real answer, a usage-limit
+   * error, then had no turn to land on, so nothing retried it.
+   */
+  private isOurResult(message: { user_message_uuid?: string; user_message_uuids?: string[] }, inflight: InflightTurn): boolean {
+    const ids = message.user_message_uuids ?? (message.user_message_uuid ? [message.user_message_uuid] : []);
+    if (ids.length > 0) return ids.includes(inflight.uuid);
+    // An older CLI stamps nothing at all: then every result is ours, as before.
+    return !this.echoesPromptUuids;
+  }
+
   private endTurn(message: Extract<SDKMessage, { type: "result" }>): void {
+    if (this.inflight && !this.isOurResult(message, this.inflight)) {
+      logger.info("result from a turn the CLI started itself; still waiting for ours", { cwd: this.opts.cwd, turnId: this.inflight.turnId });
+      return;
+    }
     const target = this.inflight ?? this.autoTurn;
     if (!target) {
       logger.debug("result with no turn in flight", { cwd: this.opts.cwd, subtype: message.subtype });

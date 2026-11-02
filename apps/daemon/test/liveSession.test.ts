@@ -310,6 +310,29 @@ describe("LiveClaudeSession background agents", () => {
   });
 
   /**
+   * After a restart the CLI ran a turn of its own (reporting a background
+   * shell the old process left) and its empty result closed the resumed
+   * prompt's turn as a success. The real answer, a limit error, was lost.
+   */
+  it("doesn't let a result from the CLI's own turn close the prompt's turn", async () => {
+    const { live, fake } = makeLive();
+    const t = live.runTurn({ prompt: "continue", promptId: "p1", resolvePermission: allow });
+    await new Promise((r) => setTimeout(r, 0));
+    const ours = fake.sent.at(-1)!.uuid!;
+    let settled = false;
+    void t.then(() => (settled = true));
+    await fake.emit({ ...assistant("noted"), user_message_uuid: "cli-own" } as never);
+    await fake.emit({ ...okResult, user_message_uuids: ["cli-own"] } as never);
+    expect(settled).toBe(false);
+    // Once the CLI is known to stamp results, an unstamped one isn't ours either.
+    await fake.emit({ ...okResult } as never);
+    expect(settled).toBe(false);
+    await fake.emit({ ...okResult, is_error: true, subtype: "error_during_execution", user_message_uuids: [ours] } as never);
+    const result = await t;
+    expect(result.ok).toBe(false);
+  });
+
+  /**
    * Claude Code tells the main agent only that an agent started and what it
    * returned, so "what is that agent doing?" got guessed from side effects.
    * Its latest steps now ride along with the user's next message.

@@ -579,6 +579,18 @@ describe("AccountRotator.prepareResume", () => {
     expect(onSwitched).toHaveBeenCalled();
   });
 
+  /** After a daemon restart cswap reported none active, and the resume ran on the spent credential still on disk. */
+  it("claims a free account first when cswap reports none active", async () => {
+    const accounts = [
+      account({ number: 1, email: "a@example.com", usage: spent }),
+      account({ number: 2, email: "b@example.com", usage: roomy }),
+    ];
+    const { rotator, cswap } = setup({ accounts, activeAccountNumber: null });
+    connected(rotator, accounts);
+    expect(await rotator.prepareResume("opus")).toEqual({ proceed: true, note: "Switched to b@example.com." });
+    expect(cswap.switchTo).toHaveBeenCalledWith(2);
+  });
+
   it("never switches while another session is mid-turn", async () => {
     const accounts = [
       account({ number: 1, active: true, usage: spent }),

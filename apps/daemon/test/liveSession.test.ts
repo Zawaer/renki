@@ -310,6 +310,48 @@ describe("LiveClaudeSession background agents", () => {
   });
 
   /**
+   * Claude Code tells the main agent only that an agent started and what it
+   * returned, so "what is that agent doing?" got guessed from side effects.
+   * Its latest steps now ride along with the user's next message.
+   */
+  it("tells the main agent what its running agents are doing with the user's next message", async () => {
+    const { live, fake } = makeLive();
+    const t1 = live.runTurn({ prompt: "spawn", promptId: "p1", resolvePermission: allow });
+    await new Promise((r) => setTimeout(r, 0));
+    await fake.emit(assistant("spawning", { toolUseId: "task-1" }));
+    await fake.emit({ type: "system", subtype: "task_started", task_id: "a1", tool_use_id: "task-1", description: "Pass 4", task_type: "local_agent" } as never);
+    await fake.emit({ type: "system", subtype: "task_started", task_id: "b1", tool_use_id: "bash-bg", description: "server", task_type: "local_bash" } as never);
+    await fake.emit(okResult as never);
+    await t1;
+    await fake.emit({
+      type: "assistant",
+      message: { role: "assistant", content: [{ type: "text", text: "Export done, re-checking." }, { type: "tool_use", id: "b2", name: "Bash", input: { command: "node export.js", description: "Run the second export" } }] },
+      parent_tool_use_id: "task-1",
+    } as never);
+    await fake.emit({ type: "system", subtype: "task_progress", task_id: "a1", tool_use_id: "task-1", description: "Pass 4", usage: { total_tokens: 1, tool_uses: 132, duration_ms: 1 } } as never);
+
+    const t2 = live.runTurn({ prompt: "how long?", promptId: "p2", resolvePermission: allow });
+    await new Promise((r) => setTimeout(r, 0));
+    const sent = String(fake.sent.at(-1)!.message.content);
+    expect(sent.startsWith("how long?\n\n[From Renki, not the user")).toBe(true);
+    expect(sent).toContain('Agent "Pass 4" (running 0s, 132 tool calls):');
+    expect(sent).toContain("said: Export done, re-checking.");
+    expect(sent).toContain("Bash: Run the second export");
+    expect(sent).toContain("/claude-sess-1/subagents/agent-a1.jsonl");
+    expect(sent).not.toContain("server");
+    await fake.emit(okResult as never);
+    await t2;
+
+    // Once it reports back there is nothing left to tell.
+    await fake.emit({ type: "system", subtype: "task_notification", task_id: "a1", tool_use_id: "task-1", status: "completed", summary: "ok" } as never);
+    const t3 = live.runTurn({ prompt: "thanks", promptId: "p3", resolvePermission: allow });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(fake.sent.at(-1)!.message.content).toBe("thanks");
+    await fake.emit(okResult as never);
+    await t3;
+  });
+
+  /**
    * A subagent's messages arrive whole, never streamed. Numbering only
    * advanced on streamed blocks, so every one of them was index 0 and each
    * step overwrote the last — the agent's view showed only its final step.

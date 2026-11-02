@@ -5,6 +5,7 @@ import type { McpSdkServerConfigWithInstance, Options, PermissionMode, Permissio
 import type { Attachment, CapabilitiesResponse, EventPayload } from "@renki/protocol";
 import { newTurnId } from "../ids.js";
 import { logger } from "../logger.js";
+import { AgentWatch } from "./agentWatch.js";
 import { unpackArchives } from "./archives.js";
 import { createRtkPreToolUseHook } from "./rtk.js";
 import { createHomelabGuardHook } from "./homelabGuard.js";
@@ -25,6 +26,7 @@ import {
   summarizeResultError,
 } from "./runner.js";
 import { CLAUDE_SETTINGS, stripUntrustedHooks } from "./settingsHygiene.js";
+import { projectDir } from "./transcripts.js";
 
 /**
  * One long-lived `claude` process for one Renki session.
@@ -219,6 +221,8 @@ export class LiveClaudeSession {
   private readonly taskToolUse = new Map<string, string>();
   /** tool_use id -> when that agent's progress was last logged, so agent_progress stays a trickle (see AGENT_PROGRESS_EVERY_MS). */
   private readonly agentProgressAt = new Map<string, number>();
+  /** Running agents' latest steps, told to the main agent with each of the user's messages (see agentWatch.ts). */
+  private readonly agentWatch = new AgentWatch();
   private lastTurnId: string | null = null;
   /**
    * The SDK's `total_cost_usd` is cumulative for the life of the process, not
@@ -391,11 +395,18 @@ export class LiveClaudeSession {
     this._lastActivityAt = Date.now();
   }
 
-  /** The user's prompt as a message, with any zip attachments unpacked to disk and named in a note before the text. */
+  /**
+   * The user's prompt as a message, with any zip attachments unpacked to disk
+   * and named in a note before the text, and what running agents are doing
+   * after it.
+   */
   private promptMessage(args: { prompt: string; attachments?: Attachment[]; promptId: string }): SDKUserMessage {
-    if (!this.opts.archiveDir) return buildUserMessage(args.prompt, args.attachments);
+    const transcripts = this._claudeSessionId ? `${projectDir(this.opts.cwd)}/${this._claudeSessionId}/subagents` : null;
+    const agents = this.agentWatch.note(transcripts);
+    const prompt = agents ? `${args.prompt}\n\n${agents}` : args.prompt;
+    if (!this.opts.archiveDir) return buildUserMessage(prompt, args.attachments);
     const { attachments, note } = unpackArchives(args.attachments, this.opts.archiveDir, args.promptId);
-    return buildUserMessage(note + args.prompt, attachments);
+    return buildUserMessage(note + prompt, attachments);
   }
 
   /**
@@ -590,6 +601,7 @@ export class LiveClaudeSession {
         if (sdkError) break;
         const turnId = this.turnFor(message.parent_tool_use_id);
         const t = this.trackingFor(message.parent_tool_use_id);
+        if (message.parent_tool_use_id) this.agentWatch.message(message.parent_tool_use_id, (message.message as { content?: unknown }).content);
         const consumed = handleAssistantMessage(
           message.message,
           turnId,
@@ -642,6 +654,7 @@ export class LiveClaudeSession {
           this.backgroundTasks.delete(message.task_id);
           this.taskToolUse.delete(message.task_id);
           this.taskFinishedSinceResult = true;
+          this.agentWatch.finished(message.task_id);
           const usage = message.usage;
           if (message.tool_use_id) this.agentProgressAt.delete(message.tool_use_id);
           this.opts.emit({
@@ -654,11 +667,13 @@ export class LiveClaudeSession {
           });
         } else if (message.subtype === "task_started") {
           if (message.tool_use_id) this.taskToolUse.set(message.task_id, message.tool_use_id);
+          this.agentWatch.started(message);
         } else if (message.subtype === "task_progress") {
           // A running agent's spend, for the agent map. The CLI reports it
           // after every step; logging each would bloat a long agent's log for
           // a number that's superseded seconds later, so keep one in a while.
           const id = message.tool_use_id;
+          if (id) this.agentWatch.progress(id, message.usage.tool_uses);
           const now = Date.now();
           if (id && now - (this.agentProgressAt.get(id) ?? 0) >= AGENT_PROGRESS_EVERY_MS) {
             this.agentProgressAt.set(id, now);
@@ -840,6 +855,7 @@ export class LiveClaudeSession {
     }
     this.backgroundTasks.clear();
     this.taskToolUse.clear();
+    this.agentWatch.clear();
     this.opts.onClosed?.(reason);
   }
 }

@@ -10,7 +10,7 @@ import { join } from "node:path";
  * working directory changes has to take its transcript along, or the next turn
  * finds nothing to resume.
  */
-function projectDir(cwd: string): string {
+export function projectDir(cwd: string): string {
   const root = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
   return join(root, "projects", cwd.replace(/[^a-zA-Z0-9]/g, "-"));
 }

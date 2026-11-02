@@ -431,9 +431,13 @@ export function SessionView({
             // Crossfades in over the skeleton the first time content arrives;
             // a chat that opened with content already loaded just shows it.
             <div key="content" className={`space-y-7 ${hadContentAtMount.current || fromHome ? "" : "renki-fade"}`}>
-              {rows.map((item, i) => (
-                <TimelineRow key={i} item={item} first={i === 0} animate={settledCount.current !== null && i >= settledCount.current} />
-              ))}
+              {groupNotices(rows).map(({ start, items }) =>
+                items.length > 1 ? (
+                  <NoticeLines key={start} notices={items as NoticeItem[]} />
+                ) : (
+                  <TimelineRow key={start} item={items[0]!} first={start === 0} animate={settledCount.current !== null && start >= settledCount.current} />
+                ),
+              )}
               {replies && (
                 <SuggestedReplies
                   question={replies.question}
@@ -866,24 +870,7 @@ function TimelineRow({ item, animate = false, first = false }: { item: TimelineI
       </div>
     );
   }
-  if (item.type === "notice") {
-    return (
-      <div className="flex justify-center">
-        <span
-          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${
-            item.level === "warn"
-              ? "border-(--renki-warning)/30 bg-(--renki-warning)/10 text-(--renki-warning)"
-              : "border-(--renki-border) bg-(--renki-surface) text-(--renki-fg-muted)"
-          }`}
-        >
-          <span
-            className={`codicon ${item.level === "warn" ? "codicon-warning" : "codicon-info"}`}
-          />
-          {item.text}
-        </span>
-      </div>
-    );
-  }
+  if (item.type === "notice") return <NoticeLines notices={[item]} />;
   if (item.type === "model_change") {
     return <ModelChangeMarker model={item.model} />;
   }
@@ -891,6 +878,44 @@ function TimelineRow({ item, animate = false, first = false }: { item: TimelineI
     return <BackgroundTasksRow tasks={item.tasks} />;
   }
   return <AssistantTurn turn={item.turn} animate={animate} />;
+}
+
+type NoticeItem = Extract<TimelineItem, { type: "notice" }>;
+
+/**
+ * Runs of back-to-back notices, so "Usage limit hit", "Switched account" and
+ * "Retrying" read as one short story instead of three rows a full gap apart.
+ * `start` is the first item's index, for keys and the enter animation.
+ */
+function groupNotices(rows: TimelineItem[]): { start: number; items: TimelineItem[] }[] {
+  const out: { start: number; items: TimelineItem[] }[] = [];
+  rows.forEach((item, i) => {
+    const last = out[out.length - 1];
+    if (item.type === "notice" && last?.items[0]?.type === "notice") last.items.push(item);
+    else out.push({ start: i, items: [item] });
+  });
+  return out;
+}
+
+/**
+ * Renki's own notes in the transcript (a limit, an account switch, a
+ * restart): quiet annotation lines in the reply column, like "Stopped" and
+ * "Continued on its own", not centred capsules. Only the icon carries the
+ * colour, so a warning is noticeable without shouting.
+ */
+function NoticeLines({ notices }: { notices: NoticeItem[] }) {
+  return (
+    <div className="space-y-1" role="status">
+      {notices.map((n, i) => (
+        <div key={i} className="flex items-start gap-2 text-xs leading-5 text-(--renki-fg-muted)">
+          <span
+            className={`codicon shrink-0 text-[13px] leading-5 ${n.level === "warn" ? "codicon-warning text-(--renki-warning)" : "codicon-info"}`}
+          />
+          <span className="min-w-0">{n.text}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 /**
@@ -907,25 +932,21 @@ function BackgroundTasksRow({ tasks }: { tasks: { summary: string; status: "comp
       ? `Background task finished: ${tasks[0]!.summary}`
       : `${tasks.length} background tasks finished${failed > 0 ? ` · ${failed} failed` : ""}`;
   return (
-    <div className="flex flex-col items-center">
+    <div>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         disabled={tasks.length === 1}
-        className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors enabled:hover:text-(--renki-fg) ${
-          failed > 0
-            ? "border-(--renki-warning)/30 bg-(--renki-warning)/10 text-(--renki-warning)"
-            : "border-(--renki-border) bg-(--renki-surface) text-(--renki-fg-muted)"
-        }`}
+        className="flex max-w-full items-start gap-2 text-left text-xs leading-5 text-(--renki-fg-muted) transition-colors enabled:hover:text-(--renki-fg)"
       >
-        <span className="codicon codicon-layers shrink-0" />
-        <span className="truncate">{label}</span>
+        <span className={`codicon codicon-layers shrink-0 text-[13px] leading-5 ${failed > 0 ? "text-(--renki-warning)" : ""}`} />
+        <span className="min-w-0 truncate">{label}</span>
         {tasks.length > 1 && (
-          <span className={`codicon ${open ? "codicon-chevron-down" : "codicon-chevron-right"} shrink-0 text-[12px]`} />
+          <span className={`codicon ${open ? "codicon-chevron-down" : "codicon-chevron-right"} shrink-0 text-[12px] leading-5`} />
         )}
       </button>
-      <Reveal open={open && tasks.length > 1} className="w-full max-w-xl">
-        <ul className="mt-2 w-full space-y-1 rounded-xl border border-(--renki-border)/70 px-3 py-2 text-xs text-(--renki-fg-muted)">
+      <Reveal open={open && tasks.length > 1} className="w-full">
+        <ul className="mt-1.5 ml-[5px] w-full space-y-1 border-l border-(--renki-border) pl-4 text-xs text-(--renki-fg-muted)">
           {tasks.map((t, i) => (
             <li key={i} className="flex items-start gap-1.5">
               <span
@@ -1190,9 +1211,11 @@ function AssistantTurn({ turn, animate = false }: { turn: TurnView; animate?: bo
         </div>
       )}
       {turn.status === "error" && !turn.interrupted && (
-        <div className="flex items-center gap-1.5 rounded-lg border border-(--renki-danger)/30 bg-(--renki-danger)/10 px-3 py-2 text-xs text-(--renki-danger)">
-          <span className="codicon codicon-error" /> Turn failed:{" "}
-          {turn.errorMessage}
+        <div className="flex items-start gap-2 text-xs leading-5 text-(--renki-fg-muted)" role="alert">
+          <span className="codicon codicon-error shrink-0 text-[13px] leading-5 text-(--renki-danger)" />
+          <span className="min-w-0">
+            <span className="font-medium text-(--renki-fg)">Turn failed.</span> {turn.errorMessage}
+          </span>
         </div>
       )}
     </div>

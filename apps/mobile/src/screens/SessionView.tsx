@@ -494,6 +494,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
               styles={styles}
               onPreview={setPreviewAttachment}
               animate={settledCount.current !== null && item.index >= settledCount.current}
+              afterNotice={item.item.type === "notice" && rows[item.index - 1]?.type === "notice"}
             />
           )}
           ItemSeparatorComponent={TimelineGap}
@@ -1060,6 +1061,7 @@ const TimelineRow = memo(function TimelineRow({
   styles,
   onPreview,
   animate = false,
+  afterNotice = false,
 }: {
   item: TimelineItem;
   colors: ThemeColors;
@@ -1067,9 +1069,11 @@ const TimelineRow = memo(function TimelineRow({
   onPreview: (a: Attachment) => void;
   /** Arrived since the chat opened: ease in rather than pop. */
   animate?: boolean;
+  /** A notice right after another: pulled up so back-to-back notices ("limit hit", "switched account") read as one block. */
+  afterNotice?: boolean;
 }) {
   return (
-    <FadeIn enabled={animate}>
+    <FadeIn enabled={animate} style={afterNotice ? { marginTop: -10 } : undefined}>
       <TimelineRowBody item={item} colors={colors} styles={styles} onPreview={onPreview} />
     </FadeIn>
   );
@@ -1101,9 +1105,16 @@ function TimelineRowBody({
     );
   }
   if (item.type === "notice") {
+    // A quiet annotation in the reply column, not a centred capsule; only the icon carries the colour.
     return (
-      <View style={styles.noticeWrap}>
-        <Text style={[styles.notice, item.level === "warn" && styles.noticeWarn]}>{item.text}</Text>
+      <View style={styles.noticeRow}>
+        <Ionicons
+          name={item.level === "warn" ? "warning-outline" : "information-circle-outline"}
+          size={14}
+          color={item.level === "warn" ? colors.busy : colors.dim}
+          style={styles.noticeIcon}
+        />
+        <Text style={styles.notice}>{item.text}</Text>
       </View>
     );
   }
@@ -1117,7 +1128,7 @@ function TimelineRowBody({
     );
   }
   if (item.type === "background_tasks") {
-    return <BackgroundTasksRow tasks={item.tasks} styles={styles} />;
+    return <BackgroundTasksRow tasks={item.tasks} colors={colors} styles={styles} />;
   }
   return <AssistantTurn turn={item.turn} colors={colors} styles={styles} />;
 }
@@ -1157,9 +1168,11 @@ function ConversationSkeleton() {
  */
 function BackgroundTasksRow({
   tasks,
+  colors,
   styles,
 }: {
   tasks: { summary: string; status: "completed" | "failed" | "stopped" }[];
+  colors: ThemeColors;
   styles: Styles;
 }) {
   const [open, setOpen] = useState(false);
@@ -1169,19 +1182,33 @@ function BackgroundTasksRow({
       ? `Background task finished: ${tasks[0]!.summary}`
       : `${tasks.length} background tasks finished${failed > 0 ? ` · ${failed} failed` : ""}${open ? "" : " ›"}`;
   return (
-    <View style={styles.noticeWrap}>
-      <TouchableOpacity disabled={tasks.length === 1} onPress={() => {
+    <View>
+      <TouchableOpacity
+        disabled={tasks.length === 1}
+        onPress={() => {
           animateLayout();
           setOpen((o) => !o);
-        }}>
-        <Text style={[styles.notice, failed > 0 && styles.noticeWarn]}>{label}</Text>
+        }}
+        style={styles.noticeRow}
+      >
+        <Ionicons name="layers-outline" size={14} color={failed > 0 ? colors.busy : colors.dim} style={styles.noticeIcon} />
+        <Text style={styles.notice}>{label}</Text>
       </TouchableOpacity>
-      {open &&
-        tasks.map((t, i) => (
-          <Text key={i} style={[styles.notice, t.status === "failed" && styles.noticeWarn]}>
-            {t.status === "completed" ? "✓" : t.status === "stopped" ? "■" : "✕"} {t.summary}
-          </Text>
-        ))}
+      {open && (
+        <View style={styles.noticeList}>
+          {tasks.map((t, i) => (
+            <View key={i} style={styles.noticeRow}>
+              <Ionicons
+                name={t.status === "completed" ? "checkmark-circle-outline" : t.status === "stopped" ? "stop-circle-outline" : "close-circle-outline"}
+                size={14}
+                color={t.status === "completed" ? colors.ok : t.status === "stopped" ? colors.dim : colors.danger}
+                style={styles.noticeIcon}
+              />
+              <Text style={styles.notice}>{t.summary}</Text>
+            </View>
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -1221,7 +1248,12 @@ function AssistantTurn({ turn, colors, styles }: { turn: TurnView; colors: Theme
           <Text style={styles.meta}>Stopped</Text>
         ) : (
           <LongPressToRead title="Error" text={`Turn failed: ${turn.errorMessage}`}>
-            <Text style={styles.errText}>Turn failed: {turn.errorMessage}</Text>
+            <View style={styles.noticeRow}>
+              <Ionicons name="close-circle-outline" size={14} color={colors.danger} style={styles.noticeIcon} />
+              <Text style={styles.notice}>
+                <Text style={styles.noticeStrong}>Turn failed.</Text> {turn.errorMessage}
+              </Text>
+            </View>
           </LongPressToRead>
         ))}
     </View>
@@ -2090,17 +2122,11 @@ const makeStyles = (colors: ThemeColors) =>
     },
     jumpText: { color: colors.text, fontSize: 13, fontWeight: "600" },
     empty: { color: colors.faint, fontSize: 14 },
-    noticeWrap: { alignItems: "center" },
-    notice: {
-      backgroundColor: colors.inset,
-      color: colors.dim,
-      fontSize: 11,
-      paddingHorizontal: 12,
-      paddingVertical: 5,
-      borderRadius: radius.pill,
-      overflow: "hidden",
-    },
-    noticeWarn: { color: colors.busy },
+    noticeRow: { flexDirection: "row", alignItems: "flex-start", gap: 7 },
+    noticeIcon: { marginTop: 1.5 },
+    notice: { flex: 1, color: colors.dim, fontSize: 12, lineHeight: 17 },
+    noticeStrong: { color: colors.text, fontWeight: "600" },
+    noticeList: { marginTop: 6, marginLeft: 6, paddingLeft: 14, borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: colors.border, gap: 4 },
     promptWrap: {
       alignSelf: "flex-end",
       maxWidth: "88%",

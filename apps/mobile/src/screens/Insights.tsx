@@ -152,6 +152,8 @@ function Code({ data, colors, styles, x }: P) {
         <StatTile label="Lines added" value={formatCount(added)} styles={styles} />
         <StatTile label="Lines removed" value={formatCount(removed)} styles={styles} />
         <StatTile label="Commits" value={formatCount(data.git.commits)} styles={styles} />
+        <StatTile label="Merges" value={formatCount(data.git.merges)} styles={styles} />
+        <StatTile label="Pushes" value={formatCount(data.git.pushes)} styles={styles} />
         <StatTile label="Files touched" value={formatCount(data.filesTouched)} styles={styles} />
       </View>
       <ChartCard title={`Lines changed, last ${LINE_DAYS} days`} styles={styles}>
@@ -167,9 +169,7 @@ function Code({ data, colors, styles, x }: P) {
       <ChartCard title="Most edited files" styles={styles}>
         <RankList x={x} colors={colors} rows={data.topFiles.map((f) => ({ key: `${f.repoName}/${f.path}`, label: fileLabel(f, data.topFiles), value: f.edits }))} />
       </ChartCard>
-      <Text style={styles.footnote}>
-        Merges {formatCount(data.git.merges)} · pushes {formatCount(data.git.pushes)}. Counted from Claude's own edits and git commands.
-      </Text>
+      <Text style={styles.footnote}>Counted from Claude's own edits and git commands; changes you make by hand aren't here.</Text>
     </Section>
   );
 }
@@ -227,6 +227,7 @@ function ClaudesWork({ data, colors, styles, x }: P) {
       )}
       <View style={styles.tiles}>
         <StatTile label="Compactions" value={formatCount(data.compactions.count)} styles={styles} />
+        <StatTile label="Automatic" value={formatCount(data.compactions.auto)} styles={styles} />
         <StatTile label="Typical size" value={data.compactions.avgPreTokens != null ? formatTokenCount(data.compactions.avgPreTokens) : "—"} styles={styles} />
       </View>
       <Text style={styles.footnote}>
@@ -250,6 +251,7 @@ function Approvals({ data, colors, styles, x }: P) {
       <View style={styles.tiles}>
         <StatTile label="Requests" value={formatCount(a.count)} styles={styles} />
         <StatTile label="Allowed" value={formatShare(a.allowed, a.allowed + a.denied)} styles={styles} />
+        <StatTile label="Denied" value={formatCount(a.denied)} styles={styles} />
         <StatTile label="Unanswered" value={formatCount(a.unanswered)} styles={styles} />
         <StatTile label="Typical answer time" value={a.medianResponseMs != null ? formatDuration(a.medianResponseMs) : "—"} styles={styles} />
       </View>

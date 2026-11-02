@@ -1,59 +1,79 @@
 import {
   activeSessions,
   displayBranch,
+  formatAgo,
   formatPurgeCountdown,
   formatResumeAt,
   groupByRepo,
+  sessionsNeedingAttention,
+  setActiveHost,
   trashedSessions,
   unpushedBadge,
+  type AttentionReason,
+  type HostsState,
 } from "@renki/client-core";
 import type { AttachRepoRequest, GithubRepo, Repo, Session } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, FlatList, Keyboard, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { animateLayout, FadeIn, Skeleton } from "../components/Motion";
 import { Sheet } from "../components/Sheet";
 import { useClient } from "../lib/client";
 import { loadCollapsedGroups, saveCollapsedGroups } from "../lib/sessionListPrefs";
+import type { AppConfig } from "../lib/config";
 import { ExportSheet } from "../components/ExportSheet";
 import { NewChatSheet } from "../components/NewChatSheet";
 import { radius, statusColorFor, type ThemeColors, useTheme, withAlpha } from "../theme";
 import { AccountsBar } from "./AccountsBar";
 
-export function SessionList({
-  onSelect,
-  onOpenSettings,
-  onOpenStats,
-  onOpenSearch,
-}: {
+type Props = {
   onSelect: (id: string) => void;
   onOpenSettings: () => void;
   onOpenStats: () => void;
   onOpenSearch: () => void;
-}) {
+  /** With more than one host paired, the header's host name switches between them. */
+  hostsState?: HostsState;
+  /** The same setter Settings → Hosts uses, so a quick switch is the same switch. */
+  onHostsChange?: (next: HostsState) => void;
+};
+
+/** Keyed on the host, so switching starts the list over instead of showing the last host's sessions. */
+export function SessionList(props: Props) {
+  const { config } = useClient();
+  return <SessionListBody key={hostKey(config)} {...props} />;
+}
+
+const hostKey = (config: AppConfig) => config.hostId ?? config.baseUrl;
+
+function SessionListBody({ onSelect, onOpenSettings, onOpenStats, onOpenSearch, hostsState, onHostsChange }: Props) {
   const colors = useTheme();
   const statusColor = statusColorFor(colors);
   const styles = makeStyles(colors);
   const insets = useSafeAreaInsets();
-  const { rest, realtime } = useClient();
+  const { rest, realtime, config } = useClient();
   // Seeded from the last list this app run saw, so coming back from a chat
   // shows it at once instead of blanking and reloading.
-  const [sessions, setSessionsState] = useState<Session[]>(() => lastSessions ?? []);
-  const [loaded, setLoaded] = useState(lastSessions !== null);
-  const [wasLoadedAtMount] = useState(lastSessions !== null);
+  const [cached] = useState(() => (lastSessions?.host === hostKey(config) ? lastSessions.sessions : null));
+  const [sessions, setSessionsState] = useState<Session[]>(() => cached ?? []);
+  const [loaded, setLoaded] = useState(cached !== null);
+  const [wasLoadedAtMount] = useState(cached !== null);
   const [creating, setCreating] = useState(false);
   // Folded repo groups, remembered on the device; Archived and Trash start folded every time, as on the web.
   const [collapsed, setCollapsed] = useState<Set<string>>(() => lastCollapsed ?? new Set());
   const [showArchived, setShowArchived] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
-  const setSessions = useCallback((next: Session[] | ((prev: Session[]) => Session[])) => {
-    setSessionsState((prev) => {
-      const value = typeof next === "function" ? next(prev) : next;
-      lastSessions = value;
-      return value;
-    });
-  }, []);
+  const [switchingHost, setSwitchingHost] = useState(false);
+  const setSessions = useCallback(
+    (next: Session[] | ((prev: Session[]) => Session[])) => {
+      setSessionsState((prev) => {
+        const value = typeof next === "function" ? next(prev) : next;
+        lastSessions = { host: hostKey(config), sessions: value };
+        return value;
+      });
+    },
+    [config],
+  );
 
   const refresh = useCallback(() => {
     rest
@@ -196,11 +216,34 @@ export function SessionList({
   const groups = groupByRepo(active);
   const archived = sessions.filter((s) => s.status === "archived");
   const trashed = trashedSessions(sessions);
+  const attention = useMemo(() => sessionsNeedingAttention(sessions), [sessions]);
+
+  const hosts = hostsState?.hosts ?? [];
+  const activeHost = hosts.find((h) => h.id === hostsState?.activeId);
+  const canSwitch = !!hostsState && !!onHostsChange && hosts.length > 1;
+
+  function switchHost(id: string) {
+    setSwitchingHost(false);
+    if (!hostsState || !onHostsChange || id === hostsState.activeId) return;
+    onHostsChange(setActiveHost(hostsState, id));
+  }
 
   return (
     <View style={[styles.fill, { paddingTop: insets.top + 14 }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>Sessions</Text>
+        {canSwitch ? (
+          <TouchableOpacity style={styles.titleBtn} onPress={() => setSwitchingHost(true)} activeOpacity={0.7} accessibilityLabel="Switch host">
+            <Text style={styles.title}>Sessions</Text>
+            <View style={styles.hostChip}>
+              <Text style={styles.hostChipText} numberOfLines={1}>
+                {activeHost?.label ?? "Host"}
+              </Text>
+              <Ionicons name="chevron-down" size={13} color={colors.faint} />
+            </View>
+          </TouchableOpacity>
+        ) : (
+          <Text style={styles.title}>Sessions</Text>
+        )}
         <View style={styles.headerActions}>
           <TouchableOpacity style={styles.iconBtn} onPress={onOpenSearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Ionicons name="search-outline" size={19} color={colors.dim} />
@@ -223,6 +266,28 @@ export function SessionList({
       ) : (
       <FadeIn enabled={!wasLoadedAtMount} distance={0} style={styles.list}>
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
+        {attention.length > 0 && (
+          <View accessibilityLabel="Needs your attention">
+            <Text style={[styles.sectionHeader, { paddingTop: 4 }]}>Needs your attention</Text>
+            <View style={styles.attentionCard}>
+              {attention.map(({ session, reason }, i) => (
+                <TouchableOpacity
+                  key={session.id}
+                  style={[styles.attentionRow, i > 0 && styles.attentionDivider]}
+                  activeOpacity={0.7}
+                  onPress={() => onSelect(session.id)}
+                >
+                  <AttentionBadge reason={reason} resumeAt={session.resume?.at ?? null} colors={colors} styles={styles} />
+                  <Text style={styles.attentionTitle} numberOfLines={1}>
+                    {session.title || session.repoName}
+                  </Text>
+                  <Text style={styles.attentionAgo}>{formatAgo(session.lastActivityAt)}</Text>
+                  <Ionicons name="chevron-forward" size={14} color={colors.faint} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
         {active.length === 0 && <Text style={styles.empty}>No sessions yet.</Text>}
         {groups.map((g) => {
           const isCollapsed = collapsed.has(g.key);
@@ -341,6 +406,50 @@ export function SessionList({
           onSelect(id);
         }}
       />
+
+      {canSwitch && (
+        <Sheet visible={switchingHost} onClose={() => setSwitchingHost(false)} title="Switch host" colors={colors}>
+          <View style={styles.sheetBody}>
+            {hosts.map((h) => {
+              const on = h.id === hostsState?.activeId;
+              return (
+                <TouchableOpacity key={h.id} style={[styles.sheetRow, on && styles.repoRowSelected]} onPress={() => switchHost(h.id)}>
+                  <Ionicons name="server-outline" size={18} color={on ? colors.accent : colors.dim} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.sheetRowText} numberOfLines={1}>
+                      {h.label}
+                    </Text>
+                    <Text style={styles.rowSub} numberOfLines={1}>
+                      {h.baseUrl}
+                    </Text>
+                  </View>
+                  {on && <Ionicons name="checkmark" size={18} color={colors.accent} />}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </Sheet>
+      )}
+    </View>
+  );
+}
+
+/** Why a chat is on the attention list, in a word or two and a colour. Same words as the web's Home. */
+function AttentionBadge({ reason, resumeAt, colors, styles }: { reason: AttentionReason; resumeAt: number | null; colors: ThemeColors; styles: Styles }) {
+  const { icon, tone, label } =
+    reason === "permission"
+      ? { icon: "shield-outline" as const, tone: colors.danger, label: "Needs approval" }
+      : reason === "error"
+        ? { icon: "alert-circle-outline" as const, tone: colors.danger, label: "Failed" }
+        : reason === "paused"
+          ? { icon: "pause-circle-outline" as const, tone: colors.busy, label: resumeAt ? formatResumeAt(resumeAt) : "Paused" }
+          : { icon: "cloud-upload-outline" as const, tone: colors.busy, label: "Not pushed" };
+  return (
+    <View style={styles.attentionBadge}>
+      <Ionicons name={icon} size={14} color={tone} />
+      <Text style={[styles.attentionBadgeText, { color: tone }]} numberOfLines={1}>
+        {label}
+      </Text>
     </View>
   );
 }
@@ -690,6 +799,16 @@ const makeStyles = (colors: ThemeColors) =>
       paddingBottom: 14,
     },
     title: { color: colors.text, fontSize: 20, fontWeight: "700" },
+    titleBtn: { flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 1, marginRight: 12 },
+    hostChip: { flexDirection: "row", alignItems: "center", gap: 3, flexShrink: 1 },
+    hostChipText: { color: colors.faint, fontSize: 14, fontWeight: "600", flexShrink: 1 },
+    attentionCard: { backgroundColor: colors.panel, borderRadius: radius.md, overflow: "hidden" },
+    attentionRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 12, paddingVertical: 10 },
+    attentionDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+    attentionBadge: { flexDirection: "row", alignItems: "center", gap: 5, maxWidth: 130 },
+    attentionBadgeText: { fontSize: 12, fontWeight: "600", flexShrink: 1 },
+    attentionTitle: { flex: 1, color: colors.text, fontSize: 13 },
+    attentionAgo: { color: colors.faint, fontSize: 11 },
     headerActions: { flexDirection: "row", alignItems: "center", gap: 14 },
     iconBtn: { padding: 2 },
     link: { color: colors.dim, fontSize: 14, fontWeight: "600" },
@@ -791,8 +910,8 @@ const makeStyles = (colors: ThemeColors) =>
     modalActions: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 16, marginTop: 14 },
   });
 
-/** The last session list seen this app run — see SessionList's state seed. */
-let lastSessions: Session[] | null = null;
+/** The last session list seen this app run, and whose it was — see SessionList's state seed. */
+let lastSessions: { host: string; sessions: Session[] } | null = null;
 /** Folded groups, once read from storage, so a return to the list doesn't unfold and refold. */
 let lastCollapsed: Set<string> | null = null;
 

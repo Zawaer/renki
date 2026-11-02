@@ -1,5 +1,6 @@
-import type { InsightsResponse, RepoStatsBucket, RtkGainResponse, StatsBucket, StatsResponse } from "@renki/protocol";
+import type { InsightsResponse, RepoStatsBucket, RtkGainResponse, Session, StatsBucket, StatsResponse } from "@renki/protocol";
 import {
+  activityGrid,
   formatClientTypeLabel,
   formatCost,
   formatDayLabel,
@@ -8,19 +9,28 @@ import {
   formatMonthLabel,
   formatSuccessRate,
   formatTokenCount,
+  intensity,
   lastNDays,
+  streaks,
+  sumRecent,
+  tokensInPerspective,
   totalTokens,
 } from "@renki/client-core";
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "../lib/client";
-import { type ThemeColors, useTheme } from "../theme";
+import { radius, type ThemeColors, useTheme, withAlpha } from "../theme";
 import { Insights } from "./Insights";
 import { Bars, ChartCard, Legend, Section, SimpleTable, StatTile, type Styles, makeStyles } from "./statsParts";
 
 const DAY_WINDOW = 14;
+const HEATMAP_WEEKS = 26;
+const HEAT_CELL = 14;
+const HEAT_GAP = 3;
+
+type Range = "all" | "30d" | "7d" | "1d";
 
 /**
  * Cost/token/wait-time analytics — mobile mirror of the web app's StatsView.
@@ -29,6 +39,8 @@ const DAY_WINDOW = 14;
  * per-turn estimate, same figure shown under each reply in SessionView.
  * Web's hover tooltips become tap-to-reveal here (no hover on touch), and its
  * side-by-side chart grid stacks into a single column for phone width.
+ * It opens on the web Home's dashboard card (see Overview), since the phone
+ * has no home screen of its own.
  */
 export function StatsView({ onBack, onOpenSession }: { onBack: () => void; onOpenSession: (id: string) => void }) {
   const colors = useTheme();
@@ -39,6 +51,8 @@ export function StatsView({ onBack, onOpenSession }: { onBack: () => void; onOpe
   const [error, setError] = useState(false);
   const [rtk, setRtk] = useState<RtkGainResponse | null>(null);
   const [insights, setInsights] = useState<InsightsResponse | null>(null);
+  /** Only for the range's session count; the tile reads "…" until it lands. */
+  const [sessions, setSessions] = useState<Session[] | null>(null);
 
   const refresh = useCallback(() => {
     rest
@@ -51,6 +65,7 @@ export function StatsView({ onBack, onOpenSession }: { onBack: () => void; onOpe
     rest.getRtkGain().then(setRtk).catch(() => {});
     // Optional: a daemon from before insights answers 404, and the screen is just the cost stats.
     rest.getInsights().then(setInsights).catch(() => {});
+    rest.listSessions().then(setSessions).catch(() => {});
   }, [rest]);
 
   useEffect(() => {
@@ -86,7 +101,7 @@ export function StatsView({ onBack, onOpenSession }: { onBack: () => void; onOpe
           {rtk?.enabled && <RtkSection rtk={rtk} colors={colors} styles={styles} />}
         </ScrollView>
       ) : (
-        <StatsBody data={data} rtk={rtk} insights={insights} onOpenSession={onOpenSession} colors={colors} styles={styles} />
+        <StatsBody data={data} sessions={sessions} rtk={rtk} insights={insights} onOpenSession={onOpenSession} colors={colors} styles={styles} />
       )}
     </View>
   );
@@ -94,6 +109,7 @@ export function StatsView({ onBack, onOpenSession }: { onBack: () => void; onOpe
 
 function StatsBody({
   data,
+  sessions,
   rtk,
   insights,
   onOpenSession,
@@ -101,6 +117,7 @@ function StatsBody({
   styles,
 }: {
   data: StatsResponse;
+  sessions: Session[] | null;
   rtk: RtkGainResponse | null;
   insights: InsightsResponse | null;
   onOpenSession: (id: string) => void;
@@ -111,14 +128,7 @@ function StatsBody({
 
   return (
     <ScrollView contentContainerStyle={styles.body}>
-      <View style={styles.tiles}>
-        <StatTile label="Total cost" value={formatCost(data.lifetime.costUsd)} styles={styles} />
-        <StatTile label="Input tokens" value={formatTokenCount(data.lifetime.inputTokens)} styles={styles} />
-        <StatTile label="Output tokens" value={formatTokenCount(data.lifetime.outputTokens)} styles={styles} />
-        <StatTile label="Time waited" value={formatDuration(data.lifetime.durationMs)} styles={styles} />
-        <StatTile label="Replies received" value={`${data.lifetime.turnCount}`} styles={styles} />
-        <StatTile label="Success rate" value={formatSuccessRate(data.lifetime)} styles={styles} />
-      </View>
+      <Overview data={data} sessions={sessions} colors={colors} styles={styles} />
 
       {insights && <Insights data={insights} stats={data} colors={colors} styles={styles} onOpenSession={onOpenSession} />}
 
@@ -342,6 +352,136 @@ function StatsBody({
     </ScrollView>
   );
 }
+
+/**
+ * The web Home's dashboard card: headline numbers for a time range, the
+ * half-year activity heatmap, streaks and the tokens-in-perspective line.
+ * Same client-core helpers as web, so both show the same figures.
+ */
+function Overview({ data, sessions, colors, styles }: { data: StatsResponse; sessions: Session[] | null; colors: ThemeColors; styles: Styles }) {
+  const [range, setRange] = useState<Range>("all");
+  const o = useMemo(() => makeOverviewStyles(colors), [colors]);
+  const streak = useMemo(() => streaks(data.daily), [data]);
+
+  const rangeDays = range === "1d" ? 1 : range === "7d" ? 7 : range === "30d" ? 30 : null;
+  const bucket: StatsBucket = rangeDays ? sumRecent(rangeDays, data.daily) : data.lifetime;
+  const activeDays = data.daily.filter((d) => d.turnCount > 0 && (!rangeDays || withinDays(d.key, rangeDays))).length;
+  const sessionCount = sessions ? sessions.filter((s) => !rangeDays || Date.now() - s.createdAt <= rangeDays * 86_400_000).length : null;
+  const perspective = tokensInPerspective(totalTokens(data.lifetime));
+
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHead}>
+        <Text style={styles.sectionTitle}>Overview</Text>
+        <View style={o.ranges}>
+          {(["all", "30d", "7d", "1d"] as Range[]).map((r) => (
+            <TouchableOpacity key={r} onPress={() => setRange(r)} style={[o.range, range === r && o.rangeOn]} hitSlop={{ top: 6, bottom: 6 }}>
+              <Text style={[o.rangeText, range === r && o.rangeTextOn]}>{r === "all" ? "All" : r}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+      <View style={styles.tiles}>
+        <StatTile label="Sessions" value={sessionCount == null ? "…" : String(sessionCount)} styles={styles} />
+        <StatTile label="Replies" value={String(bucket.turnCount)} styles={styles} />
+        <StatTile
+          label="Total tokens"
+          value={formatTokenCount(totalTokens(bucket))}
+          detail={`${formatTokenCount(bucket.inputTokens + bucket.outputTokens)} new · ${formatTokenCount(bucket.cachedInputTokens ?? 0)} cached`}
+          styles={styles}
+        />
+        <StatTile label="Spend" value={formatCost(bucket.costUsd)} styles={styles} />
+        <StatTile label="Active days" value={String(activeDays)} styles={styles} />
+        <StatTile label="Success rate" value={formatSuccessRate(bucket)} styles={styles} />
+        <StatTile label="Current streak" value={`${streak.current}d`} styles={styles} />
+        <StatTile label="Longest streak" value={`${streak.longest}d`} styles={styles} />
+      </View>
+      <ChartCard title="Last six months" styles={styles}>
+        <ActivityHeatmap data={data} colors={colors} o={o} />
+        {perspective ? <Text style={[styles.muted, { marginTop: 10 }]}>{perspective}</Text> : null}
+        <Text style={[styles.footnote, { marginTop: 4 }]}>{formatDuration(data.lifetime.durationMs)} spent waiting on Claude</Text>
+      </ChartCard>
+    </View>
+  );
+}
+
+const HEAT_ROW_LABELS = ["Mon", "", "Wed", "", "Fri", "", ""];
+
+/**
+ * 26 weeks is wider than a phone, so the grid scrolls sideways and opens
+ * scrolled to the end, with this week in view. Tap a day for its numbers.
+ */
+function ActivityHeatmap({ data, colors, o }: { data: StatsResponse; colors: ThemeColors; o: OverviewStyles }) {
+  const grid = useMemo(() => activityGrid(HEATMAP_WEEKS, data.daily), [data]);
+  const maxDay = useMemo(() => grid.reduce((m, col) => Math.max(m, ...col.map((c) => c.turnCount)), 0), [grid]);
+  const [active, setActive] = useState<string | null>(null);
+  const scroll = useRef<ScrollView>(null);
+  const cell = grid.flat().find((c) => c.key === active);
+  // Same steps as the web's heatClass: an empty day is a well, then four strengths of the accent.
+  const fill = (level: 0 | 1 | 2 | 3 | 4) => (level === 0 ? colors.inset : withAlpha(colors.accent, [0, 0.3, 0.5, 0.75, 1][level]!));
+
+  return (
+    <View>
+      <Text style={o.readout}>
+        {cell
+          ? `${formatDayLabel(cell.key)}: ${cell.turnCount === 0 ? "no replies" : `${cell.turnCount} repl${cell.turnCount === 1 ? "y" : "ies"} · ${formatCost(cell.costUsd)}`}`
+          : "Tap a day for its numbers."}
+      </Text>
+      <View style={{ flexDirection: "row" }}>
+        <View style={o.heatLabels}>
+          {HEAT_ROW_LABELS.map((l, i) => (
+            <Text key={i} style={o.heatLabel}>
+              {l}
+            </Text>
+          ))}
+        </View>
+        <ScrollView ref={scroll} horizontal showsHorizontalScrollIndicator={false} onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })}>
+          <View style={o.heatGrid}>
+            {grid.map((col, ci) => (
+              <View key={ci} style={o.heatCol}>
+                {col.map((c) =>
+                  c.future ? (
+                    <View key={c.key} style={o.heatCell} />
+                  ) : (
+                    <Pressable
+                      key={c.key}
+                      onPress={() => setActive((k) => (k === c.key ? null : c.key))}
+                      style={[o.heatCell, { backgroundColor: fill(intensity(c.turnCount, maxDay)) }, active === c.key && { borderWidth: 1.5, borderColor: colors.text }]}
+                      accessibilityLabel={`${formatDayLabel(c.key)}: ${c.turnCount} replies`}
+                    />
+                  ),
+                )}
+              </View>
+            ))}
+          </View>
+        </ScrollView>
+      </View>
+    </View>
+  );
+}
+
+function withinDays(dayKey: string, days: number): boolean {
+  const start = new Date();
+  start.setUTCDate(start.getUTCDate() - days + 1);
+  return dayKey >= start.toISOString().slice(0, 10);
+}
+
+type OverviewStyles = ReturnType<typeof makeOverviewStyles>;
+
+const makeOverviewStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    ranges: { flexDirection: "row", gap: 2, backgroundColor: colors.panel, borderRadius: radius.pill, padding: 2 },
+    range: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.pill },
+    rangeOn: { backgroundColor: withAlpha(colors.accent, 0.16) },
+    rangeText: { color: colors.faint, fontSize: 12, fontWeight: "600" },
+    rangeTextOn: { color: colors.text },
+    readout: { color: colors.text, fontSize: 11, marginBottom: 8, fontVariant: ["tabular-nums"] },
+    heatLabels: { gap: HEAT_GAP, marginRight: 6 },
+    heatLabel: { height: HEAT_CELL, lineHeight: HEAT_CELL, color: colors.faint, fontSize: 9 },
+    heatGrid: { flexDirection: "row", gap: HEAT_GAP },
+    heatCol: { gap: HEAT_GAP },
+    heatCell: { width: HEAT_CELL, height: HEAT_CELL, borderRadius: 4 },
+  });
 
 function RtkSection({ rtk, colors, styles }: { rtk: RtkGainResponse; colors: ThemeColors; styles: Styles }) {
   if (!rtk.available || !rtk.summary) {

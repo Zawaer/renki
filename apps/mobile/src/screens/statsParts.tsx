@@ -54,11 +54,12 @@ export function Legend({ items, styles }: { items: { label: string; color: strin
   );
 }
 
-export function StatTile({ label, value, styles }: { label: string; value: string; styles: Styles }) {
+export function StatTile({ label, value, detail, styles }: { label: string; value: string; detail?: string; styles: Styles }) {
   return (
     <View style={styles.tile}>
       <Text style={styles.tileLabel}>{label}</Text>
       <Text style={styles.tileValue}>{value}</Text>
+      {detail && <Text style={styles.tileDetail}>{detail}</Text>}
     </View>
   );
 }
@@ -183,6 +184,7 @@ export const makeStyles = (colors: ThemeColors) =>
     },
     tileLabel: { color: colors.faint, fontSize: 11 },
     tileValue: { color: colors.text, fontSize: 18, fontWeight: "700", marginTop: 3 },
+    tileDetail: { color: colors.faint, fontSize: 10, marginTop: 2 },
     section: { gap: 10 },
     sectionHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     sectionTitle: { color: colors.faint, fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },

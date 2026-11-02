@@ -1,4 +1,4 @@
-import { DEFAULT_PALETTE, PALETTES, removeHost, updateHost, type HostsState, type PaletteKey } from "@renki/client-core";
+import { DEFAULT_PALETTE, PALETTES, removeHost, setActiveHost, updateHost, type HostsState, type PaletteKey } from "@renki/client-core";
 import type { Account, AccountsResponse, RotationStatus } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
@@ -142,9 +142,9 @@ function Section({
  * that host's sessions without re-pairing — the pairing (URL + token) is what
  * each row stores, and this phone's own identity is shared across all of them.
  *
- * Lives here rather than as a header control: on a phone, Settings is already
- * where connection management lives, and the session list header has no room
- * for a dropdown next to its title and actions.
+ * This is where hosts are managed; the session list header has a quick
+ * switcher too (once two are paired) that goes through the same
+ * `onHostsChange(setActiveHost(...))`.
  */
 function HostsSection({
   colors,
@@ -206,7 +206,7 @@ function HostsSection({
               <TouchableOpacity
                 style={styles.hostRowMain}
                 onPress={() => {
-                  if (!active) onHostsChange({ ...hostsState, activeId: h.id });
+                  if (!active) onHostsChange(setActiveHost(hostsState, h.id));
                 }}
               >
                 <Text style={styles.hostLabel} numberOfLines={1}>

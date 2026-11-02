@@ -1341,6 +1341,29 @@ describe("live process pool", () => {
     expect([a.id, b.id, c.id]).toHaveLength(3);
   });
 
+  it("a process busy at an account switch is restarted once it's idle, not before", async () => {
+    const { manager, repoId } = setup();
+    const s = await prompted(manager, repoId);
+    const live = liveInstances[0]!;
+    live.busy = true;
+    live.backgroundTaskCount = 1;
+    manager.recycleIdleLiveSessions();
+    expect(live.isClosed).toBe(false);
+
+    // Its turn ends but an agent still runs: keep it.
+    live.busy = false;
+    live.opts.onAutoTurnStart?.("t_auto", "auto_t_auto");
+    live.opts.onAutoTurnEnd?.(okTurn);
+    expect(live.isClosed).toBe(false);
+
+    // Agent done, next turn ends idle: now it moves to the new account.
+    live.backgroundTaskCount = 0;
+    live.opts.onAutoTurnStart?.("t_auto2", "auto_t_auto2");
+    live.opts.onAutoTurnEnd?.(okTurn);
+    expect(live.closeReasons).toEqual(["account switched"]);
+    expect(manager.getSession(s.id).status).toBe("idle");
+  });
+
   it("an auto turn flips the session busy, then idle, and drains a prompt that had to be queued behind it", async () => {
     const { manager, repoId } = setup();
     const s = await prompted(manager, repoId);

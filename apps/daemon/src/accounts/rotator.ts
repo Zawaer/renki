@@ -28,10 +28,14 @@ export type RateLimitSwitch = { switched: boolean; active: number | null; reason
  *   - respecting a cooldown so it can't flip-flop,
  *   - FAIL SAFE: if usage is unavailable or cswap errors, hold (never switch
  *     blind),
- *   - NEVER mid-flight: defer while any session is running a turn, because a
- *     live `claude` process could otherwise refresh its token against the wrong
- *     account. Because we use resume-per-prompt, the swap lands cleanly and the
- *     next turn of any session simply starts on the new account.
+ *   - without waiting for quiet: sessions now keep a `claude` process alive
+ *     between turns, so a long-running one (a night of background agents) used
+ *     to keep every switch on hold, preferred account included. A process
+ *     that's busy at the switch keeps the old account in memory and is
+ *     restarted once it's idle (SessionManager.recycleIdleLiveSessions); cswap
+ *     holds Claude Code's credential lock while swapping, and if an old
+ *     process's token refresh later puts its account back on disk, cswap
+ *     reports none active and claimAnAccount sorts it out.
  *
  * The swap is global (it changes the active account for every future turn),
  * which is exactly the manual behavior being automated.
@@ -435,7 +439,6 @@ export class AccountRotator {
     const preferred = this.preferredEmail ? accounts.find((a) => a.email.toLowerCase() === this.preferredEmail) : undefined;
     if (preferred && !preferred.active && this.hasHeadroom(preferred)) {
       if (this.lastSwitchAt && Date.now() - this.lastSwitchAt < cooldownMs) return this.hold("cooldown");
-      if (this.anyBusy()) return this.hold("session busy");
       await this.cswap.switchTo(preferred.number);
       this.onSwitched?.();
       this.lastSwitchAt = Date.now();
@@ -454,9 +457,6 @@ export class AccountRotator {
     if (alternatives.length === 0) return this.hold("all accounts at limit");
 
     if (this.lastSwitchAt && Date.now() - this.lastSwitchAt < cooldownMs) return this.hold("cooldown");
-
-    // Never swap while a turn is live — defer to a later tick.
-    if (this.anyBusy()) return this.hold("session busy");
 
     // With a preference set, the target must be a specific account — cswap's
     // own "best" strategy could otherwise pick the very account being

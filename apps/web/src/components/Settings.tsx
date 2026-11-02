@@ -449,7 +449,7 @@ function RotationSettings({
         <div className="min-w-0">
           <div className="text-[13px] font-medium text-(--renki-fg)">Auto-switch accounts</div>
           <div className="mt-0.5 text-xs text-(--renki-fg-muted)">
-            When the active account's usage crosses the threshold on any limit, switch to one with headroom. Never mid-turn.
+            When the active account's usage crosses the threshold on any limit, switch to one with headroom. A chat that's working moves over once it's idle.
           </div>
         </div>
         <Switch checked={rotation.enabled} disabled={busy} onChange={toggleEnabled} label="Auto-switch accounts" />

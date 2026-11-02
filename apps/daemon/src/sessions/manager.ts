@@ -185,6 +185,8 @@ export class SessionManager {
    * next prompt's spawn time.
    */
   private readonly live = new Map<string, LiveClaudeSession>();
+  /** Sessions whose `claude` was busy at an account switch and still runs on the old account (see recycleIdleLiveSessions). */
+  private readonly staleAccount = new Set<string>();
   private reaper: NodeJS.Timeout | null = null;
   /**
    * Sessions currently inside runOneTurn (between flipping busy and settling).
@@ -1474,6 +1476,7 @@ export class SessionManager {
     // failure is handled, and the session list shows the pause instead.
     const paused = !result.ok && result.rateLimited && !result.interrupted && (await this.scheduleResume(input, result));
 
+    this.recycleIfStale(input.sessionId);
     const nextStatus: SessionStatus = result.ok || paused ? "idle" : "error";
     this.patch(input.sessionId, {
       status: nextStatus,
@@ -1915,14 +1918,28 @@ export class SessionManager {
   /**
    * Close every live process that has nothing running — used after an account
    * switch, since a running `claude` may keep the old account's credentials in
-   * memory. Busy sessions and ones with background agents are left alone; the
-   * rate-limit retry path handles its own session explicitly.
+   * memory. Busy sessions and ones with background agents are left alone, and
+   * marked, so they're restarted onto the new account as soon as they're idle
+   * (recycleIfStale); the rate-limit retry path handles its own session
+   * explicitly.
    */
   recycleIdleLiveSessions(reason = "account switched"): void {
     for (const [id, live] of [...this.live]) {
-      if (live.busy || live.backgroundTaskCount > 0 || this.buildsRunning(id)) continue;
+      if (live.busy || live.backgroundTaskCount > 0 || this.buildsRunning(id)) {
+        this.staleAccount.add(id);
+        continue;
+      }
       this.closeLive(id, reason);
     }
+  }
+
+  /** A session marked by recycleIdleLiveSessions that now has nothing running: restart it on the current account. */
+  private recycleIfStale(id: string): void {
+    if (!this.staleAccount.has(id)) return;
+    const live = this.live.get(id);
+    if (live && (live.busy || live.backgroundTaskCount > 0 || this.buildsRunning(id))) return;
+    this.staleAccount.delete(id);
+    if (live) this.closeLive(id, "account switched");
   }
 
   /** Number of sessions currently backed by a running `claude` process (for status/diagnostics). */
@@ -1979,6 +1996,7 @@ export class SessionManager {
         if (this.promptedTurns.has(sessionId)) return;
         const settle = (status: SessionStatus) => {
           if (this.isRetired(sessionId) || this.promptedTurns.has(sessionId)) return;
+          this.recycleIfStale(sessionId);
           this.patch(sessionId, { status });
           this.events.append(sessionId, { kind: "status_changed", status });
           this.drainQueue(sessionId);
@@ -2017,6 +2035,7 @@ export class SessionManager {
   }
 
   private closeLive(id: string, reason: string): void {
+    this.staleAccount.delete(id);
     const live = this.live.get(id);
     if (!live) return;
     this.live.delete(id);

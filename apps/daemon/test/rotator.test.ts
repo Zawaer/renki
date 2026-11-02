@@ -204,18 +204,37 @@ describe("AccountRotator.evaluate (via tick)", () => {
     expect(rotator.status().lastHoldReason).toBe("cooldown");
   });
 
-  it("never switches mid-flight — holds 'session busy' even over threshold with headroom and no cooldown", async () => {
+  /**
+   * Sessions now keep a process alive between turns, so "wait until nothing is
+   * busy" could hold a switch all night. A busy process stays on the old
+   * account until it's idle (SessionManager.recycleIdleLiveSessions).
+   */
+  it("switches over threshold even while a session is busy", async () => {
     const { rotator, cswap } = setup({
       threshold: 90,
       busy: true,
+      switchImpl: async () => 2,
       accounts: [
         account({ number: 1, active: true, usage: { fiveHour: { pct: 95, resetsAt: null }, sevenDay: { pct: 10, resetsAt: null }, extra: null } }),
         account({ number: 2, email: "b@example.com", active: false }),
       ],
     });
     await rotator.tick();
-    expect(cswap.switch).not.toHaveBeenCalled();
-    expect(rotator.status().lastHoldReason).toBe("session busy");
+    expect(cswap.switch).toHaveBeenCalledWith("best");
+  });
+
+  it("returns to the preferred account once it has room, even while a session is busy", async () => {
+    const { rotator, cswap } = setup({
+      threshold: 95,
+      busy: true,
+      accounts: [
+        account({ number: 1, email: "a@example.com", active: true, usage: { fiveHour: { pct: 86, resetsAt: null }, sevenDay: { pct: 11, resetsAt: null }, extra: null } }),
+        account({ number: 2, email: "preferred@example.com", active: false, usage: { fiveHour: { pct: 0, resetsAt: null }, sevenDay: { pct: 53, resetsAt: null }, extra: null } }),
+      ],
+    });
+    (rotator as any).preferredEmail = "preferred@example.com";
+    await rotator.tick();
+    expect(cswap.switchTo).toHaveBeenCalledWith(2);
   });
 
   it("switches when over threshold, headroom exists, no cooldown, and nothing is busy", async () => {

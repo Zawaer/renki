@@ -1,4 +1,4 @@
-import { formatHitTime, groupSearchHits, splitSnippet, type SearchGroup } from "@renki/client-core";
+import { formatHitTime, groupSearchHits, searchHitAnchor, splitSnippet, type SearchGroup } from "@renki/client-core";
 import type { SearchHit, SearchResponse } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useMemo, useState } from "react";
@@ -14,10 +14,16 @@ const DEBOUNCE_MS = 250;
 
 /**
  * Search everything said in every chat, your prompts and Claude's replies,
- * through the daemon's /search. Mirrors the web's SearchPalette, except a hit
- * just opens its chat: SessionView doesn't scroll to an anchor yet.
+ * through the daemon's /search. Mirrors the web's SearchPalette: a hit opens
+ * its chat scrolled to that message, with the match marked.
  */
-export function SearchScreen({ onBack, onOpenSession }: { onBack: () => void; onOpenSession: (id: string) => void }) {
+export function SearchScreen({
+  onBack,
+  onOpenHit,
+}: {
+  onBack: () => void;
+  onOpenHit: (sessionId: string, anchor: string, query: string) => void;
+}) {
   const colors = useTheme();
   const styles = makeStyles(colors);
   const insets = useSafeAreaInsets();
@@ -104,7 +110,7 @@ export function SearchScreen({ onBack, onOpenSession }: { onBack: () => void; on
                 <View key={g.sessionId} style={styles.group}>
                   <GroupHeader group={g} styles={styles} />
                   {shown.map((hit) => (
-                    <HitRow key={`${hit.sessionId}:${hit.seq}`} hit={hit} colors={colors} styles={styles} onOpen={() => onOpenSession(hit.sessionId)} />
+                    <HitRow key={`${hit.sessionId}:${hit.seq}`} hit={hit} colors={colors} styles={styles} onOpen={() => onOpenHit(hit.sessionId, searchHitAnchor(hit), result?.query ?? q)} />
                   ))}
                   {shown.length < g.hits.length && (
                     <TouchableOpacity

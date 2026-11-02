@@ -66,7 +66,6 @@ import {
   FlatList,
   Image,
   KeyboardAvoidingView,
-  Modal,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Platform,
@@ -85,6 +84,8 @@ import { AgentsButton, AgentsSheet } from "../components/AgentsSheet";
 import { Sheet } from "../components/Sheet";
 import { FileSheet, type OpenFile } from "../components/FileSheet";
 import { SessionToolsSheet } from "../components/SessionToolsSheet";
+import { ImageViewer } from "../components/ImageViewer";
+import { SearchFlash, SearchFlashContext, type SearchFlashTarget, SearchMatchText } from "../components/SearchFlash";
 import { FileLinkContext, type FileLinkTarget } from "../lib/fileLinks";
 import { pickDocumentAttachments, pickImageAttachments, type PendingAttachment } from "../lib/attachments";
 import { loadDeviceDefaults, rememberDeviceDefaults } from "../lib/composerPrefs";
@@ -95,7 +96,19 @@ import { ExportSheet } from "../components/ExportSheet";
 import { useAndroidKeyboardResizeAnimation } from "../lib/useAndroidKeyboardResizeAnimation";
 import { radius, softShadow, statusColorFor, type ThemeColors, useTheme, withAlpha } from "../theme";
 
-export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: () => void }) {
+export function SessionView({
+  sessionId,
+  onBack,
+  jumpTo,
+  onJumped,
+}: {
+  sessionId: string;
+  onBack: () => void;
+  /** Opened from search: the hit's anchor (`searchHitAnchor`) and the query, to scroll to and mark. */
+  jumpTo?: { anchor: string; query: string } | null;
+  /** Called once the hit is found, so the chat behaves normally from then on. */
+  onJumped?: () => void;
+}) {
   const colors = useTheme();
   const statusColor = statusColorFor(colors);
   const styles = makeStyles(colors);
@@ -137,7 +150,9 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const [modelSheetOpen, setModelSheetOpen] = useState(false);
   const [effortSheetOpen, setEffortSheetOpen] = useState(false);
   const [modeSheetOpen, setModeSheetOpen] = useState(false);
-  const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null);
+  /** The image viewer: every image of the message tapped, opened on the one tapped. */
+  const [preview, setPreview] = useState<{ images: Attachment[]; index: number } | null>(null);
+  const openPreview = useMemo<OpenPreview>(() => (images, index) => setPreview({ images, index }), []);
 
   useEffect(() => {
     realtime.watch(sessionId);
@@ -330,6 +345,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   // without scrolling after every change. Scrolled up, the FlatList's
   // maintainVisibleContentPosition keeps it from moving under you.
   function onTimelineScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
+    scrollOffset.current = e.nativeEvent.contentOffset.y;
     const stick = e.nativeEvent.contentOffset.y <= 24;
     if (!stick && Date.now() < jumpingUntil.current) return;
     stickToBottom.current = stick;
@@ -363,6 +379,51 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
   const rows = useMemo(() => timelineWithSending(conv), [conv.timeline, conv.sendingPrompts, conv.queuedPrompts]);
   /** Newest first for the inverted list, each with its position in the timeline for a stable key. */
   const entries = useMemo(() => rows.map((item, index): TimelineEntry => ({ item, index })).reverse(), [rows]);
+  /**
+   * Opened from search: once the hit's row is in the timeline, scroll to it
+   * (rows far back aren't rendered yet, hence the index and the fallback in
+   * onScrollToIndexFailed), then mark it. The mark measures where it landed
+   * and the list brings it to the middle. Opening a chat any other way skips
+   * all of this.
+   */
+  const timelineRef = useRef<View>(null);
+  const scrollOffset = useRef(0);
+  const [flash, setFlash] = useState<SearchFlashTarget | null>(null);
+  const jumpIndex = useRef<number | null>(null);
+  const jumpRetries = useRef(0);
+  const handledJump = useRef<object | null>(null);
+  useEffect(() => {
+    if (!jumpTo || handledJump.current === jumpTo) return;
+    const found = findSearchAnchor(entries, jumpTo.anchor);
+    if (!found) return;
+    handledJump.current = jumpTo;
+    stickToBottom.current = false;
+    setAtBottom(false);
+    jumpIndex.current = found.index;
+    jumpRetries.current = 0;
+    scrollRef.current?.scrollToIndex({ index: found.index, viewPosition: 0.5, animated: false });
+    setFlash({ anchor: found.anchor, query: jumpTo.query, onPlaced: centerSearchHit });
+    onJumped?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries, jumpTo, onJumped]);
+  // The query stays marked for a few seconds, as on the web.
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(null), 4000);
+    return () => clearTimeout(t);
+  }, [flash]);
+
+  /** Moves the marked view to the middle of the timeline, or its top near the top when it's taller than that. */
+  function centerSearchHit(y: number, height: number) {
+    timelineRef.current?.measureInWindow((_x, top, _w, visible) => {
+      const target = height < visible * 0.8 ? top + visible / 2 - height / 2 : top + 24;
+      const delta = y - target;
+      if (Math.abs(delta) < 8) return;
+      // Inverted: a bigger offset moves the content down, so a hit below its spot needs a smaller one.
+      scrollRef.current?.scrollToOffset({ offset: Math.max(0, scrollOffset.current - delta), animated: true });
+    });
+  }
+
   /** The session's subagents as a tree — the header's Agents button and sheet. */
   const agents = useMemo(() => agentMapOf(conv.timeline), [conv.timeline]);
   /** Commands sent to run in the background (the web's agent map lists them too). */
@@ -517,7 +578,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
         "always" is the safer choice for the one ScrollView the fix has to
         actually work on.
       */}
-      <View style={styles.timelineWrap}>
+      <View style={styles.timelineWrap} ref={timelineRef}>
         {/*
           Virtualised and inverted: only what's on screen (plus a little
           either side) is rendered, starting from the newest, so a chat with
@@ -529,6 +590,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
           distance={0}
           style={styles.timeline}
         >
+        <SearchFlashContext.Provider value={flash}>
         <FlatList
           ref={scrollRef}
           inverted
@@ -539,7 +601,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
               item={item.item}
               colors={colors}
               styles={styles}
-              onPreview={setPreviewAttachment}
+              onPreview={openPreview}
               animate={settledCount.current !== null && item.index >= settledCount.current}
               afterNotice={item.item.type === "notice" && rows[item.index - 1]?.type === "notice"}
             />
@@ -573,7 +635,16 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
           initialNumToRender={6}
           maxToRenderPerBatch={6}
           windowSize={9}
+          // Only a search jump scrolls by index: land near the row by its average height, then try again.
+          onScrollToIndexFailed={(info) => {
+            scrollRef.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: false });
+            setTimeout(() => {
+              if (jumpIndex.current !== info.index || jumpRetries.current++ >= 5) return;
+              scrollRef.current?.scrollToIndex({ index: info.index, viewPosition: 0.5, animated: false });
+            }, 100);
+          }}
         />
+        </SearchFlashContext.Provider>
         </FadeIn>
         {rows.length === 0 && (
           <View style={styles.timelineEmpty} pointerEvents="none">
@@ -763,7 +834,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
               colors={colors}
               styles={styles}
               onRemove={() => removeAttachment(a.id)}
-              onPreview={setPreviewAttachment}
+              onPreview={(a) => previewAmong(attachments, a, openPreview)}
             />
           ))}
         </View>
@@ -887,7 +958,7 @@ export function SessionView({ sessionId, onBack }: { sessionId: string; onBack: 
       />
       <ExportSheet sessionId={sessionId} title={title || repoName || "This chat"} visible={exportOpen} onClose={() => setExportOpen(false)} colors={colors} />
 
-      <ImagePreviewModal attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} />
+      <ImageViewer images={preview?.images ?? []} index={preview?.index ?? null} onClose={() => setPreview(null)} />
       <FileSheet sessionId={sessionId} file={openFile} onClose={() => setOpenFile(null)} />
       <AgentsSheet visible={agentsOpen} onClose={() => setAgentsOpen(false)} agents={agents} commands={commands} />
     </KeyboardAvoidingView>
@@ -1018,25 +1089,12 @@ function AttachmentChip({
   );
 }
 
-/** Full-screen preview of an attached image, dismissed by backdrop or the close button. */
-function ImagePreviewModal({ attachment, onClose }: { attachment: Attachment | null; onClose: () => void }) {
-  const { config } = useClient();
-  return (
-    <Modal transparent visible={attachment != null} animationType="fade" onRequestClose={onClose}>
-      <TouchableOpacity style={previewStyles.backdrop} activeOpacity={1} onPress={onClose}>
-        {attachment && (
-          <Image
-            source={attachmentSource(attachment, config)}
-            style={previewStyles.image}
-            resizeMode="contain"
-          />
-        )}
-        <TouchableOpacity style={previewStyles.close} onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-          <Ionicons name="close" size={26} color="#fff" />
-        </TouchableOpacity>
-      </TouchableOpacity>
-    </Modal>
-  );
+/** What a tapped chip opens: the viewer over the images of the message it's in, starting at it. */
+type OpenPreview = (images: Attachment[], index: number) => void;
+
+function previewAmong(list: Attachment[], a: Attachment, open: OpenPreview) {
+  const images = list.filter((x) => x.mediaType.startsWith("image/"));
+  open(images, Math.max(0, images.indexOf(a)));
 }
 
 /**
@@ -1044,9 +1102,9 @@ function ImagePreviewModal({ attachment, onClose }: { attachment: Attachment | n
  * shown under the step outside its fold so progress is visible at a glance.
  */
 function ToolImages({ images, styles }: { images: AttachmentView[]; styles: Styles }) {
-  const [previewing, setPreviewing] = useState<AttachmentView | null>(null);
+  const [previewing, setPreviewing] = useState<number | null>(null);
   if (images.length === 0) return null;
-  const thumbs = images.map((img, i) => <ToolImageThumb key={i} image={img} styles={styles} onPress={() => setPreviewing(img)} />);
+  const thumbs = images.map((img, i) => <ToolImageThumb key={i} image={img} styles={styles} onPress={() => setPreviewing(i)} />);
   return (
     <>
       {images.length === 1 ? (
@@ -1056,7 +1114,7 @@ function ToolImages({ images, styles }: { images: AttachmentView[]; styles: Styl
           {thumbs}
         </ScrollView>
       )}
-      <ImagePreviewModal attachment={previewing} onClose={() => setPreviewing(null)} />
+      <ImageViewer images={images} index={previewing} onClose={() => setPreviewing(null)} />
     </>
   );
 }
@@ -1084,13 +1142,32 @@ function ToolImageThumb({ image, styles, onPress }: { image: AttachmentView; sty
   );
 }
 
-const previewStyles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", alignItems: "center", justifyContent: "center" },
-  image: { width: "100%", height: "80%" },
-  close: { position: "absolute", top: 48, right: 20 },
-});
-
 type TimelineEntry = { item: TimelineItem; index: number };
+
+/**
+ * The row a search anchor sits in, and what to mark there: the prompt, the
+ * reply block when it's shown on its own, otherwise its whole turn (a block
+ * folded into a group of steps, as the web falls back to the turn).
+ */
+function findSearchAnchor(entries: TimelineEntry[], anchor: string): { index: number; anchor: string } | null {
+  if (anchor.startsWith("p:")) {
+    const id = anchor.slice(2);
+    const index = entries.findIndex(
+      ({ item }) => (item.type === "prompt" && item.promptId === id) || (item.type === "turn" && item.turn.steeredPrompts.some((p) => p.promptId === id)),
+    );
+    return index === -1 ? null : { index, anchor };
+  }
+  if (!anchor.startsWith("b:")) return null;
+  const turnId = anchor.slice(2, anchor.lastIndexOf(":"));
+  const blockIndex = Number(anchor.slice(anchor.lastIndexOf(":") + 1));
+  const index = entries.findIndex(({ item }) => item.type === "turn" && item.turn.turnId === turnId);
+  const item = entries[index]?.item;
+  if (!item || item.type !== "turn") return null;
+  const own = groupTurnBlocks(item.turn.blocks, new Set(item.turn.steeredPrompts.map((p) => p.afterBlockIndex))).some(
+    (seg) => seg.kind !== "group" && seg.index === blockIndex && seg.block.kind === "text",
+  );
+  return { index, anchor: own ? anchor : `t:${turnId}` };
+}
 
 /** Turns and prompts keep their own ids; anything else keys on its place in the timeline. */
 function entryKey(e: TimelineEntry): string {
@@ -1163,7 +1240,7 @@ const TimelineRow = memo(function TimelineRow({
   item: TimelineItem;
   colors: ThemeColors;
   styles: Styles;
-  onPreview: (a: Attachment) => void;
+  onPreview: OpenPreview;
   /** Arrived since the chat opened: ease in rather than pop. */
   animate?: boolean;
   /** A notice right after another: pulled up so back-to-back notices ("limit hit", "switched account") read as one block. */
@@ -1185,19 +1262,20 @@ function TimelineRowBody({
   item: TimelineItem;
   colors: ThemeColors;
   styles: Styles;
-  onPreview: (a: Attachment) => void;
+  onPreview: OpenPreview;
 }) {
   if (item.type === "prompt") {
     return (
       <LongPressToRead title="Your message" text={item.text} style={styles.promptWrap}>
-        {item.text.length > 0 && <Text style={styles.promptText}>{item.text}</Text>}
+        {item.text.length > 0 && <SearchMatchText text={item.text} anchor={`p:${item.promptId}`} style={styles.promptText} />}
         {item.attachments && item.attachments.length > 0 && (
           <View style={styles.attachRow}>
             {item.attachments.map((a, i) => (
-              <AttachmentChip key={i} attachment={a} colors={colors} styles={styles} onPreview={onPreview} />
+              <AttachmentChip key={i} attachment={a} colors={colors} styles={styles} onPreview={(a) => previewAmong(item.attachments!, a, onPreview)} />
             ))}
           </View>
         )}
+        <SearchFlash anchor={`p:${item.promptId}`} inset={0} rounding={radius.lg} />
       </LongPressToRead>
     );
   }
@@ -1319,7 +1397,7 @@ function AssistantTurn({
   turn: TurnView;
   colors: ThemeColors;
   styles: Styles;
-  onPreview: (a: Attachment) => void;
+  onPreview: OpenPreview;
 }) {
   const label = turnTriggerLabel(turn);
   const steeredAfter = (index: number) => turn.steeredPrompts.filter((p) => p.afterBlockIndex === index);
@@ -1337,7 +1415,7 @@ function AssistantTurn({
             {seg.kind === "group" ? (
               <ToolGroup items={seg.items} summary={seg.summary} colors={colors} styles={styles} turnRunning={turn.status === "running"} />
             ) : (
-              <Block block={seg.block} colors={colors} styles={styles} turnRunning={turn.status === "running"} />
+              <Block block={seg.block} colors={colors} styles={styles} turnRunning={turn.status === "running"} anchor={`b:${turn.turnId}:${seg.index}`} />
             )}
             <ToolImages images={segmentImages(seg)} styles={styles} />
             {steeredAfter(last).map((p) => (
@@ -1363,6 +1441,7 @@ function AssistantTurn({
             </View>
           </LongPressToRead>
         ))}
+      <SearchFlash anchor={`t:${turn.turnId}`} />
     </View>
   );
 }
@@ -1456,19 +1535,20 @@ function SteeredPrompt({
   prompt: SteeredPromptView;
   colors: ThemeColors;
   styles: Styles;
-  onPreview: (a: Attachment) => void;
+  onPreview: OpenPreview;
 }) {
   return (
     <LongPressToRead title="Your message" text={prompt.text} style={[styles.promptWrap, styles.steeredWrap]}>
-      {prompt.text.length > 0 && <Text style={styles.promptText}>{prompt.text}</Text>}
+      {prompt.text.length > 0 && <SearchMatchText text={prompt.text} anchor={`p:${prompt.promptId}`} style={styles.promptText} />}
       {prompt.attachments && prompt.attachments.length > 0 && (
         <View style={styles.attachRow}>
           {prompt.attachments.map((a, i) => (
-            <AttachmentChip key={i} attachment={a} colors={colors} styles={styles} onPreview={onPreview} />
+            <AttachmentChip key={i} attachment={a} colors={colors} styles={styles} onPreview={(a) => previewAmong(prompt.attachments!, a, onPreview)} />
           ))}
         </View>
       )}
       <Text style={styles.meta}>Sent while Claude was working</Text>
+      <SearchFlash anchor={`p:${prompt.promptId}`} inset={0} rounding={radius.lg} />
     </LongPressToRead>
   );
 }
@@ -1497,11 +1577,14 @@ function Block({
   colors,
   styles,
   turnRunning,
+  anchor,
 }: {
   block: BlockView;
   colors: ThemeColors;
   styles: Styles;
   turnRunning: boolean;
+  /** `b:<turnId>:<index>` for a reply's own block, so a search hit on it can mark it. */
+  anchor?: string;
 }) {
   if (block.kind === "tool_use") {
     return <ToolStep block={block} colors={colors} styles={styles} turnRunning={turnRunning} />;
@@ -1512,6 +1595,7 @@ function Block({
   return (
     <LongPressToRead title="Claude's reply" text={block.text} markdown>
       <StreamingMarkdown content={block.text} streaming={turnRunning && block.endedAtMs == null} />
+      {anchor && <SearchFlash anchor={anchor} />}
     </LongPressToRead>
   );
 }

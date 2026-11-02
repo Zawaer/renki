@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, AppState, BackHandler, Platform, StyleSheet, Text, ToastAndroid, View } from "react-native";
 import {
   addHost,
@@ -216,6 +216,12 @@ function Main({
   const [showSettings, setShowSettings] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  /** A chat opened from a search hit: where in it to scroll. Dropped once found or once that chat is left. */
+  const [jump, setJump] = useState<{ sessionId: string; anchor: string; query: string } | null>(null);
+  useEffect(() => {
+    if (jump && jump.sessionId !== selected) setJump(null);
+  }, [jump, selected]);
+  const onJumped = useCallback(() => setJump(null), []);
   const selectedRef = useRef(setSelected);
   selectedRef.current = setSelected;
   const colors = useTheme();
@@ -371,7 +377,12 @@ function Main({
   if (selected) {
     return (
       <TextReaderProvider>
-        <SessionView sessionId={selected} onBack={() => setSelected(null)} />
+        <SessionView
+          sessionId={selected}
+          onBack={() => setSelected(null)}
+          jumpTo={jump?.sessionId === selected ? jump : null}
+          onJumped={onJumped}
+        />
       </TextReaderProvider>
     );
   }
@@ -394,7 +405,15 @@ function Main({
   }
   if (showSearch) {
     // Same as stats: a chat opened from a hit comes back to the results.
-    return <SearchScreen onBack={() => setShowSearch(false)} onOpenSession={setSelected} />;
+    return (
+      <SearchScreen
+        onBack={() => setShowSearch(false)}
+        onOpenHit={(sessionId, anchor, query) => {
+          setJump({ sessionId, anchor, query });
+          setSelected(sessionId);
+        }}
+      />
+    );
   }
   return (
     <SessionList

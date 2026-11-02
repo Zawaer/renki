@@ -1,7 +1,8 @@
 /**
  * Tiny syntax tokenizers for the two things Renki actually shows as code: shell
- * commands a tool wants to run, and JSON tool payloads. Deliberately not a
- * general highlighter — no dependency, no language detection, no bundle cost.
+ * commands a tool wants to run, and JSON tool payloads (and, on the phone, code
+ * blocks and files in those two languages). Deliberately not a general
+ * highlighter — no dependency, no content sniffing, no bundle cost.
  * Pure functions returning tokens so every client can colour them its own way
  * and the rules stay unit-testable.
  */
@@ -76,8 +77,11 @@ export function tokenizeShell(src: string): SyntaxToken[] {
     }
 
     if (c === "#") {
-      push(out, src.slice(i), "comment");
-      break;
+      // To the end of the line: a script's next line is code again.
+      const end = src.indexOf("\n", i);
+      push(out, src.slice(i, end === -1 ? src.length : end), "comment");
+      i = end === -1 ? src.length : end;
+      continue;
     }
 
     if (c === "'" || c === '"') {
@@ -193,4 +197,63 @@ export function tokenizeJson(src: string): SyntaxToken[] {
   }
 
   return out;
+}
+
+export type SyntaxLanguage = "shell" | "json";
+
+/** Fence info words (```bash) for each language; anything else stays plain. */
+const LANGUAGE_NAMES: Record<string, SyntaxLanguage> = {
+  sh: "shell",
+  bash: "shell",
+  zsh: "shell",
+  shell: "shell",
+  console: "shell",
+  json: "json",
+  jsonc: "json",
+  json5: "json",
+};
+
+/** File extensions for each language. `.jsonl` is one JSON value per line, which tokenizes the same. */
+const LANGUAGE_EXTENSIONS: Record<string, SyntaxLanguage> = {
+  sh: "shell",
+  bash: "shell",
+  zsh: "shell",
+  json: "json",
+  jsonc: "json",
+  jsonl: "json",
+};
+
+/** The language a code fence's info string names (its first word: "bash title=x" is bash), or null. */
+export function syntaxLanguageForFence(info: string | undefined): SyntaxLanguage | null {
+  const word = (info ?? "").trim().split(/\s+/)[0]!.toLowerCase();
+  return LANGUAGE_NAMES[word] ?? null;
+}
+
+/** The language a file's extension says it's in, or null. Dotfiles like `.bashrc` count as shell. */
+export function syntaxLanguageForPath(path: string): SyntaxLanguage | null {
+  const name = path.slice(path.lastIndexOf("/") + 1).toLowerCase();
+  if (/^\.(bashrc|bash_profile|zshrc|zprofile|profile)$/.test(name)) return "shell";
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? (LANGUAGE_EXTENSIONS[name.slice(dot + 1)] ?? null) : null;
+}
+
+export function tokenize(src: string, language: SyntaxLanguage): SyntaxToken[] {
+  return language === "shell" ? tokenizeShell(src) : tokenizeJson(src);
+}
+
+/**
+ * Split tokens at newlines into one array per line, for line-numbered views
+ * that tokenize a file once and render it a line at a time. Always returns
+ * as many lines as `src.split("\n")` would.
+ */
+export function splitTokenLines(tokens: SyntaxToken[]): SyntaxToken[][] {
+  const lines: SyntaxToken[][] = [[]];
+  for (const t of tokens) {
+    const parts = t.text.split("\n");
+    parts.forEach((text, i) => {
+      if (i > 0) lines.push([]);
+      if (text) lines[lines.length - 1]!.push({ text, kind: t.kind });
+    });
+  }
+  return lines;
 }

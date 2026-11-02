@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { tokenizeJson, tokenizeShell, type SyntaxToken } from "../src/syntax.js";
+import {
+  splitTokenLines,
+  syntaxLanguageForFence,
+  syntaxLanguageForPath,
+  tokenizeJson,
+  tokenizeShell,
+  type SyntaxToken,
+} from "../src/syntax.js";
 
 /** Round-tripping matters most: colouring must never change the text shown. */
 function joined(tokens: SyntaxToken[]): string {
@@ -41,6 +48,14 @@ describe("tokenizeShell", () => {
     expect(of(tokenizeShell(src), "string")).toEqual([`"unfinished`]);
   });
 
+  it("ends a comment at the end of its line", () => {
+    const src = "# build it\nmake build";
+    const t = tokenizeShell(src);
+    expect(joined(t)).toBe(src);
+    expect(of(t, "comment")).toEqual(["# build it"]);
+    expect(of(t, "command")).toEqual(["make"]);
+  });
+
   it("handles && and >> as single operators", () => {
     const t = tokenizeShell("make build && ./run >> out.log");
     expect(of(t, "operator")).toEqual(["&&", ">>"]);
@@ -65,5 +80,40 @@ describe("tokenizeJson", () => {
     expect(joined(t)).toBe(src);
     expect(of(t, "key")).toEqual([`"msg"`, `"n"`]);
     expect(of(t, "number")).toEqual(["-12.5"]);
+  });
+});
+
+describe("syntaxLanguageForFence / syntaxLanguageForPath", () => {
+  it("knows shell and JSON by fence word, ignoring case and anything after it", () => {
+    expect(syntaxLanguageForFence("bash")).toBe("shell");
+    expect(syntaxLanguageForFence("Shell title=setup")).toBe("shell");
+    expect(syntaxLanguageForFence("jsonc")).toBe("json");
+    expect(syntaxLanguageForFence("ts")).toBeNull();
+    expect(syntaxLanguageForFence("")).toBeNull();
+    expect(syntaxLanguageForFence(undefined)).toBeNull();
+  });
+
+  it("knows them by file extension and shell dotfiles", () => {
+    expect(syntaxLanguageForPath("scripts/deploy.sh")).toBe("shell");
+    expect(syntaxLanguageForPath("apps/web/package.JSON")).toBe("json");
+    expect(syntaxLanguageForPath("/home/me/.zshrc")).toBe("shell");
+    expect(syntaxLanguageForPath("src/index.ts")).toBeNull();
+    expect(syntaxLanguageForPath(".json")).toBeNull();
+    expect(syntaxLanguageForPath("Makefile")).toBeNull();
+  });
+});
+
+describe("splitTokenLines", () => {
+  it("splits tokens at newlines, one array per source line", () => {
+    const src = `{\n  "a": "x",\n\n  "b": 1\n}`;
+    const lines = splitTokenLines(tokenizeJson(src));
+    expect(lines.map(joined)).toEqual(src.split("\n"));
+    expect(of(lines[1]!, "key")).toEqual([`"a"`]);
+    expect(lines[2]).toEqual([]);
+  });
+
+  it("keeps a trailing empty line like split does", () => {
+    expect(splitTokenLines(tokenizeShell("ls\n")).length).toBe(2);
+    expect(splitTokenLines([]).length).toBe(1);
   });
 });

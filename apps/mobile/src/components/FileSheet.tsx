@@ -1,4 +1,4 @@
-import { RestError } from "@renki/client-core";
+import { RestError, splitTokenLines, syntaxLanguageForPath, tokenize } from "@renki/client-core";
 import type { WorkspaceFileResponse } from "@renki/protocol";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
@@ -7,6 +7,7 @@ import { FileLinkContext, useFileLinkTarget } from "../lib/fileLinks";
 import { radius, type ThemeColors, useTheme } from "../theme";
 import { Markdown } from "./Markdown";
 import { Sheet } from "./Sheet";
+import { SYNTAX_MAX_CHARS, TokenSpans, useSyntaxStyles } from "./SyntaxText";
 
 const mono = Platform.OS === "ios" ? "Menlo" : "monospace";
 const LINE_H = 18;
@@ -20,7 +21,8 @@ export type OpenFile = { path: string; line?: number };
  * One file from the session's working tree, opened from a link in a reply.
  * The phone has no Files panel, so this is the whole viewer: source with line
  * numbers (scrolled to the linked line, which is highlighted), and Markdown
- * rendered with a toggle to its source. Read-only.
+ * rendered with a toggle to its source. Shell and JSON files are
+ * syntax-coloured. Read-only.
  */
 export function FileSheet({ sessionId, file, onClose }: { sessionId: string; file: OpenFile | null; onClose: () => void }) {
   const colors = useTheme();
@@ -48,6 +50,7 @@ export function FileBody({ sessionId, file, colors }: { sessionId: string; file:
   const { rest } = useClient();
   const { height, width } = useWindowDimensions();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const syntaxStyles = useSyntaxStyles();
   const [data, setData] = useState<WorkspaceFileResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const isMarkdown = /\.(md|markdown|mdx)$/i.test(file.path);
@@ -66,10 +69,17 @@ export function FileBody({ sessionId, file, colors }: { sessionId: string; file:
     };
   }, [rest, sessionId, file.path]);
 
-  const lines = useMemo(() => {
+  // Tokenized once per file and split by line, so the list's rows only look
+  // their line up; a big file is left plain.
+  const { lines, tokenLines } = useMemo(() => {
     const c = data?.content ?? "";
-    return (c.endsWith("\n") ? c.slice(0, -1) : c).split("\n");
-  }, [data]);
+    const text = c.endsWith("\n") ? c.slice(0, -1) : c;
+    const language = syntaxLanguageForPath(file.path);
+    return {
+      lines: text.split("\n"),
+      tokenLines: language && text.length <= SYNTAX_MAX_CHARS ? splitTokenLines(tokenize(text, language)) : null,
+    };
+  }, [data, file.path]);
   const bodyHeight = Math.round(height * 0.62);
 
   let body: React.ReactNode;
@@ -104,7 +114,9 @@ export function FileBody({ sessionId, file, colors }: { sessionId: string; file:
             return (
               <View style={[styles.lineRow, hit && styles.lineHit]}>
                 <Text style={[styles.lineNo, { width: gutter }, hit && { color: colors.text }]}>{index + 1}</Text>
-                <Text selectable style={styles.lineText}>{item || " "}</Text>
+                <Text selectable style={styles.lineText}>
+                  {tokenLines?.[index]?.length ? <TokenSpans tokens={tokenLines[index]!} styles={syntaxStyles} /> : item || " "}
+                </Text>
               </View>
             );
           }}

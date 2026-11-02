@@ -57,6 +57,15 @@ const darkColors = {
   series3: "#199e70",
   series4: "#c98500",
   series5: "#d55181",
+  /**
+   * Code colouring (SyntaxText): names and keys, strings, numbers and
+   * variables, comments. Softer than ok/busy/link so a block of code doesn't
+   * read as a row of status badges; all clear 4.5:1 on inset and panel.
+   */
+  syntaxName: "#86b9d8",
+  syntaxString: "#a9c97f",
+  syntaxNumber: "#e0b862",
+  syntaxComment: "#8f8477",
 };
 
 const lightColors: typeof darkColors = {
@@ -86,6 +95,10 @@ const lightColors: typeof darkColors = {
   series3: "#1baf7a",
   series4: "#eda100",
   series5: "#e87ba4",
+  syntaxName: "#266ea4",
+  syntaxString: "#4a7322",
+  syntaxNumber: "#9a5f0c",
+  syntaxComment: "#71675d",
 };
 
 export type ThemeColors = typeof darkColors;

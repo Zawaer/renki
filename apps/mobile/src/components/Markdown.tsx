@@ -4,8 +4,9 @@ import { Platform, ScrollView, StyleSheet, Text, type TextStyle, TouchableOpacit
 import MarkdownDisplay, { MarkdownIt } from "react-native-markdown-display";
 import { radius, type ThemeColors, useTheme } from "../theme";
 import { FadeIn } from "./Motion";
-import { parseFileLink } from "@renki/client-core";
+import { parseFileLink, syntaxLanguageForFence } from "@renki/client-core";
 import { useFileLinkTarget } from "../lib/fileLinks";
+import { SyntaxText } from "./SyntaxText";
 import { useOpenReader } from "./TextReader";
 
 /** A node of the lib's markdown AST, as handed to a render rule. */
@@ -14,6 +15,8 @@ type MdNode = {
   key: string;
   index: number;
   content?: string;
+  /** A fence's info string (```bash title=x → "bash title=x"). */
+  sourceInfo?: string;
   attributes: Record<string, string>;
   children: MdNode[];
 };
@@ -129,14 +132,19 @@ function TableCell({ index, children }: { index: number; children: ReactNode }) 
  * Code blocks get a copy button that opens just the code in the reader, where
  * it selects and copies like any Android text. Selecting it in place isn't an
  * option (see TextReader), and long-pressing the reply copies the whole
- * reply, not the command you wanted.
+ * reply, not the command you wanted. A fence that names shell or JSON is
+ * syntax-coloured.
  */
 function makeCodeRules(colors: ThemeColors, openReader: ReturnType<typeof useOpenReader>): Record<string, RenderRule> {
   const code: RenderRule = (node, _children, _parent, styles, inheritedStyles = {}) => {
     const text = (node.content ?? "").replace(/\n$/, "");
     return (
       <View key={node.key}>
-        <Text style={[inheritedStyles, styles[node.type], { paddingRight: 40 }]}>{text}</Text>
+        <SyntaxText
+          text={text}
+          language={node.type === "fence" ? syntaxLanguageForFence(node.sourceInfo) : null}
+          style={[inheritedStyles, styles[node.type], { paddingRight: 40 }]}
+        />
         <TouchableOpacity
           onPress={() => openReader({ title: "Code", text })}
           hitSlop={10}

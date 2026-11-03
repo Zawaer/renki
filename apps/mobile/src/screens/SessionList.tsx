@@ -15,7 +15,7 @@ import {
 import type { AttachRepoRequest, GithubRepo, Repo, Session } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, FlatList, Keyboard, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Keyboard, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { animateLayout, FadeIn, Skeleton } from "../components/Motion";
 import { Sheet } from "../components/Sheet";
@@ -141,46 +141,70 @@ function SessionListBody({ onSelect, onOpenSettings, onOpenStats, onOpenSearch, 
     };
   }, [realtime]);
 
-  async function archive(id: string) {
+  /**
+   * Sessions with an action under way, and what it is ("Archiving…"), as on
+   * the web. The row says so until the daemon answers: archiving or trashing
+   * tears down a worktree and can take a while, and a row that just sat there
+   * looked like the tap hadn't registered.
+   */
+  const [working, setWorking] = useState<ReadonlyMap<string, string>>(new Map());
+  const [emptying, setEmptying] = useState(false);
+
+  async function busyWith<T>(id: string, label: string, action: () => Promise<T>): Promise<T> {
+    setWorking((m) => new Map(m).set(id, label));
     try {
-      await rest.archiveSession(id);
-    } catch (err) {
-      Alert.alert("Couldn't archive", err instanceof Error ? err.message : "Try again in a moment.");
+      return await action();
     } finally {
-      // Whatever happened, show what the daemon now says: a slow or failed request must not leave the list stale.
+      setWorking((m) => {
+        const next = new Map(m);
+        next.delete(id);
+        return next;
+      });
+    }
+  }
+
+  /**
+   * Run an action, saying so when it fails, then show what the daemon now
+   * says either way: a slow or failed request must not leave the list stale.
+   * Resolves to whether it worked.
+   */
+  async function attempt(action: () => Promise<unknown>, failure: string): Promise<boolean> {
+    try {
+      await action();
+      return true;
+    } catch (err) {
+      Alert.alert(failure, err instanceof Error ? err.message : "Try again in a moment.");
+      return false;
+    } finally {
       refresh();
     }
   }
 
+  async function archive(id: string) {
+    await busyWith(id, "Archiving…", () => attempt(() => rest.archiveSession(id), "Couldn't archive"));
+  }
+
+  /** The new title shows at once; the refresh after it puts back the old one if the rename failed. */
   async function rename(id: string, title: string) {
-    await rest.renameSession(id, title);
-    refresh();
+    setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, title } : s)));
+    await attempt(() => rest.renameSession(id, title), "Couldn't rename");
   }
 
   async function del(id: string) {
-    await rest.trashSession(id);
-    refresh();
+    await busyWith(id, "Moving to trash…", () => attempt(() => rest.trashSession(id), "Couldn't move to trash"));
   }
 
   async function restore(id: string) {
-    await rest.restoreSession(id);
-    refresh();
+    await busyWith(id, "Restoring…", () => attempt(() => rest.restoreSession(id), "Couldn't restore"));
   }
 
   /** Archived → idle: its worktree is rebuilt and it takes prompts again. */
   async function unarchive(id: string) {
-    try {
-      await rest.unarchiveSession(id);
-      onSelect(id);
-    } catch (err) {
-      Alert.alert("Couldn't unarchive", err instanceof Error ? err.message : "Try again in a moment.");
-    }
-    refresh();
+    if (await busyWith(id, "Unarchiving…", () => attempt(() => rest.unarchiveSession(id), "Couldn't unarchive"))) onSelect(id);
   }
 
   async function purge(id: string) {
-    await rest.purgeSession(id);
-    refresh();
+    await busyWith(id, "Deleting…", () => attempt(() => rest.purgeSession(id), "Couldn't delete"));
   }
 
   function confirmEmptyTrash() {
@@ -191,13 +215,9 @@ function SessionListBody({ onSelect, onOpenSettings, onOpenStats, onOpenSearch, 
         text: "Empty trash",
         style: "destructive",
         onPress: async () => {
-          try {
-            await rest.emptyTrash();
-          } catch (err) {
-            Alert.alert("Couldn't empty the trash", err instanceof Error ? err.message : "Try again in a moment.");
-          } finally {
-            refresh();
-          }
+          setEmptying(true);
+          await attempt(() => rest.emptyTrash(), "Couldn't empty the trash");
+          setEmptying(false);
         },
       },
     ]);
@@ -315,6 +335,7 @@ function SessionListBody({ onSelect, onOpenSettings, onOpenStats, onOpenSearch, 
               <Row
                 key={s.id}
                 session={s}
+                working={working.get(s.id) ?? null}
                 colors={colors}
                 styles={styles}
                 statusColor={statusColor}
@@ -340,6 +361,7 @@ function SessionListBody({ onSelect, onOpenSettings, onOpenStats, onOpenSearch, 
           <Row
             key={s.id}
             session={s}
+            working={working.get(s.id) ?? null}
             colors={colors}
             styles={styles}
             statusColor={statusColor}
@@ -358,8 +380,13 @@ function SessionListBody({ onSelect, onOpenSettings, onOpenStats, onOpenSearch, 
               <Text style={styles.count}>{trashed.length}</Text>
             </TouchableOpacity>
             {showTrash && (
-              <TouchableOpacity style={styles.emptyBtn} onPress={confirmEmptyTrash} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={styles.emptyBtnText}>Empty trash</Text>
+              <TouchableOpacity
+                style={[styles.emptyBtn, emptying && styles.disabled]}
+                disabled={emptying}
+                onPress={confirmEmptyTrash}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.emptyBtnText}>{emptying ? "Emptying…" : "Empty trash"}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -368,6 +395,7 @@ function SessionListBody({ onSelect, onOpenSettings, onOpenStats, onOpenSearch, 
           <Row
             key={s.id}
             session={s}
+            working={working.get(s.id) ?? (emptying ? "Deleting…" : null)}
             colors={colors}
             styles={styles}
             statusColor={statusColor}
@@ -465,6 +493,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 function Row({
   session,
+  working,
   colors,
   styles,
   statusColor,
@@ -478,6 +507,8 @@ function Row({
   onPurge,
 }: {
   session: Session;
+  /** An action under way on this session, said in place of its status ("Archiving…"). */
+  working: string | null;
   colors: ThemeColors;
   styles: Styles;
   statusColor: Record<string, string>;
@@ -534,30 +565,38 @@ function Row({
   return (
     <>
       <TouchableOpacity style={styles.row} activeOpacity={0.7} onPress={onSelect}>
-        <View
-          style={[
-            styles.dot,
-            {
-              backgroundColor: session.hasPendingPermission
-                ? colors.danger
-                : paused
-                  ? colors.busy
-                  : (statusColor[session.status] ?? colors.faint),
-            },
-          ]}
-        />
+        {working ? (
+          <View style={styles.rowSpinner}>
+            <ActivityIndicator size="small" color={colors.faint} style={{ transform: [{ scale: 0.6 }] }} />
+          </View>
+        ) : (
+          <View
+            style={[
+              styles.dot,
+              {
+                backgroundColor: session.hasPendingPermission
+                  ? colors.danger
+                  : paused
+                    ? colors.busy
+                    : (statusColor[session.status] ?? colors.faint),
+              },
+            ]}
+          />
+        )}
         <View style={styles.rowText}>
           <Text style={styles.rowTitle} numberOfLines={1}>
             {session.title || session.repoName}
           </Text>
           <Text style={styles.rowSub} numberOfLines={1}>
-            {inTrash && countdown
-              ? countdown
-              : session.hasPendingPermission
-                ? "Needs your approval"
-                : paused
-                  ? `Paused · ${formatResumeAt(session.resume!.at)}`
-                  : (STATUS_LABEL[session.status] ?? session.status)}
+            {working
+              ? working
+              : inTrash && countdown
+                ? countdown
+                : session.hasPendingPermission
+                  ? "Needs your approval"
+                  : paused
+                    ? `Paused · ${formatResumeAt(session.resume!.at)}`
+                    : (STATUS_LABEL[session.status] ?? session.status)}
             {branch ? ` · ${branch}` : ""}
           </Text>
         </View>
@@ -566,7 +605,8 @@ function Row({
         )}
         {session.controller && <Ionicons name="lock-closed" size={12} color={colors.accent} />}
         <TouchableOpacity
-          style={styles.kebab}
+          style={[styles.kebab, !!working && styles.disabled]}
+          disabled={!!working}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           onPress={() => {
             setDraft(session.title ?? session.repoName);
@@ -836,6 +876,8 @@ const makeStyles = (colors: ThemeColors) =>
       paddingVertical: 11,
     },
     dot: { width: 9, height: 9, borderRadius: 5 },
+    // Same footprint as the dot it stands in for, so the title doesn't shift.
+    rowSpinner: { width: 9, height: 9, alignItems: "center", justifyContent: "center" },
     rowText: { flex: 1 },
     rowTitle: { color: colors.text, fontSize: 15, fontWeight: "600" },
     rowSub: { color: colors.faint, fontSize: 12, marginTop: 2 },

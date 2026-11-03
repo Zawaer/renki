@@ -36,12 +36,14 @@ export function SessionList({
   const loaded = live.sessions !== null;
   const sessions = useMemo(() => live.sessions ?? [], [live.sessions]);
   const refresh = live.refresh;
+  const patch = live.patch;
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
   const [showArchived, setShowArchived] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
   const [exporting, setExporting] = useState<Session | null>(null);
   const [attaching, setAttaching] = useState<Session | null>(null);
+  const [emptying, setEmptying] = useState(false);
 
   const active = useMemo(() => activeSessions(sessions), [sessions]);
   const archived = useMemo(
@@ -119,7 +121,13 @@ export function SessionList({
     }
   }
 
+  /**
+   * The new title shows at once; the daemon's answer (or, on failure, the
+   * refresh `attempt` does) replaces it. Waiting on the round trip left the
+   * old title in place, which read as the rename not having taken.
+   */
   async function rename(id: string, title: string) {
+    patch(id, { title });
     await attempt(() => rest.renameSession(id, title), "Couldn't rename this session.");
   }
 
@@ -155,7 +163,10 @@ export function SessionList({
   async function emptyTrash() {
     if (!confirm(`Permanently delete ${trashed.length} session${trashed.length === 1 ? "" : "s"}? There's no undo.`))
       return;
-    if (!(await attempt(() => rest.emptyTrash(), "Couldn't empty the trash."))) return;
+    setEmptying(true);
+    const ok = await attempt(() => rest.emptyTrash(), "Couldn't empty the trash.");
+    setEmptying(false);
+    if (!ok) return;
     for (const s of trashed) {
       forgetLocally(s.id);
       onDeleted(s.id);
@@ -295,10 +306,11 @@ export function SessionList({
               {showTrash && (
                 <button
                   onClick={emptyTrash}
+                  disabled={emptying}
                   title="Delete everything in the trash permanently"
-                  className="mr-1 shrink-0 rounded-md px-1.5 py-0.5 text-[11px] text-(--renki-fg-muted) hover:bg-(--renki-danger)/12 hover:text-(--renki-danger)"
+                  className="mr-1 shrink-0 rounded-md px-1.5 py-0.5 text-[11px] text-(--renki-fg-muted) hover:bg-(--renki-danger)/12 hover:text-(--renki-danger) active:brightness-95 disabled:pointer-events-none disabled:opacity-60"
                 >
-                  Empty
+                  {emptying ? "Emptying…" : "Empty"}
                 </button>
               )}
             </div>
@@ -437,7 +449,7 @@ function Row({
     <div
       className={`group relative flex w-full min-w-0 items-center rounded-lg py-1 pl-2 transition-colors ${
         selected ? "bg-(--renki-selected) text-(--renki-selected-fg)" : menuOpen ? "bg-(--renki-hover)" : "hover:bg-(--renki-hover)"
-      } ${menuOpen ? "z-30" : ""}`}
+      } ${menuOpen ? "z-30" : ""} has-[>button:active]:brightness-95`}
     >
       {renaming ? (
         <div className="min-w-0 flex-1 py-px">
@@ -526,7 +538,7 @@ function Row({
                     setMenuOpen(false);
                     onRestore();
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-fg) hover:bg-(--renki-hover)"
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-fg) hover:bg-(--renki-hover) active:brightness-95"
                 >
                   <span className="codicon codicon-history" /> Restore
                 </button>
@@ -537,7 +549,7 @@ function Row({
                     setMenuOpen(false);
                     onUnarchive();
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-fg) hover:bg-(--renki-hover)"
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-fg) hover:bg-(--renki-hover) active:brightness-95"
                 >
                   <span className="codicon codicon-reply" /> Unarchive
                 </button>
@@ -548,7 +560,7 @@ function Row({
                     setMenuOpen(false);
                     onArchive();
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-fg) hover:bg-(--renki-hover)"
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-fg) hover:bg-(--renki-hover) active:brightness-95"
                 >
                   <span className="codicon codicon-archive" /> Archive
                 </button>
@@ -558,7 +570,7 @@ function Row({
                   setMenuOpen(false);
                   onExport();
                 }}
-                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-fg) hover:bg-(--renki-hover)"
+                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-fg) hover:bg-(--renki-hover) active:brightness-95"
               >
                 <span className="codicon codicon-desktop-download" /> Export…
               </button>
@@ -568,7 +580,7 @@ function Row({
                     setMenuOpen(false);
                     startRename();
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-fg) hover:bg-(--renki-hover)"
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-fg) hover:bg-(--renki-hover) active:brightness-95"
                 >
                   <span className="codicon codicon-edit" /> Edit title
                 </button>
@@ -579,7 +591,7 @@ function Row({
                     setMenuOpen(false);
                     onAttachRepo();
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-fg) hover:bg-(--renki-hover)"
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-fg) hover:bg-(--renki-hover) active:brightness-95"
                 >
                   <span className="codicon codicon-repo" /> Move into repo…
                 </button>
@@ -590,7 +602,7 @@ function Row({
                     setMenuOpen(false);
                     onPurge();
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-danger) hover:bg-(--renki-danger)/12"
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-danger) hover:bg-(--renki-danger)/12 active:brightness-95"
                 >
                   <span className="codicon codicon-trash" /> Delete permanently
                 </button>
@@ -600,7 +612,7 @@ function Row({
                     setMenuOpen(false);
                     onDelete();
                   }}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-danger) hover:bg-(--renki-danger)/12"
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-(--renki-danger) hover:bg-(--renki-danger)/12 active:brightness-95"
                 >
                   <span className="codicon codicon-trash" /> Delete
                 </button>

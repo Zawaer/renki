@@ -9,7 +9,7 @@ import {
 import type { GithubReposResponse, Repo } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useMemo, useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { pickDocumentAttachments, pickImageAttachments, type PendingAttachment } from "../lib/attachments";
 import { useClient, useStoreValue } from "../lib/client";
 import { loadDeviceDefaults } from "../lib/composerPrefs";
@@ -198,8 +198,14 @@ export function NewChatSheet({
               <Ionicons name="chevron-down" size={12} color={colors.faint} />
             </TouchableOpacity>
             <View style={{ flex: 1 }} />
-            <TouchableOpacity style={[styles.send, !canSend && styles.disabled]} disabled={!canSend} onPress={start} accessibilityLabel="Send">
-              <Ionicons name="arrow-up" size={18} color={colors.accentFg} />
+            {/* While starting, a spinner instead of the arrow, and full strength: it's working, not unavailable. */}
+            <TouchableOpacity
+              style={[styles.send, !canSend && progress === null && styles.disabled]}
+              disabled={!canSend}
+              onPress={start}
+              accessibilityLabel={progress !== null ? "Starting" : "Send"}
+            >
+              {progress !== null ? <ActivityIndicator color={colors.accentFg} /> : <Ionicons name="arrow-up" size={18} color={colors.accentFg} />}
             </TouchableOpacity>
           </View>
           {(progress || error || connection !== "open") && (

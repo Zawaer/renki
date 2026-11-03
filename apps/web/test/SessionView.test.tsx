@@ -607,6 +607,13 @@ describe("SessionView session snapshot", () => {
     expect(screen.getByText(/Paused on a usage limit · Continues/)).toBeInTheDocument();
     expect(screen.getByText("Waiting for the 5-hour limit to reset.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Continue now" }));
+    // Pressed once: both buttons wait for the daemon's answer, so a second tap sends nothing.
+    expect(screen.getByRole("button", { name: "Continuing…" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(sent).toEqual([{ sid: "s1", action: "now" }]);
+
+    // A new resume (it was pushed back) is a fresh offer.
+    push(realtime, session({ at: Date.now() + 7_200_000, reason: "Waiting for the 5-hour limit to reset.", attempt: 1 }));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(sent).toEqual([
       { sid: "s1", action: "now" },

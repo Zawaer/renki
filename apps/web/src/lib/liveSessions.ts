@@ -22,8 +22,15 @@ function applyPush(list: Session[], { id, session }: Push): Session[] {
  * will return (the server built its answer first), so it's replayed on top of
  * the answer. Taking the answer as-is put a session back to "busy" after it
  * had gone idle, or brought back one just deleted, until the next poll.
+ *
+ * `patch` changes one session locally ahead of the daemon (an optimistic
+ * rename); the next push or fetch overwrites it with what the daemon says.
  */
-export function useLiveSessions(pollMs: number): { sessions: Session[] | null; refresh: () => void } {
+export function useLiveSessions(pollMs: number): {
+  sessions: Session[] | null;
+  refresh: () => void;
+  patch: (id: string, fields: Partial<Session>) => void;
+} {
   const { rest, realtime } = useClient();
   const [sessions, setSessions] = useState<Session[] | null>(null);
   /** Pushes since the oldest fetch still in flight; empty when none is. */
@@ -68,5 +75,9 @@ export function useLiveSessions(pollMs: number): { sessions: Session[] | null; r
     };
   }, [realtime]);
 
-  return { sessions, refresh };
+  const patch = useCallback((id: string, fields: Partial<Session>) => {
+    setSessions((prev) => prev && prev.map((s) => (s.id === id ? { ...s, ...fields } : s)));
+  }, []);
+
+  return { sessions, refresh, patch };
 }

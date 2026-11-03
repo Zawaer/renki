@@ -283,6 +283,19 @@ export function SessionView({
 
   /** A turn paused on a usage limit — only on the session snapshot, not in the event log. */
   const [resume, setResume] = useState<SessionResume | null>(null);
+  /** Which resume button was tapped, until the daemon answers with a new resume (or none). */
+  const [resumeSent, setResumeSent] = useState<"cancel" | "now" | null>(null);
+  useEffect(() => setResumeSent(null), [resume?.at, resume?.attempt, resume?.kind]);
+  /**
+   * Stop was tapped and the turn hasn't ended yet. Interrupting can take a
+   * moment (a tool call has to wind down), and a button that just sat there
+   * got tapped again.
+   */
+  const [stopping, setStopping] = useState(false);
+  useEffect(() => {
+    if (status !== "busy") setStopping(false);
+  }, [status]);
+  const [unarchiving, setUnarchiving] = useState(false);
   /** The worktree's absolute path, so a reply's absolute file links can be mapped into it. */
   const [worktreePath, setWorktreePath] = useState<string | null>(null);
   /** Repo and branch as the session's row has them now — a session can be moved into a repo after it started (see the web's SessionView). */
@@ -468,11 +481,6 @@ export function SessionView({
   const [exportOpen, setExportOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
 
-  // Pop the keyboard to the composer as soon as this device gains control
-  // (whether by taking it explicitly or via auto-claim on session creation).
-  useEffect(() => {
-    if (isController) inputRef.current?.focus();
-  }, [isController]);
   const effort = EFFORT_LEVELS.find((e) => e.key === effortKey) ?? EFFORT_LEVELS[0];
   const mode = PERMISSION_MODES.find((m) => m.key === permissionMode) ?? PERMISSION_MODES[0];
   const suggestions =
@@ -557,13 +565,15 @@ export function SessionView({
       <TouchableOpacity
         key="send"
         style={styles.stopBtn}
+        disabled={stopping}
         onPress={() => {
+          setStopping(true);
           takeOver();
           realtime.interrupt(sessionId);
         }}
-        accessibilityLabel="Stop"
+        accessibilityLabel={stopping ? "Stopping" : "Stop"}
       >
-        <Ionicons name="stop" size={15} color={colors.accentFg} />
+        {stopping ? <ActivityIndicator size="small" color={colors.accentFg} /> : <Ionicons name="stop" size={15} color={colors.accentFg} />}
       </TouchableOpacity>
     ) : (
       <TouchableOpacity
@@ -608,15 +618,18 @@ export function SessionView({
         {conv.status === "archived" && (
           // Archived sessions can't be controlled; bringing one back rebuilds its worktree and resumes the chat.
           <TouchableOpacity
-            style={styles.ctrlBtn}
-            onPress={() =>
+            style={[styles.ctrlBtn, unarchiving && styles.disabled]}
+            disabled={unarchiving}
+            onPress={() => {
+              setUnarchiving(true);
               rest
                 .unarchiveSession(sessionId)
                 .then(() => realtime.takeControl(sessionId))
                 .catch((err) => Alert.alert("Couldn't unarchive", err instanceof Error ? err.message : "Try again in a moment."))
-            }
+                .finally(() => setUnarchiving(false));
+            }}
           >
-            <Text style={styles.ctrlBtnText}>Unarchive</Text>
+            <Text style={styles.ctrlBtnText}>{unarchiving ? "Unarchiving…" : "Unarchive"}</Text>
           </TouchableOpacity>
         )}
         <TouchableOpacity
@@ -791,22 +804,27 @@ export function SessionView({
           {(
             <View style={styles.resumeActions}>
               <TouchableOpacity
+                style={resumeSent !== null && resumeSent !== "cancel" && styles.disabled}
+                disabled={resumeSent !== null}
                 onPress={() => {
+                  setResumeSent("cancel");
                   takeOver();
                   realtime.resumeAction(sessionId, "cancel");
                 }}
                 hitSlop={8}
               >
-                <Text style={styles.resumeCancel}>Cancel</Text>
+                <Text style={styles.resumeCancel}>{resumeSent === "cancel" ? "Cancelling…" : "Cancel"}</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.resumeNowBtn}
+                style={[styles.resumeNowBtn, resumeSent !== null && resumeSent !== "now" && styles.disabled]}
+                disabled={resumeSent !== null}
                 onPress={() => {
+                  setResumeSent("now");
                   takeOver();
                   realtime.resumeAction(sessionId, "now");
                 }}
               >
-                <Text style={styles.resumeNowText}>Now</Text>
+                <Text style={styles.resumeNowText}>{resumeSent === "now" ? "Continuing…" : "Now"}</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -2021,6 +2039,13 @@ function PermissionCard({
   colors: ThemeColors;
   styles: Styles;
 }) {
+  // Answered here, waiting for the daemon to take the card away: the buttons
+  // stay put meanwhile, and a second tap used to send a second answer.
+  const [decided, setDecided] = useState<"allow" | "deny" | null>(null);
+  const decide = (d: "allow" | "deny", updatedInput?: Record<string, unknown>) => {
+    setDecided(d);
+    onDecide(d, updatedInput);
+  };
   const askQuestion = parseAskUserQuestion(perm.toolName, perm.toolInput);
   const plan = askQuestion == null ? parsePlan(perm.toolName, perm.toolInput) : null;
   const editView = plan == null && askQuestion == null ? parseEditView(perm.toolName, perm.toolInput) : null;
@@ -2032,10 +2057,11 @@ function PermissionCard({
       <AskUserQuestionCard
         view={askQuestion}
         canAct={canAct}
+        decided={decided}
         controllerName={controllerName}
         onTakeControl={onTakeControl}
-        onSubmit={(answers) => onDecide("allow", { ...(perm.toolInput as Record<string, unknown>), answers })}
-        onCancel={() => onDecide("deny")}
+        onSubmit={(answers) => decide("allow", { ...(perm.toolInput as Record<string, unknown>), answers })}
+        onCancel={() => decide("deny")}
         colors={colors}
         styles={styles}
       />
@@ -2066,11 +2092,25 @@ function PermissionCard({
         </Text>
       )}
       <View style={[styles.permActions, !canAct && { opacity: 0.4 }]}>
-        <TouchableOpacity style={styles.allowBtn} disabled={!canAct} onPress={() => onDecide("allow")}>
-          <Text style={styles.allowText}>{plan != null ? "Approve plan" : "Allow"}</Text>
+        <TouchableOpacity
+          style={[styles.allowBtn, styles.permBtnRow, decided === "deny" && styles.disabled]}
+          disabled={!canAct || decided !== null}
+          onPress={() => decide("allow")}
+        >
+          {decided === "allow" && <ActivityIndicator size="small" color={colors.accentFg} />}
+          <Text style={styles.allowText}>
+            {decided === "allow" ? (plan != null ? "Approving…" : "Allowing…") : plan != null ? "Approve plan" : "Allow"}
+          </Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.denyBtn} disabled={!canAct} onPress={() => onDecide("deny")}>
-          <Text style={styles.denyText}>{plan != null ? "Keep planning" : "Deny"}</Text>
+        <TouchableOpacity
+          style={[styles.denyBtn, styles.permBtnRow, decided === "allow" && styles.disabled]}
+          disabled={!canAct || decided !== null}
+          onPress={() => decide("deny")}
+        >
+          {decided === "deny" && <ActivityIndicator size="small" color={colors.danger} />}
+          <Text style={styles.denyText}>
+            {decided === "deny" ? (plan != null ? "Sending…" : "Denying…") : plan != null ? "Keep planning" : "Deny"}
+          </Text>
         </TouchableOpacity>
       </View>
       {!canAct && <NotInControl name={controllerName} onTakeControl={onTakeControl} styles={styles} />}
@@ -2089,6 +2129,7 @@ const OTHER_OPTION = "__other__";
 function AskUserQuestionCard({
   view,
   canAct,
+  decided,
   controllerName,
   onTakeControl,
   onSubmit,
@@ -2098,6 +2139,8 @@ function AskUserQuestionCard({
 }: {
   view: AskUserQuestionView;
   canAct: boolean;
+  /** Answered or cancelled here, not yet cleared by the daemon. */
+  decided: "allow" | "deny" | null;
   controllerName: string | null;
   onTakeControl: () => void;
   onSubmit: (answers: Record<string, string>) => void;
@@ -2202,14 +2245,20 @@ function AskUserQuestionCard({
       )}
       <View style={[styles.permActions, !canAct && { opacity: 0.4 }]}>
         <TouchableOpacity
-          style={[styles.allowBtn, canAct && !allAnswered && { opacity: 0.4 }]}
-          disabled={!canAct || !allAnswered}
+          style={[styles.allowBtn, styles.permBtnRow, ((canAct && !allAnswered) || decided === "deny") && { opacity: 0.4 }]}
+          disabled={!canAct || !allAnswered || decided !== null}
           onPress={handleSubmit}
         >
-          <Text style={styles.allowText}>Submit answers</Text>
+          {decided === "allow" && <ActivityIndicator size="small" color={colors.accentFg} />}
+          <Text style={styles.allowText}>{decided === "allow" ? "Sending…" : "Submit answers"}</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.denyBtn} disabled={!canAct} onPress={onCancel}>
-          <Text style={styles.denyText}>Cancel</Text>
+        <TouchableOpacity
+          style={[styles.denyBtn, styles.permBtnRow, decided === "allow" && styles.disabled]}
+          disabled={!canAct || decided !== null}
+          onPress={onCancel}
+        >
+          {decided === "deny" && <ActivityIndicator size="small" color={colors.danger} />}
+          <Text style={styles.denyText}>{decided === "deny" ? "Cancelling…" : "Cancel"}</Text>
         </TouchableOpacity>
       </View>
       {!canAct && <NotInControl name={controllerName} onTakeControl={onTakeControl} styles={styles} />}
@@ -2569,6 +2618,8 @@ const makeStyles = (colors: ThemeColors) =>
     allowText: { color: colors.accentFg, fontWeight: "700" },
     denyBtn: { backgroundColor: withAlpha(colors.danger, 0.14), borderRadius: radius.pill, paddingHorizontal: 20, paddingVertical: 10 },
     denyText: { color: colors.danger, fontWeight: "700" },
+    /** Room for the spinner beside the label once a permission button is tapped. */
+    permBtnRow: { flexDirection: "row", alignItems: "center", gap: 6 },
     suggestBox: {
       marginHorizontal: 14,
       marginBottom: 6,

@@ -496,17 +496,26 @@ function RotationSettings({
   const { rest } = useClient();
   const [threshold, setThreshold] = useState(String(rotation.threshold));
   const [busy, setBusy] = useState(false);
+  /**
+   * The switch's own value, flipped before the save and put back if it fails.
+   * Showing the daemon's value meant the switch bounced back until the save
+   * and the refresh after it had both come back.
+   */
+  const [enabled, setEnabled] = useState(rotation.enabled);
 
   useEffect(() => {
     setThreshold(String(rotation.threshold));
   }, [rotation.threshold]);
+  useEffect(() => setEnabled(rotation.enabled), [rotation.enabled]);
 
   async function toggleEnabled(next: boolean) {
-    setBusy(true);
+    setEnabled(next);
     try {
       await rest.updateRotation({ enabled: next });
+    } catch (err) {
+      setEnabled(!next);
+      Alert.alert("Couldn't save this setting", err instanceof Error ? err.message : "Try again in a moment.");
     } finally {
-      setBusy(false);
       onChanged();
     }
   }
@@ -517,6 +526,8 @@ function RotationSettings({
     setBusy(true);
     try {
       await rest.updateRotation({ threshold: n });
+    } catch (err) {
+      Alert.alert("Couldn't save this setting", err instanceof Error ? err.message : "Try again in a moment.");
     } finally {
       setBusy(false);
       onChanged();
@@ -528,7 +539,7 @@ function RotationSettings({
   return (
     <View style={styles.rotation}>
       <View style={styles.row}>
-        <Switch value={rotation.enabled} disabled={busy} onValueChange={toggleEnabled} />
+        <Switch value={enabled} onValueChange={toggleEnabled} />
         <Text style={[styles.muted, styles.flex1]}>Automatically switch accounts when usage hits the threshold</Text>
       </View>
       <View style={styles.row}>
@@ -547,7 +558,7 @@ function RotationSettings({
           </TouchableOpacity>
         )}
       </View>
-      {rotation.enabled && rotation.lastHoldReason && <Text style={styles.faintNote}>holding: {rotation.lastHoldReason}</Text>}
+      {enabled && rotation.lastHoldReason && <Text style={styles.faintNote}>holding: {rotation.lastHoldReason}</Text>}
     </View>
   );
 }
@@ -555,14 +566,18 @@ function RotationSettings({
 /** Continue a turn that stopped on a usage limit once a limit resets — the daemon's ResumeScheduler. */
 function ResumeSettings({ rotation, onChanged, styles }: { rotation: RotationStatus; onChanged: () => void; styles: Styles }) {
   const { rest } = useClient();
-  const [busy, setBusy] = useState(false);
+  // Flipped before the save, put back if it fails (see RotationSettings).
+  const [autoResume, setAutoResume] = useState(rotation.autoResume);
+  useEffect(() => setAutoResume(rotation.autoResume), [rotation.autoResume]);
 
   async function toggle(next: boolean) {
-    setBusy(true);
+    setAutoResume(next);
     try {
       await rest.updateRotation({ autoResume: next });
+    } catch (err) {
+      setAutoResume(!next);
+      Alert.alert("Couldn't save this setting", err instanceof Error ? err.message : "Try again in a moment.");
     } finally {
-      setBusy(false);
       onChanged();
     }
   }
@@ -570,7 +585,7 @@ function ResumeSettings({ rotation, onChanged, styles }: { rotation: RotationSta
   return (
     <View style={styles.rotation}>
       <View style={styles.row}>
-        <Switch value={rotation.autoResume} disabled={busy} onValueChange={toggle} />
+        <Switch value={autoResume} onValueChange={toggle} />
         <Text style={[styles.muted, styles.flex1]}>
           {rotation.enabled
             ? "When every account is out of usage, continue the turn as soon as any one resets"

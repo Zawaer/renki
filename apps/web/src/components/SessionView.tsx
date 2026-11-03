@@ -436,18 +436,7 @@ export function SessionView({
           <span className="font-medium text-(--renki-fg)">This session is in the trash</span>
           {formatPurgeCountdown(purgeAt) && <span>· {formatPurgeCountdown(purgeAt)}</span>}
           <span>· its worktree and branch are already gone</span>
-          <Button
-            size="sm"
-            className="ml-auto"
-            title="Keeps this transcript, as an archived session"
-            onClick={() => {
-              // No re-watch: this chat is still watched while it's open, and a
-              // watch landing after you'd left would stay subscribed for good.
-              rest.restoreSession(sessionId).catch(() => {});
-            }}
-          >
-            <span className="codicon codicon-history" /> Restore
-          </Button>
+          <RestoreButton sessionId={sessionId} />
         </div>
       )}
 
@@ -732,7 +721,7 @@ function HeaderIconButton({ icon, label, active, onClick }: { icon: string; labe
       title={label}
       aria-label={label}
       aria-pressed={active}
-      className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
+      className={`flex h-7 w-7 items-center justify-center rounded-md transition-[background-color,color,transform] active:scale-95 ${
         active ? "bg-(--renki-surface) text-(--renki-fg)" : "text-(--renki-fg-muted) hover:bg-(--renki-surface) hover:text-(--renki-fg)"
       }`}
     >
@@ -863,13 +852,26 @@ function GitBanner({
   canAct: boolean;
   onAction: () => void;
 }) {
+  // Sent, waiting for the turn it starts: once that runs the banner hides, and
+  // new text (other commits) means it's a fresh offer.
+  const [sentFor, setSentFor] = useState<string | null>(null);
+  const sent = sentFor === text;
   return (
     <div className="px-6 pb-2">
       <div className="renki-enter mx-auto flex w-full max-w-3xl items-center gap-3 rounded-xl border border-(--renki-border) bg-(--renki-surface) px-3.5 py-2">
         <span className={`codicon ${icon} shrink-0 text-(--renki-fg-muted)`} />
         <span className="min-w-0 flex-1 truncate text-[13px] text-(--renki-fg)">{text}</span>
-        <Button variant="ghost" size="sm" disabled={!canAct} onClick={onAction} title={canAct ? undefined : `Take control to ${action.toLowerCase()}`}>
-          {action}
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={!canAct || sent}
+          onClick={() => {
+            setSentFor(text);
+            onAction();
+          }}
+          title={canAct ? undefined : `Take control to ${action.toLowerCase()}`}
+        >
+          {sent ? `${action}ing…` : action}
         </Button>
       </div>
     </div>
@@ -885,6 +887,14 @@ function ResumeBanner({
   canAct: boolean;
   onAction: (action: "cancel" | "now") => void;
 }) {
+  // Which button was pressed, until the daemon answers with a new resume (or none).
+  const resumeKey = `${resume.kind}:${resume.at}:${resume.attempt}`;
+  const [pressed, setPressed] = useState<{ key: string; action: "cancel" | "now" } | null>(null);
+  const sent = pressed?.key === resumeKey ? pressed.action : null;
+  const act = (action: "cancel" | "now") => {
+    setPressed({ key: resumeKey, action });
+    onAction(action);
+  };
   // Re-render once a minute so "today 15:31" becomes "shortly" on time.
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -910,11 +920,11 @@ function ResumeBanner({
         </div>
         {canAct && (
           <div className="flex shrink-0 items-center gap-1.5">
-            <Button variant="ghost" size="sm" onClick={() => onAction("cancel")}>
-              Cancel
+            <Button variant="ghost" size="sm" disabled={sent !== null} onClick={() => act("cancel")}>
+              {sent === "cancel" ? "Cancelling…" : "Cancel"}
             </Button>
-            <Button size="sm" onClick={() => onAction("now")}>
-              Continue now
+            <Button size="sm" disabled={sent !== null} onClick={() => act("now")}>
+              {sent === "now" ? "Continuing…" : "Continue now"}
             </Button>
           </div>
         )}
@@ -2072,6 +2082,13 @@ function PermissionCard({
     updatedInput?: Record<string, unknown>,
   ) => void;
 }) {
+  // Answered here, waiting for the daemon to take the card away: both buttons
+  // stay put meanwhile, and a second tap used to send a second answer.
+  const [decided, setDecided] = useState<"allow" | "deny" | null>(null);
+  const decide = (d: "allow" | "deny", updatedInput?: Record<string, unknown>) => {
+    setDecided(d);
+    onDecide(d, updatedInput);
+  };
   const askQuestion = parseAskUserQuestion(perm.toolName, perm.toolInput);
   const plan =
     askQuestion == null ? parsePlan(perm.toolName, perm.toolInput) : null;
@@ -2089,15 +2106,16 @@ function PermissionCard({
       <AskUserQuestionCard
         view={askQuestion}
         canAct={canAct}
+        decided={decided}
         controllerName={controllerName}
         onTakeControl={onTakeControl}
         onSubmit={(answers) =>
-          onDecide("allow", {
+          decide("allow", {
             ...(perm.toolInput as Record<string, unknown>),
             answers,
           })
         }
-        onCancel={() => onDecide("deny")}
+        onCancel={() => decide("deny")}
       />
     );
   }
@@ -2144,13 +2162,13 @@ function PermissionCard({
         </div>
       )}
       <div className="mt-3 flex gap-2">
-        <Button variant="primary" disabled={!canAct} onClick={() => onDecide("allow")}>
+        <Button variant="primary" disabled={!canAct || decided !== null} onClick={() => decide("allow")}>
           <span className="codicon codicon-check" />{" "}
-          {plan != null ? "Approve plan" : "Allow"}
+          {decided === "allow" ? (plan != null ? "Approving…" : "Allowing…") : plan != null ? "Approve plan" : "Allow"}
         </Button>
-        <Button variant="danger" disabled={!canAct} onClick={() => onDecide("deny")}>
+        <Button variant="danger" disabled={!canAct || decided !== null} onClick={() => decide("deny")}>
           <span className="codicon codicon-close" />{" "}
-          {plan != null ? "Keep planning" : "Deny"}
+          {decided === "deny" ? (plan != null ? "Sending…" : "Denying…") : plan != null ? "Keep planning" : "Deny"}
         </Button>
       </div>
       {!canAct && <NotInControl name={controllerName} onTakeControl={onTakeControl} />}
@@ -2171,11 +2189,14 @@ function AskUserQuestionCard({
   onTakeControl,
   view,
   canAct,
+  decided,
   onSubmit,
   onCancel,
 }: {
   view: AskUserQuestionView;
   canAct: boolean;
+  /** Answered or cancelled here, not yet cleared by the daemon. */
+  decided: "allow" | "deny" | null;
   controllerName: string | null;
   onTakeControl: () => void;
   onSubmit: (answers: Record<string, string>) => void;
@@ -2190,13 +2211,13 @@ function AskUserQuestionCard({
   );
 
   useEffect(() => {
-    if (!canAct) return;
+    if (!canAct || decided) return;
     function onKey(e: KeyboardEvent): void {
       if (e.key === "Escape") onCancel();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [canAct, onCancel]);
+  }, [canAct, decided, onCancel]);
 
   const question = view.questions[activeIndex]!;
   const activeSelected = selected[activeIndex] ?? [];
@@ -2305,12 +2326,13 @@ function AskUserQuestionCard({
       <div className="mt-2 flex items-center gap-2">
         <Button
           variant="primary"
-          disabled={!canAct || !allAnswered}
+          disabled={!canAct || !allAnswered || decided !== null}
           onClick={handleSubmit}
         >
-          <span className="codicon codicon-check" /> Submit answers
+          <span className="codicon codicon-check" />{" "}
+          {decided === "allow" ? "Sending…" : decided === "deny" ? "Cancelling…" : "Submit answers"}
         </Button>
-        {canAct && <span className="text-xs text-(--renki-fg-muted)">Esc to cancel</span>}
+        {canAct && !decided && <span className="text-xs text-(--renki-fg-muted)">Esc to cancel</span>}
       </div>
       {!canAct && <NotInControl name={controllerName} onTakeControl={onTakeControl} />}
     </div>
@@ -2591,6 +2613,15 @@ export function Composer({
   const draftKey = sessionId ?? NEW_CHAT_DRAFT;
   const restored = useRef(loadDraft(draftKey));
   const [sending, setSending] = useState(false);
+  /**
+   * Stop was pressed and the turn hasn't ended yet. Interrupting can take a
+   * moment (a tool call has to wind down), and a button that just sat there
+   * got pressed again.
+   */
+  const [stopping, setStopping] = useState(false);
+  useEffect(() => {
+    if (!busy) setStopping(false);
+  }, [busy]);
   const [text, setText] = useState(() => restored.current?.text ?? "");
   const [attachments, setAttachments] = useState<PendingAttachment[]>(() =>
     (restored.current?.attachments ?? []).map((a) => ({ ...a, id: crypto.randomUUID() })),
@@ -3150,12 +3181,20 @@ export function Composer({
               {busy ? (
                 <button
                   type="button"
-                  onClick={onStop}
-                  aria-label="Stop"
-                  title="Stop the current turn"
-                  className="grid h-8 w-8 place-items-center rounded-full bg-(--renki-bg-inset) text-(--renki-fg) transition-colors hover:bg-(--renki-hover)"
+                  onClick={() => {
+                    setStopping(true);
+                    onStop();
+                  }}
+                  disabled={stopping}
+                  aria-label={stopping ? "Stopping" : "Stop"}
+                  title={stopping ? "Stopping…" : "Stop the current turn"}
+                  className="grid h-8 w-8 place-items-center rounded-full bg-(--renki-bg-inset) text-(--renki-fg) transition-[background-color,transform] hover:bg-(--renki-hover) active:scale-95 disabled:cursor-default disabled:active:scale-100"
                 >
-                  <span className="codicon codicon-primitive-square text-[11px]" />
+                  {stopping ? (
+                    <span className="codicon codicon-loading codicon-modifier-spin text-[13px]" />
+                  ) : (
+                    <span className="codicon codicon-primitive-square text-[11px]" />
+                  )}
                 </button>
               ) : (
                 <button
@@ -3164,7 +3203,7 @@ export function Composer({
                   aria-label="Send"
                   title={loading ? "Loading… you can send in a moment" : "Send (Enter)"}
                   disabled={disabled || sending || (!text.trim() && attachments.length === 0)}
-                  className="grid h-8 w-8 place-items-center rounded-full bg-(--renki-accent) text-(--renki-accent-fg) transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="grid h-8 w-8 place-items-center rounded-full bg-(--renki-accent) text-(--renki-accent-fg) transition hover:brightness-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100"
                 >
                   <span className="codicon codicon-arrow-up text-base" />
                 </button>
@@ -3243,6 +3282,40 @@ function flashSearchMatch(el: HTMLElement, query: string): void {
   searchHighlightTimer = setTimeout(() => CSS.highlights.delete("renki-search"), 4000);
 }
 let searchHighlightTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * The trashed-session bar's way back. Busy and error like UnarchiveBar's
+ * button: a restore that just sat there looked like the click hadn't landed,
+ * and one that failed said nothing at all.
+ */
+function RestoreButton({ sessionId }: { sessionId: string }) {
+  const { rest } = useClient();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <>
+      {error && <span className="w-full text-(--renki-danger)">{error}</span>}
+      <Button
+        size="sm"
+        className="ml-auto"
+        title="Keeps this transcript, as an archived session"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          setError(null);
+          // No re-watch: this chat is still watched while it's open, and a
+          // watch landing after you'd left would stay subscribed for good.
+          rest
+            .restoreSession(sessionId)
+            .catch((err) => setError(err instanceof Error ? err.message : "Couldn't restore this session."))
+            .finally(() => setBusy(false));
+        }}
+      >
+        <span className="codicon codicon-history" /> {busy ? "Restoring…" : "Restore"}
+      </Button>
+    </>
+  );
+}
 
 /**
  * The bar on an archived session. Unarchiving rebuilds its working directory

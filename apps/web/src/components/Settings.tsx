@@ -403,32 +403,37 @@ function RotationSettings({
 }) {
   const { rest } = useClient();
   const [threshold, setThreshold] = useState(String(rotation.threshold));
-  const [busy, setBusy] = useState(false);
+  /**
+   * The switch's own value, flipped before the save and put back if it fails.
+   * Showing the daemon's value meant the knob sat still (or bounced back)
+   * until the save and the refresh after it had both come back.
+   */
+  const [enabled, setEnabled] = useState(rotation.enabled);
 
   useEffect(() => {
     setThreshold(String(rotation.threshold));
   }, [rotation.threshold]);
+  useEffect(() => setEnabled(rotation.enabled), [rotation.enabled]);
 
   async function toggleEnabled() {
-    setBusy(true);
+    const next = !enabled;
+    setEnabled(next);
     try {
-      await rest.updateRotation({ enabled: !rotation.enabled });
+      await rest.updateRotation({ enabled: next });
     } catch (err) {
+      setEnabled(!next);
       alert(err instanceof Error ? err.message : "Couldn't save this setting.");
     } finally {
-      setBusy(false);
       onChanged();
     }
   }
 
   async function savePreferred(email: string) {
-    setBusy(true);
     try {
       await rest.updateRotation({ preferredEmail: email || null });
     } catch (err) {
       alert(err instanceof Error ? err.message : "Couldn't save this setting.");
     } finally {
-      setBusy(false);
       onChanged();
     }
   }
@@ -436,13 +441,11 @@ function RotationSettings({
   async function saveThreshold() {
     const n = Number(threshold);
     if (!Number.isFinite(n) || n < 1 || n > 100) return;
-    setBusy(true);
     try {
       await rest.updateRotation({ threshold: n });
     } catch (err) {
       alert(err instanceof Error ? err.message : "Couldn't save this setting.");
     } finally {
-      setBusy(false);
       onChanged();
     }
   }
@@ -458,9 +461,9 @@ function RotationSettings({
             When the active account's usage crosses the threshold on any limit, switch to one with headroom. A chat that's working moves over once it's idle.
           </div>
         </div>
-        <Switch checked={rotation.enabled} disabled={busy} onChange={toggleEnabled} label="Auto-switch accounts" />
+        <Switch checked={enabled} onChange={toggleEnabled} label="Auto-switch accounts" />
       </div>
-      {rotation.enabled && (
+      {enabled && (
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-(--renki-border)/60 pt-3 text-[13px]">
           <span className="text-(--renki-fg-muted)">Switch at</span>
           <input
@@ -485,7 +488,7 @@ function RotationSettings({
           )}
         </div>
       )}
-      {rotation.enabled && accounts.length > 1 && (
+      {enabled && accounts.length > 1 && (
         <div className="mt-3 border-t border-(--renki-border)/60 pt-3">
           <div className="text-[13px] text-(--renki-fg-muted)">Prefer</div>
           <div className="mt-2">
@@ -520,16 +523,19 @@ function ResumeSettings({
   onChanged: () => void;
 }) {
   const { rest } = useClient();
-  const [busy, setBusy] = useState(false);
+  // Flipped before the save, put back if it fails (see RotationSettings).
+  const [autoResume, setAutoResume] = useState(rotation.autoResume);
+  useEffect(() => setAutoResume(rotation.autoResume), [rotation.autoResume]);
 
   async function toggle() {
-    setBusy(true);
+    const next = !autoResume;
+    setAutoResume(next);
     try {
-      await rest.updateRotation({ autoResume: !rotation.autoResume });
+      await rest.updateRotation({ autoResume: next });
     } catch (err) {
+      setAutoResume(!next);
       alert(err instanceof Error ? err.message : "Couldn't save this setting.");
     } finally {
-      setBusy(false);
       onChanged();
     }
   }
@@ -547,7 +553,7 @@ function ResumeSettings({
                 : "When a turn hits a usage limit, pause it and continue it automatically once the limit resets."}
           </div>
         </div>
-        <Switch checked={rotation.autoResume} disabled={busy} onChange={toggle} label="Continue when limits reset" />
+        <Switch checked={autoResume} onChange={toggle} label="Continue when limits reset" />
       </div>
     </div>
   );

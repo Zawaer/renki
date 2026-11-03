@@ -376,8 +376,10 @@ export function SessionView({
     <FileLinkContext.Provider value={fileLinks}>
     <div className="relative flex h-full">
     <div className="flex min-w-0 flex-1 flex-col">
-      {/* Header */}
-      <div className="flex shrink-0 items-center justify-between gap-3 px-6 py-3" style={{ viewTransitionName: "renki-session-header" }}>
+      {/* Header. Above the transcript (z-30): its view-transition-name makes it a
+          stacking context of its own, so the popovers it opens (context and
+          usage) were painted under the messages scrolling past below. */}
+      <div className="relative z-30 flex shrink-0 items-center justify-between gap-3 px-6 py-3" style={{ viewTransitionName: "renki-session-header" }}>
         <div className="min-w-0">
           <div className="flex items-center gap-2.5">
             <span className="truncate text-[15px] font-medium tracking-tight text-(--renki-fg)">

@@ -144,6 +144,8 @@ export const MAX_QUEUED_PROMPTS = 20;
 
 /** Cap on how many turns we'll keep trying to upgrade a placeholder title before giving up on it for good. */
 export const TITLE_UPGRADE_ATTEMPT_CAP = 6;
+/** How far into a still-running first turn its title gets a first try (see submitPrompt). */
+const EARLY_TITLE_AFTER_MS = 45_000;
 
 export type SubmitPromptInput = {
   sessionId: string;
@@ -1381,6 +1383,16 @@ export class SessionManager {
     if (session.title == null) {
       const placeholderSource = input.text || input.attachments?.[0]?.name || "";
       this.patch(input.sessionId, { title: derivePlaceholderTitle(placeholderSource), titleSource: "placeholder", titleGenAttempts: 0 });
+      // The title is normally upgraded when the turn ends, from what Claude
+      // said. A first turn that runs on for many minutes kept the raw first
+      // message as its title the whole time, so try once partway through,
+      // as soon as there's something of Claude's to go on.
+      const early = setTimeout(() => {
+        if (!this.inflight.has(input.sessionId) || this.titleState(input.sessionId).titleSource !== "placeholder") return;
+        const replied = this.events.read(input.sessionId).some((e) => e.kind === "assistant_block" && e.blockKind === "text" && !!e.text);
+        if (replied) void this.tryUpgradeTitle(input.sessionId, session.worktreePath);
+      }, EARLY_TITLE_AFTER_MS);
+      (early as { unref?: () => void }).unref?.();
     }
 
     this.promptedTurns.add(input.sessionId);

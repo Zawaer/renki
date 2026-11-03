@@ -1177,6 +1177,29 @@ describe("auto-titling", () => {
     expect(row.titleSource).toBe("placeholder");
   });
 
+  it("tries a title partway through a long first turn, once Claude has said something", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      const { manager, repoId } = setup();
+      vi.mocked(generateSessionTitle).mockResolvedValue("Battery stats for Matka");
+      let finish: (r: typeof okTurn) => void = () => {};
+      runTurn.mockReset().mockReturnValue(new Promise((r) => (finish = r)));
+      const s = await newSession(manager, repoId);
+      manager.takeControl(s.id, "d1");
+
+      const turn = manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p1", text: "can we add a thing?", resolvePermission: noopResolve });
+      await vi.waitFor(() => expect(runTurn).toHaveBeenCalledTimes(1));
+      manager.events.append(s.id, { kind: "assistant_block", turnId: "t1", blockIndex: 0, blockKind: "text", text: "Looking at the battery stats.", toolUseId: null, toolName: null, toolInput: null });
+      await vi.advanceTimersByTimeAsync(45_000);
+      await vi.waitFor(() => expect(manager.getSession(s.id).title).toBe("Battery stats for Matka"));
+
+      finish(okTurn);
+      await turn;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("upgrades the placeholder into a generated title once the model has enough context", async () => {
     const { manager, db, repoId } = setup();
     vi.mocked(generateSessionTitle).mockResolvedValueOnce(null).mockResolvedValueOnce("Fix login bug");

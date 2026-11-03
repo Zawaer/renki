@@ -48,7 +48,7 @@ apps:
     - talkoot
     - pihi
     - scout-tool
-    - meeting-app        # kuulo
+    - kuulo
     - otaindex
     - contacts           # about-me/contacts
     - sm-outreach-pipeline

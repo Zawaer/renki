@@ -27,9 +27,9 @@
         "worker"
       ]
     },
-    "meeting-app": {
+    "kuulo": {
       "mode": "deploy",
-      "dir": "meeting-app",
+      "dir": "kuulo",
       "git": true,
       "services": [
         "kuulo"

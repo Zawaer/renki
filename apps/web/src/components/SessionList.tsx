@@ -1,8 +1,9 @@
 import { activeSessions, displayBranch, formatPurgeCountdown, groupByRepo, trashedSessions, unpushedBadge, unpushedSummary } from "@renki/client-core";
 import type { Session } from "@renki/protocol";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { clearComposerPrefs, clearDraft } from "../lib/composerPrefs.js";
+import { useLiveSessions } from "../lib/liveSessions.js";
 import { useClient } from "../lib/client.js";
 import { AttachRepoDialog } from "./AttachRepoDialog.js";
 import { ExportDialog } from "./ExportDialog.js";
@@ -30,50 +31,17 @@ export function SessionList({
   onSelect: (id: string) => void;
   onDeleted: (id: string) => void;
 }) {
-  const { rest, realtime } = useClient();
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const { rest } = useClient();
+  const live = useLiveSessions(30_000);
+  const loaded = live.sessions !== null;
+  const sessions = useMemo(() => live.sessions ?? [], [live.sessions]);
+  const refresh = live.refresh;
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
   const [showArchived, setShowArchived] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
   const [exporting, setExporting] = useState<Session | null>(null);
   const [attaching, setAttaching] = useState<Session | null>(null);
-
-  const refresh = useCallback(() => {
-    rest
-      .listSessions()
-      .then((list) => {
-        setSessions(list);
-        setLoaded(true);
-      })
-      .catch(() => {});
-  }, [rest]);
-
-  useEffect(() => {
-    refresh();
-    const t = setInterval(refresh, 30_000);
-    return () => clearInterval(t);
-  }, [refresh]);
-
-  useEffect(() => {
-    const offChanged = realtime.onSessionChanged((session) => {
-      setSessions((prev) => {
-        const idx = prev.findIndex((s) => s.id === session.id);
-        if (idx === -1) return [session, ...prev];
-        const next = prev.slice();
-        next[idx] = session;
-        return next;
-      });
-    });
-    const offRemoved = realtime.onSessionRemoved((id) => {
-      setSessions((prev) => prev.filter((s) => s.id !== id));
-    });
-    return () => {
-      offChanged();
-      offRemoved();
-    };
-  }, [realtime]);
 
   const active = useMemo(() => activeSessions(sessions), [sessions]);
   const archived = useMemo(
@@ -107,9 +75,25 @@ export function SessionList({
     }
   }
 
+  /**
+   * Run an action, saying so when it fails (it used to be an unhandled
+   * rejection: the click just did nothing), then show what the daemon now
+   * says either way. Resolves to whether it worked.
+   */
+  async function attempt(action: () => Promise<unknown>, failure: string): Promise<boolean> {
+    try {
+      await action();
+      return true;
+    } catch (err) {
+      alert(err instanceof Error ? err.message : failure);
+      return false;
+    } finally {
+      refresh();
+    }
+  }
+
   async function rename(id: string, title: string) {
-    await rest.renameSession(id, title);
-    refresh();
+    await attempt(() => rest.renameSession(id, title), "Couldn't rename this session.");
   }
 
   /**
@@ -122,9 +106,7 @@ export function SessionList({
     const unpushedNote = commits > 0 ? ` ${commits} commit${commits === 1 ? " isn't" : "s aren't"} on GitHub; the branch is kept for ${commits === 1 ? "it" : "them"}.` : "";
     if (!confirm(`Move to trash? The transcript stays restorable for 30 days. The worktree is cleaned up now.${unpushedNote}`))
       return;
-    await rest.trashSession(id);
-    onDeleted(id);
-    refresh();
+    if (await attempt(() => rest.trashSession(id), "Couldn't move this session to the trash.")) onDeleted(id);
   }
 
   /** Archived → idle: its worktree is rebuilt and it takes prompts again. */
@@ -139,27 +121,24 @@ export function SessionList({
   }
 
   async function restore(id: string) {
-    await rest.restoreSession(id);
-    refresh();
+    await attempt(() => rest.restoreSession(id), "Couldn't restore this session.");
   }
 
   async function purge(id: string) {
     if (!confirm("Delete permanently? The transcript goes too, with no undo.")) return;
-    await rest.purgeSession(id);
+    if (!(await attempt(() => rest.purgeSession(id), "Couldn't delete this session."))) return;
     forgetLocally(id);
     onDeleted(id);
-    refresh();
   }
 
   async function emptyTrash() {
     if (!confirm(`Permanently delete ${trashed.length} session${trashed.length === 1 ? "" : "s"}? There's no undo.`))
       return;
-    await rest.emptyTrash();
+    if (!(await attempt(() => rest.emptyTrash(), "Couldn't empty the trash."))) return;
     for (const s of trashed) {
       forgetLocally(s.id);
       onDeleted(s.id);
     }
-    refresh();
   }
 
   /**

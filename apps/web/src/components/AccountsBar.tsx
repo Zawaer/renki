@@ -40,6 +40,8 @@ export function AccountsBar() {
     try {
       const res = await rest.switchAccount(account.number);
       if (!res.ok && res.message) alert(res.message);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Couldn't switch accounts.");
     } finally {
       setSwitching(false);
       refresh();

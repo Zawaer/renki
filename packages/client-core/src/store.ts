@@ -25,6 +25,11 @@ export class Store<T> {
     this.set(fn(this.state));
   }
 
+  /** Whether anything is subscribed right now. */
+  hasListeners(): boolean {
+    return this.listeners.size > 0;
+  }
+
   subscribe = (listener: Listener): (() => void) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

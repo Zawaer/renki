@@ -81,6 +81,9 @@ const CHECK_TIMEOUT_MS = 5_000;
  */
 const EVENT_BATCH_MS = 33;
 
+/** How many chats left behind keep their transcript in memory (see forgetOldStores). */
+const KEEP_UNWATCHED_STORES = 5;
+
 /** How long after a replay lands to write it to the cache — long enough to coalesce a reconnect's burst. */
 const CACHE_SAVE_DELAY_MS = 1_500;
 
@@ -102,6 +105,8 @@ export class RealtimeClient {
   private readonly sessionListeners = new Set<(session: Session) => void>();
   private readonly sessionRemovedListeners = new Set<(sessionId: string) => void>();
   private readonly pendingUnwatch = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Sessions no longer watched whose stores are still kept, oldest first (see forgetOldStores). */
+  private readonly recentlyUnwatched: string[] = [];
   /** Sessions whose cached state is still being read; their subscribe waits for it. */
   private readonly hydrating = new Set<string>();
   /** Sessions with state the cache hasn't seen yet. */
@@ -269,6 +274,7 @@ export class RealtimeClient {
     }
     const alreadyWatching = this.watched.has(sessionId);
     this.watched.add(sessionId);
+    this.unforget(sessionId);
     if (alreadyWatching) return store;
     // Never loaded this run: show the cached copy first, then ask only for
     // what came after it. The subscribe waits, or it would ask for everything.
@@ -289,8 +295,39 @@ export class RealtimeClient {
       this.watched.delete(sessionId);
       if (this.isOpen()) this.send({ type: "unsubscribe", sessionId });
       this.saveNow(sessionId);
+      this.unforget(sessionId);
+      this.recentlyUnwatched.push(sessionId);
+      this.forgetOldStores();
     }, 0);
     this.pendingUnwatch.set(sessionId, timer);
+  }
+
+  private unforget(sessionId: string): void {
+    const i = this.recentlyUnwatched.indexOf(sessionId);
+    if (i !== -1) this.recentlyUnwatched.splice(i, 1);
+  }
+
+  /**
+   * Drop the stores of chats left a while ago. Each holds a whole folded
+   * transcript, and a tab kept open for days while browsing chat after chat
+   * otherwise kept every one of them. The last few stay, so going back to one
+   * only replays what it missed; an older one is fetched again (or read from
+   * the cache) when it's opened.
+   */
+  private forgetOldStores(): void {
+    while (this.recentlyUnwatched.length > KEEP_UNWATCHED_STORES) {
+      const sessionId = this.recentlyUnwatched.shift()!;
+      this.forgetStore(sessionId);
+    }
+  }
+
+  private forgetStore(sessionId: string): void {
+    const store = this.conversations.get(sessionId);
+    // Something still reading it would be left holding a store nobody updates.
+    if (!store || this.watched.has(sessionId) || store.hasListeners()) return;
+    this.conversations.delete(sessionId);
+    this.pendingEvents.delete(sessionId);
+    this.unsaved.delete(sessionId);
   }
 
   // ── actions (controller-only ones are enforced server-side) ────────────────
@@ -543,6 +580,8 @@ export class RealtimeClient {
         for (const cb of this.sessionRemovedListeners) cb(msg.sessionId);
         // Purged for good: don't keep its transcript on the device either.
         this.unsaved.delete(msg.sessionId);
+        this.unforget(msg.sessionId);
+        this.forgetStore(msg.sessionId);
         void this.opts.cache?.remove(msg.sessionId).catch(() => {});
         return;
       case "subscribed":

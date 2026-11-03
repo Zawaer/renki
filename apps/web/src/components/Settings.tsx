@@ -413,6 +413,8 @@ function RotationSettings({
     setBusy(true);
     try {
       await rest.updateRotation({ enabled: !rotation.enabled });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Couldn't save this setting.");
     } finally {
       setBusy(false);
       onChanged();
@@ -423,6 +425,8 @@ function RotationSettings({
     setBusy(true);
     try {
       await rest.updateRotation({ preferredEmail: email || null });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Couldn't save this setting.");
     } finally {
       setBusy(false);
       onChanged();
@@ -435,6 +439,8 @@ function RotationSettings({
     setBusy(true);
     try {
       await rest.updateRotation({ threshold: n });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Couldn't save this setting.");
     } finally {
       setBusy(false);
       onChanged();
@@ -520,6 +526,8 @@ function ResumeSettings({
     setBusy(true);
     try {
       await rest.updateRotation({ autoResume: !rotation.autoResume });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Couldn't save this setting.");
     } finally {
       setBusy(false);
       onChanged();
@@ -589,6 +597,8 @@ function AccountRow({
     try {
       const res = await rest.switchAccount(account.number);
       if (!res.ok && res.message) alert(res.message);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Couldn't switch accounts.");
     } finally {
       setBusy(null);
       onChanged();
@@ -600,6 +610,8 @@ function AccountRow({
     setBusy("disconnect");
     try {
       await rest.disconnectUsageKey(account.email);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Couldn't stop tracking this account.");
     } finally {
       setBusy(null);
       onChanged();

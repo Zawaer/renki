@@ -21,6 +21,7 @@ import {
 } from "@renki/client-core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useLiveSessions } from "../lib/liveSessions.js";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { loadDeviceDefaults } from "../lib/composerPrefs.js";
 import { RepoPicker, useRepoChoices } from "./RepoPicker.js";
@@ -172,13 +173,13 @@ function NewChat({ initialRepoId, onLeaving }: { initialRepoId: string | null; o
  * glanceable version, Stats is the deep one.
  */
 export function Home() {
-  const { rest, realtime } = useClient();
+  const { rest } = useClient();
   const navigate = useNavigate();
   const { search } = useLocation();
   /** A chat is being started: the dashboard steps aside for it. */
   const [leaving, setLeaving] = useState(false);
   const [stats, setStats] = useState<StatsResponse | null>(null);
-  const [sessions, setSessions] = useState<Session[] | null>(null);
+  const { sessions } = useLiveSessions(60_000);
   const [failed, setFailed] = useState(false);
   const [range, setRange] = useState<Range>("all");
   const [tab, setTab] = useState<Tab>("overview");
@@ -191,7 +192,6 @@ export function Home() {
         setFailed(false);
       })
       .catch(() => setFailed(true));
-    rest.listSessions().then(setSessions).catch(() => {});
   }, [rest]);
 
   useEffect(() => {
@@ -200,18 +200,7 @@ export function Home() {
     return () => clearInterval(t);
   }, [refresh]);
 
-  // Live, so a session that starts waiting on you shows up here as it happens.
-  useEffect(() => {
-    const offChanged = realtime.onSessionChanged((session) =>
-      setSessions((prev) => (prev ? [session, ...prev.filter((s) => s.id !== session.id)] : prev)),
-    );
-    const offRemoved = realtime.onSessionRemoved((id) => setSessions((prev) => prev?.filter((s) => s.id !== id) ?? prev));
-    return () => {
-      offChanged();
-      offRemoved();
-    };
-  }, [realtime]);
-
+  // Live (see useLiveSessions), so a session that starts waiting on you shows up here as it happens.
   const attention = useMemo(() => (sessions ? sessionsNeedingAttention(sessions) : []), [sessions]);
 
   const grid = useMemo(() => (stats ? activityGrid(HEATMAP_WEEKS, stats.daily) : []), [stats]);

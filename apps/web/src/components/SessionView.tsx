@@ -59,7 +59,7 @@ import {
   timelineWithSending,
 } from "@renki/client-core";
 import type { Account, AttachmentView, CapabilitiesResponse, Session, SessionComposer, SessionResume } from "@renki/protocol";
-import { memo, useEffect, useMemo, useRef, useState, Fragment } from "react";
+import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore, Fragment } from "react";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { hostOpenFile, isHosted } from "../lib/host.js";
 import { revealPending, revealToolUse, useToolReveal } from "../lib/toolReveal.js";
@@ -1030,13 +1030,37 @@ function ModelChangeMarker({ model }: { model: string | null }) {
  * limits (the one in use first). With rotation, the next turn may well run on
  * another account, so its headroom matters as much as the active one's.
  */
-/** "3h ago", kept current by its own once-a-minute tick rather than only when the chat redraws. Exact time on hover. */
+/**
+ * One clock for every "3h ago" in the transcript. Each label used to run its
+ * own once-a-minute interval, so a long chat ran hundreds of them, each with
+ * its own render; now they all redraw together off one, and only while shown.
+ */
+const minuteClock = (() => {
+  const listeners = new Set<() => void>();
+  let now = Date.now();
+  let timer: ReturnType<typeof setInterval> | null = null;
+  return {
+    get: () => now,
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      timer ??= setInterval(() => {
+        now = Date.now();
+        for (const l of listeners) l();
+      }, 60_000);
+      return () => {
+        listeners.delete(listener);
+        if (listeners.size === 0 && timer) {
+          clearInterval(timer);
+          timer = null;
+        }
+      };
+    },
+  };
+})();
+
+/** "3h ago", kept current by the shared minute clock rather than only when the chat redraws. Exact time on hover. */
 function Ago({ at }: { at: number }) {
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => setTick((n) => n + 1), 60_000);
-    return () => clearInterval(t);
-  }, []);
+  useSyncExternalStore(minuteClock.subscribe, minuteClock.get);
   return <span title={new Date(at).toLocaleString()}>{formatAgo(at)}</span>;
 }
 

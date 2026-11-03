@@ -48,7 +48,6 @@ import {
   turnTodos,
   suggestedReplies,
   backgroundWorkOf,
-  type BackgroundWork,
   modelFullName,
   modelMenuLabel,
   segmentImages,
@@ -80,7 +79,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LongPressToRead } from "../components/TextReader";
 import { Markdown, StreamingMarkdown } from "../components/Markdown";
 import { FadeIn, PulseDot, Skeleton, animateLayout } from "../components/Motion";
-import { AgentsButton, AgentsSheet } from "../components/AgentsSheet";
+import { AgentsSheet } from "../components/AgentsSheet";
 import { Sheet } from "../components/Sheet";
 import { FileSheet, type OpenFile } from "../components/FileSheet";
 import { SessionToolsSheet } from "../components/SessionToolsSheet";
@@ -430,6 +429,16 @@ export function SessionView({
   const commands = useMemo(() => backgroundTasksOf(conv.timeline).filter((t) => t.kind === "command"), [conv.timeline]);
   const [agentsOpen, setAgentsOpen] = useState(false);
   const background = useMemo(() => backgroundWorkOf(conv.timeline), [conv.timeline]);
+  /** Push and pull only make sense on a live session that isn't mid-turn. */
+  const syncable = conv.status !== null && status !== "busy" && status !== "archived" && status !== "trashed";
+  const syncRows = [
+    ...(behind && syncable
+      ? [{ key: "pull", icon: "cloud-download-outline" as const, label: behindSummary(behind.commits, behind.base), action: "Pull", prompt: PULL_PROMPT }]
+      : []),
+    ...(unpushed && syncable ? [{ key: "push", icon: "cloud-upload-outline" as const, label: unpushedSummary(unpushed), action: "Push", prompt: PUSH_PROMPT }] : []),
+  ];
+  /** What the ⋯ button's dot says: agents still running beat work to push or pull. */
+  const menuBadge: "running" | "sync" | null = background.length > 0 ? "running" : syncRows.length > 0 ? "sync" : null;
   const [exportOpen, setExportOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
 
@@ -512,35 +521,24 @@ export function SessionView({
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={0}
     >
-      {/* Header */}
+      {/*
+        Header: just the way back and the chat's menu, as in the Claude and
+        ChatGPT apps. The title, status, agents and push/pull all live in the
+        ⋯ sheet; it carries a dot when something there wants a look.
+      */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backRow} onPress={onBack} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <TouchableOpacity style={styles.backRow} onPress={onBack} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Back">
           <Ionicons name="chevron-back" size={22} color={colors.text} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {title || repoName || "…"}
-          </Text>
-          <Text style={styles.headerSub}>
-            {connection !== "open" && conv.status !== null ? (
-              <>
-                <View style={[styles.dot, { backgroundColor: colors.faint }]} /> reconnecting…
-              </>
-            ) : (
-              <>
-                <View style={[styles.dot, { backgroundColor: statusColor[status] ?? colors.faint }]} /> {status}
-              </>
-            )}
-            {/* Holding control is the normal state: say something only when it isn't (or once it's known). */}
-            {loading ? "" : conv.controller ? (isController ? "" : ` · ${conv.controllerName ?? "other"}`) : " · unlocked"}
-          </Text>
+          {/* Only when it isn't live: what's on screen may be behind. */}
+          {connection !== "open" && conv.status !== null && (
+            <Text style={styles.headerSub}>
+              <View style={[styles.dot, { backgroundColor: colors.faint }]} /> reconnecting…
+            </Text>
+          )}
         </View>
-        {/* Context window, Files, Changes and Export: rarely needed on a phone, so one button instead of four. */}
-        <TouchableOpacity onPress={() => setToolsOpen(true)} hitSlop={10} accessibilityRole="button" accessibilityLabel="More" style={{ paddingHorizontal: 4 }}>
-          <Ionicons name="ellipsis-horizontal" size={20} color={colors.dim} />
-        </TouchableOpacity>
-        <AgentsButton agents={agents} commands={commands} onPress={() => setAgentsOpen(true)} />
-        {conv.status === "archived" ? (
+        {conv.status === "archived" && (
           // Archived sessions can't be controlled; bringing one back rebuilds its worktree and resumes the chat.
           <TouchableOpacity
             style={styles.ctrlBtn}
@@ -553,13 +551,22 @@ export function SessionView({
           >
             <Text style={styles.ctrlBtnText}>Unarchive</Text>
           </TouchableOpacity>
-        ) : (
-          !isController && (
-            <TouchableOpacity style={styles.ctrlBtn} onPress={() => realtime.takeControl(sessionId)}>
-              <Text style={styles.ctrlBtnText}>Take control</Text>
-            </TouchableOpacity>
-          )
         )}
+        <TouchableOpacity
+          onPress={() => setToolsOpen(true)}
+          hitSlop={10}
+          accessibilityRole="button"
+          accessibilityLabel={menuBadge ? "More, something needs a look" : "More"}
+          style={styles.menuBtn}
+        >
+          <Ionicons name="ellipsis-horizontal" size={20} color={colors.text} />
+          {menuBadge === "running" && (
+            <View style={styles.menuBadge}>
+              <PulseDot color={colors.ok} size={7} />
+            </View>
+          )}
+          {menuBadge === "sync" && <View style={[styles.menuBadge, styles.menuBadgeDot, { backgroundColor: colors.accent }]} />}
+        </TouchableOpacity>
       </View>
 
       {/* Timeline */}
@@ -572,11 +579,7 @@ export function SessionView({
         close the keyboard, not open that pill's sheet. "handled" here (and
         below on pickerList) only forwards a tap to a child that itself
         handles it, which is enough since nothing here needs to work while a
-        tap is also trying to scroll. optionsRow uses the stronger "always"
-        instead, since it's the exact row this bug was originally reported
-        against — "handled" would likely have been enough there too, but
-        "always" is the safer choice for the one ScrollView the fix has to
-        actually work on.
+        tap is also trying to scroll.
       */}
       <View style={styles.timelineWrap} ref={timelineRef}>
         {/*
@@ -722,58 +725,6 @@ export function SessionView({
         </FadeIn>
       )}
 
-      {/* Main moved on and this branch wasn't caught up automatically. Pull asks Claude to do it. */}
-      {behind && conv.status !== null && status !== "busy" && status !== "archived" && status !== "trashed" && (
-        <FadeIn>
-          <View style={styles.resumeWrap}>
-            <Ionicons name="cloud-download-outline" size={20} color={colors.dim} />
-            <Text style={[styles.resumeTitle, { flex: 1 }]} numberOfLines={2}>
-              {behindSummary(behind.commits, behind.base)}
-            </Text>
-            {isController && (
-              <TouchableOpacity
-                style={styles.resumeNowBtn}
-                onPress={() => realtime.submitPrompt(sessionId, PULL_PROMPT, promptOptsFor(conv.composer))}
-              >
-                <Text style={styles.resumeNowText}>Pull</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </FadeIn>
-      )}
-
-      {/* Work GitHub doesn't have yet. Push asks Claude to do it, so it can merge with main first. */}
-      {unpushed && conv.status !== null && status !== "busy" && status !== "archived" && status !== "trashed" && (
-        <FadeIn>
-          <View style={styles.resumeWrap}>
-            <Ionicons name="cloud-upload-outline" size={20} color={colors.dim} />
-            <Text style={[styles.resumeTitle, { flex: 1 }]} numberOfLines={2}>
-              {unpushedSummary(unpushed)}
-            </Text>
-            {isController && (
-              <TouchableOpacity
-                style={styles.resumeNowBtn}
-                onPress={() => realtime.submitPrompt(sessionId, PUSH_PROMPT, promptOptsFor(conv.composer))}
-              >
-                <Text style={styles.resumeNowText}>Push</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </FadeIn>
-      )}
-
-      {/* Background agents and commands still running, pinned here so they aren't lost mid-reply once the turn ends. */}
-      {background.length > 0 && (
-        <FadeIn>
-          <TouchableOpacity style={styles.backgroundWrap} activeOpacity={0.7} onPress={() => setAgentsOpen(true)}>
-            {background.slice(-3).map((w) => (
-              <BackgroundWorkRow key={w.toolUseId} work={w} colors={colors} styles={styles} />
-            ))}
-            {background.length > 3 && <Text style={styles.meta}>{background.length - 3} more</Text>}
-          </TouchableOpacity>
-        </FadeIn>
-      )}
-
       {/* Queued prompts — kept out of the timeline so a fast follow-up can't
           render ahead of the turn it's replying to; shown here as "up next". */}
       {conv.queuedPrompts.length > 0 && (
@@ -806,25 +757,6 @@ export function SessionView({
         </View>
         </FadeIn>
       )}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.optionsRow}
-        contentContainerStyle={styles.optionsRowContent}
-        keyboardShouldPersistTaps="always"
-      >
-        <TouchableOpacity style={styles.optionPill} onPress={() => setModelSheetOpen(true)}>
-          <Text style={styles.optionPillText} numberOfLines={1}>
-            {modelLabel}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.optionPill} onPress={() => setEffortSheetOpen(true)}>
-          <Text style={styles.optionPillText}>{effort?.label ?? "Medium"}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.optionPill} onPress={() => setModeSheetOpen(true)}>
-          <Text style={styles.optionPillText}>{mode?.label ?? "Manual"}</Text>
-        </TouchableOpacity>
-      </ScrollView>
       {attachments.length > 0 && (
         <View style={styles.pendingAttachRow}>
           {attachments.map((a) => (
@@ -842,8 +774,9 @@ export function SessionView({
       {attachError && <Text style={styles.attachError}>{attachError}</Text>}
       <View style={styles.composerWrap}>
         <View style={styles.composerPill}>
-          <TouchableOpacity style={styles.roundIconBtn} disabled={!isController && !loading} onPress={() => setAttachMenuOpen(true)}>
-            <Ionicons name="add" size={22} color={isController || loading ? colors.text : colors.faint} />
+          {/* Attachments and the chat's settings (model, effort, mode), which are rarely changed. */}
+          <TouchableOpacity style={styles.roundIconBtn} onPress={() => setAttachMenuOpen(true)} accessibilityLabel="Add and settings">
+            <Ionicons name="add" size={22} color={colors.text} />
           </TouchableOpacity>
           <TextInput
             ref={inputRef}
@@ -851,8 +784,16 @@ export function SessionView({
             value={text}
             onChangeText={setText}
             multiline
+            // No separate button: starting to type here is how you take control.
+            onFocus={() => {
+              if (!isController && !loading && claimable) realtime.takeControl(sessionId);
+            }}
             placeholder={
-              !isController && !loading ? "Take control to send prompts" : status === "busy" ? "Add to what Claude is doing…" : "Chat with Claude…"
+              !isController && !loading && claimable
+                ? "Tap to take control"
+                : status === "busy"
+                  ? "Add to what Claude is doing…"
+                  : "Chat with Claude…"
             }
             placeholderTextColor={colors.faint}
           />
@@ -876,7 +817,8 @@ export function SessionView({
 
       {/* Attach sheet */}
       <Sheet visible={attachMenuOpen} onClose={() => setAttachMenuOpen(false)} title="Add to chat" colors={colors}>
-        <View style={styles.attachTileRow}>
+        {/* Attaching is part of sending, so it's the controller's. */}
+        <View style={[styles.attachTileRow, !isController && !loading && styles.disabled]} pointerEvents={isController || loading ? "auto" : "none"}>
           <TouchableOpacity style={styles.attachTile} onPress={attachPhoto}>
             <View style={styles.attachTileIcon}>
               <Ionicons name="image-outline" size={24} color={colors.text} />
@@ -889,6 +831,32 @@ export function SessionView({
             </View>
             <Text style={styles.attachTileLabel}>File</Text>
           </TouchableOpacity>
+        </View>
+        <View style={styles.settingsList}>
+          <Text style={styles.settingsHeading}>Settings</Text>
+          {(
+            [
+              { key: "model", icon: "sparkles-outline", label: "Model", value: modelLabel, open: () => setModelSheetOpen(true) },
+              { key: "effort", icon: "bulb-outline", label: "Effort", value: effort?.label ?? "Medium", open: () => setEffortSheetOpen(true) },
+              { key: "mode", icon: "shield-checkmark-outline", label: "Mode", value: mode?.label ?? "Manual", open: () => setModeSheetOpen(true) },
+            ] as const
+          ).map((r) => (
+            <TouchableOpacity
+              key={r.key}
+              style={styles.settingsRow}
+              onPress={() => {
+                setAttachMenuOpen(false);
+                r.open();
+              }}
+            >
+              <Ionicons name={r.icon} size={18} color={colors.text} />
+              <Text style={styles.settingsLabel}>{r.label}</Text>
+              <Text style={styles.settingsValue} numberOfLines={1}>
+                {r.value}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.faint} />
+            </TouchableOpacity>
+          ))}
         </View>
       </Sheet>
 
@@ -955,6 +923,22 @@ export function SessionView({
         context={conv.context}
         hasFiles={hasFiles}
         hasTree={hasTree}
+        chatTitle={title || repoName || "This chat"}
+        statusLine={
+          loading
+            ? "Loading…"
+            : `${status}${isController ? "" : conv.controller ? ` · ${conv.controllerName ?? "Another device"} has control` : ""}`
+        }
+        statusColor={statusColor[status] ?? colors.faint}
+        // Asking Claude to push or pull is a prompt, so it's the controller's to send.
+        syncRows={syncRows.map(({ key, icon, label, action }) => ({ key, icon, label, action: isController ? action : null }))}
+        onSync={(key) => {
+          const row = syncRows.find((r) => r.key === key);
+          if (!row) return;
+          setToolsOpen(false);
+          realtime.submitPrompt(sessionId, row.prompt, promptOptsFor(conv.composer));
+        }}
+        running={background.length}
       />
       <ExportSheet sessionId={sessionId} title={title || repoName || "This chat"} visible={exportOpen} onClose={() => setExportOpen(false)} colors={colors} />
 
@@ -2202,22 +2186,6 @@ function DiffView({ view, colors, styles }: { view: EditToolView; colors: ThemeC
   );
 }
 
-function BackgroundWorkRow({ work, colors, styles }: { work: BackgroundWork; colors: ThemeColors; styles: Styles }) {
-  const elapsed = useElapsedSeconds(work.startedAtMs);
-  const stats = [work.steps != null ? `${work.steps} ${work.steps === 1 ? "step" : "steps"}` : null, elapsed != null ? formatTurnDuration(elapsed * 1000) : null]
-    .filter(Boolean)
-    .join(" · ");
-  return (
-    <View style={styles.turnStatus}>
-      <ActivityIndicator size="small" color={colors.faint} />
-      <Text style={[styles.toolStepLabel, { flex: 1 }]} numberOfLines={1}>
-        {work.kind === "agent" ? "Agent" : "Command"} · {work.label}
-      </Text>
-      {stats.length > 0 && <Text style={styles.meta}>{stats}</Text>}
-    </View>
-  );
-}
-
 /**
  * The turn's task list, once, as Claude last wrote it — ticking off in place
  * instead of repeating with every update. Open while the turn runs, so where
@@ -2314,8 +2282,15 @@ const makeStyles = (colors: ThemeColors) =>
     },
     backRow: { flexDirection: "row", alignItems: "center" },
     headerCenter: { flex: 1 },
-    headerTitle: { color: colors.text, fontSize: 15, fontWeight: "700" },
-    headerSub: { color: colors.faint, fontSize: 11, marginTop: 2 },
+    headerSub: { color: colors.faint, fontSize: 12, textAlign: "center" },
+    menuBtn: { padding: 4 },
+    menuBadge: { position: "absolute", top: 0, right: 0 },
+    menuBadgeDot: { width: 7, height: 7, borderRadius: 4 },
+    settingsList: { paddingHorizontal: 20, paddingBottom: 16 },
+    settingsHeading: { color: colors.faint, fontSize: 12, fontWeight: "600", paddingBottom: 4 },
+    settingsRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 13 },
+    settingsLabel: { color: colors.text, fontSize: 15 },
+    settingsValue: { flex: 1, textAlign: "right", color: colors.dim, fontSize: 14 },
     dot: { width: 8, height: 8, borderRadius: 4 },
     ctrlBtn: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 8 },
     ctrlBtnText: { color: colors.accentFg, fontSize: 13, fontWeight: "700" },
@@ -2522,7 +2497,6 @@ const makeStyles = (colors: ThemeColors) =>
     resumeNowBtn: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 6 },
     resumeNowText: { color: colors.accentFg, fontSize: 13, fontWeight: "700" },
     queueItem: { color: colors.faint, fontSize: 12 },
-    backgroundWrap: { gap: 6, backgroundColor: colors.panel, borderRadius: radius.md, marginHorizontal: 14, marginBottom: 8, paddingHorizontal: 12, paddingVertical: 8 },
     repliesWrap: { gap: 10, marginTop: 14, padding: 12, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
     repliesHead: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
     repliesQuestion: { flex: 1, color: colors.text },
@@ -2533,10 +2507,6 @@ const makeStyles = (colors: ThemeColors) =>
     allowText: { color: colors.accentFg, fontWeight: "700" },
     denyBtn: { backgroundColor: withAlpha(colors.danger, 0.14), borderRadius: radius.pill, paddingHorizontal: 20, paddingVertical: 10 },
     denyText: { color: colors.danger, fontWeight: "700" },
-    optionsRow: { flexGrow: 0, paddingTop: 8 },
-    optionsRowContent: { flexDirection: "row", gap: 8, paddingHorizontal: 14, paddingBottom: 2 },
-    optionPill: { backgroundColor: colors.inset, borderRadius: radius.pill, paddingHorizontal: 13, paddingVertical: 7 },
-    optionPillText: { color: colors.dim, fontSize: 12, fontWeight: "600" },
     suggestBox: {
       marginHorizontal: 14,
       marginBottom: 6,

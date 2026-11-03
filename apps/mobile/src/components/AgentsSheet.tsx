@@ -10,33 +10,9 @@ import { Sheet } from "./Sheet";
 /**
  * The phone's agent map: every subagent the session started, as a tree, with
  * what each was asked, how it ended, how long it took and what it cost.
- * `AgentsButton` is its entry point in the session header; the sheet itself
- * lists the agents and expands one to its answer.
+ * Opened from the chat's ⋯ menu; it lists the agents and expands one to its
+ * answer.
  */
-
-/** The header's entry point — hidden until the session has started an agent. */
-export function AgentsButton({ agents, commands, onPress }: { agents: AgentNode[]; commands: BackgroundTaskView[]; onPress: () => void }) {
-  const colors = useTheme();
-  const styles = useMemo(() => makeStyles(colors), [colors]);
-  const all = useMemo(() => flattenAgents(agents), [agents]);
-  if (all.length === 0 && commands.length === 0) return null;
-  const running = all.filter((a) => a.status === "running").length + commands.filter((c) => c.status === "running").length;
-  const total = all.length + commands.length;
-  const label = running > 0 ? `${running} of ${total} running` : `${total} agents and background tasks`;
-  return (
-    <TouchableOpacity
-      style={styles.headerBtn}
-      onPress={onPress}
-      hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-    >
-      <Ionicons name="git-network-outline" size={16} color={running > 0 ? colors.text : colors.dim} />
-      <Text style={[styles.headerBtnCount, running > 0 && { color: colors.text }]}>{running > 0 ? running : total}</Text>
-      {running > 0 && <PulseDot color={colors.ok} size={6} />}
-    </TouchableOpacity>
-  );
-}
 
 export function AgentsSheet({
   visible,
@@ -258,16 +234,6 @@ type Styles = ReturnType<typeof makeStyles>;
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     flex1: { flex: 1, minWidth: 0 },
-    headerBtn: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 4,
-      backgroundColor: colors.hover,
-      borderRadius: radius.pill,
-      paddingHorizontal: 9,
-      paddingVertical: 6,
-    },
-    headerBtnCount: { color: colors.dim, fontSize: 12, fontWeight: "700", fontVariant: ["tabular-nums"] },
     subtitle: { color: colors.faint, fontSize: 12, textAlign: "center", marginTop: -8, marginBottom: 8 },
     section: { color: colors.dim, fontSize: 12, fontWeight: "600", marginTop: 14, marginBottom: 4, marginLeft: 4 },
     list: { paddingHorizontal: 12, paddingBottom: 8 },

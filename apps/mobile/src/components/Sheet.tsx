@@ -149,6 +149,6 @@ const styles = StyleSheet.create({
   },
   handle: { alignSelf: "center", width: 36, height: 4, borderRadius: 2, marginTop: 10, marginBottom: 4 },
   titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 18, paddingVertical: 14 },
-  titleText: { fontSize: 17, fontWeight: "700" },
+  titleText: { flexShrink: 1, fontSize: 17, fontWeight: "700", textAlign: "center", paddingHorizontal: 8 },
   titleSpacer: { width: 20 },
 });

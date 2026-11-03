@@ -32,6 +32,12 @@ export function SessionToolsSheet({
   context,
   hasFiles,
   hasTree,
+  chatTitle,
+  statusLine,
+  statusColor,
+  syncRows = [],
+  onSync,
+  running = 0,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -45,6 +51,16 @@ export function SessionToolsSheet({
   hasFiles: boolean;
   /** It's in a repo, so there are changes to diff. */
   hasTree: boolean;
+  /** The chat's title, which the screen's header no longer shows. */
+  chatTitle: string;
+  /** Status and who has control, e.g. "idle · Web has control". */
+  statusLine: string;
+  statusColor: string;
+  /** Work to push or pull, each with the one action that deals with it (null when not this device's to do). */
+  syncRows?: { key: string; icon: keyof typeof Ionicons.glyphMap; label: string; action: string | null }[];
+  onSync?: (key: string) => void;
+  /** Agents and background commands still running. */
+  running?: number;
 }) {
   const colors = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -65,7 +81,7 @@ export function SessionToolsSheet({
           ? view.file
             ? view.file.slice(view.file.lastIndexOf("/") + 1)
             : "Changes"
-          : "This chat";
+          : chatTitle;
 
   const back = () => {
     if (view.kind === "files" && view.file) setView({ kind: "files", dir: view.dir });
@@ -84,6 +100,25 @@ export function SessionToolsSheet({
       )}
       {view.kind === "menu" && (
         <View style={styles.body}>
+          <View style={styles.statusRow}>
+            <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+            <Text style={styles.statusText} numberOfLines={1}>
+              {statusLine}
+            </Text>
+          </View>
+          {syncRows.map((r) => (
+            <View key={r.key} style={styles.row}>
+              <Ionicons name={r.icon} size={18} color={colors.text} />
+              <Text style={styles.rowText} numberOfLines={2}>
+                {r.label}
+              </Text>
+              {r.action && onSync && (
+                <TouchableOpacity style={styles.actionBtn} onPress={() => onSync(r.key)}>
+                  <Text style={styles.actionText}>{r.action}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ))}
           <MenuRow icon="pie-chart-outline" label="Context window" styles={styles} colors={colors} onPress={() => setView({ kind: "context" })}>
             {context && <Meter pct={context.percentage} colors={colors} small />}
           </MenuRow>
@@ -93,7 +128,9 @@ export function SessionToolsSheet({
           {hasTree && (
             <MenuRow icon="git-compare-outline" label="Changes" styles={styles} colors={colors} onPress={() => setView({ kind: "changes" })} />
           )}
-          <MenuRow icon="git-network-outline" label="Agents & background tasks" styles={styles} colors={colors} onPress={onAgents} />
+          <MenuRow icon="git-network-outline" label="Agents & background tasks" styles={styles} colors={colors} onPress={onAgents}>
+            {running > 0 && <Text style={styles.runningText}>{running} running</Text>}
+          </MenuRow>
           <MenuRow icon="download-outline" label="Export chat…" styles={styles} colors={colors} onPress={onExport} />
         </View>
       )}
@@ -371,6 +408,12 @@ function makeStyles(colors: ThemeColors) {
     list: { paddingHorizontal: 12, paddingBottom: 20 },
     row: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14 },
     rowText: { flex: 1, color: colors.text, fontSize: 15 },
+    statusRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingBottom: 6 },
+    statusDot: { width: 8, height: 8, borderRadius: 4 },
+    statusText: { flex: 1, color: colors.dim, fontSize: 13 },
+    actionBtn: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 7 },
+    actionText: { color: colors.accentFg, fontSize: 13, fontWeight: "700" },
+    runningText: { color: colors.ok, fontSize: 13, fontVariant: ["tabular-nums"] },
     backRow: { flexDirection: "row", alignItems: "center", gap: 2, paddingHorizontal: 14, paddingBottom: 8 },
     backText: { color: colors.dim, fontSize: 13 },
     label: { color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 8 },

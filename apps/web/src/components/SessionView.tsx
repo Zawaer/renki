@@ -155,8 +155,8 @@ export function SessionView({
   const branch = place ? place.branch : conv.branch;
   const tabName = title || repoName;
   useEffect(() => {
-    setTabTitle(tabName ? `${tabName} · Renki` : "Renki");
-  }, [tabName]);
+    setTabTitle(tabName ? `${tabName} · Renki` : "Renki", sessionId);
+  }, [tabName, sessionId]);
   useEffect(() => () => setTabTitle("Renki"), []);
 
   /**

@@ -4,17 +4,20 @@ import { useNavigate } from "react-router-dom";
 import { useClient } from "./client.js";
 
 /**
- * The tab's title: the open chat's name, led by how many chats are waiting on
- * an approval, so a background tab says it needs you. SessionView sets the
- * name, useAttentionAlerts the count, and this puts them together.
+ * The tab's title: the open chat's name, led by "Needs you" when that chat is
+ * waiting on an approval. Only that tab says so: with every Renki tab saying
+ * "(1) Needs you", none of them told you which one it was. SessionView sets
+ * the name and which chat is open, useAttentionAlerts which chats wait.
  */
 let baseTitle = "Renki";
-let waiting = 0;
+let openChat: string | null = null;
+const waitingChats = new Set<string>();
 function applyTitle() {
-  document.title = waiting > 0 ? `(${waiting}) Needs you · ${baseTitle}` : baseTitle;
+  document.title = openChat && waitingChats.has(openChat) ? `Needs you · ${baseTitle}` : baseTitle;
 }
-export function setTabTitle(title: string): void {
+export function setTabTitle(title: string, sessionId: string | null = null): void {
   baseTitle = title;
+  openChat = sessionId;
   applyTitle();
 }
 
@@ -44,7 +47,7 @@ export async function setNotifications(on: boolean): Promise<boolean> {
 
 /**
  * Watches every chat for one that starts waiting on an approval (a tool to
- * allow, a question to answer): counts them into the tab title and, while
+ * allow, a question to answer): marks the tab showing it (see setTabTitle) and, while
  * this tab isn't being looked at, shows a browser notification that opens the
  * chat. Before this a background tab gave no sign at all.
  */
@@ -53,11 +56,8 @@ export function useAttentionAlerts(): void {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const pending = new Set<string>();
-    const update = () => {
-      waiting = pending.size;
-      applyTitle();
-    };
+    const pending = waitingChats;
+    const update = applyTitle;
     const see = (s: Session, announce: boolean) => {
       const was = pending.has(s.id);
       if (s.hasPendingPermission) pending.add(s.id);
@@ -76,7 +76,7 @@ export function useAttentionAlerts(): void {
     };
 
     let live = true;
-    // Already waiting when the tab opened: counted, not announced.
+    // Already waiting when the tab opened: marked, not announced.
     rest
       .listSessions()
       .then((list) => live && list.forEach((s) => see(s, false)))
@@ -90,7 +90,7 @@ export function useAttentionAlerts(): void {
       live = false;
       offChanged();
       offRemoved();
-      waiting = 0;
+      pending.clear();
       applyTitle();
     };
   }, [rest, realtime, navigate]);

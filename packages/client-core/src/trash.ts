@@ -47,8 +47,11 @@ export type SessionGroup = {
 };
 
 /**
- * Group sessions by repo, most recently active first, with each group's
- * sessions in the same order.
+ * Group sessions by repo, newest first: chats by when they were started, and
+ * groups by their newest chat. Not by activity: that reshuffled the list
+ * every time a chat got a message, and finding a chat by where it always is
+ * matters more than seeing the busiest on top. Only starting a chat moves
+ * anything.
  *
  * Shared by web and mobile: the grouping is part of how Renki reads, not a
  * per-client layout choice, and the two had drifted (mobile showed one flat
@@ -68,6 +71,7 @@ export function groupByRepo(sessions: Session[]): SessionGroup[] {
     if (s.status === "busy") g.busy++;
     if (s.hasPendingPermission) g.pending++;
   }
-  for (const g of map.values()) g.sessions.sort((a, b) => b.lastActivityAt - a.lastActivityAt);
-  return [...map.values()].sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+  const newest = (g: SessionGroup) => g.sessions[0]?.createdAt ?? 0;
+  for (const g of map.values()) g.sessions.sort((a, b) => b.createdAt - a.createdAt);
+  return [...map.values()].sort((a, b) => newest(b) - newest(a));
 }

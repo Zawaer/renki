@@ -126,10 +126,7 @@ export function SessionView({
    * row, so the header follows it too. Falls back to the log until it lands.
    */
   const [place, setPlace] = useState<{ repoName: string; branch: string | null } | null>(null);
-  /** False once the controller's last connection closed; it can't answer approvals then, so anyone may. */
-  const [controllerOnline, setControllerOnline] = useState(true);
   useEffect(() => {
-    setControllerOnline(true);
     setPurgeAt(null);
     setResume(null);
     setTitle(null);
@@ -146,7 +143,6 @@ export function SessionView({
       setBehind(s.behind ? { commits: s.behind.commits, base: s.baseBranch } : null);
       setWorktreePath(s.worktreePath);
       setPlace({ repoName: s.repoName, branch: s.branch });
-      setControllerOnline(s.controllerOnline ?? true);
     });
   }, [realtime, sessionId]);
 
@@ -283,6 +279,15 @@ export function SessionView({
   }, [conv, jumpTo, onJumped]);
 
   const isController = conv.controller === config.deviceId;
+  /**
+   * Acting on the chat from here takes control first, instead of asking you
+   * to: it's your own devices, and a click before every message on the other
+   * one was only friction. The daemon handles messages in order, so whatever
+   * follows arrives with control already here.
+   */
+  const takeOver = () => {
+    if (!isController) realtime.takeControl(sessionId);
+  };
   const status = conv.status ?? "idle";
   /** Not "open" means what's on screen may be behind the daemon. */
   const connection = useStoreValue(realtime.status);
@@ -321,6 +326,7 @@ export function SessionView({
     suggestion && suggestion.turnId !== dismissedReplies && status !== "archived" && status !== "trashed" ? suggestion : null;
   const background = useMemo(() => backgroundWorkOf(conv.timeline), [conv.timeline]);
   const sendReply = (text: string) => {
+    takeOver();
     stickToBottom.current = true;
     setAtBottom(true);
     realtime.submitPrompt(sessionId, text, promptOptsFor(conv.composer));
@@ -416,14 +422,6 @@ export function SessionView({
                 ? `${conv.controllerName ?? conv.controller} has control`
                 : "No one has control"}
             </span>
-          )}
-          {conv.status !== null && !isController && status !== "trashed" && status !== "archived" && (
-            <Button
-              variant="primary"
-              onClick={() => realtime.takeControl(sessionId)}
-            >
-              Take control
-            </Button>
           )}
         </div>
       </div>
@@ -535,7 +533,7 @@ export function SessionView({
                 <SuggestedReplies
                   question={replies.question}
                   replies={replies.replies}
-                  canAct={isController}
+                  canAct
                   onPick={sendReply}
                   onDismiss={() => setDismissedReplies(replies.turnId)}
                 />
@@ -571,19 +569,13 @@ export function SessionView({
               <PermissionCard
                 key={p.requestId}
                 perm={p}
-                // An absent or vacant controller can't answer, so this device may
-                // (the daemon hands it control as it answers).
-                canAct={isController || !conv.controller || !controllerOnline}
+                canAct
                 controllerName={conv.controllerName ?? conv.controller}
                 onTakeControl={() => realtime.takeControl(sessionId)}
-                onDecide={(d, updatedInput) =>
-                  realtime.resolvePermission(
-                    sessionId,
-                    p.requestId,
-                    d,
-                    updatedInput,
-                  )
-                }
+                onDecide={(d, updatedInput) => {
+                  takeOver();
+                  realtime.resolvePermission(sessionId, p.requestId, d, updatedInput);
+                }}
               />
             ))}
           </div>
@@ -621,9 +613,11 @@ export function SessionView({
       {resume && conv.status !== null && status !== "busy" && (
         <ResumeBanner
           resume={resume}
-          // Anyone may act once the lock has lapsed — see the daemon's resumeAction.
-          canAct={isController || !conv.controller}
-          onAction={(action) => realtime.resumeAction(sessionId, action)}
+          canAct
+          onAction={(action) => {
+            takeOver();
+            realtime.resumeAction(sessionId, action);
+          }}
         />
       )}
 
@@ -632,8 +626,9 @@ export function SessionView({
           icon="codicon-cloud-download"
           text={behindSummary(behind.commits, behind.base)}
           action="Pull"
-          canAct={isController}
+          canAct
           onAction={() => {
+            takeOver();
             stickToBottom.current = true;
             setAtBottom(true);
             realtime.submitPrompt(sessionId, PULL_PROMPT, promptOptsFor(conv.composer));
@@ -646,8 +641,9 @@ export function SessionView({
           icon="codicon-cloud-upload"
           text={unpushedSummary(unpushed)}
           action="Push"
-          canAct={isController}
+          canAct
           onAction={() => {
+            takeOver();
             stickToBottom.current = true;
             setAtBottom(true);
             realtime.submitPrompt(sessionId, PUSH_PROMPT, promptOptsFor(conv.composer));
@@ -658,7 +654,8 @@ export function SessionView({
       <Composer
         sessionId={sessionId}
         composer={conv.composer}
-        disabled={!isController || status === "trashed" || status === "archived"}
+        // Until the daemon has answered, it isn't known whether this chat takes prompts at all.
+        disabled={conv.status === null || status === "trashed" || status === "archived"}
         // The daemon hasn't told us anything yet (who has control, archived or not): let the
         // user type and attach meanwhile; only sending waits for it. See Composer.
         loading={conv.status === null}
@@ -667,19 +664,21 @@ export function SessionView({
             ? "In the trash. Restore it to keep going."
             : status === "archived"
               ? "Archived. Unarchive it to keep going."
-              : !isController
-                ? "Take control to send prompts"
-                : ""
+              : ""
         }
         onSend={(text, opts) => {
           // You sent something: show it, even if you'd scrolled up.
           stickToBottom.current = true;
           setAtBottom(true);
+          takeOver();
           realtime.submitPrompt(sessionId, text, opts);
         }}
-        busy={isController && status === "busy"}
-        onStop={() => realtime.interrupt(sessionId)}
-        onQuickReply={replies && isController ? () => sendReply(replies.replies[0]!) : undefined}
+        busy={status === "busy"}
+        onStop={() => {
+          takeOver();
+          realtime.interrupt(sessionId);
+        }}
+        onQuickReply={replies ? () => sendReply(replies.replies[0]!) : undefined}
       />
     </div>
       {shownPanel && hasFiles && (

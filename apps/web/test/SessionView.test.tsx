@@ -178,15 +178,17 @@ describe("SessionView", () => {
     expect(screen.getByRole("button", { name: "Deny" })).toBeInTheDocument();
     cleanupRoots();
 
-    // Rendered as a viewer: the same card, its buttons disabled, and who has control.
-    renderSession(sessionId, events, "d2");
-    expect(screen.getByText("Web has control, so only it can answer.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Allow" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Deny" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Take control to answer" })).toBeEnabled();
+    // Rendered on another device: still answerable there, taking control as it answers.
+    const { realtime } = renderSession(sessionId, events, "d2");
+    const calls: string[] = [];
+    realtime.takeControl = () => void calls.push("take_control");
+    realtime.resolvePermission = () => void calls.push("resolve");
+    expect(screen.getByRole("button", { name: "Deny" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Allow" }));
+    expect(calls).toEqual(["take_control", "resolve"]);
   });
 
-  it("shows the empty state and a Take control button when unlocked", () => {
+  it("shows the empty state when unlocked, with no Take control button to press", () => {
     const sessionId = "s3";
     const events = [
       ev(sessionId, {
@@ -204,7 +206,7 @@ describe("SessionView", () => {
 
     expect(screen.getByText("Nothing here yet")).toBeInTheDocument();
     expect(screen.getByText("No one has control")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Take control" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Take control" })).toBeNull();
   });
 
   it("claims control by itself when nobody holds it, but never takes it from someone", () => {
@@ -432,7 +434,7 @@ describe("SessionView control label", () => {
     expect(screen.queryByRole("button", { name: "Take control" })).toBeNull();
   });
 
-  it("says who is in control when it is someone else, and lets you take it", () => {
+  it("says who is in control when it is someone else", () => {
     const sid = "s_ctl_other";
     renderSession(sid, [
       created(sid),
@@ -440,7 +442,6 @@ describe("SessionView control label", () => {
       ev(sid, { kind: "control_changed", controller: "phone-1", controllerName: "Phone" }),
     ]);
     expect(screen.getByText("Phone has control")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Take control" })).toBeInTheDocument();
   });
 });
 
@@ -488,15 +489,21 @@ describe("SessionView composer while the conversation loads", () => {
     expect(sent).toEqual(["hello"]);
   });
 
-  it("still disables the box once it is known that someone else holds control", () => {
+  it("sends while someone else holds control, taking it first", () => {
     const sid = "s_other";
-    renderSession(sid, [
+    const { realtime } = renderSession(sid, [
       created(sid),
       ev(sid, { kind: "status_changed", status: "idle" }),
       ev(sid, { kind: "control_changed", controller: "someone-else", controllerName: "Phone" }),
     ]);
-    const box = screen.getByPlaceholderText("Take control to send prompts") as HTMLTextAreaElement;
-    expect(box.disabled).toBe(true);
+    const calls: string[] = [];
+    realtime.takeControl = () => void calls.push("take_control");
+    realtime.submitPrompt = (_sid: string, text: string) => (calls.push(`send ${text}`), "p1");
+    const box = screen.getByPlaceholderText(/Reply to Claude/) as HTMLTextAreaElement;
+    expect(box.disabled).toBe(false);
+    fireEvent.change(box, { target: { value: "from the laptop" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(calls).toEqual(["take_control", "send from the laptop"]);
   });
 });
 

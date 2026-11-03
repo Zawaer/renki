@@ -62,17 +62,30 @@ export function SessionList({
     });
   }
 
+  /**
+   * Sessions with an action under way, and what it is ("Archiving…"). The row
+   * says so until the daemon answers: archiving or trashing tears down a
+   * worktree and can take a while, and a row that just sat there looked like
+   * the click hadn't registered.
+   */
+  const [working, setWorking] = useState<ReadonlyMap<string, string>>(new Map());
+  async function busyWith<T>(id: string, label: string, action: () => Promise<T>): Promise<T> {
+    setWorking((m) => new Map(m).set(id, label));
+    try {
+      return await action();
+    } finally {
+      setWorking((m) => {
+        const next = new Map(m);
+        next.delete(id);
+        return next;
+      });
+    }
+  }
+
   async function archive(id: string) {
     const commits = sessions.find((s) => s.id === id)?.unpushed?.commits ?? 0;
     if (commits > 0 && !confirm(`${commits} commit${commits === 1 ? " isn't" : "s aren't"} on GitHub yet. Archive anyway? The branch is kept, so unarchiving brings ${commits === 1 ? "it" : "them"} back.`)) return;
-    try {
-      await rest.archiveSession(id);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Couldn't archive this session.");
-    } finally {
-      // Whatever happened, show what the daemon now says: a slow or failed request must not leave the list stale.
-      refresh();
-    }
+    await busyWith(id, "Archiving…", () => attempt(() => rest.archiveSession(id), "Couldn't archive this session."));
   }
 
   /**
@@ -106,27 +119,21 @@ export function SessionList({
     const unpushedNote = commits > 0 ? ` ${commits} commit${commits === 1 ? " isn't" : "s aren't"} on GitHub; the branch is kept for ${commits === 1 ? "it" : "them"}.` : "";
     if (!confirm(`Move to trash? The transcript stays restorable for 30 days. The worktree is cleaned up now.${unpushedNote}`))
       return;
-    if (await attempt(() => rest.trashSession(id), "Couldn't move this session to the trash.")) onDeleted(id);
+    if (await busyWith(id, "Moving to trash…", () => attempt(() => rest.trashSession(id), "Couldn't move this session to the trash."))) onDeleted(id);
   }
 
   /** Archived → idle: its worktree is rebuilt and it takes prompts again. */
   async function unarchive(id: string) {
-    try {
-      await rest.unarchiveSession(id);
-      onSelect(id);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Couldn't unarchive this session.");
-    }
-    refresh();
+    if (await busyWith(id, "Unarchiving…", () => attempt(() => rest.unarchiveSession(id), "Couldn't unarchive this session."))) onSelect(id);
   }
 
   async function restore(id: string) {
-    await attempt(() => rest.restoreSession(id), "Couldn't restore this session.");
+    await busyWith(id, "Restoring…", () => attempt(() => rest.restoreSession(id), "Couldn't restore this session."));
   }
 
   async function purge(id: string) {
     if (!confirm("Delete permanently? The transcript goes too, with no undo.")) return;
-    if (!(await attempt(() => rest.purgeSession(id), "Couldn't delete this session."))) return;
+    if (!(await busyWith(id, "Deleting…", () => attempt(() => rest.purgeSession(id), "Couldn't delete this session.")))) return;
     forgetLocally(id);
     onDeleted(id);
   }
@@ -155,6 +162,7 @@ export function SessionList({
   const rowProps = (s: Session) => ({
     session: s,
     selected: s.id === selectedId,
+    working: working.get(s.id) ?? null,
     onSelect: () => onSelect(s.id),
     onRename: (title: string) => rename(s.id, title),
     onDelete: () => del(s.id),
@@ -371,9 +379,12 @@ function Row({
   onDelete,
   onRestore,
   onPurge,
+  working,
 }: {
   session: Session;
   selected: boolean;
+  /** An action under way on this session, said in place of its details ("Archiving…"). */
+  working: string | null;
   onSelect: () => void;
   onArchive?: () => void;
   onUnarchive?: () => void;
@@ -432,10 +443,14 @@ function Row({
       ) : (
         <button
           onClick={onSelect}
-          className={`flex h-7 min-w-0 flex-1 items-center gap-2.5 pr-1 text-left ${session.status === "archived" || inTrash ? "opacity-70" : ""}`}
+          className={`flex h-7 min-w-0 flex-1 items-center gap-2.5 pr-1 text-left ${session.status === "archived" || inTrash || working ? "opacity-70" : ""}`}
           title={`${session.title || session.repoName}${branch ? ` · ${session.repoName} · ${branch}` : ""}`}
         >
-          <SessionGlyph status={session.status} pendingPermission={session.hasPendingPermission} paused={!!session.resume && session.resume.kind !== "restart"} />
+          {working ? (
+            <span className="codicon codicon-loading codicon-modifier-spin w-3.5 shrink-0 text-center text-[13px] text-(--renki-fg-muted)" />
+          ) : (
+            <SessionGlyph status={session.status} pendingPermission={session.hasPendingPermission} paused={!!session.resume && session.resume.kind !== "restart"} />
+          )}
           <span
             className={`renki-fade-end min-w-0 flex-1 overflow-hidden text-[13px] whitespace-nowrap text-(--renki-fg) ${
               menuOpen ? "renki-fade-end-wide" : "group-hover:renki-fade-end-wide"
@@ -448,8 +463,10 @@ function Row({
               isn't what you came to check. */}
           {/* Details on the right give way to the ⋮ button on hover, and the
               branch drops out entirely once the sidebar gets narrow. */}
-          <span className={`flex shrink-0 items-center gap-1.5 transition-opacity ${menuOpen ? "opacity-0" : "group-hover:opacity-0"}`}>
-            {inTrash && countdown ? (
+          <span className={`flex shrink-0 items-center gap-1.5 transition-opacity ${menuOpen || working ? "" : "group-hover:opacity-0"} ${menuOpen ? "opacity-0" : ""}`}>
+            {working ? (
+              <span className="text-[11px] text-(--renki-fg-muted)">{working}</span>
+            ) : inTrash && countdown ? (
               <span className="text-[10px] text-(--renki-fg-muted)">{countdown}</span>
             ) : (
               branch && (
@@ -470,7 +487,7 @@ function Row({
 
       {/* Above the rows after it while its menu is open (z-30 on the row):
           every row is positioned, and later ones would otherwise paint over it. */}
-      <div className="absolute inset-y-0 right-1 flex items-center">
+      <div className={`absolute inset-y-0 right-1 flex items-center ${working ? "hidden" : ""}`}>
         <button
           onClick={() => setMenuOpen((v) => !v)}
           title="Session actions"

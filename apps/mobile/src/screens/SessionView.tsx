@@ -264,11 +264,12 @@ export function SessionView({
   const [dismissedReplies, setDismissedReplies] = useState<string | null>(null);
   const suggestion = useMemo(() => suggestedReplies(conv), [conv.timeline, conv.sendingPrompts, conv.queuedPrompts]);
   const replies =
-    suggestion && suggestion.turnId !== dismissedReplies && isController && status !== "archived" && status !== "trashed"
+    suggestion && suggestion.turnId !== dismissedReplies && status !== "archived" && status !== "trashed"
       ? suggestion
       : null;
   // Sending mid-turn queues the prompt on the daemon, same as Enter on the web.
-  const canSend = isController;
+  // Not holding control doesn't stop you: sending takes it (see takeOver).
+  const canSend = status !== "archived" && status !== "trashed";
   /** The daemon hasn't reported yet: typing and attaching are fine meanwhile; only sending waits. */
   const loading = conv.status === null;
   /** Not "open" means what's on screen may be behind; say so rather than pass it off as live. */
@@ -481,9 +482,20 @@ export function SessionView({
       ? capabilities.commands.filter((c) => c.name.toLowerCase().startsWith(text.slice(1).toLowerCase()))
       : [];
 
+  /**
+   * Acting on the chat from here takes control first, instead of asking you
+   * to: it's your own devices, and a step before every message on the other
+   * one was only friction. The daemon handles messages in order, so the
+   * prompt that follows arrives with control already here.
+   */
+  function takeOver() {
+    if (!isController) realtime.takeControl(sessionId);
+  }
+
   function send() {
     const t = text.trim();
     if ((!t && attachments.length === 0) || !canSend) return;
+    takeOver();
     realtime.submitPrompt(sessionId, t, {
       model: model || undefined,
       maxThinkingTokens: effort?.maxThinkingTokens ?? undefined,
@@ -538,6 +550,35 @@ export function SessionView({
     setText(`/${name} `);
   }
 
+  const [focused, setFocused] = useState(false);
+  const composerOpen = focused || text.length > 0 || attachments.length > 0;
+  // Mid-turn, Stop only while the composer is empty: once there's something
+  // to send, the button queues it instead.
+  const sendButton =
+    status === "busy" && !text.trim() && attachments.length === 0 ? (
+      <TouchableOpacity
+        key="send"
+        style={styles.stopBtn}
+        onPress={() => {
+          takeOver();
+          realtime.interrupt(sessionId);
+        }}
+        accessibilityLabel="Stop"
+      >
+        <Ionicons name="stop" size={15} color={colors.accentFg} />
+      </TouchableOpacity>
+    ) : (
+      <TouchableOpacity
+        key="send"
+        style={[styles.sendBtn, (!canSend || (!text.trim() && attachments.length === 0)) && styles.disabled]}
+        disabled={!canSend || (!text.trim() && attachments.length === 0)}
+        onPress={send}
+        accessibilityLabel="Send"
+      >
+        <Ionicons name="arrow-up" size={19} color={colors.accentFg} />
+      </TouchableOpacity>
+    );
+
   const selectedModel = capabilities.models.find((m) => m.value === model);
   const modelLabel = selectedModel ? modelFullName(selectedModel) : model || "Default";
 
@@ -549,22 +590,22 @@ export function SessionView({
       keyboardVerticalOffset={0}
     >
       {/*
-        Header: just the way back and the chat's menu, as in the Claude and
-        ChatGPT apps. The title, status, agents and push/pull all live in the
-        ⋯ sheet; it carries a dot when something there wants a look.
+        Header: back, the title and the chat's menu, as in the Claude app.
+        Status, agents and push/pull live in the ⋯ sheet, which carries a dot
+        when something there wants a look.
       */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backRow} onPress={onBack} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Back">
           <Ionicons name="chevron-back" size={22} color={colors.text} />
         </TouchableOpacity>
-        <View style={styles.headerCenter}>
+        {/* The title opens the chat's menu, like the ⋯ beside it. */}
+        <TouchableOpacity style={styles.headerCenter} onPress={() => setToolsOpen(true)} activeOpacity={0.6}>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {title || repoName || " "}
+          </Text>
           {/* Only when it isn't live: what's on screen may be behind. */}
-          {connection !== "open" && conv.status !== null && (
-            <Text style={styles.headerSub}>
-              <View style={[styles.dot, { backgroundColor: colors.faint }]} /> reconnecting…
-            </Text>
-          )}
-        </View>
+          {connection !== "open" && conv.status !== null && <Text style={styles.headerSub}>Reconnecting…</Text>}
+        </TouchableOpacity>
         {conv.status === "archived" && (
           // Archived sessions can't be controlled; bringing one back rebuilds its worktree and resumes the chat.
           <TouchableOpacity
@@ -645,7 +686,10 @@ export function SessionView({
               <SuggestedReplies
                 question={replies.question}
                 replies={replies.replies}
-                onPick={(r) => realtime.submitPrompt(sessionId, r, promptOptsFor(conv.composer))}
+                onPick={(r) => {
+                  takeOver();
+                  realtime.submitPrompt(sessionId, r, promptOptsFor(conv.composer));
+                }}
                 onDismiss={() => setDismissedReplies(replies.turnId)}
                 colors={colors}
                 styles={styles}
@@ -718,10 +762,13 @@ export function SessionView({
           key={p.requestId}
           perm={p}
           // An absent or vacant controller can't answer, so this device may (the daemon hands it control as it answers).
-          canAct={isController || !conv.controller || !controllerOnline}
+          canAct
           controllerName={conv.controllerName ?? conv.controller}
           onTakeControl={() => realtime.takeControl(sessionId)}
-          onDecide={(d, updatedInput) => realtime.resolvePermission(sessionId, p.requestId, d, updatedInput)}
+          onDecide={(d, updatedInput) => {
+            takeOver();
+            realtime.resolvePermission(sessionId, p.requestId, d, updatedInput);
+          }}
           colors={colors}
           styles={styles}
         />
@@ -741,13 +788,25 @@ export function SessionView({
               {resume.attempt > 0 ? ` Attempt ${resume.attempt + 1}.` : ""}
             </Text>
           </View>
-          {/* Anyone may act once the lock has lapsed — see the daemon's resumeAction. */}
-          {(isController || !conv.controller) && (
+          {/* Acting takes control first (takeOver), so these are always there. */}
+          {(
             <View style={styles.resumeActions}>
-              <TouchableOpacity onPress={() => realtime.resumeAction(sessionId, "cancel")} hitSlop={8}>
+              <TouchableOpacity
+                onPress={() => {
+                  takeOver();
+                  realtime.resumeAction(sessionId, "cancel");
+                }}
+                hitSlop={8}
+              >
                 <Text style={styles.resumeCancel}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.resumeNowBtn} onPress={() => realtime.resumeAction(sessionId, "now")}>
+              <TouchableOpacity
+                style={styles.resumeNowBtn}
+                onPress={() => {
+                  takeOver();
+                  realtime.resumeAction(sessionId, "now");
+                }}
+              >
                 <Text style={styles.resumeNowText}>Now</Text>
               </TouchableOpacity>
             </View>
@@ -803,91 +862,90 @@ export function SessionView({
         </View>
       )}
       {attachError && <Text style={styles.attachError}>{attachError}</Text>}
+      {/*
+        Composer, as in the Claude app: a slim pill while you read, opening
+        into two rows while you write, the second with the model and effort.
+        The input keeps its place (and its key) in both, so it never remounts
+        and drops the keyboard.
+      */}
       <View style={styles.composerWrap}>
-        <View style={styles.composerPill}>
-          {/* Attachments and the chat's settings (model, effort, mode), which are rarely changed. */}
-          <TouchableOpacity style={styles.roundIconBtn} onPress={() => setAttachMenuOpen(true)} accessibilityLabel="Add and settings">
-            <Ionicons name="add" size={22} color={colors.text} />
-          </TouchableOpacity>
-          <TextInput
-            ref={inputRef}
-            style={styles.composerInput}
-            value={text}
-            onChangeText={setText}
-            multiline
-            // No separate button: starting to type here is how you take control.
-            onFocus={() => {
-              if (!isController && !loading && claimable) realtime.takeControl(sessionId);
-            }}
-            placeholder={
-              !isController && !loading && claimable
-                ? "Tap to take control"
-                : status === "busy"
-                  ? "Add to what Claude is doing…"
-                  : "Chat with Claude…"
-            }
-            placeholderTextColor={colors.faint}
-          />
-          {/* Mid-turn, Stop only while the composer is empty — once there's
-              something to send, the button queues it instead. */}
-          {isController && status === "busy" && !text.trim() && attachments.length === 0 ? (
-            <TouchableOpacity style={styles.stopBtn} onPress={() => realtime.interrupt(sessionId)}>
-              <Ionicons name="stop" size={15} color={colors.accentFg} />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={[styles.sendBtn, (!canSend || (!text.trim() && attachments.length === 0)) && styles.disabled]}
-              disabled={!canSend || (!text.trim() && attachments.length === 0)}
-              onPress={send}
-            >
-              <Ionicons name="arrow-up" size={19} color={colors.accentFg} />
-            </TouchableOpacity>
+        <View style={[styles.composerPill, composerOpen && styles.composerPillOpen]}>
+          <View style={styles.composerRow}>
+            {!composerOpen && (
+              <TouchableOpacity key="add" style={styles.roundIconBtn} onPress={() => setAttachMenuOpen(true)} accessibilityLabel="Add to chat">
+                <Ionicons name="add" size={22} color={colors.text} />
+              </TouchableOpacity>
+            )}
+            <TextInput
+              key="input"
+              ref={inputRef}
+              style={[styles.composerInput, composerOpen && styles.composerInputOpen]}
+              value={text}
+              onChangeText={setText}
+              multiline
+              onFocus={() => {
+                animateLayout();
+                setFocused(true);
+              }}
+              onBlur={() => {
+                animateLayout();
+                setFocused(false);
+              }}
+              placeholder={status === "busy" ? "Add to what Claude is doing…" : "Reply to Claude…"}
+              placeholderTextColor={colors.faint}
+            />
+            {!composerOpen && sendButton}
+          </View>
+          {composerOpen && (
+            <View style={styles.composerRow}>
+              <TouchableOpacity style={styles.roundIconBtn} onPress={() => setAttachMenuOpen(true)} accessibilityLabel="Add to chat">
+                <Ionicons name="add" size={22} color={colors.text} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modelChip} onPress={() => setModelSheetOpen(true)} accessibilityLabel="Model and effort">
+                <Text style={styles.modelChipText} numberOfLines={1}>
+                  {modelLabel} <Text style={styles.modelChipEffort}>{effort?.label ?? "Medium"}</Text>
+                </Text>
+              </TouchableOpacity>
+              <View style={styles.flex1} />
+              {sendButton}
+            </View>
           )}
         </View>
       </View>
 
       {/* Attach sheet */}
       <Sheet visible={attachMenuOpen} onClose={() => setAttachMenuOpen(false)} title="Add to chat" colors={colors}>
-        {/* Attaching is part of sending, so it's the controller's. */}
-        <View style={[styles.attachTileRow, !isController && !loading && styles.disabled]} pointerEvents={isController || loading ? "auto" : "none"}>
-          <TouchableOpacity style={styles.attachTile} onPress={attachPhoto}>
-            <View style={styles.attachTileIcon}>
-              <Ionicons name="image-outline" size={24} color={colors.text} />
-            </View>
-            <Text style={styles.attachTileLabel}>Photo</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.attachTile} onPress={attachDocument}>
-            <View style={styles.attachTileIcon}>
-              <Ionicons name="document-outline" size={24} color={colors.text} />
-            </View>
-            <Text style={styles.attachTileLabel}>File</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.settingsList}>
-          <Text style={styles.settingsHeading}>Settings</Text>
-          {(
-            [
-              { key: "model", icon: "sparkles-outline", label: "Model", value: modelLabel, open: () => setModelSheetOpen(true) },
-              { key: "effort", icon: "bulb-outline", label: "Effort", value: effort?.label ?? "Medium", open: () => setEffortSheetOpen(true) },
-              { key: "mode", icon: "shield-checkmark-outline", label: "Mode", value: mode?.label ?? "Manual", open: () => setModeSheetOpen(true) },
-            ] as const
-          ).map((r) => (
-            <TouchableOpacity
-              key={r.key}
-              style={styles.settingsRow}
-              onPress={() => {
-                setAttachMenuOpen(false);
-                r.open();
-              }}
-            >
-              <Ionicons name={r.icon} size={18} color={colors.text} />
-              <Text style={styles.settingsLabel}>{r.label}</Text>
-              <Text style={styles.settingsValue} numberOfLines={1}>
-                {r.value}
-              </Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.faint} />
+        <View style={styles.sheetBody}>
+          <View style={styles.attachTileRow}>
+            <TouchableOpacity style={styles.attachTile} onPress={attachPhoto}>
+              <View style={styles.attachTileIcon}>
+                <Ionicons name="images-outline" size={22} color={colors.text} />
+              </View>
+              <Text style={styles.attachTileLabel}>Photos</Text>
             </TouchableOpacity>
-          ))}
+            <TouchableOpacity style={styles.attachTile} onPress={attachDocument}>
+              <View style={styles.attachTileIcon}>
+                <Ionicons name="document-attach-outline" size={22} color={colors.text} />
+              </View>
+              <Text style={styles.attachTileLabel}>Files</Text>
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity
+            style={styles.sheetCardRow}
+            onPress={() => {
+              setAttachMenuOpen(false);
+              setModeSheetOpen(true);
+            }}
+          >
+            <View style={styles.sheetCardIcon}>
+              <Ionicons name="shield-checkmark-outline" size={20} color={colors.text} />
+            </View>
+            <View style={styles.flex1}>
+              <Text style={styles.sheetCardLabel}>Permissions</Text>
+              <Text style={styles.sheetCardSub}>{mode?.label ?? "Manual"}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.faint} />
+          </TouchableOpacity>
         </View>
       </Sheet>
 
@@ -908,14 +966,28 @@ export function SessionView({
         colors={colors}
         styles={styles}
         footer={
-          <CustomModelField
-            onUse={(id) => {
-              setModel(id);
-              setModelSheetOpen(false);
-            }}
-            colors={colors}
-            styles={styles}
-          />
+          <>
+            {/* Effort goes with the model, as in the Claude app. */}
+            <TouchableOpacity
+              style={styles.sheetCardRow}
+              onPress={() => {
+                setModelSheetOpen(false);
+                setEffortSheetOpen(true);
+              }}
+            >
+              <Text style={styles.sheetCardLabel}>Effort</Text>
+              <Text style={styles.sheetCardValue}>{effort?.label ?? "Medium"}</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.faint} />
+            </TouchableOpacity>
+            <CustomModelField
+              onUse={(id) => {
+                setModel(id);
+                setModelSheetOpen(false);
+              }}
+              colors={colors}
+              styles={styles}
+            />
+          </>
         }
       />
       <PickerSheet
@@ -961,12 +1033,12 @@ export function SessionView({
             : `${status}${isController ? "" : conv.controller ? ` · ${conv.controllerName ?? "Another device"} has control` : ""}`
         }
         statusColor={statusColor[status] ?? colors.faint}
-        // Asking Claude to push or pull is a prompt, so it's the controller's to send.
-        syncRows={syncRows.map(({ key, icon, label, action }) => ({ key, icon, label, action: isController ? action : null }))}
+        syncRows={syncRows.map(({ key, icon, label, action }) => ({ key, icon, label, action }))}
         onSync={(key) => {
           const row = syncRows.find((r) => r.key === key);
           if (!row) return;
           setToolsOpen(false);
+          takeOver();
           realtime.submitPrompt(sessionId, row.prompt, promptOptsFor(conv.composer));
         }}
         running={background.length}
@@ -2322,15 +2394,11 @@ const makeStyles = (colors: ThemeColors) =>
     },
     backRow: { flexDirection: "row", alignItems: "center" },
     headerCenter: { flex: 1 },
-    headerSub: { color: colors.faint, fontSize: 12, textAlign: "center" },
+    headerTitle: { color: colors.text, fontSize: 16, fontWeight: "600" },
+    headerSub: { color: colors.faint, fontSize: 11, marginTop: 1 },
     menuBtn: { padding: 4 },
     menuBadge: { position: "absolute", top: 0, right: 0 },
     menuBadgeDot: { width: 7, height: 7, borderRadius: 4 },
-    settingsList: { paddingHorizontal: 20, paddingBottom: 16 },
-    settingsHeading: { color: colors.faint, fontSize: 12, fontWeight: "600", paddingBottom: 4 },
-    settingsRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 13 },
-    settingsLabel: { color: colors.text, fontSize: 15 },
-    settingsValue: { flex: 1, textAlign: "right", color: colors.dim, fontSize: 14 },
     dot: { width: 8, height: 8, borderRadius: 4 },
     ctrlBtn: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 8 },
     ctrlBtnText: { color: colors.accentFg, fontSize: 13, fontWeight: "700" },
@@ -2418,17 +2486,23 @@ const makeStyles = (colors: ThemeColors) =>
     },
     pickerRowLabel: { color: colors.text, fontSize: 15, fontWeight: "600" },
     pickerRowDesc: { color: colors.faint, fontSize: 12, marginTop: 2 },
-    attachTileRow: { flexDirection: "row", gap: 20, paddingHorizontal: 20, paddingTop: 6, paddingBottom: 16 },
-    attachTile: { alignItems: "center", gap: 8 },
+    sheetBody: { paddingHorizontal: 14, paddingBottom: 16, gap: 10 },
+    attachTileRow: { flexDirection: "row", gap: 10 },
+    attachTile: { flex: 1, alignItems: "center", gap: 10, backgroundColor: colors.inset, borderRadius: radius.lg, paddingVertical: 18 },
     attachTileIcon: {
-      width: 60,
-      height: 60,
-      borderRadius: 30,
-      backgroundColor: colors.inset,
+      width: 46,
+      height: 46,
+      borderRadius: 23,
+      backgroundColor: colors.panel,
       alignItems: "center",
       justifyContent: "center",
     },
-    attachTileLabel: { color: colors.text, fontSize: 13 },
+    attachTileLabel: { color: colors.text, fontSize: 15 },
+    sheetCardRow: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: colors.inset, borderRadius: radius.lg, paddingHorizontal: 16, paddingVertical: 14 },
+    sheetCardIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.panel, alignItems: "center", justifyContent: "center" },
+    sheetCardLabel: { color: colors.text, fontSize: 16, flexShrink: 1 },
+    sheetCardSub: { color: colors.dim, fontSize: 13, marginTop: 2 },
+    sheetCardValue: { flex: 1, textAlign: "right", color: colors.dim, fontSize: 15 },
     turn: { gap: 10 },
     thinkingWrap: { backgroundColor: withAlpha(colors.faint, 0.1), borderRadius: radius.md, padding: 12, gap: 4 },
     thinkingHeader: { color: colors.faint, fontSize: 11 },
@@ -2568,8 +2642,8 @@ const makeStyles = (colors: ThemeColors) =>
     suggestDesc: { flex: 1, color: colors.dim, fontSize: 12 },
     composerWrap: { paddingHorizontal: 14, paddingTop: 6, paddingBottom: 10 },
     composerPill: {
-      flexDirection: "row",
-      alignItems: "flex-end",
+      flexDirection: "column",
+      alignItems: "stretch",
       gap: 4,
       backgroundColor: colors.panel,
       borderRadius: radius.xl,
@@ -2578,6 +2652,12 @@ const makeStyles = (colors: ThemeColors) =>
       paddingVertical: 4,
       ...softShadow(colors),
     },
+    composerPillOpen: { gap: 2, paddingTop: 6 },
+    composerRow: { flexDirection: "row", alignItems: "flex-end", gap: 4 },
+    composerInputOpen: { paddingHorizontal: 12, minHeight: 44 },
+    modelChip: { backgroundColor: colors.inset, borderRadius: radius.pill, paddingHorizontal: 14, height: 38, justifyContent: "center", maxWidth: 220 },
+    modelChipText: { color: colors.text, fontSize: 14, fontWeight: "500" },
+    modelChipEffort: { color: colors.dim, fontWeight: "400" },
     composerInput: {
       flex: 1,
       color: colors.text,

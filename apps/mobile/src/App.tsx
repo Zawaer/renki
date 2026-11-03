@@ -35,6 +35,7 @@ import { SessionView } from "./screens/SessionView";
 import { StatsView } from "./screens/StatsView";
 import { PaletteProvider, type ThemeColors, useTheme } from "./theme";
 import { TextReaderProvider } from "./components/TextReader";
+import { UpdateBanner } from "./components/UpdateBanner";
 
 // Show notifications while the app is foregrounded too.
 /** The Approve / Deny buttons on a gateway approval notification answer straight away, with a toast. */
@@ -78,6 +79,7 @@ export function App() {
     <PaletteProvider value={palette}>
       <SafeAreaProvider>
         <AppBody onPaletteChange={setPalette} />
+        <UpdateBanner />
       </SafeAreaProvider>
     </PaletteProvider>
   );

@@ -21,6 +21,7 @@ import { resolve, sep } from "node:path";
 import type { Config } from "../config.js";
 import type { DB } from "../db/index.js";
 import { compactions, sessions } from "../db/schema.js";
+import { FoldedChats } from "../events/folded.js";
 import { EventLog } from "../events/log.js";
 import { chatAsContext, isLostConversation } from "../export/context.js";
 import { cleanUpCheckouts, extraCheckoutsOf, isFinished, listWorktreeFolders } from "../git/leftovers.js";
@@ -169,6 +170,8 @@ export type SessionBroadcast = {
 
 export class SessionManager {
   readonly events: EventLog;
+  /** Chats folded for clients, so opening one sends its latest turns instead of its whole log. */
+  readonly folded: FoldedChats;
   private autoSwitch: RateLimitAutoSwitch | null = null;
   private mac: { bridge: MacBridge; jobs: MacJobs; builds: MacBuilds } | null = null;
   private broadcast: SessionBroadcast | null = null;
@@ -220,6 +223,7 @@ export class SessionManager {
     private readonly db: DB,
   ) {
     this.events = new EventLog(db);
+    this.folded = new FoldedChats(this.events);
   }
 
   /**
@@ -909,6 +913,7 @@ export class SessionManager {
       logger.warn("unpacked attachments removal failed during delete", { id, err: String(err) }),
     );
     this.events.deleteTranscript(id);
+    this.folded.forget(id);
     this.db
       .update(sessions)
       .set({

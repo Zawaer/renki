@@ -62,6 +62,27 @@ export class EventLog {
   }
 
   /**
+   * `read`, but with attachment bytes left out (`data: ""`), for anything that
+   * sends them by reference anyway. They're most of a long chat's size —
+   * hundreds of megabytes of screenshots — and parsing them was most of the
+   * time it took to read one.
+   */
+  readLight(sessionId: string, afterSeq = -1): SessionEvent[] {
+    const rows = this.db
+      .select()
+      .from(events)
+      .where(and(eq(events.sessionId, sessionId), gt(events.seq, afterSeq)))
+      .orderBy(asc(events.seq))
+      .all();
+    return rows.map((row) =>
+      // Only prompts and tool results carry attachments. Base64 has no quotes
+      // or backslashes, and a key inside an encoded string reads \"data\", so
+      // this matches exactly an attachment's own data field.
+      row.kind === "prompt_submitted" || row.kind === "tool_result" ? rowToEvent({ ...row, data: row.data.replace(BASE64_DATA, '"data":""') }) : rowToEvent(row),
+    );
+  }
+
+  /**
    * Every permission request, in any session, that was never resolved: one
    * pass over just the permission events, not every session's whole log.
    */
@@ -290,6 +311,9 @@ const ANY = "evt:*";
 function channel(sessionId: string): string {
   return `evt:${sessionId}`;
 }
+
+/** An attachment's inline bytes, as stored: `"data":"<base64>"`. */
+const BASE64_DATA = /"data":"[A-Za-z0-9+/=]+"/g;
 
 function rowToEvent(row: {
   sessionId: string;

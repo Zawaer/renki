@@ -201,6 +201,12 @@ export type ConversationState = {
   composer: SessionComposer | null;
   /** Highest seq folded in — sent as lastSeq on (re)subscribe. */
   lastSeq: number;
+  /**
+   * How many timeline items come before `timeline[0]` that aren't loaded here
+   * yet. A chat opens with only its latest turns (see the daemon's snapshot)
+   * and the rest arrives afterwards (prependOlder). Absent means 0.
+   */
+  olderItems?: number;
 };
 
 /**
@@ -395,6 +401,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
     }
 
     case "assistant_delta":
+      if (inUnloadedTurn(s, subagentTurnId(s.timeline, e.turnId, e.parentToolUseId))) return s;
       s.timeline = updateTurn(s.timeline, subagentTurnId(s.timeline, e.turnId, e.parentToolUseId), e.ts, (turn) => ({
         ...turn,
         blocks: e.parentToolUseId
@@ -404,6 +411,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       return s;
 
     case "assistant_block":
+      if (inUnloadedTurn(s, subagentTurnId(s.timeline, e.turnId, e.parentToolUseId))) return s;
       s.timeline = updateTurn(s.timeline, subagentTurnId(s.timeline, e.turnId, e.parentToolUseId), e.ts, (turn) => ({
         ...turn,
         blocks: e.parentToolUseId
@@ -418,6 +426,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       return s;
 
     case "tool_result":
+      if (inUnloadedTurn(s, subagentTurnId(s.timeline, e.turnId, e.toolUseId))) return s;
       s.timeline = updateTurn(s.timeline, subagentTurnId(s.timeline, e.turnId, e.toolUseId), e.ts, (turn) => ({
         ...turn,
         blocks: applyToolResult(
@@ -513,6 +522,9 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
         s.timeline = found;
         return s;
       }
+      // Most likely its call is in the history not loaded yet, which the
+      // daemon sends already patched.
+      if (hasUnloaded(s)) return s;
       const task = { summary: e.summary, status: e.status };
       const last = s.timeline[s.timeline.length - 1];
       s.timeline =
@@ -544,7 +556,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       };
       const found = e.toolUseId ? patchToolBlock(s.timeline, e.toolUseId, (b) => ({ ...b, macBuild: view })) : null;
       if (found) s.timeline = found;
-      else if (e.state !== "running") {
+      else if (e.state !== "running" && !hasUnloaded(s)) {
         // No call to show it on (never replayed, or unknown): say how it ended.
         const text = `Mac build ${e.job} ${e.state === "succeeded" ? "succeeded" : "failed"}${e.detail ? `: ${e.detail}` : "."}`;
         s.timeline = [...s.timeline, { type: "notice", text, level: e.state === "succeeded" ? "info" : "warn", at: e.ts }];
@@ -617,6 +629,42 @@ function containsToolUse(blocks: BlockView[], toolUseId: string): boolean {
     if (b.subagent && containsToolUse(b.subagent.blocks, toolUseId)) return true;
   }
   return false;
+}
+
+function hasUnloaded(s: ConversationState): boolean {
+  return (s.olderItems ?? 0) > 0;
+}
+
+/**
+ * An event for a turn that's in the history not loaded yet. Folding it would
+ * start an empty stand-in turn at the bottom; the daemon's copy of the older
+ * history already has it, so it's dropped here.
+ */
+function inUnloadedTurn(s: ConversationState, turnId: string): boolean {
+  return hasUnloaded(s) && lastTurnIndex(s.timeline, turnId) === -1;
+}
+
+/**
+ * Older history arriving in front of what's loaded: `items` end where the
+ * loaded timeline starts, and `start` is how many items still come before them.
+ */
+export function prependOlder(state: ConversationState, items: TimelineItem[], start: number): ConversationState {
+  if (!hasUnloaded(state) || items.length === 0) return state;
+  return { ...state, timeline: [...items, ...state.timeline], olderItems: Math.max(0, start) };
+}
+
+/**
+ * The latest turns of a folded conversation, for opening a chat fast: the last
+ * `tail` items, cut back to start at a prompt so a turn never shows without
+ * what asked for it.
+ */
+export function latestOf(state: ConversationState, tail: number): ConversationState {
+  const before = state.olderItems ?? 0;
+  if (state.timeline.length <= tail) return state;
+  let cut = state.timeline.length - tail;
+  while (cut > 0 && state.timeline[cut]?.type !== "prompt") cut--;
+  if (cut === 0) return state;
+  return { ...state, timeline: state.timeline.slice(cut), olderItems: before + cut };
 }
 
 /** Index of the turn with `turnId`, or -1. Searched from the end, where the running turn is. */

@@ -372,12 +372,19 @@ export function SessionView({
    */
   const settledCount = useRef<number | null>(null);
   const hadContentAtMount = useRef(conv.timeline.length > 0);
-  if (settledCount.current === null && conv.timeline.length > 0) settledCount.current = conv.timeline.length;
+  /**
+   * Items before the loaded ones, still on their way: the chat opens with its
+   * latest turns and client-core fetches the rest. Positions count from the
+   * start of the whole chat, so keys stay put as history arrives in front
+   * (at the list's far end, being inverted, so nothing on screen moves).
+   */
+  const older = conv.olderItems ?? 0;
+  if (settledCount.current === null && conv.timeline.length > 0) settledCount.current = older + conv.timeline.length;
 
   /** The timeline plus any message sent from here that the daemon hasn't confirmed yet (shown instantly). */
   const rows = useMemo(() => timelineWithSending(conv), [conv.timeline, conv.sendingPrompts, conv.queuedPrompts]);
-  /** Newest first for the inverted list, each with its position in the timeline for a stable key. */
-  const entries = useMemo(() => rows.map((item, index): TimelineEntry => ({ item, index })).reverse(), [rows]);
+  /** Newest first for the inverted list, each with its position in the whole chat for a stable key. */
+  const entries = useMemo(() => rows.map((item, i): TimelineEntry => ({ item, index: older + i })).reverse(), [rows, older]);
   /**
    * Opened from search: once the hit's row is in the timeline, scroll to it
    * (rows far back aren't rendered yet, hence the index and the fallback in
@@ -606,11 +613,12 @@ export function SessionView({
               styles={styles}
               onPreview={openPreview}
               animate={settledCount.current !== null && item.index >= settledCount.current}
-              afterNotice={item.item.type === "notice" && rows[item.index - 1]?.type === "notice"}
+              afterNotice={item.item.type === "notice" && rows[item.index - older - 1]?.type === "notice"}
             />
           )}
           ItemSeparatorComponent={TimelineGap}
-          ListFooterComponent={TimelineAnchor}
+          // Inverted, so the footer is the top: where older history is still arriving.
+          ListFooterComponent={older > 0 ? <OlderLoading styles={styles} colors={colors} /> : TimelineAnchor}
           // The list is inverted, so its header sits at the bottom, right under the newest reply.
           ListHeaderComponent={
             replies ? (
@@ -1207,6 +1215,15 @@ function SuggestedReplies({
 
 function TimelineAnchor() {
   return null;
+}
+
+function OlderLoading({ styles, colors }: { styles: Styles; colors: ThemeColors }) {
+  return (
+    <View style={styles.olderLoading}>
+      <ActivityIndicator size="small" color={colors.faint} />
+      <Text style={styles.meta}>Loading earlier messages</Text>
+    </View>
+  );
 }
 
 /**
@@ -2295,6 +2312,7 @@ const makeStyles = (colors: ThemeColors) =>
     ctrlBtn: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 8 },
     ctrlBtnText: { color: colors.accentFg, fontSize: 13, fontWeight: "700" },
     timelineWrap: { flex: 1 },
+    olderLoading: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12 },
     timeline: { flex: 1 },
     timelineContent: { padding: 14 },
     timelineEmpty: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center", gap: 10 },

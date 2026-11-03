@@ -1,5 +1,4 @@
 import {
-  type AttachmentView,
   type ClientMessage,
   ClientMessage as ClientMessageSchema,
   type SessionEvent,
@@ -7,6 +6,7 @@ import {
   WsErrorCode,
 } from "@renki/protocol";
 import type { WebSocket } from "ws";
+import { withAttachmentRefs } from "../events/attachmentRefs.js";
 import { logger } from "../logger.js";
 import type { DeviceRegistry } from "../push/devices.js";
 import { SessionError } from "../sessions/errors.js";
@@ -90,7 +90,7 @@ export class Connection {
         return this.send({ type: "pong" });
 
       case "subscribe":
-        return this.subscribe(msg.sessionId, msg.lastSeq, msg.lazyAttachments ?? false);
+        return this.subscribe(msg.sessionId, msg.lastSeq, msg.lazyAttachments ?? false, msg.tail);
 
       case "unsubscribe":
         return this.unsubscribe(msg.sessionId);
@@ -180,7 +180,7 @@ export class Connection {
    * Because append + subscribe are synchronous, nothing can be lost or doubled
    * between "caught up" and "streaming live".
    */
-  private subscribe(sessionId: string, lastSeq: number, lazyAttachments: boolean): void {
+  private subscribe(sessionId: string, lastSeq: number, lazyAttachments: boolean, tail?: number): void {
     const session = this.manager.getSession(sessionId); // throws SessionError if unknown
     this.unsubscribe(sessionId); // idempotent re-subscribe
 
@@ -202,11 +202,19 @@ export class Connection {
     });
     this.subs.set(sessionId, off);
 
-    const replay = this.manager.events.read(sessionId, lastSeq);
-    const upTo = replay.length > 0 ? replay[replay.length - 1]!.seq : lastSeq;
-
-    this.send({ type: "subscribed", sessionId, currentSeq: upTo });
-    this.send({ type: "replay", sessionId, events: lazyAttachments ? replay.map(withAttachmentRefs) : replay, upToSeq: upTo });
+    let upTo: number;
+    if (tail && lastSeq < 0) {
+      // Nothing loaded yet: the chat folded, latest turns only (see FoldedChats).
+      const state = this.manager.folded.latest(sessionId, tail);
+      upTo = state.lastSeq;
+      this.send({ type: "subscribed", sessionId, currentSeq: upTo });
+      this.send({ type: "snapshot", sessionId, state, upToSeq: upTo });
+    } else {
+      const replay = this.manager.events.read(sessionId, lastSeq);
+      upTo = replay.length > 0 ? replay[replay.length - 1]!.seq : lastSeq;
+      this.send({ type: "subscribed", sessionId, currentSeq: upTo });
+      this.send({ type: "replay", sessionId, events: lazyAttachments ? replay.map(withAttachmentRefs) : replay, upToSeq: upTo });
+    }
 
     const buffered = buffer;
     buffer = null; // switch to live pass-through
@@ -235,24 +243,4 @@ export class Connection {
     // reopen, and approve.
     logger.info("connection closed", { deviceId: this.deviceId });
   }
-}
-
-/**
- * A replayed prompt's attachments as references to fetch rather than their
- * bytes (see AttachmentView). Live events keep their data: they're one prompt,
- * and the sender wants to see it at once.
- */
-export function withAttachmentRefs(e: SessionEvent): SessionEvent {
-  const refs = (list: AttachmentView[]) =>
-    list.map((a, i) => ({
-      name: a.name,
-      mediaType: a.mediaType,
-      data: "",
-      ref: `/sessions/${encodeURIComponent(e.sessionId)}/attachments/${e.seq}/${i}`,
-    }));
-  if (e.kind === "prompt_submitted" && e.attachments?.length) return { ...e, attachments: refs(e.attachments) };
-  // A tool's images too: a session that screenshots its work as it goes
-  // would otherwise replay every one of them.
-  if (e.kind === "tool_result" && e.images?.length) return { ...e, images: refs(e.images) };
-  return e;
 }

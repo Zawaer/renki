@@ -369,6 +369,40 @@ describe("WebSocket: connection", () => {
   });
 });
 
+describe("WebSocket: opening a chat from its latest turns", () => {
+  it("sends a snapshot of the last items, serves the rest as history, and goes live", async () => {
+    const { base, wsBase, config, manager, repoId } = await startServer();
+    const session = await manager.createSession({ repoId, baseBranch: "main" });
+    const image = { name: "shot.png", mediaType: "image/png", data: "A".repeat(5000) };
+    for (let i = 0; i < 30; i++) {
+      manager.events.append(session.id, { kind: "prompt_submitted", promptId: `p${i}`, deviceId: "d1", text: `q${i}`, attachments: i === 0 ? [image] : undefined });
+      manager.events.append(session.id, { kind: "turn_started", turnId: `t${i}`, promptId: `p${i}`, trigger: "prompt" });
+    }
+
+    const { ws, bus } = await connectWs(wsBase, `deviceId=d1&token=${config.authToken}`);
+    ws.send(JSON.stringify({ type: "subscribe", sessionId: session.id, lastSeq: -1, lazyAttachments: true, tail: 10 }));
+    const snap = await bus.next((m) => m.type === "snapshot");
+    const state = snap.state as { timeline: { type: string }[]; olderItems: number; lastSeq: number };
+    expect(state.timeline).toHaveLength(10);
+    expect(state.timeline[0]?.type).toBe("prompt");
+    expect(state.olderItems).toBe(50);
+    expect(snap.upToSeq).toBe(state.lastSeq);
+
+    const res = await authedFetch(base, config.authToken)(`/sessions/${session.id}/history?end=50&limit=100`);
+    const history = (await res.json()) as { items: { type: string; attachments?: { data: string; ref?: string }[] }[]; start: number };
+    expect(history.start).toBe(0);
+    expect(history.items).toHaveLength(50);
+    // The first prompt's screenshot goes by reference, its bytes never read into the fold.
+    expect(history.items[0]?.attachments?.[0]).toMatchObject({ name: "shot.png", data: "" });
+    expect(history.items[0]?.attachments?.[0]?.ref).toBeTruthy();
+
+    manager.events.append(session.id, { kind: "notice", text: "after the snapshot", level: "info" });
+    const live = await bus.next((m) => m.type === "event");
+    expect(live.event).toMatchObject({ kind: "notice", text: "after the snapshot" });
+    ws.close();
+  });
+});
+
 describe("WebSocket: subscribe -> replay -> live", () => {
   it("replays existing events then streams new ones live", async () => {
     const { wsBase, config, manager, repoId } = await startServer();

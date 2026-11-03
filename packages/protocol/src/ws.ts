@@ -33,6 +33,13 @@ export const ClientMessage = z.discriminatedUnion("type", [
      * clients keep getting the data inline and older daemons ignore it.
      */
     lazyAttachments: z.boolean().optional(),
+    /**
+     * Opening the chat with nothing loaded (lastSeq -1): send its folded
+     * state with only the last this-many timeline items, as a `snapshot`,
+     * instead of replaying every event. The rest comes from
+     * GET /sessions/:id/history. Older daemons ignore it and replay.
+     */
+    tail: z.number().int().positive().optional(),
   }),
 
   z.object({
@@ -157,6 +164,19 @@ export const ServerMessage = z.discriminatedUnion("type", [
     type: z.literal("replay"),
     sessionId: z.string(),
     events: z.array(SessionEvent),
+    upToSeq: z.number().int().min(-1),
+  }),
+
+  /**
+   * Instead of `replay` when the subscribe asked for a `tail`: the chat folded
+   * up to `upToSeq` (client-core's ConversationState, attachments by
+   * reference), holding only its latest timeline items. `state.olderItems`
+   * says how many come before them.
+   */
+  z.object({
+    type: z.literal("snapshot"),
+    sessionId: z.string(),
+    state: z.record(z.string(), z.unknown()),
     upToSeq: z.number().int().min(-1),
   }),
 

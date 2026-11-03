@@ -253,6 +253,19 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
     }
   });
 
+  // Older timeline items of a chat opened from a snapshot (see FoldedChats).
+  app.get<{ Params: { id: string }; Querystring: { end?: string; limit?: string } }>("/sessions/:id/history", async (req, reply) => {
+    try {
+      manager.getSession(req.params.id);
+      const end = Number(req.query.end);
+      const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100));
+      if (!Number.isInteger(end) || end < 0) return reply.code(400).send({ error: "end must be a timeline index" });
+      return manager.folded.history(req.params.id, end, limit);
+    } catch (err) {
+      return sendSessionError(reply, err);
+    }
+  });
+
   app.get<{ Params: { id: string } }>("/sessions/:id/transcript", async (req, reply) => {
     try {
       const session = manager.getSession(req.params.id);

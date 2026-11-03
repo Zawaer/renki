@@ -59,7 +59,7 @@ import {
   timelineWithSending,
 } from "@renki/client-core";
 import type { Account, AttachmentView, CapabilitiesResponse, Session, SessionComposer, SessionResume } from "@renki/protocol";
-import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore, Fragment } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, Fragment } from "react";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { hostOpenFile, isHosted } from "../lib/host.js";
 import { revealPending, revealToolUse, useToolReveal } from "../lib/toolReveal.js";
@@ -200,6 +200,22 @@ export function SessionView({
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }
 
+  /**
+   * History landing above while you read: keep what's on screen where it is.
+   * (Done by hand, with the browser's own scroll anchoring turned off on the
+   * transcript, since Safari has none and the two together would double it.)
+   */
+  const lastHeight = useRef(0);
+  const lastOlder = useRef(conv.olderItems ?? 0);
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const older = conv.olderItems ?? 0;
+    if (older < lastOlder.current && !stickToBottom.current) el.scrollTop += el.scrollHeight - lastHeight.current;
+    lastOlder.current = older;
+    lastHeight.current = el.scrollHeight;
+  });
+
   // Follow growth that isn't a new event too: a screenshot loading, a card
   // opening, the summary that lands as a turn ends.
   const contentRef = useRef<HTMLDivElement>(null);
@@ -267,7 +283,14 @@ export function SessionView({
    */
   const settledCount = useRef<number | null>(null);
   const hadContentAtMount = useRef(conv.timeline.length > 0);
-  if (settledCount.current === null && conv.timeline.length > 0) settledCount.current = conv.timeline.length;
+  /**
+   * Items before the loaded ones, still on their way (the chat opened with its
+   * latest turns; client-core fetches the rest). Rows are keyed and counted by
+   * their place in the whole chat, so history arriving in front leaves every
+   * row already on screen as it is.
+   */
+  const older = conv.olderItems ?? 0;
+  if (settledCount.current === null && conv.timeline.length > 0) settledCount.current = older + conv.timeline.length;
 
   /** The timeline plus any message sent from here that the daemon hasn't confirmed yet (shown instantly). */
   const rows = useMemo(() => timelineWithSending(conv), [conv.timeline, conv.sendingPrompts, conv.queuedPrompts]);
@@ -419,7 +442,7 @@ export function SessionView({
         onScroll={onTranscriptScroll}
         onWheel={() => (autoScrolling.current = false)}
         onTouchStart={() => (autoScrolling.current = false)}
-        className="flex-1 overflow-y-auto"
+        className="flex-1 overflow-y-auto [overflow-anchor:none]"
       >
         <div ref={contentRef} className="mx-auto w-full max-w-3xl space-y-7 px-6 py-6">
           {conv.status === null && rows.length === 0 && (
@@ -462,13 +485,20 @@ export function SessionView({
             // Crossfades in over the skeleton the first time content arrives;
             // a chat that opened with content already loaded just shows it.
             <div key="content" className={`space-y-7 ${hadContentAtMount.current || fromHome ? "" : "renki-fade"}`}>
-              {groupNotices(rows).map(({ start, items }) =>
-                items.length > 1 ? (
-                  <NoticeLines key={start} notices={items as NoticeItem[]} />
-                ) : (
-                  <TimelineRow key={start} item={items[0]!} first={start === 0} animate={settledCount.current !== null && start >= settledCount.current} />
-                ),
+              {older > 0 && (
+                <div className="flex items-center justify-center gap-2 text-xs text-(--renki-fg-muted)">
+                  <span className="codicon codicon-loading codicon-modifier-spin" />
+                  Loading earlier messages
+                </div>
               )}
+              {groupNotices(rows).map(({ start, items }) => {
+                const at = older + start;
+                return items.length > 1 ? (
+                  <NoticeLines key={at} notices={items as NoticeItem[]} />
+                ) : (
+                  <TimelineRow key={at} item={items[0]!} first={at === 0} animate={settledCount.current !== null && at >= settledCount.current} />
+                );
+              })}
               {replies && (
                 <SuggestedReplies
                   question={replies.question}

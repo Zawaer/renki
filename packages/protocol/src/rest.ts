@@ -103,6 +103,17 @@ export const CreateSessionResponse = z.object({
 });
 export type CreateSessionResponse = z.infer<typeof CreateSessionResponse>;
 
+/**
+ * GET /sessions/:id/history?end=&limit= — older timeline items of a chat
+ * opened from a snapshot: the up-to-`limit` items ending (exclusive) at index
+ * `end` of the folded timeline, and the index `start` they begin at.
+ */
+export const SessionHistoryResponse = z.object({
+  items: z.array(z.record(z.string(), z.unknown())),
+  start: z.number().int().nonnegative(),
+});
+export type SessionHistoryResponse = z.infer<typeof SessionHistoryResponse>;
+
 export const ListSessionsResponse = z.object({
   sessions: z.array(Session),
 });

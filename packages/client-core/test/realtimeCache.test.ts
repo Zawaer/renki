@@ -117,10 +117,10 @@ describe("RealtimeClient conversation cache", () => {
     await vi.waitFor(() => expect(cache.remove).toHaveBeenCalledWith("s1"));
   });
 
-  it("behaves as before without a cache", () => {
+  it("opens from scratch with only the latest turns, without a cache", () => {
     const { client, socket } = connect();
     client.watch("s1");
-    expect(subscribes(socket)).toEqual([{ type: "subscribe", sessionId: "s1", lastSeq: -1, lazyAttachments: true }]);
+    expect(subscribes(socket)).toEqual([{ type: "subscribe", sessionId: "s1", lastSeq: -1, lazyAttachments: true, tail: 40 }]);
   });
 });
 

@@ -20,7 +20,9 @@ import {
   dropPendingPermission,
   dropSendingPrompt,
   initialConversation,
+  prependOlder,
   restoreBlockGaps,
+  type TimelineItem,
 } from "./reducer.js";
 import { Store } from "./store.js";
 
@@ -81,6 +83,15 @@ const CHECK_TIMEOUT_MS = 5_000;
  */
 const EVENT_BATCH_MS = 33;
 
+/**
+ * Timeline items a chat opens with (about the last 20 turns: a prompt and its
+ * reply are two). The rest follows in pages of OLDER_PAGE_ITEMS.
+ */
+const SNAPSHOT_TAIL = 40;
+const OLDER_PAGE_ITEMS = 120;
+/** Between pages of older history, so fetching it never crowds out the chat itself. */
+const OLDER_PAGE_PAUSE_MS = 150;
+
 /** How many chats left behind keep their transcript in memory (see forgetOldStores). */
 const KEEP_UNWATCHED_STORES = 5;
 
@@ -121,6 +132,8 @@ export class RealtimeClient {
   /** Live events waiting to be folded in, per session (see queueEvent). */
   private readonly pendingEvents = new Map<string, SessionEvent[]>();
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Sessions whose older history is being fetched (see fillOlder). */
+  private readonly fillingOlder = new Set<string>();
   private stopped = false;
 
   constructor(private readonly opts: RealtimeOptions) {}
@@ -276,6 +289,8 @@ export class RealtimeClient {
     this.watched.add(sessionId);
     this.unforget(sessionId);
     if (alreadyWatching) return store;
+    // Left before its history had all arrived: carry on.
+    this.fillOlder(sessionId);
     // Never loaded this run: show the cached copy first, then ask only for
     // what came after it. The subscribe waits, or it would ask for everything.
     if (this.opts.cache && store.get().lastSeq < 0 && !this.hydrating.has(sessionId)) {
@@ -480,6 +495,8 @@ export class RealtimeClient {
       .finally(() => {
         this.hydrating.delete(sessionId);
         if (this.watched.has(sessionId) && this.isOpen()) this.sendSubscribe(sessionId);
+        // A copy saved before its history had all arrived.
+        this.fillOlder(sessionId);
       });
   }
 
@@ -510,7 +527,9 @@ export class RealtimeClient {
     const lastSeq = this.conversation(sessionId).get().lastSeq;
     // Screenshots in a long chat's history are most of its size; fetch each
     // one when it's actually shown instead (see attachmentSource).
-    this.send({ type: "subscribe", sessionId, lastSeq, lazyAttachments: true });
+    // Nothing here yet: ask for the latest turns only, and fetch the rest
+    // after they're on screen (see the snapshot case in route).
+    this.send({ type: "subscribe", sessionId, lastSeq, lazyAttachments: true, ...(lastSeq < 0 ? { tail: SNAPSHOT_TAIL } : {}) });
   }
 
   private onMessage(raw: string): void {
@@ -541,6 +560,20 @@ export class RealtimeClient {
         const store = this.conversation(msg.sessionId);
         if (!this.fold(msg.sessionId, store, (s) => applyEvents(s, msg.events))) return;
         if (msg.events.length > 0) this.scheduleSave(msg.sessionId);
+        // Back after a dropped connection, possibly mid-way through fetching the history.
+        this.fillOlder(msg.sessionId);
+        return;
+      }
+      case "snapshot": {
+        const store = this.conversation(msg.sessionId);
+        const local = store.get();
+        // Only onto a chat with nothing folded yet: a snapshot answers a subscribe from scratch.
+        if (local.lastSeq >= 0) return;
+        const state = restoreBlockGaps(msg.state as unknown as ConversationState);
+        // The composer and this device's unconfirmed sends aren't in the log; keep what's here.
+        store.set({ ...state, sessionId: msg.sessionId, lastSeq: msg.upToSeq, composer: local.composer, sendingPrompts: local.sendingPrompts });
+        if (this.opts.cache) this.scheduleSave(msg.sessionId);
+        this.fillOlder(msg.sessionId);
         return;
       }
       case "event":
@@ -588,6 +621,45 @@ export class RealtimeClient {
       case "pong":
         return;
     }
+  }
+
+  /**
+   * Fetch the history a snapshot left out, newest first, in the background:
+   * the chat opens with its latest turns, and the rest is normally there before
+   * anyone scrolls up to it. Stops when the chat is left (watch resumes it) or
+   * its state is replaced; a failed page is retried on the next watch.
+   */
+  private fillOlder(sessionId: string): void {
+    if (this.fillingOlder.has(sessionId) || !this.watched.has(sessionId)) return;
+    const store = this.conversations.get(sessionId);
+    if (!store || !(store.get().olderItems! > 0)) return;
+    this.fillingOlder.add(sessionId);
+    const page = async () => {
+      // A moment first, so the latest turns get drawn before any of this.
+      await new Promise((r) => setTimeout(r, OLDER_PAGE_PAUSE_MS));
+      const end = store.get().olderItems ?? 0;
+      if (end <= 0 || !this.watched.has(sessionId) || this.conversations.get(sessionId) !== store) return false;
+      const res = await fetch(`${this.opts.baseUrl}/sessions/${encodeURIComponent(sessionId)}/history?end=${end}&limit=${OLDER_PAGE_ITEMS}`, {
+        headers: { authorization: `Bearer ${this.opts.token}` },
+      });
+      if (!res.ok) return false;
+      const { items, start } = (await res.json()) as { items: TimelineItem[]; start: number };
+      // Changed meanwhile (reset, or another page landed): ask again from where it is now.
+      if ((store.get().olderItems ?? 0) !== end) return true;
+      const restored = restoreBlockGaps({ ...initialConversation(sessionId), timeline: items }).timeline;
+      store.update((s) => prependOlder(s, restored, start));
+      if (this.opts.cache) this.scheduleSave(sessionId);
+      return start > 0;
+    };
+    void (async () => {
+      try {
+        while (await page());
+      } catch {
+        // Offline or the daemon restarted: the loaded part stands, and the next watch carries on.
+      } finally {
+        this.fillingOlder.delete(sessionId);
+      }
+    })();
   }
 
   /**

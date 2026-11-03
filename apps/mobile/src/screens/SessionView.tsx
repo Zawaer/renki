@@ -1079,25 +1079,28 @@ function PickerSheet({
   return (
     <Sheet visible={visible} onClose={onClose} title={title} colors={colors}>
       <ScrollView contentContainerStyle={styles.pickerList} keyboardShouldPersistTaps="handled">
-        {options.map((o) => {
-          const selected = o.key === selectedKey;
-          return (
-            <TouchableOpacity
-              key={o.key}
-              style={[styles.pickerRow, selected && { backgroundColor: withAlpha(colors.accent, 0.16) }]}
-              onPress={() => {
-                onSelect(o.key);
-                onClose();
-              }}
-            >
-              <View style={styles.flex1}>
-                <Text style={[styles.pickerRowLabel, selected && { color: colors.accent }]}>{o.label}</Text>
-                {o.description && <Text style={styles.pickerRowDesc}>{o.description}</Text>}
-              </View>
-              {selected && <Ionicons name="checkmark" size={19} color={colors.accent} />}
-            </TouchableOpacity>
-          );
-        })}
+        {/* One grouped card, rows split by hairlines, the pick marked by a tick alone: the Claude app's picker. */}
+        <View style={styles.pickerGroup}>
+          {options.map((o, i) => {
+            const selected = o.key === selectedKey;
+            return (
+              <TouchableOpacity
+                key={o.key}
+                style={[styles.pickerRow, i > 0 && styles.pickerRowDivided]}
+                onPress={() => {
+                  onSelect(o.key);
+                  onClose();
+                }}
+              >
+                <View style={styles.flex1}>
+                  <Text style={styles.pickerRowLabel}>{o.label}</Text>
+                  {o.description && <Text style={styles.pickerRowDesc}>{o.description}</Text>}
+                </View>
+                {selected && <Ionicons name="checkmark" size={21} color={colors.accent} />}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
         {footer}
       </ScrollView>
     </Sheet>
@@ -2475,17 +2478,17 @@ const makeStyles = (colors: ThemeColors) =>
     },
     customModelButton: { justifyContent: "center", paddingHorizontal: 16, borderRadius: radius.md, backgroundColor: colors.accent },
     customModelButtonText: { color: colors.accentFg, fontSize: 14, fontWeight: "600" },
+    pickerGroup: { borderRadius: radius.lg, backgroundColor: colors.inset, overflow: "hidden" },
     pickerRow: {
       flexDirection: "row",
       alignItems: "center",
       gap: 10,
-      borderRadius: radius.md,
-      backgroundColor: colors.inset,
       paddingHorizontal: 16,
-      paddingVertical: 14,
+      paddingVertical: 12,
     },
-    pickerRowLabel: { color: colors.text, fontSize: 15, fontWeight: "600" },
-    pickerRowDesc: { color: colors.faint, fontSize: 12, marginTop: 2 },
+    pickerRowDivided: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+    pickerRowLabel: { color: colors.text, fontSize: 16 },
+    pickerRowDesc: { color: colors.dim, fontSize: 13, marginTop: 2 },
     sheetBody: { paddingHorizontal: 14, paddingBottom: 16, gap: 10 },
     attachTileRow: { flexDirection: "row", gap: 10 },
     attachTile: { flex: 1, alignItems: "center", gap: 10, backgroundColor: colors.inset, borderRadius: radius.lg, paddingVertical: 18 },
@@ -2655,7 +2658,7 @@ const makeStyles = (colors: ThemeColors) =>
     composerPillOpen: { gap: 2, paddingTop: 6 },
     composerRow: { flexDirection: "row", alignItems: "flex-end", gap: 4 },
     composerInputOpen: { paddingHorizontal: 12, minHeight: 44 },
-    modelChip: { backgroundColor: colors.inset, borderRadius: radius.pill, paddingHorizontal: 14, height: 38, justifyContent: "center", maxWidth: 220 },
+    modelChip: { backgroundColor: withAlpha(colors.text, 0.07), borderRadius: radius.pill, paddingHorizontal: 14, height: 38, justifyContent: "center", maxWidth: 220 },
     modelChipText: { color: colors.text, fontSize: 14, fontWeight: "500" },
     modelChipEffort: { color: colors.dim, fontWeight: "400" },
     composerInput: {

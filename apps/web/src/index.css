@@ -565,7 +565,7 @@ input:focus-visible {
 }
 
 /*
- * While the sidebar edge is being dragged: keep the resize cursor whatever the
+ * While a panel edge is being dragged: keep the resize cursor whatever the
  * pointer passes over, and stop the drag from selecting text on the way.
  */
 body.renki-resizing {

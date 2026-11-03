@@ -1,5 +1,5 @@
 import { addHost, removeHost, type HostsState } from "@renki/client-core";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BrowserRouter, MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { ClientProvider, useClient, useStoreValue } from "./lib/client.js";
 import { type AppConfig, getOrCreateDeviceId } from "./lib/config.js";
@@ -7,6 +7,7 @@ import { loadHosts, saveHosts } from "./lib/hosts.js";
 import { ConnectionBanner } from "./components/ConnectionBanner.js";
 import { HostSwitcher } from "./components/HostSwitcher.js";
 import { RenkiMark } from "./components/ui.js";
+import { ResizeHandle, trackResizeDrag } from "./components/ResizeHandle.js";
 import { AccountsBar } from "./components/AccountsBar.js";
 import { Home } from "./components/Home.js";
 import { SessionList } from "./components/SessionList.js";
@@ -111,33 +112,32 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
    * it to the rail — the same gesture an editor uses, so it needs no
    * explaining.
    *
-   * The listeners live on the WINDOW, not the handle: crossing the collapse
-   * threshold swaps which of the two sidebar branches is rendered, which
-   * unmounts the handle mid-drag. Pointer capture on the handle would die with
-   * it, stranding the drag; the window doesn't go anywhere.
+   * Mid-drag the width goes straight onto the grid's style, and React only
+   * hears about it on release: setting state per pointer move re-rendered the
+   * whole workspace (session list, transcript) at pointer rate, which made
+   * dragging crawl. Only crossing the collapse threshold, which swaps what's
+   * rendered, goes through state.
    */
+  const gridRef = useRef<HTMLDivElement>(null);
   function startResize(e: React.PointerEvent) {
-    e.preventDefault();
-    const move = (ev: PointerEvent) => {
-      // The sidebar starts at the window's left edge, so the pointer's x IS
-      // the width the user is asking for.
-      if (ev.clientX < SIDEBAR_COLLAPSE_AT) {
-        setSidebarOpen(false);
-        return;
-      }
-      setSidebarOpen(true);
-      setSidebarWidth(clampSidebarWidth(ev.clientX));
-    };
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      document.body.classList.remove("renki-resizing");
-    };
-    // Held on <body> so the resize cursor survives crossing other elements and
-    // a drag can't select text on the way past.
-    document.body.classList.add("renki-resizing");
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    let open = sidebarOpen;
+    let width = sidebarWidth;
+    trackResizeDrag(
+      e,
+      (ev) => {
+        // The sidebar starts at the window's left edge, so the pointer's x IS
+        // the width the user is asking for.
+        const wantOpen = ev.clientX >= SIDEBAR_COLLAPSE_AT;
+        if (wantOpen !== open) {
+          open = wantOpen;
+          setSidebarOpen(open);
+        }
+        if (!open) return;
+        width = clampSidebarWidth(ev.clientX);
+        if (gridRef.current) gridRef.current.style.gridTemplateColumns = `${width}px 1fr`;
+      },
+      () => setSidebarWidth(width),
+    );
   }
 
   /** Arrow keys move the edge; pushing past the minimum collapses it, as dragging does. */
@@ -157,6 +157,11 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
 
   const resizeHandle = (
     <ResizeHandle
+      edge="right"
+      label="Resize sidebar"
+      hint="Drag to resize · drag left to collapse · double-click to reset"
+      min={SIDEBAR_RAIL}
+      max={SIDEBAR_MAX}
       width={sidebarOpen ? sidebarWidth : SIDEBAR_RAIL}
       onPointerDown={startResize}
       onKeyDown={resizeByKey}
@@ -229,7 +234,7 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
   }
 
   return (
-    <div className="grid h-full overflow-hidden" style={{ gridTemplateColumns: `${sidebarWidth}px 1fr` }}>
+    <div ref={gridRef} className="grid h-full overflow-hidden" style={{ gridTemplateColumns: `${sidebarWidth}px 1fr` }}>
       <aside className="relative flex min-h-0 flex-col border-r border-(--renki-border) bg-(--renki-bg-elevated)">
         {resizeHandle}
         <div className="flex h-12 shrink-0 items-center gap-1.5 pr-2 pl-4">
@@ -317,45 +322,6 @@ function loadSidebarWidth(): number {
   } catch {
     return SIDEBAR_DEFAULT;
   }
-}
-
-/**
- * The sidebar's draggable edge.
- *
- * Invisible until you approach it — a permanent divider line on a UI whose
- * hierarchy comes from tone would be a piece of furniture you can't use for
- * anything else. The hit area straddles the border and is wider than the line
- * it draws, because a 1px target is a target you miss.
- */
-function ResizeHandle({
-  width,
-  onPointerDown,
-  onKeyDown,
-  onDoubleClick,
-}: {
-  width: number;
-  onPointerDown: (e: React.PointerEvent) => void;
-  onKeyDown: (e: React.KeyboardEvent) => void;
-  onDoubleClick: () => void;
-}) {
-  return (
-    <div
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize sidebar"
-      aria-valuenow={width}
-      aria-valuemin={SIDEBAR_RAIL}
-      aria-valuemax={SIDEBAR_MAX}
-      tabIndex={0}
-      onPointerDown={onPointerDown}
-      onKeyDown={onKeyDown}
-      onDoubleClick={onDoubleClick}
-      title="Drag to resize · drag left to collapse · double-click to reset"
-      className="group absolute top-0 -right-1 z-30 h-full w-2 cursor-col-resize focus-visible:outline-none"
-    >
-      <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-(--renki-accent) opacity-0 transition-opacity duration-150 group-hover:opacity-70 group-focus-visible:opacity-100 group-active:opacity-100" />
-    </div>
-  );
 }
 
 function MainColumn({

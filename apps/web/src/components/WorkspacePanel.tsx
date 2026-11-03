@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { useClient } from "../lib/client.js";
 import { FileLinkContext } from "../lib/fileLinks.js";
 import { Markdown } from "./Markdown.js";
+import { ResizeHandle, trackResizeDrag } from "./ResizeHandle.js";
 import { Skeleton } from "./ui.js";
 
 export type WorkspaceTab = "changes" | "files";
@@ -42,11 +43,75 @@ export function WorkspacePanel({
   /** A file to open in the Files tab, e.g. from a link in the transcript. */
   openRequest?: FileOpenRequest | null;
 }) {
+  /** Null until dragged: the default is relative to the window (45%, capped), not a fixed width. */
+  const [width, setWidth] = useState<number | null>(loadPanelWidth);
+  const asideRef = useRef<HTMLElement>(null);
+  // Drop the drag's inline width once state has it, before the frame paints.
+  useLayoutEffect(() => {
+    asideRef.current?.style.removeProperty("width");
+  }, [width]);
+
+  /**
+   * Drag the left edge to resize. As with the sidebar, the width goes straight
+   * onto the element mid-drag and into state only on release, so the
+   * transcript beside it isn't re-rendered at pointer rate.
+   */
+  function startResize(e: React.PointerEvent) {
+    const aside = asideRef.current;
+    if (!aside) return;
+    const right = aside.getBoundingClientRect().right;
+    const max = panelMax(aside);
+    let next = aside.offsetWidth;
+    trackResizeDrag(
+      e,
+      (ev) => {
+        next = clampPanelWidth(right - ev.clientX, max);
+        aside.style.width = `${next}px`;
+      },
+      () => commitWidth(next),
+    );
+  }
+
+  function commitWidth(px: number | null) {
+    setWidth(px);
+    try {
+      if (px === null) localStorage.removeItem(PANEL_WIDTH_KEY);
+      else localStorage.setItem(PANEL_WIDTH_KEY, String(px));
+    } catch {
+      // Storage unavailable — the width just won't persist.
+    }
+  }
+
+  function resizeByKey(e: React.KeyboardEvent) {
+    const aside = asideRef.current;
+    if (!aside || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+    e.preventDefault();
+    const step = (e.shiftKey ? 64 : 16) * (e.key === "ArrowLeft" ? 1 : -1);
+    commitWidth(clampPanelWidth(aside.offsetWidth + step, panelMax(aside)));
+  }
+
   return (
     <aside
+      ref={asideRef}
       aria-label="Session workspace"
-      className="renki-panel flex min-h-0 flex-col border-l border-(--renki-border) bg-(--renki-bg) max-lg:absolute max-lg:inset-0 max-lg:z-30 lg:w-[45%] lg:max-w-[44rem] lg:shrink-0"
+      // A dragged width overrides the default and its cap; below lg the panel covers the chat, so it has none.
+      style={width === null ? undefined : ({ "--renki-panel-w": `${width}px` } as React.CSSProperties)}
+      className={`renki-panel relative flex min-h-0 flex-col border-l border-(--renki-border) bg-(--renki-bg) max-lg:absolute max-lg:inset-0 max-lg:z-30 lg:shrink-0 ${
+        width === null ? "lg:w-[45%] lg:max-w-[44rem]" : "lg:w-(--renki-panel-w)"
+      }`}
     >
+      <ResizeHandle
+        edge="left"
+        label="Resize panel"
+        hint="Drag to resize · double-click to reset"
+        min={PANEL_MIN}
+        max={asideRef.current ? panelMax(asideRef.current) : PANEL_MIN}
+        width={width ?? asideRef.current?.offsetWidth ?? PANEL_MIN}
+        onPointerDown={startResize}
+        onKeyDown={resizeByKey}
+        onDoubleClick={() => commitWidth(null)}
+        className="max-lg:hidden"
+      />
       <div className="flex shrink-0 items-center gap-1 border-b border-(--renki-border) px-3 py-2">
         {hasChanges && (
           <PanelTab active={tab === "changes"} onClick={() => onTab("changes")} icon="codicon-diff">
@@ -70,6 +135,30 @@ export function WorkspacePanel({
       </div>
     </aside>
   );
+}
+
+const PANEL_WIDTH_KEY = "renki.session.panel.width";
+const PANEL_MIN = 280;
+/** However wide the panel is dragged, the chat beside it keeps at least this much. */
+const CHAT_MIN = 360;
+
+/** The panel can grow until the chat beside it is down to CHAT_MIN. */
+function panelMax(aside: HTMLElement): number {
+  const row = aside.parentElement?.clientWidth ?? window.innerWidth;
+  return Math.max(PANEL_MIN, row - CHAT_MIN);
+}
+
+function clampPanelWidth(px: number, max: number): number {
+  return Math.round(Math.min(max, Math.max(PANEL_MIN, px)));
+}
+
+function loadPanelWidth(): number | null {
+  try {
+    const raw = Number(localStorage.getItem(PANEL_WIDTH_KEY));
+    return Number.isFinite(raw) && raw >= PANEL_MIN ? Math.round(raw) : null;
+  } catch {
+    return null;
+  }
 }
 
 function PanelTab({ active, onClick, icon, children }: { active: boolean; onClick: () => void; icon: string; children: string }) {

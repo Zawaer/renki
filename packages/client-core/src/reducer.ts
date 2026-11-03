@@ -840,7 +840,20 @@ function applyToolResult(blocks: BlockView[], toolUseId: string, result: ToolRes
  * back to a plain notice).
  */
 function patchToolBlock(timeline: TimelineItem[], toolUseId: string, fn: (b: ToolUseBlock) => ToolUseBlock): TimelineItem[] | null {
-  return patchBlocks(timeline, (b) => b.toolUseId === toolUseId, fn);
+  // An id is in one turn only, and agents report back mostly on recent ones:
+  // look from the end and stop there. Walking every turn for each of the
+  // thousands of progress reports a long chat collects took seconds to fold.
+  for (let i = timeline.length - 1; i >= 0; i--) {
+    const item = timeline[i]!;
+    if (item.type !== "turn" || !containsToolUse(item.turn.blocks, toolUseId)) continue;
+    const patched = patchBlocks([item], (b) => b.toolUseId === toolUseId, fn);
+    if (!patched) return null;
+    if (patched[0] === item) return timeline;
+    const next = timeline.slice();
+    next[i] = patched[0]!;
+    return next;
+  }
+  return null;
 }
 
 /**

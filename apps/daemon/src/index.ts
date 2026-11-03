@@ -78,6 +78,9 @@ async function main() {
     });
   }
 
+  // The chats you were last in open fast right after a restart too (see FoldedChats).
+  manager.folded.warm(manager.listSessions().filter((s) => s.status !== "trashed" && s.status !== "archived").map((s) => s.id));
+
   const sweep = startIdleSweep(manager, devices, config.controlIdleMs);
   const trashSweep = startTrashSweep(manager);
 

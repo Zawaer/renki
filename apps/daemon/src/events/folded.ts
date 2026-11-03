@@ -2,8 +2,10 @@ import { applyEvents, type ConversationState, initialConversation, latestOf, typ
 import { withAttachmentRefs } from "./attachmentRefs.js";
 import type { EventLog } from "./log.js";
 
-/** How many chats stay folded in memory: the ones being opened right now, roughly. */
-const KEEP = 4;
+/** How many chats stay folded in memory: the ones in use lately, roughly. */
+const KEEP = 8;
+/** How many of the most recently active chats get folded at startup (see warm). */
+const WARM = 6;
 
 /**
  * Chats folded into the state a client renders, kept up to date on demand, so
@@ -43,6 +45,27 @@ export class FoldedChats {
     const to = Math.max(0, Math.min(end, timeline.length));
     const start = Math.max(0, to - limit);
     return { items: timeline.slice(start, to), start };
+  }
+
+  /**
+   * Fold the chats most likely to be opened next, one at a time and out of
+   * the way, so the first open after a restart is as quick as any other.
+   * Folding a long chat from scratch takes a second or more (reading its log
+   * is most of it), and it blocks while it runs, hence the gaps.
+   */
+  warm(sessionIds: string[]): void {
+    const queue = sessionIds.slice(0, WARM);
+    const next = () => {
+      const id = queue.shift();
+      if (!id) return;
+      try {
+        if (!this.chats.has(id)) this.get(id);
+      } catch {
+        // Gone meanwhile, or unreadable: it folds when opened, as before.
+      }
+      setTimeout(next, 500).unref();
+    };
+    setTimeout(next, 5_000).unref();
   }
 
   /** A chat that's gone, or whose log was rewritten. */

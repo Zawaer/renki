@@ -179,17 +179,36 @@ export function SessionView({
    */
   const autoScrolling = useRef(false);
 
-  function onTranscriptScroll() {
-    const el = scrollRef.current;
-    if (!el) return;
-    const stick = el.scrollHeight - el.scrollTop - el.clientHeight <= 24;
-    if (autoScrolling.current) {
-      if (!stick) return;
-      autoScrolling.current = false;
-    }
+  function setStick(stick: boolean) {
     stickToBottom.current = stick;
     setAtBottom((was) => (was === stick ? was : stick));
   }
+
+  /**
+   * Scrolling up yourself lets go of the bottom at once; only arriving right
+   * back at it holds it again. A distance alone was too eager: anywhere within
+   * it, a streaming reply pulled you back down between scroll steps before
+   * you could get away.
+   */
+  function onTranscriptScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (autoScrolling.current) {
+      if (fromBottom > 24) return;
+      autoScrolling.current = false;
+    }
+    if (stickToBottom.current) {
+      if (fromBottom > 24) setStick(false);
+    } else if (fromBottom <= 2) setStick(true);
+  }
+
+  /** The reader reaching for earlier text: wheel or keys up, or a finger pulling the page down. */
+  function letGo() {
+    autoScrolling.current = false;
+    if (stickToBottom.current) setStick(false);
+  }
+  const touchY = useRef<number | null>(null);
 
   function jumpToLatest() {
     const el = scrollRef.current;
@@ -440,8 +459,21 @@ export function SessionView({
       <div
         ref={scrollRef}
         onScroll={onTranscriptScroll}
-        onWheel={() => (autoScrolling.current = false)}
-        onTouchStart={() => (autoScrolling.current = false)}
+        onWheel={(e) => {
+          autoScrolling.current = false;
+          if (e.deltaY < 0) letGo();
+        }}
+        onTouchStart={(e) => {
+          autoScrolling.current = false;
+          touchY.current = e.touches[0]?.clientY ?? null;
+        }}
+        onTouchMove={(e) => {
+          const y = e.touches[0]?.clientY;
+          if (y != null && touchY.current != null && y > touchY.current + 4) letGo();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowUp" || e.key === "PageUp" || e.key === "Home") letGo();
+        }}
         className="flex-1 overflow-y-auto [overflow-anchor:none]"
       >
         <div ref={contentRef} className="mx-auto w-full max-w-3xl space-y-7 px-6 py-6">

@@ -343,12 +343,32 @@ export function SessionView({
   // bottom" is just a small offset, and new output stays in view by itself
   // without scrolling after every change. Scrolled up, the FlatList's
   // maintainVisibleContentPosition keeps it from moving under you.
-  function onTimelineScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
-    scrollOffset.current = e.nativeEvent.contentOffset.y;
-    const stick = e.nativeEvent.contentOffset.y <= 24;
-    if (!stick && Date.now() < jumpingUntil.current) return;
+  //
+  // Your finger decides, not a distance: touching the list to scroll lets go
+  // of the bottom at once, and only coming to rest right at it again (or
+  // Jump to latest, or sending) holds it again. A distance alone was too
+  // eager: anywhere near the bottom, a streaming reply kept pulling you down
+  // before a drag could get away from it.
+  const dragging = useRef(false);
+  function setStick(stick: boolean) {
     stickToBottom.current = stick;
     setAtBottom((was) => (was === stick ? was : stick));
+  }
+  function onTimelineScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
+    const y = e.nativeEvent.contentOffset.y;
+    scrollOffset.current = y;
+    if (stickToBottom.current) {
+      if (y > 24 && Date.now() >= jumpingUntil.current) setStick(false);
+    } else if (y <= 2 && !dragging.current) setStick(true);
+  }
+  function onTimelineDragStart() {
+    dragging.current = true;
+    jumpingUntil.current = 0;
+    setStick(false);
+  }
+  function onTimelineSettle(e: NativeSyntheticEvent<NativeScrollEvent>) {
+    dragging.current = false;
+    if (e.nativeEvent.contentOffset.y <= 8) setStick(true);
   }
 
   function jumpToLatest() {
@@ -635,6 +655,9 @@ export function SessionView({
           style={styles.timeline}
           contentContainerStyle={styles.timelineContent}
           onScroll={onTimelineScroll}
+          onScrollBeginDrag={onTimelineDragStart}
+          onScrollEndDrag={onTimelineSettle}
+          onMomentumScrollEnd={onTimelineSettle}
           scrollEventThrottle={32}
           // Scrolled up, the newest row (index 0) growing as a reply streams
           // would push everything you're reading off-screen. Anchor on the

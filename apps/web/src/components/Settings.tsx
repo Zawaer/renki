@@ -8,6 +8,7 @@ import { isHosted } from "../lib/host.js";
 import { loadPalette, savePalette } from "../lib/palette.js";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { UsageLimits } from "./UsageLimits.js";
+import { notificationsOn, setNotifications } from "../lib/attention.js";
 import { AddHostModal } from "./AddHostModal.js";
 import { PairDevice } from "./PairDevice.js";
 import { UsageConnect } from "./UsageConnect.js";
@@ -29,6 +30,7 @@ export function Settings({ onReset, managed }: { onReset: () => void; managed: b
         <h1 className="text-[22px] font-semibold tracking-tight text-(--renki-fg)">Settings</h1>
         <div className="mt-5 flex flex-col gap-4">
           <AppearanceSection managed={managed} />
+          {!managed && <NotificationsSection />}
           {!managed && <HostsSection />}
           <ThisDeviceSection />
           <ConnectionSection status={status} />
@@ -101,6 +103,41 @@ function AppearanceSection({ managed }: { managed: boolean }) {
             savePalette(key);
           }}
         />
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Browser notifications for a chat that starts waiting on your approval
+ * while this tab is in the background (see useAttentionAlerts). The tab's
+ * title says so either way.
+ */
+function NotificationsSection() {
+  const supported = typeof Notification !== "undefined";
+  const [on, setOn] = useState(notificationsOn);
+  const blocked = supported && Notification.permission === "denied";
+
+  async function toggle() {
+    const next = !on;
+    setOn(next);
+    setOn(await setNotifications(next));
+  }
+
+  return (
+    <Card title="Notifications" description="The tab's title always shows how many chats are waiting on you.">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-[13px] font-medium text-(--renki-fg)">Notify when a chat needs approval</div>
+          <div className="mt-0.5 text-xs text-(--renki-fg-muted)">
+            {!supported
+              ? "This browser can't show notifications."
+              : blocked
+                ? "Blocked in this browser. Allow notifications for this site in its settings, then turn this on."
+                : "Only while this tab is in the background. Clicking one opens the chat."}
+          </div>
+        </div>
+        <Switch checked={on} disabled={!supported || blocked} onChange={() => void toggle()} label="Notify when a chat needs approval" />
       </div>
     </Card>
   );

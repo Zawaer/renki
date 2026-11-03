@@ -16,6 +16,7 @@ import { SessionView } from "./components/SessionView.js";
 import { Settings } from "./components/Settings.js";
 import { Setup } from "./components/Setup.js";
 import { StatsView } from "./components/StatsView.js";
+import { useAttentionAlerts } from "./lib/attention.js";
 import { injectedConfig } from "./lib/host.js";
 
 export function App() {
@@ -91,6 +92,7 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
   const lastError = useStoreValue(realtime.lastError);
   const location = useLocation();
   const navigate = useNavigate();
+  useAttentionAlerts();
   const onStats = location.pathname === "/stats";
   const onSettings = location.pathname === "/settings";
   const sessionMatch = location.pathname.match(/^\/session\/(.+)$/);

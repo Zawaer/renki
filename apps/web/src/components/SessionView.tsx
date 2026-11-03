@@ -62,6 +62,7 @@ import {
 import type { Account, AttachmentView, CapabilitiesResponse, Session, SessionComposer, SessionResume } from "@renki/protocol";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, Fragment } from "react";
 import { useClient, useStoreValue } from "../lib/client.js";
+import { setTabTitle } from "../lib/attention.js";
 import { hostOpenFile, isHosted } from "../lib/host.js";
 import { revealPending, revealToolUse, useToolReveal } from "../lib/toolReveal.js";
 import {
@@ -154,9 +155,9 @@ export function SessionView({
   const branch = place ? place.branch : conv.branch;
   const tabName = title || repoName;
   useEffect(() => {
-    document.title = tabName ? `${tabName} · Renki` : "Renki";
+    setTabTitle(tabName ? `${tabName} · Renki` : "Renki");
   }, [tabName]);
-  useEffect(() => () => void (document.title = "Renki"), []);
+  useEffect(() => () => setTabTitle("Renki"), []);
 
   /**
    * Follow the newest output ONLY while the reader is already at the bottom.

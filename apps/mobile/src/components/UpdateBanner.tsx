@@ -6,42 +6,32 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { radius, type ThemeColors, useTheme } from "../theme";
 import { FadeIn } from "./Motion";
 
-type Phase = { kind: "idle" } | { kind: "downloading" } | { kind: "ready" } | { kind: "failed" };
-
 /**
  * Says when a new version is on its way and when it's ready, with a button to
  * start it. Without it an over-the-air update just happened at some launch,
  * silently, and there was no telling how long to keep the app open for it or
  * whether it had arrived.
  *
- * Checks at launch and whenever the app comes back to the front.
+ * Reads expo-updates' own state, so an update the app fetched by itself at
+ * launch shows as ready too, not only one this asked for. Asks again whenever
+ * the app comes back to the front.
  */
 export function UpdateBanner() {
   const colors = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
-  const [phase, setPhase] = useState<Phase>({ kind: "idle" });
+  const { isDownloading, isUpdatePending, downloadError } = Updates.useUpdates();
+  const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
     // Development builds and Expo Go have no update channel.
     if (__DEV__ || !Updates.isEnabled) return;
-    let busy = false;
-    const check = async () => {
-      if (busy) return;
-      busy = true;
-      try {
-        const found = await Updates.checkForUpdateAsync();
-        if (!found.isAvailable) return;
-        setPhase({ kind: "downloading" });
-        const fetched = await Updates.fetchUpdateAsync();
-        setPhase(fetched.isNew ? { kind: "ready" } : { kind: "idle" });
-      } catch {
-        // Offline, most likely. Say so only if a download had started.
-        setPhase((p) => (p.kind === "downloading" ? { kind: "failed" } : p));
-      } finally {
-        busy = false;
-      }
-    };
+    const check = () =>
+      Updates.checkForUpdateAsync()
+        .then((found) => (found.isAvailable ? Updates.fetchUpdateAsync() : null))
+        .catch(() => {
+          // Offline, most likely: downloadError says so if a download had started.
+        });
     void check();
     const sub = AppState.addEventListener("change", (state) => {
       if (state === "active") void check();
@@ -49,21 +39,22 @@ export function UpdateBanner() {
     return () => sub.remove();
   }, []);
 
-  if (phase.kind === "idle") return null;
+  const phase = isUpdatePending ? "ready" : isDownloading ? "downloading" : downloadError ? "failed" : null;
+  if (!phase || dismissed) return null;
   return (
     <FadeIn style={[styles.wrap, { top: insets.top + 8 }]} pointerEvents="box-none">
       <View style={styles.banner}>
-        {phase.kind === "downloading" && (
+        {phase === "downloading" && (
           <>
             <ActivityIndicator size="small" color={colors.dim} />
             <Text style={styles.text}>Downloading an update…</Text>
           </>
         )}
-        {phase.kind === "ready" && (
+        {phase === "ready" && (
           <>
             <Ionicons name="sparkles-outline" size={18} color={colors.accent} />
             <Text style={styles.text}>Update ready</Text>
-            <TouchableOpacity onPress={() => setPhase({ kind: "idle" })} hitSlop={8}>
+            <TouchableOpacity onPress={() => setDismissed(true)} hitSlop={8}>
               <Text style={styles.later}>Later</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.restart} onPress={() => void Updates.reloadAsync()}>
@@ -71,11 +62,11 @@ export function UpdateBanner() {
             </TouchableOpacity>
           </>
         )}
-        {phase.kind === "failed" && (
+        {phase === "failed" && (
           <>
             <Ionicons name="cloud-offline-outline" size={18} color={colors.dim} />
             <Text style={styles.text}>The update didn't download. It tries again next time.</Text>
-            <TouchableOpacity onPress={() => setPhase({ kind: "idle" })} hitSlop={8}>
+            <TouchableOpacity onPress={() => setDismissed(true)} hitSlop={8}>
               <Ionicons name="close" size={18} color={colors.dim} />
             </TouchableOpacity>
           </>

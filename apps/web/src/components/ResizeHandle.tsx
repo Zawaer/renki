@@ -43,7 +43,7 @@ export function ResizeHandle({
       onKeyDown={onKeyDown}
       onDoubleClick={onDoubleClick}
       title={hint}
-      className={`group absolute top-0 z-30 h-full w-2 cursor-col-resize focus-visible:outline-none ${edge === "right" ? "-right-1" : "-left-1"} ${className}`}
+      className={`group absolute top-0 z-30 h-full w-2 cursor-col-resize touch-none focus-visible:outline-none ${edge === "right" ? "-right-1" : "-left-1"} ${className}`}
     >
       <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-(--renki-accent) opacity-0 transition-opacity duration-150 group-hover:opacity-70 group-focus-visible:opacity-100 group-active:opacity-100" />
     </div>
@@ -57,10 +57,14 @@ export function ResizeHandle({
  * pointer position; `end` runs once on release.
  */
 export function trackResizeDrag(e: React.PointerEvent, move: (ev: PointerEvent) => void, end: () => void): void {
+  if (e.button !== 0) return;
   e.preventDefault();
+  // A cancelled pointer (the browser took over a touch, say) never sends
+  // pointerup; without this the drag stayed attached to every later move.
   const up = () => {
     window.removeEventListener("pointermove", move);
     window.removeEventListener("pointerup", up);
+    window.removeEventListener("pointercancel", up);
     document.body.classList.remove("renki-resizing");
     end();
   };
@@ -69,4 +73,5 @@ export function trackResizeDrag(e: React.PointerEvent, move: (ev: PointerEvent) 
   document.body.classList.add("renki-resizing");
   window.addEventListener("pointermove", move);
   window.addEventListener("pointerup", up);
+  window.addEventListener("pointercancel", up);
 }

@@ -185,9 +185,56 @@ export const Markdown = memo(function Markdown({
         streaming ? "renki-stream-md" : ""
       }`}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={streaming ? [rehypeWrapWords] : []} components={components}>
-        {content}
-      </ReactMarkdown>
+      {streaming ? (
+        streamingChunks(content).map((chunk, i) => <StreamingChunk key={i} content={chunk} />)
+      ) : (
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+          {content}
+        </ReactMarkdown>
+      )}
     </div>
   );
 });
+
+const wrapWordsPlugins = [rehypeWrapWords];
+
+/** One finished paragraph (or list, table, code block) of a streaming reply; parsed once. */
+const StreamingChunk = memo(function StreamingChunk({ content }: { content: string }) {
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={wrapWordsPlugins} components={components}>
+      {content}
+    </ReactMarkdown>
+  );
+});
+
+/**
+ * A streaming reply split at its blank lines, so each new token re-parses only
+ * the paragraph still being written rather than the whole reply (on a long
+ * one, that parse on every update was enough to make the page lag).
+ *
+ * Never splits inside a fenced code block, or before an indented line, which
+ * continues the list item or block above it. A list with blank lines between
+ * its items briefly renders as several lists; once the reply settles, the
+ * whole text is parsed as one.
+ */
+function streamingChunks(content: string): string[] {
+  const lines = content.split("\n");
+  const chunks: string[] = [];
+  let current: string[] = [];
+  let fence: string | null = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    if (marker && (fence === null || (marker[0] === fence[0] && marker.length >= fence.length))) {
+      fence = fence === null ? marker : null;
+    }
+    current.push(line);
+    const next = lines[i + 1];
+    if (fence === null && line.trim() === "" && next !== undefined && next.trim() !== "" && !/^\s/.test(next)) {
+      chunks.push(current.join("\n"));
+      current = [];
+    }
+  }
+  chunks.push(current.join("\n"));
+  return chunks;
+}

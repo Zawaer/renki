@@ -585,7 +585,7 @@ export function applyEvents(prev: ConversationState, events: SessionEvent[]): Co
  */
 function subagentTurnId(timeline: TimelineItem[], turnId: string, toolUseId: string | null | undefined): string {
   if (!toolUseId) return turnId;
-  const own = timeline.find((it) => it.type === "turn" && it.turn.turnId === turnId);
+  const own = timeline[lastTurnIndex(timeline, turnId)];
   if (own?.type === "turn" && containsToolUse(own.turn.blocks, toolUseId)) return turnId;
   for (let i = timeline.length - 1; i >= 0; i--) {
     const it = timeline[i]!;
@@ -619,13 +619,22 @@ function containsToolUse(blocks: BlockView[], toolUseId: string): boolean {
   return false;
 }
 
+/** Index of the turn with `turnId`, or -1. Searched from the end, where the running turn is. */
+function lastTurnIndex(timeline: TimelineItem[], turnId: string): number {
+  for (let i = timeline.length - 1; i >= 0; i--) {
+    const it = timeline[i]!;
+    if (it.type === "turn" && it.turn.turnId === turnId) return i;
+  }
+  return -1;
+}
+
 function updateTurn(
   timeline: TimelineItem[],
   turnId: string,
   ts: number,
   fn: (turn: TurnView) => TurnView,
 ): TimelineItem[] {
-  const idx = timeline.findIndex((it) => it.type === "turn" && it.turn.turnId === turnId);
+  const idx = lastTurnIndex(timeline, turnId);
   if (idx === -1) {
     return [...timeline, { type: "turn", turn: fn(emptyTurn(turnId, ts)) }];
   }
@@ -786,23 +795,40 @@ function patchToolBlock(timeline: TimelineItem[], toolUseId: string, fn: (b: Too
   return patchBlocks(timeline, (b) => b.toolUseId === toolUseId, fn);
 }
 
+/**
+ * Copies only the path to each matching block; every other turn and block
+ * keeps its identity. Agent progress arrives every few seconds per agent, and
+ * rebuilding the whole timeline each time re-rendered every turn on screen.
+ */
 function patchBlocks(timeline: TimelineItem[], match: (b: ToolUseBlock) => boolean, fn: (b: ToolUseBlock) => ToolUseBlock): TimelineItem[] | null {
   let found = false;
   function patch(blocks: BlockView[]): BlockView[] {
-    return blocks.map((b) => {
+    let changed = false;
+    const next = blocks.map((b) => {
       if (b?.kind !== "tool_use") return b;
+      let out = b;
       if (match(b)) {
         found = true;
-        return fn(b);
+        out = fn(b);
+      } else if (b.subagent) {
+        const sub = patch(b.subagent.blocks);
+        if (sub !== b.subagent.blocks) out = { ...b, subagent: { ...b.subagent, blocks: sub } };
       }
-      if (b.subagent) return { ...b, subagent: { ...b.subagent, blocks: patch(b.subagent.blocks) } };
-      return b;
+      if (out !== b) changed = true;
+      return out;
     });
+    return changed ? next : blocks;
   }
-  const next = timeline.map((item) =>
-    item.type === "turn" ? { type: "turn" as const, turn: { ...item.turn, blocks: patch(item.turn.blocks) } } : item,
-  );
-  return found ? next : null;
+  let changed = false;
+  const next = timeline.map((item) => {
+    if (item.type !== "turn") return item;
+    const blocks = patch(item.turn.blocks);
+    if (blocks === item.turn.blocks) return item;
+    changed = true;
+    return { type: "turn" as const, turn: { ...item.turn, blocks } };
+  });
+  if (!found) return null;
+  return changed ? next : timeline;
 }
 
 function emptyTurn(turnId: string, ts: number): TurnView {

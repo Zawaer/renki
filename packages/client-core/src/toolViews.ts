@@ -71,8 +71,23 @@ export function diffLines(oldText: string, newText: string): DiffLineView[] {
 }
 
 /** Edit/MultiEdit/Write → a diff view, or null if the input doesn't match the expected shape. */
+/**
+ * Cached per tool input: a tool call's input never changes once it's in the
+ * timeline, and the line diff is an O(n·m) table that every render of a step
+ * (and every regrouping of a running turn) would otherwise redo.
+ */
+const editViewCache = new WeakMap<object, { toolName: string; view: EditToolView | null }>();
+
 export function parseEditView(toolName: string, toolInput: unknown): EditToolView | null {
   if (!toolInput || typeof toolInput !== "object") return null;
+  const cached = editViewCache.get(toolInput);
+  if (cached && cached.toolName === toolName) return cached.view;
+  const view = computeEditView(toolName, toolInput);
+  editViewCache.set(toolInput, { toolName, view });
+  return view;
+}
+
+function computeEditView(toolName: string, toolInput: object): EditToolView | null {
   const input = toolInput as Record<string, unknown>;
   const filePath = typeof input.file_path === "string" ? input.file_path : null;
 

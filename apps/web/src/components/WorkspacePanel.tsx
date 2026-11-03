@@ -97,7 +97,7 @@ export function WorkspacePanel({
       // A dragged width overrides the default and its cap; below lg the panel covers the chat, so it has none.
       style={width === null ? undefined : ({ "--renki-panel-w": `${width}px` } as React.CSSProperties)}
       className={`renki-panel relative flex min-h-0 flex-col border-l border-(--renki-border) bg-(--renki-bg) max-lg:absolute max-lg:inset-0 max-lg:z-30 lg:shrink-0 ${
-        width === null ? "lg:w-[45%] lg:max-w-[44rem]" : "lg:w-(--renki-panel-w)"
+        width === null ? "lg:w-[45%] lg:max-w-[44rem]" : "lg:w-(--renki-panel-w) lg:max-w-[calc(100%-360px)]"
       }`}
     >
       <ResizeHandle
@@ -139,7 +139,7 @@ export function WorkspacePanel({
 
 const PANEL_WIDTH_KEY = "renki.session.panel.width";
 const PANEL_MIN = 280;
-/** However wide the panel is dragged, the chat beside it keeps at least this much. */
+/** However wide the panel is dragged, the chat beside it keeps at least this much (also the panel's CSS max-width). */
 const CHAT_MIN = 360;
 
 /** The panel can grow until the chat beside it is down to CHAT_MIN. */
@@ -201,14 +201,19 @@ function ChangesTab({ sessionId, refreshKey }: { sessionId: string; refreshKey: 
   const [error, setError] = useState<string | null>(null);
   const [openPath, setOpenPath] = useState<string | null>(null);
 
+  // Only the newest request may land: two turns settling back to back (or a
+  // Refresh mid-flight) could otherwise have the older answer arrive last.
+  const latest = useRef(0);
   const load = useCallback(() => {
+    const req = ++latest.current;
     rest
       .getWorkspaceChanges(sessionId)
       .then((d) => {
+        if (req !== latest.current) return;
         setData(d);
         setError(null);
       })
-      .catch((err) => setError(failureText(err)));
+      .catch((err) => req === latest.current && setError(failureText(err)));
   }, [rest, sessionId]);
 
   useEffect(() => {
@@ -293,7 +298,11 @@ function ChangedFile({
     let live = true;
     rest
       .getWorkspaceFileDiff(sessionId, file.path)
-      .then((d) => live && setPatch({ text: d.patch, truncated: d.truncated }))
+      .then((d) => {
+        if (!live) return;
+        setPatch({ text: d.patch, truncated: d.truncated });
+        setError(null);
+      })
       .catch((err) => live && setError(failureText(err)));
     return () => {
       live = false;
@@ -378,10 +387,13 @@ function FilesTab({ sessionId, openRequest }: { sessionId: string; openRequest: 
   const [error, setError] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
 
+  /** Bumped on every open, so asking again for the file and line already shown still re-scrolls. */
+  const [jump, setJump] = useState(0);
   const open = useCallback((path: string, at?: number) => {
     setDir(dirOf(path));
     setOpenFile(path);
     setLine(at);
+    setJump((n) => n + 1);
   }, []);
 
   // A link elsewhere asked for a file: show it (also when it's already open, to re-scroll).
@@ -470,7 +482,7 @@ function FilesTab({ sessionId, openRequest }: { sessionId: string; openRequest: 
         ) : file.binary ? (
           <PanelNote>Binary file, nothing to show as text.</PanelNote>
         ) : (
-          <FileViewer key={openFile} path={openFile} content={file.content ?? ""} line={line} onOpenFile={open} />
+          <FileViewer key={openFile} path={openFile} content={file.content ?? ""} line={line} jump={jump} onOpenFile={open} />
         )}
         {file?.truncated && <PanelNote>Only the first 512 KB is shown.</PanelNote>}
       </div>
@@ -539,11 +551,13 @@ function FileViewer({
   path,
   content,
   line,
+  jump,
   onOpenFile,
 }: {
   path: string;
   content: string;
   line?: number;
+  jump: number;
   onOpenFile: (path: string, line?: number) => void;
 }) {
   const isMarkdown = /\.(md|markdown|mdx)$/i.test(path);
@@ -551,12 +565,12 @@ function FileViewer({
   const [rendered, setRendered] = useState(isMarkdown && !line);
   useEffect(() => {
     if (line) setRendered(false);
-  }, [line]);
+  }, [line, jump]);
   const lineRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
     if (line && !rendered) lineRef.current?.scrollIntoView({ block: "center" });
-  }, [line, rendered, content]);
+  }, [line, rendered, content, jump]);
 
   const lines = content.endsWith("\n") ? content.slice(0, -1).split("\n") : content.split("\n");
   const gutter = String(lines.length).length;

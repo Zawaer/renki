@@ -6,6 +6,7 @@ import {
   type SessionComposer,
   type ServerMessage,
   ServerMessage as ServerMessageSchema,
+  type SessionEvent,
   SessionEvent as SessionEventSchema,
   WsErrorCode,
 } from "@renki/protocol";
@@ -14,7 +15,6 @@ import { localTimeZone } from "./rest.js";
 import {
   type ConversationState,
   addSendingPrompt,
-  applyEvent,
   applyEvents,
   dropAllSendingPrompts,
   dropPendingPermission,
@@ -75,6 +75,12 @@ const DEAD_AFTER_MS = 40_000;
 /** How long checkConnection waits for any answer before reconnecting. */
 const CHECK_TIMEOUT_MS = 5_000;
 
+/**
+ * How long live events gather before they're folded in and the UI re-renders:
+ * about 30 frames a second, quicker than streamed text needs to look smooth.
+ */
+const EVENT_BATCH_MS = 33;
+
 /** How long after a replay lands to write it to the cache — long enough to coalesce a reconnect's burst. */
 const CACHE_SAVE_DELAY_MS = 1_500;
 
@@ -107,6 +113,9 @@ export class RealtimeClient {
   private checkTimer: ReturnType<typeof setTimeout> | null = null;
   /** When the current socket last delivered anything. */
   private lastMessageAt = 0;
+  /** Live events waiting to be folded in, per session (see queueEvent). */
+  private readonly pendingEvents = new Map<string, SessionEvent[]>();
+  private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
 
   constructor(private readonly opts: RealtimeOptions) {}
@@ -119,6 +128,7 @@ export class RealtimeClient {
   }
 
   close(): void {
+    this.flushEvents();
     this.stopped = true;
     this.clearTimers();
     this.clearPendingUnwatches();
@@ -223,6 +233,8 @@ export class RealtimeClient {
 
   /** Get (creating if needed) the reactive state store for a session. */
   conversation(sessionId: string): Store<ConversationState> {
+    // Anyone reading the state gets it with every event that has arrived.
+    if (this.pendingEvents.has(sessionId)) this.flushEvents();
     let store = this.conversations.get(sessionId);
     if (!store) {
       store = new Store(initialConversation(sessionId));
@@ -383,6 +395,7 @@ export class RealtimeClient {
    * the app is about to be backgrounded, since it may never come back.
    */
   flushCache(): void {
+    this.flushEvents();
     for (const sessionId of [...this.unsaved]) this.saveNow(sessionId);
   }
 
@@ -449,6 +462,7 @@ export class RealtimeClient {
     const timer = this.saveTimers.get(sessionId);
     if (timer !== undefined) clearTimeout(timer);
     this.saveTimers.delete(sessionId);
+    this.flushEvents();
     if (!this.opts.cache || !this.unsaved.has(sessionId)) return;
     this.unsaved.delete(sessionId);
     const state = this.conversations.get(sessionId)?.get();
@@ -483,6 +497,8 @@ export class RealtimeClient {
   }
 
   private route(msg: ServerMessage): void {
+    // Everything else lands after the live events that came before it.
+    if (msg.type !== "event") this.flushEvents();
     switch (msg.type) {
       case "replay": {
         const store = this.conversation(msg.sessionId);
@@ -490,14 +506,9 @@ export class RealtimeClient {
         if (msg.events.length > 0) this.scheduleSave(msg.sessionId);
         return;
       }
-      case "event": {
-        const store = this.conversation(msg.event.sessionId);
-        if (!this.fold(msg.event.sessionId, store, (s) => applyEvent(s, msg.event))) return;
-        // Marked, not saved: writing a long transcript on every streamed token
-        // would stutter the reply. It's written on leaving or backgrounding.
-        if (this.opts.cache) this.unsaved.add(msg.event.sessionId);
+      case "event":
+        this.queueEvent(msg.event);
         return;
-      }
       case "error":
         // An approval nobody is waiting on any more: just close its card. Older
         // daemons said so with bad_message, so match those by their ref too.
@@ -537,6 +548,34 @@ export class RealtimeClient {
       case "subscribed":
       case "pong":
         return;
+    }
+  }
+
+  /**
+   * Live events are folded in batches, not one by one. A streaming reply
+   * arrives as many small deltas a second (more with agents running), and each
+   * fold re-renders the open chat; one render per delta could keep the main
+   * thread busy enough that typing lagged and the page stopped responding.
+   */
+  private queueEvent(event: SessionEvent): void {
+    const queue = this.pendingEvents.get(event.sessionId);
+    if (queue) queue.push(event);
+    else this.pendingEvents.set(event.sessionId, [event]);
+    this.flushTimer ??= setTimeout(() => this.flushEvents(), EVENT_BATCH_MS);
+  }
+
+  private flushEvents(): void {
+    if (this.flushTimer) clearTimeout(this.flushTimer);
+    this.flushTimer = null;
+    if (this.pendingEvents.size === 0) return;
+    const batches = [...this.pendingEvents];
+    this.pendingEvents.clear();
+    for (const [sessionId, events] of batches) {
+      const store = this.conversation(sessionId);
+      if (!this.fold(sessionId, store, (s) => applyEvents(s, events))) continue;
+      // Marked, not saved: writing a long transcript on every streamed token
+      // would stutter the reply. It's written on leaving or backgrounding.
+      if (this.opts.cache) this.unsaved.add(sessionId);
     }
   }
 

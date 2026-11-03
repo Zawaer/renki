@@ -59,7 +59,7 @@ import {
   timelineWithSending,
 } from "@renki/client-core";
 import type { Account, AttachmentView, CapabilitiesResponse, Session, SessionComposer, SessionResume } from "@renki/protocol";
-import { useEffect, useMemo, useRef, useState, Fragment } from "react";
+import { memo, useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { hostOpenFile, isHosted } from "../lib/host.js";
 import { revealPending, revealToolUse, useToolReveal } from "../lib/toolReveal.js";
@@ -171,10 +171,22 @@ export function SessionView({
   const stickToBottom = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
 
+  /**
+   * Set while "Jump to latest" scrolls smoothly down: the animation's own
+   * scroll events are still short of the bottom, and taking them for the
+   * reader scrolling up un-stuck the view mid-reply. Cleared on arrival, or by
+   * the reader actually grabbing the scroll (wheel, touch).
+   */
+  const autoScrolling = useRef(false);
+
   function onTranscriptScroll() {
     const el = scrollRef.current;
     if (!el) return;
     const stick = el.scrollHeight - el.scrollTop - el.clientHeight <= 24;
+    if (autoScrolling.current) {
+      if (!stick) return;
+      autoScrolling.current = false;
+    }
     stickToBottom.current = stick;
     setAtBottom((was) => (was === stick ? was : stick));
   }
@@ -183,9 +195,23 @@ export function SessionView({
     const el = scrollRef.current;
     if (!el) return;
     stickToBottom.current = true;
+    autoScrolling.current = true;
     setAtBottom(true);
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }
+
+  // Follow growth that isn't a new event too: a screenshot loading, a card
+  // opening, the summary that lands as a turn ends.
+  const contentRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (stickToBottom.current && !autoScrolling.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
 
   // Opening a different session always starts at its newest output.
   useEffect(() => {
@@ -374,10 +400,9 @@ export function SessionView({
             className="ml-auto"
             title="Keeps this transcript, as an archived session"
             onClick={() => {
-              rest
-                .restoreSession(sessionId)
-                .then(() => realtime.watch(sessionId))
-                .catch(() => {});
+              // No re-watch: this chat is still watched while it's open, and a
+              // watch landing after you'd left would stay subscribed for good.
+              rest.restoreSession(sessionId).catch(() => {});
             }}
           >
             <span className="codicon codicon-history" /> Restore
@@ -389,8 +414,14 @@ export function SessionView({
       {status === "archived" && <UnarchiveBar sessionId={sessionId} hasRepo={!!branch} />}
 
       {/* Timeline */}
-      <div ref={scrollRef} onScroll={onTranscriptScroll} className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-3xl space-y-7 px-6 py-6">
+      <div
+        ref={scrollRef}
+        onScroll={onTranscriptScroll}
+        onWheel={() => (autoScrolling.current = false)}
+        onTouchStart={() => (autoScrolling.current = false)}
+        className="flex-1 overflow-y-auto"
+      >
+        <div ref={contentRef} className="mx-auto w-full max-w-3xl space-y-7 px-6 py-6">
           {conv.status === null && rows.length === 0 && (
             <div className="space-y-7" aria-busy="true" aria-label="Loading conversation">
               <div className="flex justify-end">
@@ -835,7 +866,11 @@ function ResumeBanner({
  * a chat loads with don't — animating a whole transcript at once reads as a
  * flicker, not as motion.
  */
-function TimelineRow({ item, animate = false, first = false }: { item: TimelineItem; animate?: boolean; first?: boolean }) {
+/**
+ * Memoized: the reducer keeps every item it didn't touch, so a streamed token
+ * re-renders only the turn it landed in, not the whole transcript.
+ */
+const TimelineRow = memo(function TimelineRow({ item, animate = false, first = false }: { item: TimelineItem; animate?: boolean; first?: boolean }) {
   if (item.type === "prompt") {
     return (
       <div className={`${animate ? "renki-enter " : ""}group flex items-center justify-end gap-1`} data-anchor={`p:${item.promptId}`}>
@@ -878,7 +913,7 @@ function TimelineRow({ item, animate = false, first = false }: { item: TimelineI
     return <BackgroundTasksRow tasks={item.tasks} />;
   }
   return <AssistantTurn turn={item.turn} animate={animate} />;
-}
+});
 
 type NoticeItem = Extract<TimelineItem, { type: "notice" }>;
 
@@ -1455,7 +1490,7 @@ function ToolStep({
           ) : command ? (
             <ShellCode command={command} />
           ) : block.toolName !== "Agent" && block.toolName !== "Task" ? (
-            <JsonCode json={truncate(JSON.stringify(block.toolInput, null, 2), 800)} />
+            <JsonCode json={truncate(JSON.stringify(block.toolInput ?? null, null, 2), 800)} />
           ) : null}
           {block.result && block.result.summary && !isAgent && (
             <pre
@@ -2565,15 +2600,22 @@ export function Composer({
   }, [draftKey, text, attachments]);
 
   // A closing tab doesn't reliably run the debounce, so flush on the way out
-  // (and when switching sessions unmounts this composer).
+  // (and when switching sessions unmounts this composer). It reads the draft
+  // from a ref: with the draft in its deps, this cleanup ran on every
+  // keystroke and wrote the whole draft (attachments too) to storage each time.
+  const latestDraft = useRef({ key: draftKey, text, attachments });
+  latestDraft.current = { key: draftKey, text, attachments };
   useEffect(() => {
-    const flush = () => saveDraft(draftKey, text, attachments.map(({ id: _id, ...a }) => a));
+    const flush = () => {
+      const d = latestDraft.current;
+      saveDraft(d.key, d.text, d.attachments.map(({ id: _id, ...a }) => a));
+    };
     window.addEventListener("pagehide", flush);
     return () => {
       window.removeEventListener("pagehide", flush);
       flush();
     };
-  }, [draftKey, text, attachments]);
+  }, [draftKey]);
 
   // supportedModels() already includes its own "Default (recommended)" entry
   // (first in the list) — no need for our own placeholder on top of it. Once
@@ -3183,10 +3225,7 @@ function UnarchiveBar({ sessionId, hasRepo }: { sessionId: string; hasRepo: bool
           setError(null);
           rest
             .unarchiveSession(sessionId)
-            .then(() => {
-              realtime.watch(sessionId);
-              realtime.takeControl(sessionId);
-            })
+            .then(() => realtime.takeControl(sessionId))
             .catch((err) => setError(err instanceof Error ? err.message : "Couldn't unarchive this session."))
             .finally(() => setBusy(false));
         }}

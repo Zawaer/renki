@@ -282,7 +282,7 @@ export function computeInsights(db: DB, tzName: string | undefined, now = Date.n
           limitHits++;
         } else outcomes.errored++;
 
-        const model = e.model ?? "default";
+        const model = e.resolvedModel ?? e.model ?? "default";
         const out = e.outputTokens ?? 0;
         outputTokensTotal += out;
         if (e.ok && out > 0 && durationMs > 0) {

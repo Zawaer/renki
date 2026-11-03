@@ -49,6 +49,7 @@ import {
   suggestedReplies,
   backgroundWorkOf,
   modelFullName,
+  pickableModel,
   modelMenuLabel,
   segmentImages,
   agentMapOf,
@@ -64,7 +65,6 @@ import {
   Animated,
   FlatList,
   Image,
-  KeyboardAvoidingView,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Platform,
@@ -92,7 +92,7 @@ import { clearDraft, loadDraft, saveDraft } from "../lib/drafts";
 import { randomUUID } from "expo-crypto";
 import { useClient, useStoreValue } from "../lib/client";
 import { ExportSheet } from "../components/ExportSheet";
-import { useAndroidKeyboardResizeAnimation } from "../lib/useAndroidKeyboardResizeAnimation";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { radius, softShadow, statusColorFor, type ThemeColors, useTheme, withAlpha } from "../theme";
 
 export function SessionView({
@@ -188,8 +188,6 @@ export function SessionView({
     return () => clearTimeout(id);
   }, [sessionId, text, attachments]);
 
-  useAndroidKeyboardResizeAnimation();
-
   // Capabilities and this device's defaults are fetched together so the
   // "default model from capabilities" fallback only runs once both are known —
   // otherwise a slow SecureStore read racing a fast capabilities fetch could
@@ -207,7 +205,7 @@ export function SessionView({
       setCapabilities(caps);
       setEffortKeyState(defaults.effortKey);
       setPermissionModeState(defaults.permissionMode);
-      setModelState(defaults.model || caps.models[0]?.value || "");
+      setModelState(pickableModel(defaults.model, caps.models));
     });
     return () => {
       live = false;
@@ -222,7 +220,7 @@ export function SessionView({
   const composer = conv.composer;
   useEffect(() => {
     if (!composer) return;
-    if (composer.model !== null) setModelState(composer.model);
+    if (composer.model !== null) setModelState(pickableModel(composer.model, capabilities.models));
     if (composer.effortKey !== null) setEffortKeyState(resolveEffortKey(composer.effortKey));
     if (composer.permissionMode !== null) setPermissionModeState(resolvePermissionMode(composer.permissionMode));
   }, [composer]);
@@ -584,11 +582,12 @@ export function SessionView({
 
   return (
     <FileLinkContext.Provider value={fileLinks}>
-    <KeyboardAvoidingView
-      style={[styles.fill, { paddingTop: insets.top + 10 }]}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={0}
-    >
+    {/*
+      keyboard-controller's, not React Native's: it follows the keyboard frame
+      by frame on Android too, so the composer slides up with it instead of
+      jumping once the keyboard is already open.
+    */}
+    <KeyboardAvoidingView style={[styles.fill, { paddingTop: insets.top + 10 }]} behavior="padding" keyboardVerticalOffset={0}>
       {/*
         Header: back, the title and the chat's menu, as in the Claude app.
         Status, agents and push/pull live in the ⋯ sheet, which carries a dot
@@ -958,8 +957,6 @@ export function SessionView({
             const { title, subtitle } = modelMenuLabel(m);
             return { key: m.value, label: title, description: subtitle };
           }),
-          // A model entered by ID stays visible, and ticked, while it's the pick.
-          ...(model && !selectedModel ? [{ key: model, label: model, description: "Entered by ID" }] : []),
         ]}
         selectedKey={model}
         onSelect={setModel}
@@ -979,14 +976,6 @@ export function SessionView({
               <Text style={styles.sheetCardValue}>{effort?.label ?? "Medium"}</Text>
               <Ionicons name="chevron-forward" size={16} color={colors.faint} />
             </TouchableOpacity>
-            <CustomModelField
-              onUse={(id) => {
-                setModel(id);
-                setModelSheetOpen(false);
-              }}
-              colors={colors}
-              styles={styles}
-            />
           </>
         }
       />
@@ -1104,38 +1093,6 @@ function PickerSheet({
         {footer}
       </ScrollView>
     </Sheet>
-  );
-}
-
-/** "Not listed? Enter a model ID": for a model the CLI doesn't list yet, as on the web. */
-function CustomModelField({ onUse, colors, styles }: { onUse: (id: string) => void; colors: ThemeColors; styles: Styles }) {
-  const [value, setValue] = useState("");
-  const id = value.trim();
-  const use = () => {
-    if (!id) return;
-    onUse(id);
-    setValue("");
-  };
-  return (
-    <View style={styles.customModel}>
-      <Text style={styles.pickerRowDesc}>Not listed? Enter a model ID:</Text>
-      <View style={styles.customModelRow}>
-        <TextInput
-          value={value}
-          onChangeText={setValue}
-          onSubmitEditing={use}
-          placeholder="claude-fable-5-1"
-          placeholderTextColor={colors.faint}
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="done"
-          style={styles.customModelInput}
-        />
-        <TouchableOpacity onPress={use} disabled={!id} style={[styles.customModelButton, !id && { opacity: 0.4 }]}>
-          <Text style={styles.customModelButtonText}>Use</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
   );
 }
 
@@ -2465,19 +2422,6 @@ const makeStyles = (colors: ThemeColors) =>
     attachName: { flex: 1, color: colors.text, fontSize: 11 },
     attachError: { color: colors.danger, fontSize: 12, paddingHorizontal: 16, paddingTop: 4 },
     pickerList: { paddingHorizontal: 14, gap: 8, paddingBottom: 8 },
-    customModel: { marginTop: 8, gap: 8, paddingHorizontal: 4 },
-    customModelRow: { flexDirection: "row", gap: 8 },
-    customModelInput: {
-      flex: 1,
-      color: colors.text,
-      fontSize: 14,
-      backgroundColor: colors.inset,
-      borderRadius: radius.md,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-    },
-    customModelButton: { justifyContent: "center", paddingHorizontal: 16, borderRadius: radius.md, backgroundColor: colors.accent },
-    customModelButtonText: { color: colors.accentFg, fontSize: 14, fontWeight: "600" },
     pickerGroup: { borderRadius: radius.lg, backgroundColor: colors.inset, overflow: "hidden" },
     pickerRow: {
       flexDirection: "row",

@@ -250,7 +250,7 @@ export class EventLog {
 
       const repo = repoBySession.get(row.sessionId) ?? { repoId: "unknown", repoName: "Unknown repo" };
       accumulate(repoBucketFor(byRepo, repo), payload);
-      accumulate(bucketFor(byModel, payload.model ?? "default"), payload);
+      accumulate(bucketFor(byModel, payload.resolvedModel ?? payload.model ?? "default"), payload);
       accumulate(bucketFor(byClientType, payload.clientType ?? "unknown"), payload);
 
       if (firstTurnAt === null || row.ts < firstTurnAt) firstTurnAt = row.ts;

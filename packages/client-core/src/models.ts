@@ -25,3 +25,13 @@ export function modelMenuLabel(m: Model): { title: string; subtitle: string } {
   if (!match || !match[1]!.startsWith(m.displayName)) return { title: m.displayName, subtitle: m.description };
   return { title: match[1]!, subtitle: match[2]! };
 }
+
+/**
+ * The model a picker should show: the one chosen, unless that's nothing or
+ * the old "default" (no longer offered: see the daemon's withExtraModels),
+ * in which case Opus, else the first listed.
+ */
+export function pickableModel(value: string | null | undefined, models: Model[]): string {
+  if (value && value !== "default") return value;
+  return models.find((m) => m.value === "opus")?.value ?? models[0]?.value ?? "";
+}

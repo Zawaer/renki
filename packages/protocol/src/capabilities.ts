@@ -10,6 +10,8 @@ import { z } from "zod";
 export const ModelInfo = z.object({
   /** Model identifier to use in API calls. */
   value: z.string(),
+  /** What an alias like "fable" stands for ("claude-fable-5-1"), when the SDK says. */
+  resolvedModel: z.string().optional(),
   displayName: z.string(),
   description: z.string(),
 });

@@ -1,6 +1,6 @@
 import { activeSessions, displayBranch, formatPurgeCountdown, groupByRepo, trashedSessions, unpushedBadge, unpushedSummary } from "@renki/client-core";
 import type { Session } from "@renki/protocol";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { clearComposerPrefs, clearDraft } from "../lib/composerPrefs.js";
 import { useLiveSessions } from "../lib/liveSessions.js";
@@ -69,6 +69,20 @@ export function SessionList({
    * the click hadn't registered.
    */
   const [working, setWorking] = useState<ReadonlyMap<string, string>>(new Map());
+
+  /**
+   * The row you just clicked, highlighted at once. The highlight otherwise
+   * follows the URL, which only changes once the chat it opens has rendered,
+   * so a long chat left the click looking ignored for a moment. Navigating
+   * waits a frame, so this paints first.
+   */
+  const [picked, setPicked] = useState<string | null>(null);
+  useEffect(() => setPicked(null), [selectedId]);
+  function pick(id: string) {
+    if (id === selectedId) return;
+    setPicked(id);
+    requestAnimationFrame(() => setTimeout(() => onSelect(id), 0));
+  }
   async function busyWith<T>(id: string, label: string, action: () => Promise<T>): Promise<T> {
     setWorking((m) => new Map(m).set(id, label));
     try {
@@ -161,9 +175,9 @@ export function SessionList({
 
   const rowProps = (s: Session) => ({
     session: s,
-    selected: s.id === selectedId,
+    selected: s.id === (picked ?? selectedId),
     working: working.get(s.id) ?? null,
-    onSelect: () => onSelect(s.id),
+    onSelect: () => pick(s.id),
     onRename: (title: string) => rename(s.id, title),
     onDelete: () => del(s.id),
     onExport: () => setExporting(s),

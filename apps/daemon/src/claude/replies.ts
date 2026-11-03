@@ -31,7 +31,9 @@ const Question = z.string().trim().min(1).max(100);
 const INSTRUCTIONS = [
   "The user reads this session in Renki, often on a phone, where typing is slow.",
   "When you end a turn waiting on a short decision from the user (a yes/no, or a pick between two or three next steps),",
-  "write your reply as usual, ending on the question, then call suggest_replies as your very last action with the answers they're likely to give. The turn ends with that call, so the reply before it is your final message.",
+  // The full name: told only "suggest_replies", Claude once guessed it lived on
+  // the mac server, got "No such tool", and wrote its whole answer again.
+  `write your reply as usual, ending on the question, then call ${SUGGEST_REPLIES_TOOL} (on the ${RENKI_SERVER} server, not any other) as your very last action with the answers they're likely to give. The turn ends with that call, so the reply before it is your final message.`,
   "Finish all other work (edits, commits, file writes) before writing that reply, and spell out in the reply itself what each choice means: a file you wrote doesn't count, the user only sees the reply and the buttons.",
   "Don't call it when you're not asking anything, when the answer needs the user's own words, or more than once per turn.",
   "The buttons are read on their own, often long after the options were explained: each label must name the choice itself (\"Name places by street\"), never refer to it by number or letter (\"Option 1\", \"Do 1 and 2\").",
@@ -93,7 +95,7 @@ export function createRepliesGuardHook(hasReply: () => boolean): HookCallbackMat
             hookEventName: "PreToolUse",
             permissionDecision: "deny",
             permissionDecisionReason:
-              "Not shown: there's no reply above the buttons. The user can't see your thinking, and text written before a tool call reads as progress. Write your reply now as plain text, explaining each choice, then call suggest_replies again.",
+              `Not shown: there's no reply above the buttons. The user can't see your thinking, and text written before a tool call reads as progress. Write your reply now as plain text, explaining each choice, then call ${SUGGEST_REPLIES_TOOL} again.`,
           },
         };
       },

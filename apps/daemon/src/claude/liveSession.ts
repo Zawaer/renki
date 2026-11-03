@@ -126,6 +126,8 @@ type InflightTurn = {
   /** The uuid we stamped on the user message, so the matching `result.user_message_uuid` can be cross-checked. */
   uuid: string;
   model: string | null;
+  /** The model the main agent's messages came from, as the API names it (see turn_result's resolvedModel). */
+  servedModel: string | null;
   clientType: string | null;
   sawRateLimitError: boolean;
   /** Set when the CLI reports a rejected limit mid-turn — tells the resume scheduler when to come back. */
@@ -361,6 +363,7 @@ export class LiveClaudeSession {
         promptId: args.promptId,
         uuid,
         model: args.model ?? null,
+        servedModel: null,
         clientType: args.clientType ?? null,
         sawRateLimitError: false,
         rateLimit: null,
@@ -602,6 +605,10 @@ export class LiveClaudeSession {
         // the same failure the `result` message's errorMessage will carry —
         // skip it here so it isn't shown twice.
         if (sdkError) break;
+        if (!message.parent_tool_use_id && this.inflight) {
+          const served = (message.message as { model?: unknown }).model;
+          if (typeof served === "string" && served) this.inflight.servedModel = served;
+        }
         const turnId = this.turnFor(message.parent_tool_use_id);
         const t = this.trackingFor(message.parent_tool_use_id);
         if (message.parent_tool_use_id) this.agentWatch.message(message.parent_tool_use_id, (message.message as { content?: unknown }).content);
@@ -768,6 +775,7 @@ export class LiveClaudeSession {
       outputTokens: usage?.output_tokens ?? null,
       interrupted,
       model: this.inflight?.model ?? null,
+      resolvedModel: this.inflight?.servedModel ?? null,
       clientType: this.inflight?.clientType ?? null,
     });
 

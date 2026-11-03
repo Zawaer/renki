@@ -220,6 +220,12 @@ const payloads = [
     interrupted: z.boolean().optional(),
     /** The per-turn model override the client sent, or null when it ran the SDK's own default. Optional so events stored before this field existed still parse. */
     model: z.string().nullable().optional(),
+    /**
+     * The model that actually answered (the API's own id, e.g.
+     * "claude-opus-5-5"), from the main agent's last message: what the stats
+     * count, since `model` can be an alias. Absent on older events.
+     */
+    resolvedModel: z.string().nullable().optional(),
     /** Which kind of client submitted the prompt this turn answers ("web"/"phone"/"vscode"), derived from the submitting device's id. Optional for the same reason as `model`. */
     clientType: z.string().nullable().optional(),
     /**

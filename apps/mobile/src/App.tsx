@@ -14,6 +14,7 @@ import {
   type HostsState,
   type PaletteKey,
 } from "@renki/client-core";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as Notifications from "expo-notifications";
@@ -78,8 +79,11 @@ export function App() {
   return (
     <PaletteProvider value={palette}>
       <SafeAreaProvider>
-        <AppBody onPaletteChange={setPalette} />
-        <UpdateBanner />
+        {/* Lets the chat's composer follow the keyboard as it slides (see SessionView). */}
+        <KeyboardProvider>
+          <AppBody onPaletteChange={setPalette} />
+          <UpdateBanner />
+        </KeyboardProvider>
       </SafeAreaProvider>
     </PaletteProvider>
   );

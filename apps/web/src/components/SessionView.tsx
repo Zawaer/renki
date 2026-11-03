@@ -54,6 +54,7 @@ import {
   backgroundWorkOf,
   type BackgroundWork,
   modelFullName,
+  pickableModel,
   modelMenuLabel,
   segmentImages,
   timelineWithSending,
@@ -2655,7 +2656,6 @@ export function Composer({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
-  const [customModel, setCustomModel] = useState("");
 
   useEffect(() => {
     rest
@@ -2702,15 +2702,12 @@ export function Composer({
     };
   }, [draftKey]);
 
-  // supportedModels() already includes its own "Default (recommended)" entry
-  // (first in the list) — no need for our own placeholder on top of it. Once
-  // the real list loads, default the selection to that entry rather than an
-  // empty value that wouldn't match any <option>.
+  // Once the real list loads, nothing picked (or the old "Default", which is
+  // gone) shows a real model (see pickableModel) rather than a blank picker.
   // Local only, deliberately: merely opening a session shouldn't pin a model
   // onto it. This just stops the picker reading blank before anyone chooses.
   useEffect(() => {
-    if (!model && capabilities.models.length > 0)
-      setModelState(capabilities.models[0]?.value ?? "");
+    if ((!model || model === "default") && capabilities.models.length > 0) setModelState(pickableModel(model, capabilities.models));
   }, [capabilities, model]);
 
   // The box is usable while the conversation is still loading — a prompt can be
@@ -2875,14 +2872,6 @@ export function Composer({
     setSuggestionIndex(0);
   }
 
-  function useCustomModel() {
-    const id = customModel.trim();
-    if (!id) return;
-    setModel(id);
-    setCustomModel("");
-    setOpenMenu(null);
-  }
-
   /** The open picker's menu, anchored to its own button and opening upward. */
   const menuPanel = (align: "start" | "end") =>
     openMenu ? (
@@ -2923,35 +2912,6 @@ export function Composer({
                   <MenuKey n={capabilities.models.indexOf(m) + 1} selected={m.value === model} />
                 </button>
               )),
-              <div
-                key="custom"
-                className="mt-1 border-t border-(--renki-border)/60 p-2"
-              >
-                <div className="mb-1 text-(--renki-fg-muted)">
-                  Not listed? Enter a model ID directly:
-                </div>
-                <div className="flex gap-1.5">
-                  <input
-                    value={customModel}
-                    onChange={(ev) => setCustomModel(ev.target.value)}
-                    onKeyDown={(ev) => {
-                      if (ev.key === "Enter") useCustomModel();
-                    }}
-                    placeholder="claude-fable-5-1"
-                    spellCheck={false}
-                    autoComplete="off"
-                    className="renki-input min-w-0 flex-1 px-2 py-1 text-xs"
-                  />
-                  <Button
-                    variant="default"
-                    disabled={!customModel.trim()}
-                    onClick={useCustomModel}
-                    className="shrink-0"
-                  >
-                    Use
-                  </Button>
-                </div>
-              </div>,
             ]
           : openMenu === "effort"
             ? EFFORT_LEVELS.map((e) => (

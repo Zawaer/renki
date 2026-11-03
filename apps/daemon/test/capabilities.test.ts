@@ -37,14 +37,19 @@ describe("withExtraModels", () => {
     { value: "claude-haiku-4-5-20251001", displayName: "Haiku", description: "" },
   ];
 
-  it("slots Fable in after Default/Sonnet when the CLI doesn't list it", () => {
-    expect(withExtraModels(sdk).map((m) => m.displayName)).toEqual(["Default (recommended)", "Sonnet", "Fable", "Opus", "Haiku"]);
-    expect(withExtraModels(sdk)[2]).toMatchObject({ value: "claude-fable-5-1" });
+  it("drops Default, and slots Fable in after Sonnet when the CLI doesn't list it", () => {
+    expect(withExtraModels(sdk).map((m) => m.displayName)).toEqual(["Sonnet", "Fable", "Opus", "Haiku"]);
+    expect(withExtraModels(sdk)[1]).toMatchObject({ value: "claude-fable-5-1" });
   });
 
-  it("leaves the list alone when the CLI already lists that family, whatever the exact id", () => {
+  it("leaves the rest alone when the CLI already lists that family, whatever the exact id", () => {
     const withFable = [...sdk.slice(0, 2), { value: "claude-fable-5-1-20260901", displayName: "Fable", description: "" }, ...sdk.slice(2)];
-    expect(withExtraModels(withFable)).toEqual(withFable);
+    expect(withExtraModels(withFable)).toEqual(withFable.slice(1));
+  });
+
+  it("knows an alias by what it resolves to, so Fable isn't listed twice", () => {
+    const aliased = [...sdk.slice(1), { value: "fable", resolvedModel: "claude-fable-5-1", displayName: "Fable", description: "" }];
+    expect(withExtraModels(aliased).filter((m) => m.displayName === "Fable").map((m) => m.value)).toEqual(["fable"]);
   });
 
   it("appends when the CLI list is short", () => {

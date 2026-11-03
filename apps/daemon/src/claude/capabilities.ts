@@ -38,12 +38,21 @@ function family(value: string): string {
   return m ? `${m[1]}-${m[2]}${m[3] ? `-${m[3]}` : ""}` : value;
 }
 
-/** The SDK's list plus EXTRA_MODELS, each extra slotted in after "Default"/Sonnet (position 2) unless the CLI already lists that family. */
+/**
+ * The SDK's list without "Default", plus EXTRA_MODELS, each extra slotted in
+ * after Sonnet (position 1) unless the CLI already lists that family.
+ *
+ * "Default" goes: it's only another name for whichever model the SDK picks,
+ * so a turn run on it couldn't say in the stats which model that was. A
+ * family is matched on what an alias resolves to as well ("fable" is
+ * claude-fable-5-1), or the extra showed up twice.
+ */
 export function withExtraModels(models: CapabilitiesResponse["models"]): CapabilitiesResponse["models"] {
-  const out = [...models];
+  const out = models.filter((m) => m.value !== "default");
+  const families = (m: CapabilitiesResponse["models"][number]) => [family(m.value), ...(m.resolvedModel ? [family(m.resolvedModel)] : [])];
   for (const extra of EXTRA_MODELS) {
-    if (out.some((m) => m.value === extra.value || family(m.value) === family(extra.value))) continue;
-    out.splice(Math.min(2, out.length), 0, extra);
+    if (out.some((m) => m.value === extra.value || families(m).includes(family(extra.value)))) continue;
+    out.splice(Math.min(1, out.length), 0, extra);
   }
   return out;
 }

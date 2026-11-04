@@ -27,6 +27,9 @@ DISABLED_PATH = "/etc/homelab-gateway/DISABLED"
 AUDIT_LOG = "/var/log/homelab-gateway.log"
 JOBS_DIR = "/var/log/homelab-gateway-jobs"
 APPROVAL_DIR = "/var/lib/homelab-gateway/approvals"
+# Apps added with `add-app` (after phone approval). Written only by the gateway; the root-owned
+# policy.json stays the base and always wins on a name clash.
+ADDED_APPS_PATH = "/var/lib/homelab-gateway/added-apps.json"
 EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,80}$")
@@ -40,9 +43,36 @@ class Refused(Exception):
     pass
 
 
-def load_policy(path=POLICY_PATH):
+def load_policy(path=POLICY_PATH, added_path=None):
     with open(path) as f:
-        return json.load(f)
+        policy = json.load(f)
+    merge_added_apps(policy, read_added_apps(added_path or ADDED_APPS_PATH))
+    return policy
+
+
+def read_added_apps(path):
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def merge_added_apps(policy, added):
+    """Added apps are always plain `deploy` apps, re-checked on every load: a name the base policy
+    already has, a folder that is protected or another app's, or anything odd is skipped."""
+    for name, app in added.items():
+        if not NAME_RE.match(name) or name in policy["apps"] or not isinstance(app, dict):
+            continue
+        d, services = app.get("dir"), app.get("services")
+        if not isinstance(d, str) or not isinstance(services, list) or not all(isinstance(x, str) and NAME_RE.match(x) for x in services):
+            continue
+        try:
+            check_app_dir(policy, d)
+        except Refused:
+            continue
+        policy["apps"][name] = {"mode": "deploy", "dir": d, "git": bool(app.get("git")), "services": services, "added": True}
 
 
 def cap(text, limit):
@@ -170,6 +200,11 @@ def do_deploy(policy, name):
         out += "$ git pull --ff-only\n" + o
         if rc != 0:
             return rc, out + "git pull failed; nothing was rebuilt.\n"
+    if app.get("added"):
+        full = app_dir(policy, app)
+        risks = compose_risks(policy, full, compose_config(full))
+        if risks:
+            return 2, out + "refused: the compose file now reaches outside its folder, so it wasn't deployed:\n  " + "\n  ".join(risks) + "\n"
     rc, o = compose(policy, app, "up", "-d", "--build", *app.get("services", []), timeout=t)
     return rc, out + "$ docker compose up -d --build " + " ".join(app.get("services", [])) + "\n" + o
 
@@ -542,6 +577,216 @@ def v_create_repo(policy, args):
     return rc, out + (f"created https://github.com/{owner}/{name}\n" if rc == 0 else "")
 
 
+# ---- adding apps and routes (tier 2) ---------------------------------------
+#
+# Both only ever widen what the gateway may touch by one named thing, and only after the phone says
+# yes. An added app is a plain `deploy` app in its own folder directly under the home folder, and its
+# compose file is checked for anything that would reach outside that folder (privileged, host
+# network, docker.sock, binds elsewhere). The check runs again on every deploy of an added app, since
+# a later `git pull` could change the compose file.
+
+DIR_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,80}$")
+HOST_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,40}[a-z0-9])?$")
+COMPOSE_FILES = ("compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml")
+SAFE_BIND_SOURCES = ("/etc/localtime", "/etc/timezone")
+
+
+def check_app_dir(policy, d):
+    """A new app's folder: one plain name directly under the home folder, not protected, not another app's."""
+    if not isinstance(d, str) or not DIR_RE.match(d) or d in (".", ".."):
+        raise Refused("the folder must be a plain name directly under the home folder")
+    full = os.path.join(policy["run_as_home"], d)
+    for pat in policy.get("protected_paths", []):
+        if full == pat or full.startswith(pat.rstrip("/") + "/") or pat.startswith(full + "/"):
+            raise Refused("that folder is protected")
+    for other in policy["apps"].values():
+        root = os.path.join(policy["run_as_home"], other["dir"])
+        if full == root or root.startswith(full + "/") or full.startswith(root + "/"):
+            raise Refused("that folder belongs to another app")
+    if d.startswith("."):
+        raise Refused("hidden folders can't be apps")
+    return full
+
+
+def compose_config(full):
+    rc, out = run(["docker", "compose", "config", "--format", "json"], cwd=full, timeout=60)
+    if rc != 0:
+        raise Refused("docker compose config failed (is .env there?):\n" + out[-1500:])
+    try:
+        return json.loads(out[out.index("{"):])
+    except ValueError:
+        raise Refused("couldn't read the compose config")
+
+
+def compose_risks(policy, full, config):
+    """Everything in a compose config that reaches outside its own folder. Empty means fine."""
+    risks, full = [], os.path.realpath(full)
+    for sname, svc in (config.get("services") or {}).items():
+        if svc.get("privileged"):
+            risks.append(f"{sname}: privileged")
+        for key in ("network_mode", "pid", "ipc", "userns_mode", "uts", "cgroup"):
+            v = str(svc.get(key) or "")
+            if v == "host" or v.startswith("container:"):
+                risks.append(f"{sname}: {key} {v}")
+        for key in ("cap_add", "devices", "security_opt", "device_cgroup_rules", "volumes_from"):
+            if svc.get(key):
+                risks.append(f"{sname}: {key}")
+        cname = svc.get("container_name")
+        if cname and is_protected(policy, cname):
+            risks.append(f"{sname}: container_name {cname} is protected")
+        for vol in svc.get("volumes") or []:
+            if not isinstance(vol, dict):
+                risks.append(f"{sname}: a volume compose didn't normalize")
+                continue
+            if vol.get("type") != "bind":
+                continue  # named volumes and tmpfs stay inside Docker
+            src = os.path.realpath(vol.get("source") or "/")
+            if "docker.sock" in src:
+                risks.append(f"{sname}: mounts the Docker socket")
+            elif src in SAFE_BIND_SOURCES and vol.get("read_only"):
+                continue
+            elif src != full and not src.startswith(full + "/"):
+                risks.append(f"{sname}: mounts {src}")
+    return risks
+
+
+def check_new_app(policy, name, d, services):
+    if not NAME_RE.match(name or ""):
+        raise Refused("bad app name")
+    if name in policy["apps"]:
+        raise Refused(f"'{name}' is already an app")
+    full = check_app_dir(policy, d)
+    if not os.path.isdir(full):
+        raise Refused(f"~/{d} doesn't exist (pass --repo to clone it)")
+    if not any(os.path.isfile(os.path.join(full, f)) for f in COMPOSE_FILES):
+        raise Refused(f"no compose file in ~/{d}")
+    config = compose_config(full)
+    risks = compose_risks(policy, full, config)
+    if risks:
+        raise Refused("the compose file reaches outside its folder, so it can't be added this way:\n  " + "\n  ".join(risks))
+    known = sorted((config.get("services") or {}).keys())
+    services = services or known
+    unknown = [x for x in services if x not in known]
+    if unknown or not services:
+        raise Refused("unknown services: " + ", ".join(unknown) + " (the compose file has: " + ", ".join(known) + ")")
+    return full, services
+
+
+def write_added_app(path, name, entry):
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    added = read_added_apps(path)
+    added[name] = entry
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(added, f, indent=2)
+    os.replace(tmp, path)
+
+
+def v_add_app(policy, args, added_path=None):
+    """add-app <name> [--dir <folder>] [--repo <repo>] [--services a,b]
+
+    Lets sessions deploy and restart one more app. --repo clones github.com/<owner>/<repo> into
+    ~/<folder> first (owner from the policy, with the host's own git login)."""
+    usage = "usage: add-app <name> [--dir <folder under ~, default name>] [--repo <GitHub repo to clone>] [--services a,b]"
+    if not args or args[0].startswith("-"):
+        raise Refused(usage)
+    name, rest, opts = args[0], args[1:], {}
+    while rest:
+        if rest[0] in ("--dir", "--repo", "--services") and len(rest) >= 2 and rest[0] not in opts:
+            opts[rest[0]] = rest[1]; rest = rest[2:]
+        else:
+            raise Refused(usage)
+    d = opts.get("--dir", name)
+    services = [x for x in opts.get("--services", "").split(",") if x]
+    if any(not NAME_RE.match(x) for x in services):
+        raise Refused(usage)
+    if not NAME_RE.match(name):
+        raise Refused("bad app name")
+    if name in policy["apps"]:
+        raise Refused(f"'{name}' is already an app")
+    full = check_app_dir(policy, d)
+    repo = opts.get("--repo")
+    cloned = ""
+    if repo is not None:
+        owner = (policy.get("github") or {}).get("owner")
+        if not owner or not REPO_NAME_RE.match(repo) or repo.endswith(".git"):
+            raise Refused("--repo takes a repo name under " + str(owner))
+        if os.path.exists(full):
+            raise Refused(f"~/{d} already exists; leave out --repo to use it")
+        url = f"https://github.com/{owner}/{repo}.git"
+        rc, out = run(["git", "clone", "--", url, full], timeout=300)
+        if rc != 0:
+            raise Refused(f"git clone {url} failed:\n" + out[-1500:])
+        cloned = f"$ git clone {url} ~/{d}\n" + out
+    full, services = check_new_app(policy, name, d, services)
+    git = os.path.isdir(os.path.join(full, ".git"))
+    summary = (f"Let Claude deploy and restart a new app '{name}' in ~/{d} (services: {', '.join(services)})"
+               + (", pulling from git first" if git else "") + ". Its compose file only uses its own folder.")
+    if not request_approval(policy, "add-app", args, summary):
+        return 3, cloned + "denied: not approved on the phone in time.\n"
+    policy_now = load_policy() if added_path is None else policy
+    check_new_app(policy_now, name, d, services)  # again: the folder may have changed while waiting
+    write_added_app(added_path or ADDED_APPS_PATH, name, {"dir": d, "git": git, "services": services})
+    return 0, cloned + f"approved; '{name}' is now an app. Deploy it with: deploy {name}\n"
+
+
+def caddy_cfg(policy):
+    c = policy.get("caddy") or {}
+    return (os.path.join(policy["run_as_home"], c.get("file", "caddy/Caddyfile")),
+            c.get("container", "caddy"), c.get("network", "homelab_net"))
+
+
+def check_route(policy, host, upstream):
+    if host.endswith(".internal"):
+        host = host[:-len(".internal")]
+    if not HOST_RE.match(host or ""):
+        raise Refused("usage: add-route <name>[.internal] <container>:<port>")
+    container, _, port = (upstream or "").rpartition(":")
+    if not NAME_RE.match(container or "") or not port.isdigit() or not 0 < int(port) < 65536:
+        raise Refused("usage: add-route <name>[.internal] <container>:<port>")
+    if is_protected(policy, container):
+        raise Refused("that container is protected")
+    caddyfile, caddy, network = caddy_cfg(policy)
+    rc, out = run(["docker", "inspect", container, "--format",
+                   '{{index .Config.Labels "com.docker.compose.project"}}|{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}'], timeout=30)
+    if rc != 0:
+        raise Refused("no such container (deploy the app first)")
+    project, _, nets = out.strip().partition("|")
+    owner = [n for n, a in policy["apps"].items() if a["mode"] in ("deploy", "detached") and os.path.basename(a["dir"]) == project]
+    if not owner:
+        raise Refused("only containers of a deployable app can get a route")
+    if network not in nets.split():
+        raise Refused(f"{container} isn't on {network}, so Caddy can't reach it; add that network to its compose file")
+    with open(caddyfile) as f:
+        text = f.read()
+    fqdn = host + ".internal"
+    if re.search(r"(^|[\s,])" + re.escape(fqdn) + r"([\s,{]|$)", text, re.M):
+        raise Refused(f"{fqdn} is already in the Caddyfile")
+    return fqdn, container, int(port), owner[0], caddyfile, caddy, text
+
+
+def v_add_route(policy, args):
+    """add-route <name>[.internal] <container>:<port> - a Caddy site for one deployable app."""
+    if len(args) != 2:
+        raise Refused("usage: add-route <name>[.internal] <container>:<port>")
+    fqdn, container, port, app, caddyfile, caddy, _ = check_route(policy, args[0], args[1])
+    summary = f"Make https://{fqdn} open {container}:{port} (app {app}). Anyone on your tailnet can reach it."
+    if not request_approval(policy, "add-route", args, summary):
+        return 3, "denied: not approved on the phone in time.\n"
+    fqdn, container, port, app, caddyfile, caddy, before = check_route(policy, args[0], args[1])
+    block = f"\n# {app}, added by the homelab gateway (add-route)\n{fqdn} {{\n\treverse_proxy {container}:{port}\n\timport common\n}}\n"
+    # In place, never a new file: Caddy's bind mount of a single file follows the inode.
+    with open(caddyfile, "a") as f:
+        f.write(block)
+    rc, out = run(["docker", "exec", caddy, "caddy", "validate", "--config", "/etc/caddy/Caddyfile"], timeout=60)
+    if rc != 0:
+        with open(caddyfile, "r+") as f:
+            f.write(before); f.truncate()
+        return rc, out + "\nThe Caddyfile didn't validate with the new block, so it was put back.\n"
+    rc, out2 = run(["docker", "exec", caddy, "caddy", "reload", "--config", "/etc/caddy/Caddyfile"], timeout=60)
+    return rc, f"approved; https://{fqdn} -> {container}:{port}\n" + out2
+
+
 class ApprovalHandler(BaseHTTPRequestHandler):
     approval_dir = APPROVAL_DIR
 
@@ -589,8 +834,9 @@ VERBS = {
     "deploy": v_deploy, "restart": v_restart, "builder-prune": v_builder_prune,
     "caddy-reload": v_caddy_reload, "job": v_job,
     "rm-path": v_rm_path, "remove-container": v_remove_container, "create-repo": v_create_repo,
+    "add-app": v_add_app, "add-route": v_add_route,
 }
-HELP = "verbs: " + ", ".join(sorted(VERBS)) + "  (rm-path, remove-container and create-repo wait for approval on the phone)"
+HELP = "verbs: " + ", ".join(sorted(VERBS)) + "  (rm-path, remove-container, create-repo, add-app and add-route wait for approval on the phone)"
 
 
 def audit(entry):

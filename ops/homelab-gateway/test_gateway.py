@@ -348,5 +348,153 @@ class ApprovalTest(unittest.TestCase):
             srv.shutdown()
 
 
+class AddAppAndRouteTest(unittest.TestCase):
+    """add-app / add-route: widen the policy by one named thing, only after the phone says yes."""
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp()
+        self.policy = json.loads(json.dumps(POLICY))
+        self.policy["run_as_home"] = self.home
+        self.policy["protected_paths"] = [os.path.join(self.home, ".ssh")]
+        self.added = os.path.join(tempfile.mkdtemp(), "added-apps.json")
+        os.makedirs(os.path.join(self.home, "life-api"))
+        open(os.path.join(self.home, "life-api", "docker-compose.yml"), "w").close()
+        self.config = {"services": {"api": {"volumes": [{"type": "bind", "source": os.path.join(self.home, "life-api", "data")},
+                                                        {"type": "volume", "source": "pg"}]},
+                                    "db": {"volumes": [{"type": "volume", "source": "pg"}]}}}
+
+    def fake_run(self, config=None, inspect="life-api|homelab_net "):
+        calls = []
+        def run(cmd, cwd=None, timeout=1800, env=None):
+            calls.append((cmd, cwd))
+            if cmd[:3] == ["docker", "compose", "config"]:
+                return 0, json.dumps(config or self.config)
+            if cmd[:2] == ["docker", "inspect"]:
+                return (0, inspect) if inspect else (1, "no such object")
+            return 0, ""
+        return calls, run
+
+    def add(self, args, approve=True, config=None):
+        calls, run = self.fake_run(config)
+        with mock.patch.object(gateway, "run", run), \
+             mock.patch.object(gateway, "request_approval", return_value=approve) as ask:
+            rc, out = gateway.v_add_app(self.policy, args, added_path=self.added)
+        return rc, out, ask, calls
+
+    def test_add_app_records_a_plain_deploy_app_after_approval(self):
+        rc, out, ask, _ = self.add(["life-api"])
+        self.assertEqual(rc, 0, out)
+        self.assertIn("db, api", ask.call_args[0][3].replace("api, db", "db, api"))
+        policy = json.loads(json.dumps(POLICY)); policy["run_as_home"] = self.home
+        gateway.merge_added_apps(policy, gateway.read_added_apps(self.added))
+        self.assertEqual(policy["apps"]["life-api"], {"mode": "deploy", "dir": "life-api", "git": False,
+                                                      "services": ["api", "db"], "added": True})
+
+    def test_add_app_writes_nothing_without_approval(self):
+        rc, out, _, _ = self.add(["life-api"], approve=False)
+        self.assertEqual(rc, 3); self.assertFalse(os.path.exists(self.added))
+
+    def test_add_app_refuses_compose_files_that_reach_outside_their_folder(self):
+        for svc in [{"privileged": True}, {"network_mode": "host"}, {"pid": "host"}, {"cap_add": ["SYS_ADMIN"]},
+                    {"devices": ["/dev/sda"]}, {"container_name": "caddy"},
+                    {"volumes": [{"type": "bind", "source": "/var/run/docker.sock"}]},
+                    {"volumes": [{"type": "bind", "source": "/"}]},
+                    {"volumes": [{"type": "bind", "source": os.path.join(self.home, "immich")}]},
+                    {"volumes": [{"type": "bind", "source": os.path.join(self.home, "life-api", "..", "x")}]},
+                    {"volumes": [{"type": "bind", "source": "/etc/localtime"}]}]:  # not read-only
+            with self.assertRaises(gateway.Refused, msg=str(svc)):
+                self.add(["life-api"], config={"services": {"api": svc}})
+        self.assertFalse(os.path.exists(self.added))
+
+    def test_add_app_refuses_bad_names_existing_apps_and_odd_folders(self):
+        for args in [[], ["-x"], ["../x"], ["talkoot"], ["new", "--dir", "../etc"], ["new", "--dir", ".ssh"],
+                     ["new", "--dir", "talkoot"], ["new", "--dir", "a/b"], ["new", "--dir", "missing"],
+                     ["life-api", "--services", "nope"], ["life-api", "--bogus", "x"], ["life-api", "--repo", "a/b"],
+                     ["life-api", "--repo", "life-api"]]:  # exists already, so no clone over it
+            with self.assertRaises(gateway.Refused, msg=str(args)):
+                self.add(args)
+
+    def test_add_app_clones_from_the_policy_owner_only(self):
+        def run(cmd, cwd=None, timeout=1800, env=None):
+            if cmd[:2] == ["git", "clone"]:
+                os.makedirs(cmd[-1]); open(os.path.join(cmd[-1], "compose.yaml"), "w").close()
+                os.makedirs(os.path.join(cmd[-1], ".git"))
+                return 0, ""
+            return 0, json.dumps({"services": {"web": {}}})
+        with mock.patch.object(gateway, "run", run), mock.patch.object(gateway, "request_approval", return_value=True):
+            rc, out = gateway.v_add_app(self.policy, ["notes", "--repo", "notes-app"], added_path=self.added)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("https://github.com/Zawaer/notes-app.git", out)
+        self.assertTrue(gateway.read_added_apps(self.added)["notes"]["git"])
+
+    def test_merge_skips_entries_that_clash_or_point_somewhere_protected(self):
+        policy = json.loads(json.dumps(self.policy))
+        gateway.merge_added_apps(policy, {
+            "talkoot": {"dir": "elsewhere", "services": ["x"]},          # base policy wins
+            "sneaky": {"dir": ".ssh", "services": ["x"]},                # protected
+            "inside": {"dir": "talkoot", "services": ["x"]},             # another app's folder
+            "bad": {"dir": "../etc", "services": ["x"]},
+            "ok": {"dir": "ok", "services": ["web"], "mode": "detached"},  # mode is ignored
+        })
+        self.assertEqual(policy["apps"]["talkoot"], POLICY["apps"]["talkoot"])
+        for n in ("sneaky", "inside", "bad"):
+            self.assertNotIn(n, policy["apps"])
+        self.assertEqual(policy["apps"]["ok"]["mode"], "deploy")
+
+    def test_deploy_of_an_added_app_rechecks_its_compose_file(self):
+        self.policy["apps"]["life-api"] = {"mode": "deploy", "dir": "life-api", "git": True, "services": ["api"], "added": True}
+        calls, run = self.fake_run(config={"services": {"api": {"privileged": True}}})
+        with mock.patch.object(gateway, "run", run):
+            rc, out = gateway.do_deploy(self.policy, "life-api")
+        self.assertEqual(rc, 2); self.assertIn("privileged", out)
+        self.assertFalse(any(c[0][:3] == ["docker", "compose", "up"] for c in calls))
+
+    # --- add-route
+
+    def route(self, args, inspect="life-api|homelab_net ", approve=True, validate_rc=0):
+        os.makedirs(os.path.join(self.home, "caddy"), exist_ok=True)
+        cf = os.path.join(self.home, "caddy", "Caddyfile")
+        if not os.path.exists(cf):
+            open(cf, "w").write("(common) {\n}\n\nmatka.internal {\n\treverse_proxy matka:3000\n}\n")
+        self.policy["apps"]["life-api"] = {"mode": "deploy", "dir": "life-api", "services": ["api"]}
+        calls = []
+        def run(cmd, cwd=None, timeout=1800, env=None):
+            calls.append(cmd)
+            if cmd[:2] == ["docker", "inspect"]:
+                return (0, inspect) if inspect else (1, "")
+            if "validate" in cmd:
+                return validate_rc, "" if validate_rc == 0 else "bad"
+            return 0, ""
+        with mock.patch.object(gateway, "run", run), mock.patch.object(gateway, "request_approval", return_value=approve):
+            rc, out = gateway.v_add_route(self.policy, args)
+        return rc, out, open(cf).read(), calls
+
+    def test_add_route_appends_a_block_and_reloads(self):
+        rc, out, text, calls = self.route(["life", "life-api:8000"])
+        self.assertEqual(rc, 0, out)
+        self.assertIn("life.internal {\n\treverse_proxy life-api:8000\n\timport common\n}", text)
+        self.assertIn("reload", calls[-1])
+
+    def test_add_route_puts_the_caddyfile_back_when_it_does_not_validate(self):
+        rc, out, text, calls = self.route(["life.internal", "life-api:8000"], validate_rc=1)
+        self.assertNotEqual(rc, 0); self.assertNotIn("life.internal", text)
+        self.assertFalse(any("reload" in c for c in calls))
+
+    def test_add_route_refuses(self):
+        for args, inspect in [(["matka", "life-api:8000"], None),            # name taken
+                              (["life", "immich_server:2283"], None),        # protected
+                              (["life", "life-api:0"], None), (["life", "life-api"], None),
+                              (["Life", "life-api:80"], None), (["a.b", "life-api:80"], None),
+                              (["life", "life-api:80"], ""),                  # no such container
+                              (["life", "life-api:80"], "immich|homelab_net "),  # not a deployable app
+                              (["life", "life-api:80"], "life-api|life-api_default ")]:  # caddy can't reach it
+            with self.assertRaises(gateway.Refused, msg=str(args)):
+                self.route(args, inspect=inspect if inspect is not None else "life-api|homelab_net ")
+
+    def test_add_route_without_approval_changes_nothing(self):
+        rc, out, text, _ = self.route(["life", "life-api:8000"], approve=False)
+        self.assertEqual(rc, 3); self.assertNotIn("life.internal", text)
+
+
 if __name__ == "__main__":
     unittest.main()

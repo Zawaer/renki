@@ -9,6 +9,7 @@ import { AgentWatch } from "./agentWatch.js";
 import { unpackArchives } from "./archives.js";
 import { createRtkPreToolUseHook } from "./rtk.js";
 import { createHomelabGuardHook } from "./homelabGuard.js";
+import { createMoveIntoRepoHook, createMoveIntoRepoTool, type MoveRequester } from "./moveIntoRepo.js";
 import { MAC_FREE_TOOLS, MAC_SERVER, type MacCallIds, createMacApprovalHook } from "../mac/tools.js";
 import { RENKI_SERVER, SUGGEST_REPLIES_TOOL, createRepliesGuardHook, createRepliesMcpServer, createRepliesStopHook, replyStateAfter } from "./replies.js";
 import {
@@ -89,6 +90,8 @@ export type LiveSessionOptions = {
   homelabBlocked?: boolean;
   /** The `mac` MCP server (phone tools via the user's Mac, see ../mac/tools.ts), when this session may use it. */
   mac?: { server: McpSdkServerConfigWithInstance; callIds: MacCallIds };
+  /** Lets the chat move itself into a repo (see ./moveIntoRepo.ts); only for repo-less chats. */
+  moveIntoRepo?: MoveRequester;
   /** Only obtainable from a live Query object — the caller opts in when it doesn't already have this cached daemon-wide. */
   onCapabilities?: (caps: CapabilitiesResponse) => void;
   /** The CLI began a turn nobody prompted (see class doc). The caller should treat the session as busy until `onAutoTurnEnd`. */
@@ -259,6 +262,7 @@ export class LiveClaudeSession {
     const preToolUseHooks = [
       ...(opts.homelabBlocked ? [createHomelabGuardHook()] : []),
       ...(opts.mac ? [createMacApprovalHook(opts.mac.callIds)] : []),
+      ...(opts.moveIntoRepo ? [createMoveIntoRepoHook()] : []),
       ...(opts.enableRtk ? [createRtkPreToolUseHook(opts.rtkBin ?? "rtk")] : []),
       createRepliesGuardHook(() => this.replyWritten),
     ];
@@ -282,7 +286,7 @@ export class LiveClaudeSession {
       ...(opts.maxThinkingTokens != null ? { maxThinkingTokens: opts.maxThinkingTokens } : {}),
       ...(opts.forcePermissionPrompts ? { settingSources: [] } : {}),
       hooks: { ...(preToolUseHooks.length ? { PreToolUse: preToolUseHooks } : {}), PostToolUse: [createRepliesStopHook()] },
-      mcpServers: { [RENKI_SERVER]: createRepliesMcpServer(), ...(opts.mac ? { [MAC_SERVER]: opts.mac.server } : {}) },
+      mcpServers: { [RENKI_SERVER]: createRepliesMcpServer(opts.moveIntoRepo ? [createMoveIntoRepoTool(opts.moveIntoRepo)] : []), ...(opts.mac ? { [MAC_SERVER]: opts.mac.server } : {}) },
       allowedTools: [SUGGEST_REPLIES_TOOL, ...(opts.mac ? MAC_FREE_TOOLS : [])],
       // Route every permission decision through the current resolver. Only
       // fires for tools the permission system doesn't auto-resolve (edits,

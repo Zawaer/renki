@@ -817,6 +817,56 @@ describe("attachRepo", () => {
   });
 });
 
+describe("move_into_repo", () => {
+  it("is offered only to repo-less chats, and moves the chat once its turn ends", async () => {
+    const { manager, repoId } = setup();
+    const inRepo = await newSession(manager, repoId);
+    manager.takeControl(inRepo.id, "d1");
+    runTurn.mockReset().mockResolvedValue(okTurn);
+    await manager.submitPrompt({ sessionId: inRepo.id, deviceId: "d1", promptId: "p0", text: "hi", resolvePermission: noopResolve });
+    expect(liveInstances.at(-1)!.opts.moveIntoRepo).toBeUndefined();
+
+    const chat = await manager.createSession({});
+    manager.takeControl(chat.id, "d1");
+    const booked: { ok: boolean; text: string }[] = [];
+    runTurn.mockReset().mockImplementation(async () => {
+      const move = liveInstances.at(-1)!.opts.moveIntoRepo!;
+      booked.push(await move("not-a-repo"));
+      booked.push(await move(repoId));
+      // Still mid-turn: nothing has moved yet.
+      expect(manager.getSession(chat.id).repoId).toBeNull();
+      return okTurn;
+    });
+    await manager.submitPrompt({ sessionId: chat.id, deviceId: "d1", promptId: "p1", text: "move yourself", resolvePermission: noopResolve });
+    expect(booked[0]).toMatchObject({ ok: false });
+    expect(booked[1]).toMatchObject({ ok: true });
+    await vi.waitFor(() => expect(manager.getSession(chat.id).repoId).toBe(repoId));
+    expect(manager.events.read(chat.id).at(-1)).toMatchObject({ kind: "notice" });
+  });
+
+  it("waits while background work is running", async () => {
+    const { manager, repoId } = setup();
+    const chat = await manager.createSession({});
+    manager.takeControl(chat.id, "d1");
+    runTurn.mockReset().mockImplementation(async () => {
+      const live = liveInstances.at(-1)!;
+      await live.opts.moveIntoRepo!(repoId);
+      live.backgroundTaskCount = 1;
+      return okTurn;
+    });
+    await manager.submitPrompt({ sessionId: chat.id, deviceId: "d1", promptId: "p1", text: "go", resolvePermission: noopResolve });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(manager.getSession(chat.id).repoId).toBeNull();
+
+    // The background agent finishes and its auto turn ends: now it moves.
+    const live = liveInstances.at(-1)!;
+    live.backgroundTaskCount = 0;
+    live.opts.onAutoTurnStart?.("t2", "auto");
+    live.opts.onAutoTurnEnd?.(okTurn);
+    await vi.waitFor(() => expect(manager.getSession(chat.id).repoId).toBe(repoId));
+  });
+});
+
 describe("trash", () => {
   /**
    * The bin holds the transcript, not the code. Keeping worktrees open for a

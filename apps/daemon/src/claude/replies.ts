@@ -1,4 +1,4 @@
-import { createSdkMcpServer, tool, type HookCallbackMatcher, type HookJSONOutput, type McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk";
+import { createSdkMcpServer, tool, type HookCallbackMatcher, type HookJSONOutput, type McpSdkServerConfigWithInstance, type SdkMcpToolDefinition } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 
 /**
@@ -39,7 +39,9 @@ const INSTRUCTIONS = [
   "The buttons are read on their own, often long after the options were explained: each label must name the choice itself (\"Name places by street\"), never refer to it by number or letter (\"Option 1\", \"Do 1 and 2\").",
 ].join(" ");
 
-export function createRepliesMcpServer(): McpSdkServerConfigWithInstance {
+/** `extraTools`: per-session tools served on the same `renki` server (e.g. move_into_repo). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function createRepliesMcpServer(extraTools: SdkMcpToolDefinition<any>[] = []): McpSdkServerConfigWithInstance {
   return createSdkMcpServer({
     name: RENKI_SERVER,
     version: "1.0.0",
@@ -55,6 +57,7 @@ export function createRepliesMcpServer(): McpSdkServerConfigWithInstance {
         }),
         { annotations: { readOnlyHint: true } },
       ),
+      ...extraTools,
     ],
   });
 }

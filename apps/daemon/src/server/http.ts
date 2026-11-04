@@ -409,15 +409,8 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
   app.post<{ Params: { id: string } }>("/sessions/:id/attach-repo", async (req, reply) => {
     const parsed = AttachRepoRequest.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues });
-    let repoId = parsed.data.repoId;
-    if (parsed.data.github) {
-      const outcome = await cloneGithubRepo(config, parsed.data.github);
-      if (!outcome.ok) return reply.code(400).send({ error: "invalid_request", message: outcome.message });
-      repoId = (await scanRepos(config)).find((r) => r.name === outcome.dirName)?.id;
-      if (!repoId) return reply.code(500).send({ error: "internal", message: "Cloned, but the repo didn't appear under the repos root." });
-    }
     try {
-      return { session: await manager.attachRepo(req.params.id, repoId!) };
+      return { session: await manager.attachRepoFrom(req.params.id, parsed.data) };
     } catch (err) {
       return sendSessionError(reply, err);
     }

@@ -30,7 +30,8 @@ import { baseStatusOf, catchUpWithBase } from "../git/baseSync.js";
 import { createWorktree, removeWorktree, restoreWorktree } from "../git/worktrees.js";
 import { newSessionId } from "../ids.js";
 import { logger } from "../logger.js";
-import { findRepo } from "../repos.js";
+import { findRepo, scanRepos } from "../repos.js";
+import { cloneGithubRepo, parseRepoRef } from "../github.js";
 import { hasCapabilities, setCapabilities } from "../claude/capabilities.js";
 import { LiveClaudeSession } from "../claude/liveSession.js";
 import { copyTranscript } from "../claude/transcripts.js";
@@ -170,6 +171,8 @@ export type SessionBroadcast = {
   onSessionRemoved: (sessionId: string) => void;
 };
 
+type MoveTarget = { repoId?: string; github?: string; label: string };
+
 export class SessionManager {
   readonly events: EventLog;
   /** Chats folded for clients, so opening one sends its latest turns instead of its whole log. */
@@ -179,6 +182,8 @@ export class SessionManager {
   private broadcast: SessionBroadcast | null = null;
   /** sessionId -> prompts submitted while busy, FIFO; drained in submitPrompt's loop. */
   private readonly queues = new Map<string, SubmitPromptInput[]>();
+  /** Moves a chat booked for itself with move_into_repo, carried out once it settles (applyPendingMove). */
+  private readonly pendingMoves = new Map<string, MoveTarget>();
   /** sessionId -> requestIds of permission_requests awaiting a decision. */
   private readonly pendingPermissions = new Map<string, Set<string>>();
   /**
@@ -803,6 +808,68 @@ export class SessionManager {
     logger.info("session attached to repo", { id, repo: repo.name, branch: created.branch, carried });
     this.refreshUnpushed(id);
     return this.getSession(id);
+  }
+
+  /** attachRepo by a repo Renki has, or by a GitHub repo it clones first (what "Move into repo…" and move_into_repo both use). */
+  async attachRepoFrom(id: string, target: { repoId?: string; github?: string }): Promise<Session> {
+    let repoId = target.repoId;
+    if (target.github) {
+      const outcome = await cloneGithubRepo(this.config, target.github);
+      if (!outcome.ok) throw new SessionError("invalid_request", outcome.message);
+      repoId = (await scanRepos(this.config)).find((r) => r.name === outcome.dirName)?.id;
+      if (!repoId) throw new SessionError("invalid_request", "Cloned, but the repo didn't appear under the repos root.");
+    }
+    if (!repoId) throw new SessionError("invalid_request", "Give a repo or a GitHub repo.");
+    return this.attachRepo(id, repoId);
+  }
+
+  /** move_into_repo's handler: check the repo now, so a typo comes back to Claude at once, and book the move. */
+  private async requestMove(id: string, input: string): Promise<{ ok: boolean; text: string }> {
+    const session = this.getSession(id);
+    if (session.repoId) return { ok: false, text: `This chat is already in ${session.repoName}.` };
+    const repos = await scanRepos(this.config);
+    const ref = parseRepoRef(input);
+    const needle = input.trim().toLowerCase();
+    const local = repos.find(
+      (r) => r.id === needle || r.name.toLowerCase() === needle || (ref !== null && r.remote?.toLowerCase() === ref.toLowerCase()),
+    );
+    if (!local && !ref) {
+      return {
+        ok: false,
+        text: `"${input}" isn't a repo Renki has, nor a GitHub owner/name. Renki has: ${repos.map((r) => r.name).join(", ") || "none"}.`,
+      };
+    }
+    const target: MoveTarget = local ? { repoId: local.id, label: local.name } : { github: ref!, label: ref! };
+    this.pendingMoves.set(id, target);
+    logger.info("move into repo booked", { id, target: target.label });
+    return {
+      ok: true,
+      text:
+        `Booked: this chat moves into ${target.label}${local ? "" : " (cloned from GitHub first)"} as soon as this turn ends. ` +
+        "End your turn now with a short note to the user; more work would only hold the move up. " +
+        `From the next turn you work in the repo's checkout, on this chat's own branch. This folder (${session.worktreePath}) stays as it is.`,
+    };
+  }
+
+  /** Carry out a booked move once the chat is idle: no turn, queue, approval or background work left. */
+  private applyPendingMove(id: string): void {
+    const target = this.pendingMoves.get(id);
+    if (!target) return;
+    const session = this.getSession(id);
+    if (session.repoId || this.isRetired(id)) {
+      this.pendingMoves.delete(id);
+      return;
+    }
+    const live = this.live.get(id);
+    // Moving closes the process, which would stop background agents and builds: wait for the next settle.
+    if (session.status === "busy" || this.inflight.has(id) || (this.queues.get(id)?.length ?? 0) > 0) return;
+    if (session.hasPendingPermission || (live && live.backgroundTaskCount > 0) || this.buildsRunning(id)) return;
+    this.pendingMoves.delete(id);
+    this.attachRepoFrom(id, target).catch((err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn("booked move into repo failed", { id, target: target.label, err: message });
+      this.events.append(id, { kind: "notice", text: `Couldn't move this chat into ${target.label}: ${message}`, level: "warn" });
+    });
   }
 
   /**
@@ -1501,6 +1568,7 @@ export class SessionManager {
       lastActivityAt: Date.now(),
     });
     this.events.append(input.sessionId, { kind: "status_changed", status: nextStatus });
+    if (nextStatus === "idle" && !paused) setImmediate(() => this.applyPendingMove(input.sessionId));
 
     // Fire-and-forget, started only now that the turn's own assistant text is
     // already in the log: attempting this BEFORE the turn ran (the previous
@@ -1997,6 +2065,7 @@ export class SessionManager {
       rtkBin: this.config.rtkBin,
       homelabBlocked: this.homelabBlockedFor(sessionId),
       mac: this.macFor(sessionId, cwd),
+      moveIntoRepo: this.getSession(sessionId).repoId ? undefined : (repo) => this.requestMove(sessionId, repo),
       // Cheap to skip once the daemon already knows this — it's static per
       // `claude` install, not per-session.
       onCapabilities: hasCapabilities() ? undefined : setCapabilities,
@@ -2017,6 +2086,7 @@ export class SessionManager {
           this.patch(sessionId, { status });
           this.events.append(sessionId, { kind: "status_changed", status });
           this.drainQueue(sessionId);
+          if (status === "idle") this.applyPendingMove(sessionId);
         };
         if (!result.ok && result.rateLimited && !result.interrupted) {
           void this.continueAfterAutoLimit(sessionId, result)

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { MAC_OFFLINE, type MacBridge, type MacResult } from "./bridge.js";
 import { describeBuild, type MacBuilds } from "./builds.js";
 import { ManifestError, buildManifest, type MacJobs } from "./jobs.js";
+import { phoneShellReadOnly } from "./phoneShell.js";
 
 /**
  * The `mac` MCP server every allowed session gets: the phone plugged into the
@@ -13,9 +14,10 @@ import { ManifestError, buildManifest, type MacJobs } from "./jobs.js";
  * or not a Mac is attached right now, since a live session outlives many
  * connects and disconnects; an offline Mac answers each call with how to fix it.
  *
- * Reading the phone (devices, screenshot, logcat) and tapping/typing on it run
- * without asking. A free phone shell and installing an APK ask the controller
- * first, in every permission mode (see createMacApprovalHook).
+ * Reading the phone (devices, screenshot, logcat, read-only shell commands
+ * like `dumpsys battery`) and tapping/typing on it run without asking. Any
+ * other phone shell command and installing an APK ask the controller first,
+ * in every permission mode (see createMacApprovalHook and ./phoneShell.ts).
  *
  * `mac_build` runs one of the build jobs the user defined on the Mac, by name.
  * Sessions can't send a command: the Mac's config is the only place one is
@@ -28,7 +30,8 @@ export const MAC_SERVER = "mac";
 const tid = (name: string) => `mcp__${MAC_SERVER}__${name}`;
 
 /** Tools that change what is on the phone or a board; these always ask. */
-export const MAC_ASK_TOOLS = [tid("phone_shell"), tid("phone_install_apk"), tid("esp_flash")];
+const PHONE_SHELL_TOOL = tid("phone_shell");
+export const MAC_ASK_TOOLS = [PHONE_SHELL_TOOL, tid("phone_install_apk"), tid("esp_flash")];
 /** Builds the user defined on the Mac; ask only when the build is to be installed on the phone. */
 export const MAC_BUILD_TOOL = tid("mac_build");
 /** Tools that only look or tap, and builds without install; allowed without asking. */
@@ -125,7 +128,9 @@ export function createMacMcpServer(
       ),
       tool(
         "phone_shell",
-        "Run a command in the PHONE's shell (adb shell), e.g. `am start -n pkg/.MainActivity`, `pm clear pkg`, `dumpsys battery`. Not the Mac's shell. The user approves each call.",
+        "Run a command in the PHONE's shell (adb shell), e.g. `dumpsys battery`, `am start -n pkg/.MainActivity`, `pm clear pkg`. Not the Mac's shell. " +
+          "One plain command that only reads (dumpsys, getprop, settings get, pm list, cat, ls, ps…, with no pipes, quotes, globs or $) runs straight away; " +
+          "anything else waits for the user's approval, so prefer several plain reads over one piped command, and filter the output yourself.",
         MacVerbArgs.shell.shape,
         async (args) => run("shell", args, 60_000),
       ),
@@ -288,6 +293,18 @@ export function createMacApprovalHook(callIds?: MacCallIds): HookCallbackMatcher
         if (input.tool_name === MAC_BUILD_TOOL) callIds?.note(input.tool_use_id, input.tool_input);
         const installsBuild = input.tool_name === MAC_BUILD_TOOL && (input.tool_input as { install?: unknown } | null)?.install === true;
         if (!MAC_ASK_TOOLS.includes(input.tool_name) && !installsBuild) return { continue: true };
+        if (input.tool_name === PHONE_SHELL_TOOL) {
+          const command = (input.tool_input as { command?: unknown } | null)?.command;
+          if (typeof command === "string" && phoneShellReadOnly(command)) {
+            return {
+              hookSpecificOutput: {
+                hookEventName: "PreToolUse",
+                permissionDecision: "allow",
+                permissionDecisionReason: "A read-only command on the phone.",
+              },
+            };
+          }
+        }
         return {
           hookSpecificOutput: {
             hookEventName: "PreToolUse",

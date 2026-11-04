@@ -86,8 +86,8 @@ export type LiveSessionOptions = {
   enableRtk?: boolean;
   /** `rtk` executable to invoke when enableRtk is set (name on PATH or absolute path). */
   rtkBin?: string;
-  /** If true, refuse Bash commands that would reach the homelab gateway (see ./homelabGuard.ts). */
-  homelabBlocked?: boolean;
+  /** Asked on every Bash command that would reach the homelab gateway: true refuses it (see ./homelabGuard.ts). */
+  homelabBlocked?: () => boolean;
   /** The `mac` MCP server (phone tools via the user's Mac, see ../mac/tools.ts), when this session may use it. */
   mac?: { server: McpSdkServerConfigWithInstance; callIds: MacCallIds };
   /** Lets the chat move itself into a repo (see ./moveIntoRepo.ts); only for repo-less chats. */
@@ -260,7 +260,7 @@ export class LiveClaudeSession {
 
     // The homelab guard goes first, so a refused command is never rewritten or run.
     const preToolUseHooks = [
-      ...(opts.homelabBlocked ? [createHomelabGuardHook()] : []),
+      ...(opts.homelabBlocked ? [createHomelabGuardHook(opts.homelabBlocked)] : []),
       ...(opts.mac ? [createMacApprovalHook(opts.mac.callIds)] : []),
       ...(opts.moveIntoRepo ? [createMoveIntoRepoHook()] : []),
       ...(opts.enableRtk ? [createRtkPreToolUseHook(opts.rtkBin ?? "rtk")] : []),

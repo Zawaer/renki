@@ -1,4 +1,5 @@
 import { homelabAllowed } from "../claude/homelabGuard.js";
+import { HomelabAccess } from "../claude/homelabAccess.js";
 import type { MacBridge } from "../mac/bridge.js";
 import type { MacJobs } from "../mac/jobs.js";
 import type { MacBuilds } from "../mac/builds.js";
@@ -184,6 +185,8 @@ export class SessionManager {
   private readonly queues = new Map<string, SubmitPromptInput[]>();
   /** Moves a chat booked for itself with move_into_repo, carried out once it settles (applyPendingMove). */
   private readonly pendingMoves = new Map<string, MoveTarget>();
+  /** Settings > Homelab access. */
+  readonly homelabAccess: HomelabAccess;
   /** sessionId -> requestIds of permission_requests awaiting a decision. */
   private readonly pendingPermissions = new Map<string, Set<string>>();
   /**
@@ -231,6 +234,7 @@ export class SessionManager {
   ) {
     this.events = new EventLog(db);
     this.folded = new FoldedChats(this.events);
+    this.homelabAccess = new HomelabAccess(config.dataDir, config.homelabRepos);
   }
 
   /**
@@ -2032,10 +2036,10 @@ export class SessionManager {
     return this.live.size;
   }
 
-  /** True when this session's repo isn't on RENKI_HOMELAB_REPOS (see claude/homelabGuard.ts). */
+  /** True when this session's repo isn't allowed in Settings > Homelab access (see claude/homelabGuard.ts). Read fresh each time. */
   private homelabBlockedFor(sessionId: string): boolean {
     const session = this.getSession(sessionId);
-    return !homelabAllowed(this.config.homelabRepos, session.repoId, session.repoName);
+    return !homelabAllowed(this.homelabAccess.get(), session.repoId, session.repoName);
   }
 
   private macFor(sessionId: string, cwd: string) {
@@ -2063,7 +2067,7 @@ export class SessionManager {
       forcePermissionPrompts: this.config.forcePermissionPrompts,
       enableRtk: this.config.enableRtk,
       rtkBin: this.config.rtkBin,
-      homelabBlocked: this.homelabBlockedFor(sessionId),
+      homelabBlocked: () => this.homelabBlockedFor(sessionId),
       mac: this.macFor(sessionId, cwd),
       moveIntoRepo: this.getSession(sessionId).repoId ? undefined : (repo) => this.requestMove(sessionId, repo),
       // Cheap to skip once the daemon already knows this — it's static per

@@ -16,6 +16,7 @@ import {
   type Session,
   SwitchAccountRequest,
   UpdateRotationRequest,
+  UpdateHomelabAccessRequest,
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS_PER_PROMPT,
 } from "@renki/protocol";
@@ -517,6 +518,14 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
     const parsed = SwitchAccountRequest.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
     return accounts.manualSwitch(parsed.data.to);
+  });
+
+  // Settings > Homelab access: which repos' chats may run the homelab command. Applies at once.
+  app.get("/homelab-access", async () => ({ repos: manager.homelabAccess.get() }));
+  app.put("/homelab-access", async (req, reply) => {
+    const parsed = UpdateHomelabAccessRequest.safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues });
+    return { repos: manager.homelabAccess.set(parsed.data.repos) };
   });
 
   // Toggle auto-rotation on/off and/or change its usage threshold (Settings page).

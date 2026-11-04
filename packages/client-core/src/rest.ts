@@ -34,6 +34,7 @@ import type {
   TailscaleStatusResponse,
   UpdateRotationRequest,
   UpdateRotationResponse,
+  HomelabAccessResponse,
   UsageLoginResponse,
 } from "@renki/protocol";
 
@@ -238,6 +239,15 @@ export class RestClient {
   /** Manually rotate accounts. Omit `to` to jump to the account with most headroom. */
   async switchAccount(to?: number | string): Promise<SwitchAccountResponse> {
     return this.post<SwitchAccountResponse>("/accounts/switch", to === undefined ? {} : { to });
+  }
+
+  /** Settings > Homelab access: which repos' chats may run the `homelab` command (null = every chat). */
+  async getHomelabAccess(): Promise<HomelabAccessResponse> {
+    return this.get<HomelabAccessResponse>("/homelab-access");
+  }
+
+  async setHomelabAccess(repos: string[] | null): Promise<HomelabAccessResponse> {
+    return this.request<HomelabAccessResponse>("PUT", "/homelab-access", { repos });
   }
 
   /** Toggle auto-rotation on/off and/or change its usage threshold. Send only what changed. */

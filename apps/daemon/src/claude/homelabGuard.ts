@@ -4,15 +4,16 @@ import type { HookCallbackMatcher, HookJSONOutput } from "@anthropic-ai/claude-a
 /**
  * Per-project switch for the `homelab` command (docs/homelab-gateway.md).
  *
- * RENKI_HOMELAB_REPOS lists the repos whose sessions may operate the homelab.
+ * Settings > Homelab access (./homelabAccess.ts; RENKI_HOMELAB_REPOS until it's
+ * first saved) lists the repos whose sessions may operate the homelab.
  * Unset = not enforced (everything allowed, as before). Set = only those repos;
- * an empty value means nobody. `@plain` stands for repo-less sessions.
+ * an empty list means nobody. `@plain` stands for repo-less sessions.
  *
  * Be clear about what this is: a guardrail against accidents and the lazy kind of
  * prompt injection ("now run homelab deploy …"). Sessions share one container and
  * one user, so a session set on getting around it can — the gateway's own tiers,
- * policy and phone approval are what actually limit the damage. The value comes
- * from the daemon's own environment, which sessions cannot edit.
+ * policy and phone approval are what actually limit the damage. The hook asks
+ * `blocked()` on every command, so a change in Settings applies at once.
  */
 
 export function parseHomelabRepos(raw: string | undefined): string[] | null {
@@ -29,7 +30,7 @@ export function homelabAllowed(allowed: string[] | null | undefined, repoId: str
   return allowed.includes(repoId.toLowerCase()) || allowed.includes(repoName.toLowerCase());
 }
 
-const VERBS = "status|logs|top|deploy|restart|builder-prune|caddy-reload|backup-audit|job|rm-path|remove-container";
+const VERBS = "status|logs|top|deploy|restart|builder-prune|caddy-reload|backup-audit|job|rm-path|remove-container|create-repo|add-app|add-route";
 const PREFIX_WORDS = new Set(["sudo", "env", "command", "exec", "nohup", "time", "nice", "stdbuf", "timeout", "xargs", "builtin"]);
 
 /** Why this Bash command would reach the gateway, or null if it wouldn't. */
@@ -54,16 +55,16 @@ export function homelabCommandReason(command: string): string | null {
 const DENY_MESSAGE =
   "This project doesn't have homelab access, so the `homelab` command is off here. " +
   "Don't look for another way to reach the homelab. Tell the user what you wanted to do and why; " +
-  "they can enable it for this project (RENKI_HOMELAB_REPOS) if they want.";
+  "they can turn it on for this project in Renki's Settings > Homelab access if they want.";
 
-export function createHomelabGuardHook(): HookCallbackMatcher {
+export function createHomelabGuardHook(blocked: () => boolean = () => true): HookCallbackMatcher {
   return {
     matcher: "Bash",
     hooks: [
       async (input): Promise<HookJSONOutput> => {
         if (input.hook_event_name !== "PreToolUse" || input.tool_name !== "Bash") return { continue: true };
         const command = (input.tool_input as { command?: unknown } | null)?.command;
-        if (typeof command !== "string" || homelabCommandReason(command) === null) return { continue: true };
+        if (typeof command !== "string" || homelabCommandReason(command) === null || !blocked()) return { continue: true };
         return {
           hookSpecificOutput: {
             hookEventName: "PreToolUse",

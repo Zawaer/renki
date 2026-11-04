@@ -554,3 +554,12 @@ export const InsightsResponse = z.object({
   compactions: z.object({ count: z.number().int(), auto: z.number().int(), avgPreTokens: z.number().int().nullable() }),
 });
 export type InsightsResponse = z.infer<typeof InsightsResponse>;
+
+/**
+ * Settings > Homelab access: which repos' chats may run the `homelab` command.
+ * `repos` null = not enforced (every chat). "@plain" = chats without a repo.
+ */
+export const HomelabAccessResponse = z.object({ repos: z.array(z.string()).nullable() });
+export type HomelabAccessResponse = z.infer<typeof HomelabAccessResponse>;
+export const UpdateHomelabAccessRequest = z.object({ repos: z.array(z.string().trim().min(1).max(200)).max(500).nullable() }).strict();
+export type UpdateHomelabAccessRequest = z.infer<typeof UpdateHomelabAccessRequest>;

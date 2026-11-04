@@ -1,6 +1,6 @@
 import { removeHost, updateHost, type HostsState } from "@renki/client-core";
 import { PALETTES, resolvePalette, type PaletteKey } from "@renki/client-core";
-import type { Account, AccountsResponse, RotationStatus } from "@renki/protocol";
+import type { Account, AccountsResponse, Repo, RotationStatus } from "@renki/protocol";
 import { useCallback, useEffect, useState } from "react";
 import { saveConfig } from "../lib/config.js";
 import { loadHosts, saveHosts } from "../lib/hosts.js";
@@ -35,6 +35,7 @@ export function Settings({ onReset, managed }: { onReset: () => void; managed: b
           <ThisDeviceSection />
           <ConnectionSection status={status} />
           <AccountsSection />
+          <HomelabAccessSection />
           {!managed && <PairSection />}
           {!managed && <DisconnectSection onReset={onReset} />}
         </div>
@@ -425,6 +426,78 @@ function AccountsSection() {
         <AddCodingAccount onAdded={refresh} />
       </div>
     </Card>
+  );
+}
+
+const PLAIN = "@plain";
+
+/**
+ * Which repos' chats may run the `homelab` command (deploy, logs, add-app…).
+ * Saved on the daemon and checked on every command, so a switch applies at
+ * once, also in chats that are already open. "Every chat" means not limited.
+ */
+function HomelabAccessSection() {
+  const { rest } = useClient();
+  const [allowed, setAllowed] = useState<string[] | null | undefined>(undefined);
+  const [repos, setRepos] = useState<Repo[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    rest.getHomelabAccess().then((r) => setAllowed(r.repos)).catch(() => setError("Couldn't load homelab access."));
+    rest.listRepos().then(setRepos).catch(() => setRepos([]));
+  }, [rest]);
+
+  const rows = [{ key: PLAIN, label: "Chats without a repo" }, ...(repos ?? []).map((r) => ({ key: r.id, label: r.name }))];
+  const has = (key: string, label: string) => allowed == null || allowed.includes(key) || allowed.includes(label.toLowerCase());
+
+  async function save(next: string[] | null) {
+    const before = allowed;
+    setAllowed(next);
+    setError(null);
+    try {
+      setAllowed((await rest.setHomelabAccess(next)).repos);
+    } catch {
+      setAllowed(before);
+      setError("Couldn't save. Try again.");
+    }
+  }
+
+  function toggle(key: string, label: string) {
+    const current = rows.filter((r) => has(r.key, r.label)).map((r) => r.key);
+    void save(has(key, label) ? current.filter((k) => k !== key) : [...current, key]);
+  }
+
+  return (
+    <Card
+      title="Homelab access"
+      description="Chats in these repos can run the homelab command: deploy, logs, and asking your phone to add apps or routes. Changes apply right away."
+    >
+      {allowed === undefined || repos === null ? (
+        <Skeleton className="h-24 w-full rounded-xl" />
+      ) : (
+        <div className="flex flex-col divide-y divide-(--renki-border) rounded-xl bg-(--renki-bg-inset)/70">
+          <AccessRow label="Every chat">
+            <Switch checked={allowed === null} onChange={() => void save(allowed === null ? rows.map((r) => r.key) : null)} label="Every chat" />
+          </AccessRow>
+          {allowed !== null &&
+            rows.map((r) => (
+              <AccessRow key={r.key} label={r.label}>
+                <Switch checked={has(r.key, r.label)} onChange={() => toggle(r.key, r.label)} label={r.label} />
+              </AccessRow>
+            ))}
+        </div>
+      )}
+      {error && <p className="mt-2 text-[13px] text-(--renki-danger)">{error}</p>}
+    </Card>
+  );
+}
+
+function AccessRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4 px-4 py-2.5 text-[13px]">
+      <span className="min-w-0 truncate text-(--renki-fg)">{label}</span>
+      {children}
+    </div>
   );
 }
 

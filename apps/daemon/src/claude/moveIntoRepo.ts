@@ -16,6 +16,8 @@ import { RENKI_SERVER } from "./replies.js";
 export const MOVE_INTO_REPO_TOOL = `mcp__${RENKI_SERVER}__move_into_repo`;
 
 export type MoveRequester = (repo: string) => Promise<{ ok: boolean; text: string }>;
+/** What the approval card should add about the move, e.g. that the repo lacks homelab access the chat has now. */
+export type MoveNote = (repo: string) => Promise<string | null>;
 
 export function createMoveIntoRepoTool(request: MoveRequester): SdkMcpToolDefinition<{ repo: z.ZodString }> {
   return tool(
@@ -34,18 +36,19 @@ export function createMoveIntoRepoTool(request: MoveRequester): SdkMcpToolDefini
 }
 
 /** Ask before every move, even in Auto or bypass mode: it changes which repo's access rules apply. */
-export function createMoveIntoRepoHook(): HookCallbackMatcher {
+export function createMoveIntoRepoHook(note?: MoveNote): HookCallbackMatcher {
   return {
     matcher: MOVE_INTO_REPO_TOOL,
     hooks: [
       async (input): Promise<HookJSONOutput> => {
         if (input.hook_event_name !== "PreToolUse" || input.tool_name !== MOVE_INTO_REPO_TOOL) return { continue: true };
         const repo = (input.tool_input as { repo?: unknown } | null)?.repo;
+        const extra = typeof repo === "string" && note ? await note(repo).catch(() => null) : null;
         return {
           hookSpecificOutput: {
             hookEventName: "PreToolUse",
             permissionDecision: "ask",
-            permissionDecisionReason: `Move this chat into ${typeof repo === "string" ? repo : "a repo"}.`,
+            permissionDecisionReason: `Move this chat into ${typeof repo === "string" ? repo : "a repo"}.${extra ? ` ${extra}` : ""}`,
           },
         };
       },

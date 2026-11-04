@@ -2143,6 +2143,7 @@ function PermissionCard({
           </span>
         )}
       </div>
+      {perm.reason && <p className="mt-2 text-[13px] text-(--renki-fg)">{perm.reason}</p>}
       {plan != null ? (
         <div className="mt-2 max-h-64 overflow-auto rounded-lg bg-(--renki-surface) p-2 text-xs">
           <Markdown content={plan} />

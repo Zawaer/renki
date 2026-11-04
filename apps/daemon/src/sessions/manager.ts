@@ -827,23 +827,47 @@ export class SessionManager {
     return this.attachRepo(id, repoId);
   }
 
-  /** move_into_repo's handler: check the repo now, so a typo comes back to Claude at once, and book the move. */
-  private async requestMove(id: string, input: string): Promise<{ ok: boolean; text: string }> {
-    const session = this.getSession(id);
-    if (session.repoId) return { ok: false, text: `This chat is already in ${session.repoName}.` };
+  /** A repo Renki has, matched by id, name or GitHub remote; else a GitHub owner/name to clone; else null. */
+  private async resolveMoveTarget(input: string): Promise<{ target: MoveTarget; local: boolean; repoId: string; repoName: string } | null> {
     const repos = await scanRepos(this.config);
     const ref = parseRepoRef(input);
     const needle = input.trim().toLowerCase();
     const local = repos.find(
       (r) => r.id === needle || r.name.toLowerCase() === needle || (ref !== null && r.remote?.toLowerCase() === ref.toLowerCase()),
     );
-    if (!local && !ref) {
+    if (local) return { target: { repoId: local.id, label: local.name }, local: true, repoId: local.id, repoName: local.name };
+    if (!ref) return null;
+    const name = ref.split("/")[1]!;
+    return { target: { github: ref, label: ref }, local: false, repoId: name.toLowerCase(), repoName: name };
+  }
+
+  /**
+   * The warning for the move's approval card: the chat may use the homelab command now, but the
+   * repo it moves into may not. Said before the user approves, so they can switch it on first.
+   */
+  private async moveAccessNote(id: string, input: string): Promise<string | null> {
+    const session = this.getSession(id);
+    const access = this.homelabAccess.get();
+    if (!homelabAllowed(access, session.repoId, session.repoName)) return null;
+    const resolved = await this.resolveMoveTarget(input);
+    if (!resolved || homelabAllowed(access, resolved.repoId, resolved.repoName)) return null;
+    return `It will lose homelab access: turn on ${resolved.repoName} in Settings > Homelab access to keep it.`;
+  }
+
+  /** move_into_repo's handler: check the repo now, so a typo comes back to Claude at once, and book the move. */
+  private async requestMove(id: string, input: string): Promise<{ ok: boolean; text: string }> {
+    const session = this.getSession(id);
+    if (session.repoId) return { ok: false, text: `This chat is already in ${session.repoName}.` };
+    const resolved = await this.resolveMoveTarget(input);
+    if (!resolved) {
+      const repos = await scanRepos(this.config);
       return {
         ok: false,
         text: `"${input}" isn't a repo Renki has, nor a GitHub owner/name. Renki has: ${repos.map((r) => r.name).join(", ") || "none"}.`,
       };
     }
-    const target: MoveTarget = local ? { repoId: local.id, label: local.name } : { github: ref!, label: ref! };
+    const { target, local } = resolved;
+    const accessNote = await this.moveAccessNote(id, input);
     this.pendingMoves.set(id, target);
     logger.info("move into repo booked", { id, target: target.label });
     return {
@@ -851,7 +875,8 @@ export class SessionManager {
       text:
         `Booked: this chat moves into ${target.label}${local ? "" : " (cloned from GitHub first)"} as soon as this turn ends. ` +
         "End your turn now with a short note to the user; more work would only hold the move up. " +
-        `From the next turn you work in the repo's checkout, on this chat's own branch. This folder (${session.worktreePath}) stays as it is.`,
+        `From the next turn you work in the repo's checkout, on this chat's own branch. This folder (${session.worktreePath}) stays as it is.` +
+        (accessNote ? ` Tell the user: ${accessNote}` : ""),
     };
   }
 
@@ -2070,6 +2095,7 @@ export class SessionManager {
       homelabBlocked: () => this.homelabBlockedFor(sessionId),
       mac: this.macFor(sessionId, cwd),
       moveIntoRepo: this.getSession(sessionId).repoId ? undefined : (repo) => this.requestMove(sessionId, repo),
+      moveIntoRepoNote: (repo) => this.moveAccessNote(sessionId, repo),
       // Cheap to skip once the daemon already knows this — it's static per
       // `claude` install, not per-session.
       onCapabilities: hasCapabilities() ? undefined : setCapabilities,

@@ -123,6 +123,8 @@ export type PermissionView = {
   turnId: string;
   toolName: string;
   toolInput: unknown;
+  /** Set by Renki's own tools: what to know before deciding. */
+  reason?: string;
 };
 
 /** A prompt sent while the session was busy, waiting its turn — not yet running. */
@@ -441,7 +443,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
     case "permission_request":
       s.pending = [
         ...s.pending,
-        { requestId: e.requestId, turnId: e.turnId, toolName: e.toolName, toolInput: e.toolInput },
+        { requestId: e.requestId, turnId: e.turnId, toolName: e.toolName, toolInput: e.toolInput, ...(e.reason ? { reason: e.reason } : {}) },
       ];
       return s;
 

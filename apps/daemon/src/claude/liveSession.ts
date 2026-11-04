@@ -9,7 +9,7 @@ import { AgentWatch } from "./agentWatch.js";
 import { unpackArchives } from "./archives.js";
 import { createRtkPreToolUseHook } from "./rtk.js";
 import { createHomelabGuardHook } from "./homelabGuard.js";
-import { createMoveIntoRepoHook, createMoveIntoRepoTool, type MoveRequester } from "./moveIntoRepo.js";
+import { createMoveIntoRepoHook, createMoveIntoRepoTool, type MoveNote, type MoveRequester } from "./moveIntoRepo.js";
 import { MAC_FREE_TOOLS, MAC_SERVER, type MacCallIds, createMacApprovalHook } from "../mac/tools.js";
 import { RENKI_SERVER, SUGGEST_REPLIES_TOOL, createRepliesGuardHook, createRepliesMcpServer, createRepliesStopHook, replyStateAfter } from "./replies.js";
 import {
@@ -92,6 +92,8 @@ export type LiveSessionOptions = {
   mac?: { server: McpSdkServerConfigWithInstance; callIds: MacCallIds };
   /** Lets the chat move itself into a repo (see ./moveIntoRepo.ts); only for repo-less chats. */
   moveIntoRepo?: MoveRequester;
+  /** Added to the move's approval card (e.g. a warning that the repo lacks homelab access). */
+  moveIntoRepoNote?: MoveNote;
   /** Only obtainable from a live Query object — the caller opts in when it doesn't already have this cached daemon-wide. */
   onCapabilities?: (caps: CapabilitiesResponse) => void;
   /** The CLI began a turn nobody prompted (see class doc). The caller should treat the session as busy until `onAutoTurnEnd`. */
@@ -262,7 +264,7 @@ export class LiveClaudeSession {
     const preToolUseHooks = [
       ...(opts.homelabBlocked ? [createHomelabGuardHook(opts.homelabBlocked)] : []),
       ...(opts.mac ? [createMacApprovalHook(opts.mac.callIds)] : []),
-      ...(opts.moveIntoRepo ? [createMoveIntoRepoHook()] : []),
+      ...(opts.moveIntoRepo ? [createMoveIntoRepoHook(opts.moveIntoRepoNote)] : []),
       ...(opts.enableRtk ? [createRtkPreToolUseHook(opts.rtkBin ?? "rtk")] : []),
       createRepliesGuardHook(() => this.replyWritten),
     ];
@@ -293,7 +295,7 @@ export class LiveClaudeSession {
       // bash, etc.) — exactly the set a human controller should see. Also
       // fires between turns, for background subagents; that's the case the
       // old resume-per-prompt design could never serve.
-      canUseTool: (toolName, input, o) => this.onPermission(toolName, input, o.toolUseID, o.signal),
+      canUseTool: (toolName, input, o) => this.onPermission(toolName, input, o.toolUseID, o.signal, o.decisionReason),
       // Surface the child process's stderr into our logs for debuggability.
       stderr: (data: string) => logger.debug("claude stderr", { data: data.slice(0, 500) }),
     };
@@ -509,6 +511,7 @@ export class LiveClaudeSession {
     input: Record<string, unknown>,
     toolUseID: string,
     signal: AbortSignal,
+    decisionReason?: string,
   ): Promise<PermissionResult> {
     const requestId = toolUseID;
     // The tool_use block this request is for has normally already been emitted
@@ -520,7 +523,10 @@ export class LiveClaudeSession {
     const resolver = this.resolver;
     if (!resolver) return { behavior: "deny", message: "No controller available." };
 
-    this.opts.emit({ kind: "permission_request", requestId, turnId, toolName, toolInput: input });
+    // Only the reasons Renki's own hooks write (move_into_repo, the phone tools) are shown on the card;
+    // Claude Code's own reasons for other tools aren't meant as user-facing text.
+    const reason = decisionReason && (toolName.startsWith(`mcp__${RENKI_SERVER}__`) || toolName.startsWith(`mcp__${MAC_SERVER}__`)) ? decisionReason.slice(0, 500) : undefined;
+    this.opts.emit({ kind: "permission_request", requestId, turnId, toolName, toolInput: input, ...(reason ? { reason } : {}) });
     const { decision, byDeviceId, updatedInput, message } = await resolver({ requestId, turnId, toolName, toolInput: input, signal });
     this.opts.emit({ kind: "permission_resolved", requestId, decision, byDeviceId });
 

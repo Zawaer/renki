@@ -844,6 +844,25 @@ describe("move_into_repo", () => {
     expect(manager.events.read(chat.id).at(-1)).toMatchObject({ kind: "notice" });
   });
 
+  it("warns, before the move is approved, when the repo would lose the chat its homelab access", async () => {
+    const { manager, repoId } = setup();
+    const chat = await manager.createSession({});
+    manager.takeControl(chat.id, "d1");
+    runTurn.mockReset().mockResolvedValue(okTurn);
+    await manager.submitPrompt({ sessionId: chat.id, deviceId: "d1", promptId: "p1", text: "hi", resolvePermission: noopResolve });
+    const note = liveInstances.at(-1)!.opts.moveIntoRepoNote!;
+
+    manager.homelabAccess.set(["@plain"]);
+    expect(await note(repoId)).toMatch(/lose homelab access.*Settings > Homelab access/);
+    expect(await note("someone/elsewhere")).toMatch(/turn on elsewhere/);
+    manager.homelabAccess.set(["@plain", repoId]);
+    expect(await note(repoId)).toBeNull();
+    manager.homelabAccess.set([]); // nothing to lose
+    expect(await note(repoId)).toBeNull();
+    manager.homelabAccess.set(null);
+    expect(await note(repoId)).toBeNull();
+  });
+
   it("waits while background work is running", async () => {
     const { manager, repoId } = setup();
     const chat = await manager.createSession({});

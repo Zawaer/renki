@@ -2074,6 +2074,7 @@ function PermissionCard({
         <Ionicons name={plan != null ? "list-outline" : "shield-checkmark-outline"} size={14} color={colors.busy} />
         <Text style={styles.permTitle}>{plan != null ? "Plan ready for review" : `Permission: ${perm.toolName}`}</Text>
       </View>
+      {perm.reason ? <Text style={styles.permReason}>{perm.reason}</Text> : null}
       {plan != null ? (
         <ScrollView style={styles.permDetailScroll}>
           <Markdown content={plan} muted />
@@ -2547,6 +2548,7 @@ const makeStyles = (colors: ThemeColors) =>
     permHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
     permTitle: { color: colors.busy, fontSize: 14, fontWeight: "600" },
     permBody: { color: colors.dim, fontSize: 12 },
+    permReason: { color: colors.text, fontSize: 13, lineHeight: 18 },
     permDetailScroll: { maxHeight: 220, backgroundColor: colors.panel, borderRadius: radius.sm },
     permActions: { flexDirection: "row", gap: 10, marginTop: 4 },
     permNotInControl: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 8 },

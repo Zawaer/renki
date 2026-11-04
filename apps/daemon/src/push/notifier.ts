@@ -85,6 +85,7 @@ export function composePush(event: SessionEvent, session: Session, replyExcerpt:
       if (["Edit", "MultiEdit", "Write", "NotebookEdit"].includes(event.toolName)) {
         return { ...approval, title: `Approve an edit? · ${name}`, body: clip(`${label} ${meta ?? ""}`, 160) };
       }
+      if (event.reason) return { ...approval, title: `Permission needed · ${name}`, body: clip(event.reason, 160) };
       return { ...approval, title: `Permission needed · ${name}`, body: clip(meta ? `${label}: ${meta}` : `Claude wants to use ${event.toolName}`, 160) };
     }
 

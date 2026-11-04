@@ -186,6 +186,8 @@ const payloads = [
     turnId: z.string(),
     toolName: z.string(),
     toolInput: z.unknown(),
+    /** What Renki's own tools want the user to know before deciding (e.g. "It will lose homelab access…"). */
+    reason: z.string().max(500).optional(),
   }),
 
   /** A permission request was answered (by the controller or auto-timeout). */

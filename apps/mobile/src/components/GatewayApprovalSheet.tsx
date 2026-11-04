@@ -41,7 +41,9 @@ export function GatewayApprovalSheet({
   if (pending) last.current = pending;
   const shown = pending ?? last.current;
 
-  const [peek, setPeek] = useState<GatewayPeek | null | undefined>(undefined); // undefined = loading, null = unreachable
+  const [peek, setPeek] = useState<GatewayPeek | undefined>(undefined); // undefined = not reached yet
+  /** How many tries in a row couldn't reach the homelab (it keeps trying while the popup is open). */
+  const [misses, setMisses] = useState(0);
   const [busy, setBusy] = useState<"approve" | "deny" | null>(null);
   const [now, setNow] = useState(Date.now());
   const id = pending?.approval.id;
@@ -50,14 +52,24 @@ export function GatewayApprovalSheet({
     // Closing leaves the last content up while the sheet slides away; only a new request resets it.
     if (!pending) return;
     setPeek(undefined);
+    setMisses(0);
     setBusy(null);
     let live = true;
-    void peekGatewayApproval(pending.approval).then((p) => {
+    // Keep asking until the homelab answers: right after the phone wakes, the tailnet can take a
+    // while to come back, and one failed (or hung) try used to leave the popup spinning for good.
+    const ask = async (miss: number) => {
+      const p = await peekGatewayApproval(pending.approval);
       if (!live) return;
-      setPeek(p);
-      // Found in the tray and already settled: nothing to ask, so just tidy up.
-      if (pending.quiet && p && p.state !== "pending") onClose(true);
-    });
+      if (p) {
+        setPeek(p);
+        // Found in the tray and already settled: nothing to ask, so just tidy up.
+        if (pending.quiet && p.state !== "pending") onClose(true);
+        return;
+      }
+      setMisses(miss + 1);
+      setTimeout(() => void (live && ask(miss + 1)), 3_000);
+    };
+    void ask(0);
     const tick = setInterval(() => setNow(Date.now()), 1000);
     return () => {
       live = false;
@@ -83,11 +95,15 @@ export function GatewayApprovalSheet({
   return (
     <Sheet visible={open} onClose={() => onClose(false)} title="Approve on the homelab?" colors={colors}>
       <View style={styles.body}>
-        {shown && peek === undefined && <ActivityIndicator color={colors.accent} />}
+        {shown && peek === undefined && misses === 0 && <ActivityIndicator color={colors.accent} />}
 
-        {shown && peek === null && (
+        {shown && peek === undefined && misses > 0 && (
           <>
-            <Text style={styles.text}>Couldn't reach the homelab to check this request.</Text>
+            <View style={styles.row}>
+              <ActivityIndicator color={colors.accent} />
+              <Text style={[styles.text, { flex: 1 }]}>Can't reach the homelab yet. Trying again (attempt {misses + 1}).</Text>
+            </View>
+            <Text style={styles.dim}>Check that Tailscale is connected on this phone. The request stays open for up to five minutes.</Text>
             <TouchableOpacity style={styles.secondary} onPress={() => onClose(false)}>
               <Text style={styles.secondaryText}>Close</Text>
             </TouchableOpacity>

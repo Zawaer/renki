@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { answerGatewayApproval, describeGatewayOutcome, formatTimeLeft, parseGatewayApproval, peekGatewayApproval } from "../src/gatewayApproval";
 
 const good = { kind: "gateway-approval", id: "0123456789", token: "t".repeat(43), url: "https://approvals.internal" };
@@ -88,5 +88,29 @@ describe("formatTimeLeft", () => {
     expect(formatTimeLeft(1000, 940_000)).toBe("1:00");
     expect(formatTimeLeft(1000, 995_500)).toBe("0:05");
     expect(formatTimeLeft(1000, 2_000_000)).toBe("0:00");
+  });
+});
+
+describe("gateway calls on a phone that just woke up", () => {
+  const approval = { id: "abcdef0123", token: "t".repeat(40), url: "https://approvals.internal" };
+
+  it("give up on a connection that hangs instead of spinning for good", async () => {
+    vi.useFakeTimers();
+    try {
+      const hang = ((_: string, init?: RequestInit) =>
+        new Promise((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new Error("aborted"))))) as unknown as typeof fetch;
+      const peek = peekGatewayApproval(approval, hang);
+      const answer = answerGatewayApproval(approval, "approve", hang);
+      await vi.advanceTimersByTimeAsync(9_000);
+      expect(await peek).toBeNull();
+      expect(await answer).toBe("failed");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("treat a request the homelab no longer has as closed, not unreachable", async () => {
+    const gone = (async () => ({ ok: false, status: 404, json: async () => ({}) })) as unknown as typeof fetch;
+    expect(await peekGatewayApproval(approval, gone)).toMatchObject({ state: "expired" });
   });
 });

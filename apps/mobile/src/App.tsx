@@ -7,6 +7,7 @@ import {
   describeGatewayOutcome,
   emptyHostsState,
   parseGatewayApproval,
+  peekGatewayApproval,
   requestGatewayResend,
   removeHost,
   updateHost,
@@ -284,15 +285,39 @@ function Main({
       rememberGatewayUrl(p.approval.url);
       // Once per request per app run, unless the user asked for it by tapping.
       if (!force && shownApprovals.current.has(p.approval.id)) return;
+      // Never swap out a popup the user opened by tapping for one the app found by itself:
+      // a tray scan on coming to the front used to replace the tapped request with an old one.
+      const current = approvalRef.current;
+      if (!force && current && !current.quiet && current.approval.id !== p.approval.id) return;
       shownApprovals.current.add(p.approval.id);
       setApproval(p);
     };
     const looksForWaiting = () => {
       void Notifications.getPresentedNotificationsAsync()
         .then(async (list) => {
-          for (const n of list) {
-            const a = parseGatewayApproval(n.request.content.data);
-            if (a) return showApproval({ approval: a, notificationId: n.request.identifier, quiet: true });
+          // Check every approval in the tray, not just the first: clear the ones that are closed
+          // (expired notifications used to pile up there, and the first one found was often stale),
+          // and show the newest one still waiting.
+          const found = list
+            .map((n) => ({ n, a: parseGatewayApproval(n.request.content.data) }))
+            .filter((x): x is { n: Notifications.Notification; a: GatewayApproval } => x.a !== null)
+            .sort((x, y) => y.n.date - x.n.date);
+          if (found.length) {
+            const peeks = await Promise.all(found.map((x) => peekGatewayApproval(x.a)));
+            let shown = false;
+            found.forEach((x, i) => {
+              const p = peeks[i];
+              if (p && p.state !== "pending") void Notifications.dismissNotificationAsync(x.n.request.identifier).catch(() => {});
+              else if (p && !shown) {
+                shown = true;
+                showApproval({ approval: x.a, notificationId: x.n.request.identifier });
+              }
+            });
+            if (shown) return;
+            // None could be checked: the popup for the newest keeps retrying and says it can't
+            // reach the homelab. If they were all closed, fall through: a newer one may have been
+            // swiped away, so ask for it to be pushed again.
+            if (peeks.every((p) => p === null)) return showApproval({ approval: found[0]!.a, notificationId: found[0]!.n.request.identifier });
           }
           // Nothing in the tray, but a request may still be waiting: one whose notification was
           // swiped away. Its token lives only in that notification and the waiting gateway, so ask

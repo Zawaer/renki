@@ -13,6 +13,18 @@ export type GatewayOutcome = "done" | "already_answered" | "expired" | "failed";
 
 const ID = /^[0-9a-f]{10}$/;
 
+/**
+ * Every call here gives up after a few seconds. A phone just woken up may not have its tailnet
+ * back yet, and a fetch with no timeout then hangs for good: the approval popup spun forever while
+ * its five minutes ran out (2026-11-04). Better to fail fast and try again.
+ */
+const TIMEOUT_MS = 8_000;
+function withTimeout(fetchImpl: typeof fetch, input: string, init: RequestInit = {}): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  return fetchImpl(input, { ...init, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+}
+
 /** The approval inside a notification's data, or null if it isn't one (or is malformed). */
 export function parseGatewayApproval(data: unknown): GatewayApproval | null {
   if (!data || typeof data !== "object") return null;
@@ -32,7 +44,7 @@ export async function answerGatewayApproval(
   fetchImpl: typeof fetch = fetch,
 ): Promise<GatewayOutcome> {
   try {
-    const res = await fetchImpl(`${approval.url}/v1/approvals/${approval.id}`, {
+    const res = await withTimeout(fetchImpl, `${approval.url}/v1/approvals/${approval.id}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ token: approval.token, decision }),
@@ -55,7 +67,7 @@ export async function answerGatewayApproval(
 export async function requestGatewayResend(url: string, fetchImpl: typeof fetch = fetch): Promise<number | null> {
   if (!/^https:\/\/[^/\s]+\/?$/.test(url)) return null;
   try {
-    const res = await fetchImpl(`${url.replace(/\/$/, "")}/v1/approvals/resend`, { method: "POST" });
+    const res = await withTimeout(fetchImpl, `${url.replace(/\/$/, "")}/v1/approvals/resend`, { method: "POST" });
     if (!res.ok) return null;
     const body = (await res.json()) as { pending?: unknown };
     return typeof body.pending === "number" ? body.pending : null;
@@ -76,11 +88,13 @@ export type GatewayPeek = {
 /**
  * Ask the approval service about a request: its wording from the gateway itself (never from the
  * notification), whether it is still waiting, and when it runs out. Null when it can't be reached
- * or the service doesn't recognise the request.
+ * (or answered with an error); a request it no longer knows comes back as expired.
  */
 export async function peekGatewayApproval(approval: GatewayApproval, fetchImpl: typeof fetch = fetch): Promise<GatewayPeek | null> {
   try {
-    const res = await fetchImpl(`${approval.url}/v1/approvals/${approval.id}`, { headers: { "x-approval-token": approval.token } });
+    const res = await withTimeout(fetchImpl, `${approval.url}/v1/approvals/${approval.id}`, { headers: { "x-approval-token": approval.token } });
+    // Reached, but the homelab no longer has it (cleaned up long after it closed): closed, not unreachable.
+    if (res.status === 404) return { summary: "This request is no longer on the homelab.", state: "expired", expires: 0 };
     if (!res.ok) return null;
     const body = (await res.json()) as Partial<GatewayPeek>;
     if (typeof body.summary !== "string" || typeof body.expires !== "number") return null;

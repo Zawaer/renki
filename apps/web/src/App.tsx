@@ -16,6 +16,7 @@ import { SessionView } from "./components/SessionView.js";
 import { Settings } from "./components/Settings.js";
 import { Setup } from "./components/Setup.js";
 import { StatsView } from "./components/StatsView.js";
+import { PhoneApprovalBanner } from "./components/PhoneApprovalBanner.js";
 import { useAttentionAlerts } from "./lib/attention.js";
 import { injectedConfig } from "./lib/host.js";
 
@@ -351,6 +352,7 @@ function MainColumn({
   return (
     <main className="flex min-h-0 flex-col overflow-hidden bg-(--renki-bg)">
       <ConnectionBanner />
+      <PhoneApprovalBanner />
       {lastError && (
         <div className="flex items-center gap-1.5 border-b border-(--renki-danger)/30 bg-(--renki-danger)/10 px-4 py-1.5 text-xs text-(--renki-danger)">
           <span className="codicon codicon-error" />

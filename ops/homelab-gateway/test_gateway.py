@@ -335,6 +335,8 @@ class ApprovalTest(unittest.TestCase):
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         base = f"http://127.0.0.1:{srv.server_address[1]}/v1/approvals/{aid}"
         try:
+            listed = json.load(urllib.request.urlopen(base.rsplit("/", 1)[0] + "/pending"))["pending"]
+            self.assertEqual([p["summary"] for p in listed], ["Delete x"])
             req = urllib.request.Request(base, headers={"x-approval-token": token})
             self.assertEqual(json.load(urllib.request.urlopen(req))["summary"], "Delete x")
             bad = urllib.request.Request(base, data=json.dumps({"token": "no", "decision": "approve"}).encode(), method="POST")
@@ -494,6 +496,20 @@ class AddAppAndRouteTest(unittest.TestCase):
     def test_add_route_without_approval_changes_nothing(self):
         rc, out, text, _ = self.route(["life", "life-api:8000"], approve=False)
         self.assertEqual(rc, 3); self.assertNotIn("life.internal", text)
+
+
+class PendingListTest(unittest.TestCase):
+    def test_lists_open_requests_without_tokens(self):
+        d = tempfile.mkdtemp()
+        a, tok = gateway.create_approval(d, "add-app", ["x"], "Add x", 300, now=1000)
+        b, _ = gateway.create_approval(d, "add-route", ["y"], "Route y", 300, now=1001)
+        c, _ = gateway.create_approval(d, "rm-path", ["/z"], "Delete z", 10, now=900)  # expired
+        gateway.write_decision(d, b, "approve")  # decided
+        pending = gateway.list_pending(d, now=1100)
+        self.assertEqual([p["id"] for p in pending], [a])
+        self.assertEqual(pending[0]["summary"], "Add x")
+        self.assertNotIn(tok, json.dumps(pending))
+        self.assertNotIn("token_sha256", json.dumps(pending))
 
 
 if __name__ == "__main__":

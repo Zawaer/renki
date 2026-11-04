@@ -51,6 +51,7 @@ import { getTailscaleStatus } from "../tailscale.js";
 import type { InsightsCache } from "../stats/insights.js";
 import { tokenMatches } from "./auth.js";
 import { Connection } from "./connection.js";
+import { GatewayApprovals } from "../gateway/approvals.js";
 import type { PermissionBroker } from "./permissions.js";
 
 export type ServerDeps = {
@@ -91,6 +92,22 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
     const withPresence = devices.withPresence(session);
     for (const conn of liveConnections) conn.notify({ type: "session", session: withPresence });
   };
+  // Homelab gateway requests waiting for the phone: every tab shows them (see gateway/approvals.ts).
+  const gatewayApprovals = config.gatewayApprovalsUrl ? new GatewayApprovals(config.gatewayApprovalsUrl) : null;
+  gatewayApprovals?.onChange((pending) => {
+    for (const conn of liveConnections) conn.notify({ type: "gateway_approvals", pending });
+  });
+  gatewayApprovals?.start();
+  app.addHook("onClose", async () => gatewayApprovals?.stop());
+  app.post("/gateway-approvals/resend", async (_req, reply) => {
+    if (!gatewayApprovals) return reply.code(404).send({ error: "not_configured" });
+    try {
+      return { pending: await gatewayApprovals.resend() };
+    } catch (err) {
+      return reply.code(502).send({ error: "unreachable", message: String(err) });
+    }
+  });
+
   manager.setBroadcast({
     onSessionChanged: pushSession,
     onSessionRemoved: (sessionId) => {
@@ -681,6 +698,7 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
       const deviceName = req.query.deviceName?.trim() || null;
       const conn = new Connection(socket, deviceId, deviceName, manager, broker, devices, () => liveConnections.delete(conn));
       liveConnections.add(conn);
+      if (gatewayApprovals) conn.notify({ type: "gateway_approvals", pending: gatewayApprovals.current() });
       logger.info("connection opened", { deviceId, deviceName });
     },
   );

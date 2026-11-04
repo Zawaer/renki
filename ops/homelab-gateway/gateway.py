@@ -324,6 +324,30 @@ def request_resend(approval_dir, now=None):
     return n
 
 
+def list_pending(approval_dir, now=None):
+    """Requests still waiting for the phone: what Renki's tabs show. Never the token or its hash, so
+    seeing this list (anyone on the Docker network can) is no step towards approving anything."""
+    now = time.time() if now is None else now
+    out = []
+    try:
+        names = os.listdir(approval_dir)
+    except FileNotFoundError:
+        return out
+    for name in names:
+        aid = name[:-5] if name.endswith(".json") else None
+        if not aid or not ID_RE.match(aid):
+            continue
+        try:
+            with open(_rec_path(approval_dir, aid)) as f:
+                rec = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if now > rec["expires"] or read_decision(approval_dir, aid) is not None:
+            continue
+        out.append({"id": aid, "verb": rec["verb"], "summary": rec["summary"], "created": rec["created"], "expires": rec["expires"]})
+    return sorted(out, key=lambda r: r["created"])
+
+
 def create_approval(approval_dir, verb, args, summary, ttl, now=None):
     now = time.time() if now is None else now
     os.makedirs(approval_dir, mode=0o700, exist_ok=True)
@@ -803,6 +827,8 @@ class ApprovalHandler(BaseHTTPRequestHandler):
         return m.group(1) if m else None
 
     def do_GET(self):
+        if re.fullmatch(r"/v1/approvals/pending(?:\?.*)?", self.path):
+            return self._reply(200, {"pending": list_pending(self.approval_dir)})
         aid = self._parts()
         token = (self.headers.get("x-approval-token") or "")
         self._reply(*(peek(self.approval_dir, aid, token) if aid else (404, {"error": "not found"})))

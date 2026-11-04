@@ -1,4 +1,4 @@
-import type { Session } from "@renki/protocol";
+import type { GatewayApproval, Session } from "@renki/protocol";
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useClient } from "./client.js";
@@ -12,8 +12,11 @@ import { useClient } from "./client.js";
 let baseTitle = "Renki";
 let openChat: string | null = null;
 const waitingChats = new Set<string>();
+/** Homelab requests waiting for the phone: every tab says so, since the phone is the only place to answer. */
+let phoneWaiting = 0;
 function applyTitle() {
-  document.title = openChat && waitingChats.has(openChat) ? `Needs you · ${baseTitle}` : baseTitle;
+  const prefix = phoneWaiting > 0 ? "Approve on phone · " : openChat && waitingChats.has(openChat) ? "Needs you · " : "";
+  document.title = prefix + baseTitle;
 }
 export function setTabTitle(title: string, sessionId: string | null = null): void {
   baseTitle = title;
@@ -82,6 +85,24 @@ export function useAttentionAlerts(): void {
       .then((list) => live && list.forEach((s) => see(s, false)))
       .catch(() => {});
     const offChanged = realtime.onSessionChanged((s) => see(s, true));
+    // Phone approvals: the title on every tab, and a notification for each new one while the tab is hidden.
+    const announced = new Set<string>();
+    const seePhone = (list: GatewayApproval[]) => {
+      phoneWaiting = list.length;
+      for (const p of list) {
+        if (announced.has(p.id)) continue;
+        announced.add(p.id);
+        if (!notificationsOn() || document.visibilityState === "visible") continue;
+        const n = new Notification("Approve on your phone", { body: p.summary, tag: `renki-gw-${p.id}` });
+        n.onclick = () => {
+          window.focus();
+          n.close();
+        };
+      }
+      update();
+    };
+    seePhone(realtime.gatewayApprovals.get());
+    const offPhone = realtime.gatewayApprovals.subscribe(() => seePhone(realtime.gatewayApprovals.get()));
     const offRemoved = realtime.onSessionRemoved((id) => {
       pending.delete(id);
       update();
@@ -90,6 +111,8 @@ export function useAttentionAlerts(): void {
       live = false;
       offChanged();
       offRemoved();
+      offPhone();
+      phoneWaiting = 0;
       pending.clear();
       applyTitle();
     };

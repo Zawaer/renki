@@ -241,6 +241,11 @@ export class RestClient {
     return this.post<SwitchAccountResponse>("/accounts/switch", to === undefined ? {} : { to });
   }
 
+  /** Push every homelab gateway request still waiting to the phone again (its notification was swiped away). */
+  async resendGatewayApprovals(): Promise<{ pending: number }> {
+    return this.post<{ pending: number }>("/gateway-approvals/resend", {});
+  }
+
   /** Settings > Homelab access: which repos' chats may run the `homelab` command (null = every chat). */
   async getHomelabAccess(): Promise<HomelabAccessResponse> {
     return this.get<HomelabAccessResponse>("/homelab-access");

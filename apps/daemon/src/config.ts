@@ -89,6 +89,11 @@ const Env = z.object({
    * itself being switched on is the main gate.
    */
   RENKI_MAC_REPOS: z.string().optional(),
+  /**
+   * The homelab gateway's approval service as the daemon reaches it, e.g. http://homelab-host:4530
+   * (docs/homelab-gateway.md). Set = every tab shows approvals waiting on the phone. Unset = off.
+   */
+  RENKI_GATEWAY_APPROVALS_URL: z.string().url().optional(),
   /** `rtk` executable (name on PATH or absolute path) — set this if the daemon's process manager runs with a PATH that doesn't include it. */
   RENKI_RTK_BIN: z.string().min(1).default("rtk"),
   /** Expo push endpoint (override to a mock in tests). */
@@ -155,6 +160,8 @@ export type Config = {
   rtkBin: string;
   /** Repos allowed to use the homelab command; null = not enforced. See claude/homelabGuard.ts. */
   homelabRepos: string[] | null;
+  /** See RENKI_GATEWAY_APPROVALS_URL; null = off. */
+  gatewayApprovalsUrl: string | null;
   /** Repos whose sessions get the Mac phone tools; null = every session. See mac/tools.ts. */
   macRepos: string[] | null;
   expoPushUrl: string;
@@ -250,6 +257,7 @@ export function loadConfig(): Config {
     autoPull: env.RENKI_AUTO_PULL === "1" || env.RENKI_AUTO_PULL === "true",
     rtkBin: env.RENKI_RTK_BIN,
     homelabRepos: parseHomelabRepos(env.RENKI_HOMELAB_REPOS),
+    gatewayApprovalsUrl: env.RENKI_GATEWAY_APPROVALS_URL?.replace(/\/+$/, "") ?? null,
     macRepos: parseHomelabRepos(env.RENKI_MAC_REPOS),
     expoPushUrl: env.RENKI_EXPO_PUSH_URL,
     rotation: {

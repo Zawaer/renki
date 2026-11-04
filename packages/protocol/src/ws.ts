@@ -17,6 +17,10 @@ import { SessionEvent } from "./events.js";
 
 // ── Client → Server ────────────────────────────────────────────────────────
 
+/** One homelab gateway request waiting for the phone (see ServerMessage gateway_approvals). Times in ms. */
+export const GatewayApproval = z.object({ id: z.string(), verb: z.string(), summary: z.string(), created: z.number(), expires: z.number() });
+export type GatewayApproval = z.infer<typeof GatewayApproval>;
+
 export const ClientMessage = z.discriminatedUnion("type", [
   /**
    * Start watching a session. `lastSeq` is the highest seq this client already
@@ -213,6 +217,13 @@ export const ServerMessage = z.discriminatedUnion("type", [
     type: z.literal("session_removed"),
     sessionId: z.string(),
   }),
+
+  /**
+   * Homelab gateway requests waiting for the user's phone (add-app, rm-path…),
+   * sent on connect and whenever the list changes. Only what the phone will
+   * show; approving still happens on the phone alone.
+   */
+  z.object({ type: z.literal("gateway_approvals"), pending: z.array(GatewayApproval) }),
 
   z.object({ type: z.literal("pong") }),
 ]);

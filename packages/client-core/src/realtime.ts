@@ -1,6 +1,7 @@
 import {
   type Attachment,
   type ClientMessage,
+  type GatewayApproval,
   type PermissionDecision,
   type Session,
   type SessionComposer,
@@ -109,6 +110,8 @@ export class RealtimeClient {
   readonly status = new Store<ConnectionStatus>("closed");
   /** Last WS-level error (e.g. not_controller, session_busy). UI can toast it. */
   readonly lastError = new Store<WsError | null>(null);
+  /** Homelab gateway requests waiting for the user's phone (empty when none, or when the daemon doesn't track them). */
+  readonly gatewayApprovals = new Store<GatewayApproval[]>([]);
 
   private ws: WebSocket | null = null;
   private readonly conversations = new Map<string, Store<ConversationState>>();
@@ -616,6 +619,9 @@ export class RealtimeClient {
         this.unforget(msg.sessionId);
         this.forgetStore(msg.sessionId);
         void this.opts.cache?.remove(msg.sessionId).catch(() => {});
+        return;
+      case "gateway_approvals":
+        this.gatewayApprovals.set(msg.pending);
         return;
       case "subscribed":
       case "pong":

@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Runner, putFile } from "./runner.js";
 import { Serial } from "./serial.js";
+import { proposeJob } from "./proposeJob.js";
 import { BuildVm, MAC_FROM_VM } from "./vm.js";
 
 /**
@@ -113,6 +114,16 @@ function startBuild(id: string, args: unknown): Promise<Result> {
   builds.set(id, { abort, result: null });
   return runner.run(parsed.data, progressSender(id, sendNow), abort.signal);
 }
+/** One dialog at a time: a second proposal waits rather than stacking dialogs. */
+let proposing: Promise<unknown> = Promise.resolve();
+function proposeJobCall(args: unknown): Promise<Result> {
+  const parsed = MacVerbArgs.propose_job.safeParse(args);
+  if (!parsed.success || !runner) return Promise.resolve({ ok: false, text: "Refused by the Mac: bad job proposal." });
+  const next = proposing.then(() => proposeJob(CONFIG_PATH, parsed.data));
+  proposing = next.catch(() => {});
+  return next.catch((err) => ({ ok: false, text: `Couldn't add the job: ${err instanceof Error ? err.message : String(err)}` }));
+}
+
 function sendHello(): void {
   sendNow({ type: "hello", name: config.name, version: VERSION, verbs: config.verbs, ...(runner ? { jobs: jobInfo(config) } : {}) });
 }
@@ -214,7 +225,9 @@ async function connect(): Promise<void> {
     const work: Promise<Result> =
       verb === "run"
         ? startBuild(id, args)
-        : SERIAL_VERBS.has(verb)
+        : verb === "propose_job"
+          ? proposeJobCall(args)
+          : SERIAL_VERBS.has(verb)
           ? runSerial(verb as "serial_ports" | "serial_read" | "esp_reset" | "esp_flash", args)
           : adb.run(verb, args);
     void work.then((r) => {

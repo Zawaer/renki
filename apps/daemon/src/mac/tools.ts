@@ -42,6 +42,8 @@ export const MAC_FREE_TOOLS = [
   tid("phone_input"),
   MAC_BUILD_TOOL,
   tid("mac_build_status"),
+  // The user decides in a dialog on the Mac itself (see apps/mac-node/src/proposeJob.ts).
+  tid("mac_propose_job"),
   tid("esp_ports"),
   tid("esp_serial"),
   tid("esp_reset"),
@@ -217,7 +219,7 @@ export function createMacMcpServer(
           const defined = st.jobs[ctx.project] ?? [];
           const listing = defined.length
             ? defined.map((j) => `- ${j.name}${j.installs ? " (can install)" : ""}: ${j.description}`).join("\n")
-            : `No jobs are defined for "${ctx.project}" on the Mac. The user adds them in the Mac's mac-node.json (jobs > ${ctx.project}); don't look for another way to run commands there.`;
+            : `No jobs are defined for "${ctx.project}" on the Mac yet. Propose one with mac_propose_job (the user confirms it on the Mac); don't look for another way to run commands there.`;
           if (job === "list" || !defined.some((j) => j.name === job)) {
             return asToolResult({ ok: job === "list", text: `${job === "list" ? "" : `There is no job "${job}". `}Jobs for ${ctx.project} on ${st.name}:\n${listing}` });
           }
@@ -257,6 +259,28 @@ export function createMacMcpServer(
               `Started ${job} on ${st.name} as build ${build.id}. It runs in the background; its result will arrive as a message in this conversation when it ends. ` +
               "Carry on with anything else meanwhile, or end your turn if there's nothing else to do. Don't wait or poll for it.",
           });
+        },
+      ),
+      tool(
+        "mac_propose_job",
+        "Propose a new build job for this project on the user's Mac, instead of asking the user to edit mac-node.json. The Mac shows the user a dialog with " +
+          "your exact command, and the job is added only if they click Add there (they may be away: an unanswered dialog means no after 10 minutes). " +
+          "The command runs later, through mac_build, in the Mac's build VM with this project's working tree mirrored in: a plain Linux container " +
+          "(Node 22, JDK 17, Android SDK, ESP-IDF for esp32s3 at /opt/esp-idf) with internet but no access to the Mac's files or the LAN. `cwd` and every path are relative " +
+          "to the project root. `artifacts` are the files sent back here afterwards; `installApk` (one of them) is what mac_build install: true puts on the phone. " +
+          "A new job can't replace an existing one or sign anything; for release signing the user edits the job on the Mac.",
+        {
+          job: MacName,
+          description: z.string().max(300),
+          command: z.string().min(1).max(4000),
+          cwd: MacVerbArgs.propose_job.shape.cwd,
+          timeoutMinutes: z.number().int().min(1).max(60).optional(),
+          artifacts: MacVerbArgs.propose_job.shape.artifacts,
+          installApk: MacVerbArgs.propose_job.shape.installApk,
+        },
+        async (args) => {
+          if (!ctx.project) return asToolResult({ ok: false, text: "Build jobs need a project (a repo); this chat has none. Move it into one first (move_into_repo)." });
+          return run("propose_job", { ...args, project: ctx.project }, 11 * 60_000);
         },
       ),
       tool(

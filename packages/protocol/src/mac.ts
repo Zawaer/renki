@@ -92,7 +92,8 @@ export const MacVerbArgs = {
   /**
    * Run one of the build jobs defined in the Mac's own config, by name. There
    * is deliberately no command field: the homelab can't choose what runs on
-   * the Mac, only which of the user's jobs. The Mac first brings the project's
+   * the Mac, only which of the user's jobs (new ones arrive only through
+   * propose_job's dialog on the Mac). The Mac first brings the project's
    * mirror in line with `manifest` (fetching changed files for `jobId`), runs
    * the job as its sandboxed runner user, sends the job's artifacts back and,
    * when `install` is set, installs the job's APK on the phone.
@@ -137,6 +138,25 @@ export const MacVerbArgs = {
         .min(1)
         .max(8),
       erase: z.boolean().optional(),
+    })
+    .strict(),
+  /**
+   * Ask the user, in a dialog ON THE MAC, to add a build job for `project` to
+   * mac-node.json. The Mac shows the exact command and adds nothing unless the
+   * user clicks Add there, so the homelab still can't make anything run on the
+   * Mac by itself. A proposed job never gets signing keys and never replaces
+   * an existing job; those stay hand edits.
+   */
+  propose_job: z
+    .object({
+      project: MacName,
+      job: MacName,
+      description: z.string().max(300),
+      command: z.string().min(1).max(4000),
+      cwd: MacRelPath.optional(),
+      timeoutMinutes: z.number().int().min(1).max(60).optional(),
+      artifacts: z.array(MacRelPath).max(10).optional(),
+      installApk: MacRelPath.optional(),
     })
     .strict(),
 } as const;

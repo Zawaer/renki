@@ -162,6 +162,7 @@ export function loadConfig(path = CONFIG_PATH): Config {
       (v) =>
         f.verbs?.[v] !== false &&
         (v !== "run" || (runner !== null && Object.keys(f.jobs).length > 0)) &&
+        (v !== "propose_job" || runner !== null) &&
         (!SERIAL_VERBS.includes(v) || espPython !== null),
     ),
     espPython,

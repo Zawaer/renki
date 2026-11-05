@@ -1,3 +1,4 @@
+import { pickAnchor as pickScrollAnchor, restoreAnchor, type ScrollAnchor } from "../lib/scrollAnchor.js";
 import {
   classifyAttachment,
   EFFORT_LEVELS,
@@ -191,6 +192,7 @@ export function SessionView({
   function onTranscriptScroll() {
     const el = scrollRef.current;
     if (!el) return;
+    pickAnchor();
     const fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     if (autoScrolling.current) {
       if (fromBottom > 24) return;
@@ -218,32 +220,38 @@ export function SessionView({
   }
 
   /**
-   * History landing above while you read: keep what's on screen where it is.
-   * (Done by hand, with the browser's own scroll anchoring turned off on the
-   * transcript, since Safari has none and the two together would double it.)
+   * While you read further up, whatever changes above you (history landing, a
+   * running agent's card growing and shrinking as it works, a screenshot
+   * loading) must not move the text you're reading: see lib/scrollAnchor.ts.
+   * Re-picked on every scroll, held after every change, before it's painted.
    */
-  const lastHeight = useRef(0);
-  const lastOlder = useRef(conv.olderItems ?? 0);
-  useLayoutEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const older = conv.olderItems ?? 0;
-    if (older < lastOlder.current && !stickToBottom.current) el.scrollTop += el.scrollHeight - lastHeight.current;
-    lastOlder.current = older;
-    lastHeight.current = el.scrollHeight;
-  });
-
-  // Follow growth that isn't a new event too: a screenshot loading, a card
-  // opening, the summary that lands as a turn ends.
   const contentRef = useRef<HTMLDivElement>(null);
+  const anchor = useRef<ScrollAnchor>(null);
+  function pickAnchor() {
+    const root = scrollRef.current;
+    const content = contentRef.current;
+    anchor.current = root && content ? pickScrollAnchor(root, content) : null;
+  }
+  function holdAnchor() {
+    const root = scrollRef.current;
+    if (root && !stickToBottom.current && !autoScrolling.current) restoreAnchor(root, anchor.current);
+    pickAnchor();
+  }
+  // After every render (new events, cards changing) ...
+  useLayoutEffect(holdAnchor);
+
+  // ... and on growth that isn't a render here: a screenshot loading, a card
+  // opening, the summary that lands as a turn ends. At the bottom, follow it.
   useEffect(() => {
     const content = contentRef.current;
     if (!content || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
       if (stickToBottom.current && !autoScrolling.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+      else holdAnchor();
     });
     observer.observe(content);
     return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Opening a different session always starts at its newest output.

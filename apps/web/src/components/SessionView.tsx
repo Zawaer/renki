@@ -236,7 +236,8 @@ export function SessionView({
   }
   function holdAnchor() {
     const root = scrollRef.current;
-    if (root && !stickToBottom.current && !autoScrolling.current) restoreAnchor(root, anchor.current);
+    const content = contentRef.current;
+    if (root && content && !stickToBottom.current && !autoScrolling.current) restoreAnchor(root, content, anchor.current);
     pickAnchor();
   }
   // After every render (new events, cards changing) ...
@@ -461,6 +462,10 @@ export function SessionView({
         ref={scrollRef}
         onScroll={onTranscriptScroll}
         onWheel={(e) => {
+          // A trackpad pinch (zooming the page) arrives as wheel events with ctrlKey set, dozens
+          // per gesture and "upwards" when zooming in. It isn't scrolling: treated as such, every
+          // one let go of the bottom and the next scroll took it back, and the chat jittered.
+          if (e.ctrlKey) return;
           autoScrolling.current = false;
           if (e.deltaY < 0) letGo();
         }}
@@ -475,9 +480,10 @@ export function SessionView({
         onKeyDown={(e) => {
           if (e.key === "ArrowUp" || e.key === "PageUp" || e.key === "Home") letGo();
         }}
-        className="flex-1 overflow-y-auto [overflow-anchor:none]"
+        className="relative flex-1 overflow-y-auto [overflow-anchor:none]"
       >
-        <div ref={contentRef} className="mx-auto w-full max-w-3xl space-y-7 px-6 py-6">
+        {/* relative: the offsets lib/scrollAnchor.ts measures by are taken from here */}
+        <div ref={contentRef} className="relative mx-auto w-full max-w-3xl space-y-7 px-6 py-6">
           {conv.status === null && rows.length === 0 && (
             <div className="space-y-7" aria-busy="true" aria-label="Loading conversation">
               <div className="flex justify-end">

@@ -58,7 +58,7 @@ import {
 } from "@renki/client-core";
 import type { AttachmentView, CapabilitiesResponse, Session, SessionResume } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
-import { Fragment, memo, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -1154,6 +1154,32 @@ function PickerSheet({
 }
 
 /** One attached file: a thumbnail for images, a file chip otherwise. `onRemove` omitted renders it read-only (timeline history). */
+/** Lines a message of yours shows before it folds, as on the web. */
+const PROMPT_LINES = 14;
+
+/**
+ * Your message's text, folded to PROMPT_LINES when it's long, with a toggle,
+ * like the web's. "Long" is estimated from its length (a phone line holds
+ * about 40 characters), since React Native can't tell how many lines a folded
+ * text would have had. Opened from search, it shows in full.
+ */
+function PromptText({ text, anchor, styles }: { text: string; anchor: string; styles: Styles }) {
+  const [open, setOpen] = useState(false);
+  const flash = useContext(SearchFlashContext);
+  const long = text.split("\n").length > PROMPT_LINES || text.length > PROMPT_LINES * 40;
+  const folded = long && !open && flash?.anchor !== anchor;
+  return (
+    <>
+      <SearchMatchText text={text} anchor={anchor} style={styles.promptText} numberOfLines={folded ? PROMPT_LINES : undefined} />
+      {long && (
+        <TouchableOpacity onPress={() => setOpen((o) => !o)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+          <Text style={styles.promptMore}>{open ? "Show less" : "Show full message"}</Text>
+        </TouchableOpacity>
+      )}
+    </>
+  );
+}
+
 /** A file going by reference: uploading (no ref yet), uploaded (ref), or failed (error). */
 type PendingUpload = { id: string; name: string; size: number; progress: number; ref?: UploadRef; error?: string };
 
@@ -1410,7 +1436,7 @@ function TimelineRowBody({
   if (item.type === "prompt") {
     return (
       <LongPressToRead title="Your message" text={item.text} style={styles.promptWrap}>
-        {item.text.length > 0 && <SearchMatchText text={item.text} anchor={`p:${item.promptId}`} style={styles.promptText} />}
+        {item.text.length > 0 && <PromptText text={item.text} anchor={`p:${item.promptId}`} styles={styles} />}
         {item.attachments && item.attachments.length > 0 && (
           <View style={styles.attachRow}>
             {item.attachments.map((a, i) => (
@@ -1689,7 +1715,7 @@ function SteeredPrompt({
 }) {
   return (
     <LongPressToRead title="Your message" text={prompt.text} style={[styles.promptWrap, styles.steeredWrap]}>
-      {prompt.text.length > 0 && <SearchMatchText text={prompt.text} anchor={`p:${prompt.promptId}`} style={styles.promptText} />}
+      {prompt.text.length > 0 && <PromptText text={prompt.text} anchor={`p:${prompt.promptId}`} styles={styles} />}
       {prompt.attachments && prompt.attachments.length > 0 && (
         <View style={styles.attachRow}>
           {prompt.attachments.map((a, i) => (
@@ -2530,6 +2556,7 @@ const makeStyles = (colors: ThemeColors) =>
       gap: 6,
     },
     promptText: { color: colors.text, fontSize: 15, lineHeight: 21 },
+    promptMore: { color: colors.dim, fontSize: 13, fontWeight: "600", marginTop: 6 },
     steeredWrap: { marginTop: 2 },
     attachRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
     pendingAttachRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingHorizontal: 16, marginBottom: 4 },

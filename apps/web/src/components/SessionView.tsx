@@ -1385,10 +1385,13 @@ function SteeredPrompt({ prompt }: { prompt: SteeredPromptView }) {
     <div className="renki-enter group flex items-center justify-end gap-1" data-testid="steered-prompt" data-anchor={`p:${prompt.promptId}`}>
       {prompt.text && <CopyButton text={prompt.text} label="Copy message" />}
       <div className="max-w-[85%] rounded-2xl bg-(--renki-surface) px-4 py-3">
+        {/* Folded like an ordinary message: sent mid-turn, a long one used to fill the screen. */}
         {prompt.text && (
-          <div className="whitespace-pre-wrap text-[14px] leading-relaxed text-(--renki-fg)">
-            {prompt.text}
-          </div>
+          <Collapsible text={prompt.text} collapseLines={14} moreLabel="Show full message" hideCopy>
+            <div className="whitespace-pre-wrap text-[14px] leading-relaxed text-(--renki-fg)">
+              {prompt.text}
+            </div>
+          </Collapsible>
         )}
         {prompt.attachments && prompt.attachments.length > 0 && (
           <div

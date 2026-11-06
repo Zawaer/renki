@@ -81,11 +81,22 @@ function Tint({ flash, inset, rounding }: { flash: SearchFlashTarget; inset: num
  * Plain text with every occurrence of the query marked while `anchor` is the
  * hit, like the web's highlight. Markdown replies only get the tint.
  */
-export function SearchMatchText({ text, anchor, style }: { text: string; anchor: string; style?: StyleProp<TextStyle> }) {
+export function SearchMatchText({
+  text,
+  anchor,
+  style,
+  numberOfLines,
+}: {
+  text: string;
+  anchor: string;
+  style?: StyleProp<TextStyle>;
+  /** Folds the text to this many lines (a long message); never while it's the search hit being shown. */
+  numberOfLines?: number;
+}) {
   const flash = useContext(SearchFlashContext);
   const colors = useTheme();
   const q = flash?.anchor === anchor ? flash.query.trim().toLowerCase() : "";
-  if (!q) return <Text style={style}>{text}</Text>;
+  if (!q) return <Text style={style} numberOfLines={numberOfLines}>{text}</Text>;
   const parts: React.ReactNode[] = [];
   const lower = text.toLowerCase();
   let from = 0;

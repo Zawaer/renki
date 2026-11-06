@@ -27,14 +27,6 @@
         "worker"
       ]
     },
-    "kuulo": {
-      "mode": "deploy",
-      "dir": "kuulo",
-      "git": true,
-      "services": [
-        "kuulo"
-      ]
-    },
     "otaindex": {
       "mode": "deploy",
       "dir": "otaindex",

@@ -50,7 +50,6 @@ apps:
     - talkoot
     - pihi
     - scout-tool
-    - kuulo
     - otaindex
     - contacts           # about-me/contacts
     - sm-outreach-pipeline

@@ -86,7 +86,9 @@ import { SessionToolsSheet } from "../components/SessionToolsSheet";
 import { ImageViewer } from "../components/ImageViewer";
 import { SearchFlash, SearchFlashContext, type SearchFlashTarget, SearchMatchText } from "../components/SearchFlash";
 import { FileLinkContext, type FileLinkTarget } from "../lib/fileLinks";
-import { pickDocumentAttachments, pickImageAttachments, type PendingAttachment } from "../lib/attachments";
+import { pickDocumentAttachments, pickImageAttachments, type PendingAttachment, type Picked } from "../lib/attachments";
+import { formatBytes, uploadFile } from "../lib/upload";
+import type { UploadRef } from "@renki/protocol";
 import { loadDeviceDefaults, rememberDeviceDefaults } from "../lib/composerPrefs";
 import { clearDraft, loadDraft, saveDraft } from "../lib/drafts";
 import { randomUUID } from "expo-crypto";
@@ -144,6 +146,10 @@ export function SessionView({
   const [permissionMode, setPermissionModeState] = useState<PermissionModeKey>(DEFAULT_PERMISSION_MODE);
   const [capabilities, setCapabilities] = useState<CapabilitiesResponse>({ models: [], commands: [] });
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  /** Files going by reference (too big for inline, or another kind): uploaded as soon as they're picked. Not kept in drafts. */
+  const [uploads, setUploads] = useState<PendingUpload[]>([]);
+  const uploadCancels = useRef(new Map<string, () => void>());
+  const uploading = uploads.some((u) => !u.ref && !u.error);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [modelSheetOpen, setModelSheetOpen] = useState(false);
@@ -500,50 +506,80 @@ export function SessionView({
 
   function send() {
     const t = text.trim();
-    if ((!t && attachments.length === 0) || !canSend) return;
+    if ((!t && attachments.length === 0 && uploads.length === 0) || !canSend) return;
+    // Big files must finish uploading first; one that failed has to be removed or picked again.
+    if (uploading) return setAttachError("Wait for the upload to finish.");
+    if (uploads.some((u) => u.error)) return setAttachError("Remove the file that didn't upload, or pick it again.");
+    const refs = uploads.map((u) => u.ref!);
     takeOver();
     realtime.submitPrompt(sessionId, t, {
       model: model || undefined,
       maxThinkingTokens: effort?.maxThinkingTokens ?? undefined,
       permissionMode,
       attachments: attachments.length > 0 ? attachments.map(({ id: _id, ...a }) => a) : undefined,
+      uploads: refs.length > 0 ? refs : undefined,
     });
     setText("");
     setAttachments([]);
+    setUploads([]);
     setAttachError(null);
     clearDraft(sessionId);
   }
 
   /** Appends whatever came back from a picker, surfacing the first error (if any) below the composer. */
-  function addPicked(results: Array<PendingAttachment | { error: string }>) {
+  function addPicked(results: Picked[]) {
     const errors = results.filter((r): r is { error: string } => "error" in r).map((r) => r.error);
-    // The whole message has to fit in one API request: keep files in order
-    // until the next one wouldn't fit, as on the web.
+    // The whole message has to fit in one API request (as on the web); inline
+    // files past that go by reference instead of being dropped. A file read
+    // inline already sits in memory, so it isn't re-uploaded: its data is.
     let total = attachments.reduce((sum, a) => sum + attachmentBytes(a), 0);
     const accepted: PendingAttachment[] = [];
     for (const r of results) {
       if ("error" in r) continue;
-      total += attachmentBytes(r);
-      if (total > MAX_PROMPT_ATTACHMENT_BYTES) {
-        errors.unshift(`Attachments can be ${MAX_PROMPT_ATTACHMENT_BYTES / (1024 * 1024)}MB per message in total. Dropped ${r.name} and any after it.`);
-        break;
+      if ("upload" in r) {
+        startUpload(r.upload.uri, r.upload.name, r.upload.size);
+        continue;
       }
+      if (total + attachmentBytes(r) > MAX_PROMPT_ATTACHMENT_BYTES) {
+        errors.unshift(`Attachments can be ${MAX_PROMPT_ATTACHMENT_BYTES / (1024 * 1024)}MB per message in total. Dropped ${r.name}.`);
+        continue;
+      }
+      total += attachmentBytes(r);
       accepted.push(r);
     }
     if (accepted.length > 0) setAttachments((prev) => [...prev, ...accepted]);
     setAttachError(errors[0] ?? null);
   }
 
+  /** Streams one picked file to the daemon in the background, its chip showing how far it's got. */
+  function startUpload(uri: string, name: string, size: number | undefined) {
+    const id = randomUUID();
+    setUploads((prev) => [...prev, { id, name, size: size ?? 0, progress: 0 }]);
+    const { done, cancel } = uploadFile(uri, name, config, (progress) =>
+      setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, progress } : u))),
+    );
+    uploadCancels.current.set(id, cancel);
+    done
+      .then((ref) => setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, ref, size: ref.size, progress: 1 } : u))))
+      .catch((err: Error) => setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, error: err.message } : u))))
+      .finally(() => uploadCancels.current.delete(id));
+  }
+
+  function removeUpload(id: string) {
+    uploadCancels.current.get(id)?.();
+    setUploads((prev) => prev.filter((u) => u.id !== id));
+  }
+
   async function attachPhoto() {
     setAttachMenuOpen(false);
-    const room = MAX_ATTACHMENTS_PER_PROMPT - attachments.length;
+    const room = MAX_ATTACHMENTS_PER_PROMPT - attachments.length - uploads.length;
     if (room <= 0) return setAttachError(`Up to ${MAX_ATTACHMENTS_PER_PROMPT} attachments per message.`);
     addPicked(await pickImageAttachments(room));
   }
 
   async function attachDocument() {
     setAttachMenuOpen(false);
-    const room = MAX_ATTACHMENTS_PER_PROMPT - attachments.length;
+    const room = MAX_ATTACHMENTS_PER_PROMPT - attachments.length - uploads.length;
     if (room <= 0) return setAttachError(`Up to ${MAX_ATTACHMENTS_PER_PROMPT} attachments per message.`);
     addPicked(await pickDocumentAttachments(room));
   }
@@ -557,11 +593,11 @@ export function SessionView({
   }
 
   const [focused, setFocused] = useState(false);
-  const composerOpen = focused || text.length > 0 || attachments.length > 0;
+  const composerOpen = focused || text.length > 0 || attachments.length > 0 || uploads.length > 0;
   // Mid-turn, Stop only while the composer is empty: once there's something
   // to send, the button queues it instead.
   const sendButton =
-    status === "busy" && !text.trim() && attachments.length === 0 ? (
+    status === "busy" && !text.trim() && attachments.length === 0 && uploads.length === 0 ? (
       <TouchableOpacity
         key="send"
         style={styles.stopBtn}
@@ -578,8 +614,8 @@ export function SessionView({
     ) : (
       <TouchableOpacity
         key="send"
-        style={[styles.sendBtn, (!canSend || (!text.trim() && attachments.length === 0)) && styles.disabled]}
-        disabled={!canSend || (!text.trim() && attachments.length === 0)}
+        style={[styles.sendBtn, (!canSend || uploading || (!text.trim() && attachments.length === 0 && uploads.length === 0)) && styles.disabled]}
+        disabled={!canSend || uploading || (!text.trim() && attachments.length === 0 && uploads.length === 0)}
         onPress={send}
         accessibilityLabel="Send"
       >
@@ -864,7 +900,7 @@ export function SessionView({
         </View>
         </FadeIn>
       )}
-      {attachments.length > 0 && (
+      {(attachments.length > 0 || uploads.length > 0) && (
         <View style={styles.pendingAttachRow}>
           {attachments.map((a) => (
             <AttachmentChip
@@ -875,6 +911,9 @@ export function SessionView({
               onRemove={() => removeAttachment(a.id)}
               onPreview={(a) => previewAmong(attachments, a, openPreview)}
             />
+          ))}
+          {uploads.map((u) => (
+            <UploadChip key={u.id} upload={u} colors={colors} styles={styles} onRemove={() => removeUpload(u.id)} />
           ))}
         </View>
       )}
@@ -1115,6 +1154,36 @@ function PickerSheet({
 }
 
 /** One attached file: a thumbnail for images, a file chip otherwise. `onRemove` omitted renders it read-only (timeline history). */
+/** A file going by reference: uploading (no ref yet), uploaded (ref), or failed (error). */
+type PendingUpload = { id: string; name: string; size: number; progress: number; ref?: UploadRef; error?: string };
+
+/** A file sent by reference: its name and size, and while it uploads, how far it's got. */
+function UploadChip({ upload, colors, styles, onRemove }: { upload: PendingUpload; colors: ThemeColors; styles: Styles; onRemove?: () => void }) {
+  const pending = !upload.ref && !upload.error;
+  return (
+    <View style={[styles.attachChip, upload.error ? { borderColor: colors.danger } : null, { overflow: "hidden" }]}>
+      {pending && (
+        <View
+          pointerEvents="none"
+          style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${Math.round(upload.progress * 100)}%`, backgroundColor: colors.accent, opacity: 0.15 }}
+        />
+      )}
+      <Ionicons name={upload.error ? "warning-outline" : "document-outline"} size={14} color={upload.error ? colors.danger : colors.faint} />
+      <Text style={styles.attachName} numberOfLines={1}>
+        {upload.name}
+      </Text>
+      <Text style={{ color: colors.faint, fontSize: 11, fontVariant: ["tabular-nums"] }}>
+        {upload.error ? "failed" : pending ? `${Math.round(upload.progress * 100)}%` : formatBytes(upload.size)}
+      </Text>
+      {onRemove && (
+        <TouchableOpacity onPress={onRemove} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+          <Ionicons name="close" size={14} color={colors.faint} />
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
 function AttachmentChip({
   attachment,
   colors,
@@ -1346,6 +1415,13 @@ function TimelineRowBody({
           <View style={styles.attachRow}>
             {item.attachments.map((a, i) => (
               <AttachmentChip key={i} attachment={a} colors={colors} styles={styles} onPreview={(a) => previewAmong(item.attachments!, a, onPreview)} />
+            ))}
+          </View>
+        )}
+        {item.uploads && item.uploads.length > 0 && (
+          <View style={styles.attachRow}>
+            {item.uploads.map((u) => (
+              <UploadChip key={u.id} upload={{ id: u.id, name: u.name, size: u.size, progress: 1, ref: u }} colors={colors} styles={styles} />
             ))}
           </View>
         )}
@@ -1618,6 +1694,13 @@ function SteeredPrompt({
         <View style={styles.attachRow}>
           {prompt.attachments.map((a, i) => (
             <AttachmentChip key={i} attachment={a} colors={colors} styles={styles} onPreview={(a) => previewAmong(prompt.attachments!, a, onPreview)} />
+          ))}
+        </View>
+      )}
+      {prompt.uploads && prompt.uploads.length > 0 && (
+        <View style={styles.attachRow}>
+          {prompt.uploads.map((u) => (
+            <UploadChip key={u.id} upload={{ id: u.id, name: u.name, size: u.size, progress: 1, ref: u }} colors={colors} styles={styles} />
           ))}
         </View>
       )}

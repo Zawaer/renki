@@ -18,6 +18,7 @@ import {
   UpdateRotationRequest,
   UpdateHomelabAccessRequest,
   MAX_ATTACHMENT_BYTES,
+  MAX_UPLOAD_BYTES,
   MAX_ATTACHMENTS_PER_PROMPT,
 } from "@renki/protocol";
 import { ExportError, exportChat } from "../export/index.js";
@@ -50,6 +51,7 @@ import type { SessionManager } from "../sessions/manager.js";
 import { getTailscaleStatus } from "../tailscale.js";
 import type { InsightsCache } from "../stats/insights.js";
 import { tokenMatches } from "./auth.js";
+import { UploadTooLarge, type Uploads } from "../uploads.js";
 import { Connection } from "./connection.js";
 import { GatewayApprovals } from "../gateway/approvals.js";
 import type { PermissionBroker } from "./permissions.js";
@@ -68,6 +70,8 @@ export type ServerDeps = {
   /** The Mac bridge (apps/mac-node); optional for the same reason. */
   mac?: MacBridge;
   macJobs?: MacJobs;
+  /** Files sent by reference (see ../uploads.ts); POST /uploads is off without it. */
+  uploads?: Uploads;
 };
 
 /**
@@ -153,7 +157,7 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
     }
   });
 
-  // Raw uploads (a Mac job's artifacts) reach their route as a stream; the route caps the size.
+  // Raw uploads (a Mac job's artifacts, files sent by reference) reach their route as a stream; the route caps the size.
   app.addContentTypeParser("application/octet-stream", (_req, payload, done) => done(null, payload));
 
   app.get("/health", async () => ({ ok: true }));
@@ -651,6 +655,20 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
       }
     }
     return reply.header("content-type", "application/octet-stream").send(Readable.from(frames()));
+  });
+
+  // A file sent by reference (too big, or of a kind, to go inline): streamed to disk now,
+  // claimed by the message that names it (see ../uploads.ts). ?name= is its file name.
+  app.post<{ Querystring: { name?: string } }>("/uploads", async (req, reply) => {
+    if (!deps.uploads) return reply.code(404).send({ error: "not_configured" });
+    const name = (req.query.name ?? "").trim();
+    if (!name || name.length > 255) return reply.code(400).send({ error: "invalid_request", message: "?name= is required." });
+    try {
+      return await deps.uploads.save(req.body as Readable, name);
+    } catch (err) {
+      if (err instanceof UploadTooLarge) return reply.code(413).send({ error: "too_large", message: `Files can be up to ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB.` });
+      return reply.code(400).send({ error: "upload_failed", message: String(err) });
+    }
   });
 
   // A job's artifact (an APK, the build log) coming back from the Mac.

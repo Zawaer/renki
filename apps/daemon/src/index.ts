@@ -1,3 +1,4 @@
+import { Uploads } from "./uploads.js";
 import { AccountRotator } from "./accounts/rotator.js";
 import { ServiceUsage } from "./accounts/service.js";
 import { UsageReader, type UsageSource } from "./accounts/usage.js";
@@ -62,10 +63,14 @@ async function main() {
   const mac = new MacBridge();
   const macJobs = new MacJobs(join(config.dataDir, "mac-artifacts"));
   manager.setMacBridge(mac, macJobs, new MacBuilds());
+  const uploads = new Uploads(config.dataDir);
+  manager.setUploads(uploads);
+  uploads.sweep();
+  setInterval(() => uploads.sweep(), 6 * 60 * 60_000).unref();
   accounts.setOnSwitched(() => manager.recycleIdleLiveSessions()); // idle processes may cache the old account's creds
   accounts.start();
 
-  const app = await createServer(config, { manager, broker, pushTokens, devices, accounts, usage: usageReader, notifier, insights: new InsightsCache(db), mac, macJobs });
+  const app = await createServer(config, { manager, broker, pushTokens, devices, accounts, usage: usageReader, notifier, insights: new InsightsCache(db), mac, macJobs, uploads });
   await app.listen({ host: config.host, port: config.port });
   logger.info("daemon listening", { url: `http://${config.host}:${config.port}`, reposRoot: config.reposRoot });
 

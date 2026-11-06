@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, posix, resolve, sep } from "node:path";
 import type { Attachment } from "@renki/protocol";
 import { unzipSync } from "fflate";
@@ -35,6 +35,24 @@ export function unpackArchives(
     }
   });
   return { attachments: rest.length ? rest : undefined, note: notes.join("\n") + "\n\n" };
+}
+
+/**
+ * What Claude is told about a file the user uploaded by reference (see Uploads):
+ * where it is, and for a zip, unpacked next to it once. Never throws; a zip that
+ * won't unpack is still there to read as a file.
+ */
+export function describeUpload(name: string, path: string, size: number): string {
+  if (!/\.zip$/i.test(name)) return `[The user attached ${name} (${formatSize(size)}). It's at ${path}]`;
+  const target = path.replace(/\.zip$/i, "");
+  try {
+    const files = existsSync(target) ? null : unpack(readFileSync(path), target);
+    if (files) return describe(name, target, files);
+    return `[The user attached ${name} (${formatSize(size)}), already unpacked to ${target}]`;
+  } catch (err) {
+    rmSync(target, { recursive: true, force: true });
+    return `[The user attached ${name} (${formatSize(size)}) at ${path}, but it couldn't be unpacked: ${err instanceof Error ? err.message : String(err)}]`;
+  }
 }
 
 /** Writes the archive's files under `target` and returns their paths relative to it, with sizes. */

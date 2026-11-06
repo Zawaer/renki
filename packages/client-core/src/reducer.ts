@@ -1,4 +1,4 @@
-import type { AgentUsage, Attachment, AttachmentView, SessionComposer, SessionEvent, SessionStatus } from "@renki/protocol";
+import type { AgentUsage, Attachment, AttachmentView, SessionComposer, SessionEvent, SessionStatus, UploadRef } from "@renki/protocol";
 
 /**
  * The event-log → view-state reducer. This is the piece that makes every client
@@ -68,6 +68,7 @@ export type SteeredPromptView = {
   deviceId: string;
   text: string;
   attachments?: Attachment[];
+  uploads?: UploadRef[];
   /** Index of the last block that existed when it arrived (-1 = before any) — render it right after that block. */
   afterBlockIndex: number;  /** When it was sent. */
   at?: number;
@@ -105,7 +106,7 @@ export type TurnView = {
 /** A prompt the controller sent, an assistant turn, a system notice, or a model switch. */
 export type TimelineItem =
   /** `at`: when it was sent (the event's time); absent only on items built by hand. */
-  | { type: "prompt"; promptId: string; deviceId: string; text: string; attachments?: Attachment[]; at?: number }
+  | { type: "prompt"; promptId: string; deviceId: string; text: string; attachments?: Attachment[]; uploads?: UploadRef[]; at?: number }
   | { type: "turn"; turn: TurnView }
   | { type: "notice"; text: string; level: "info" | "warn"; at?: number }
   /**
@@ -132,6 +133,7 @@ export type QueuedPromptView = {
   promptId: string;
   deviceId: string;
   text: string;
+  uploads?: UploadRef[];
 };
 
 /**
@@ -146,6 +148,7 @@ export type SendingPromptView = {
   deviceId: string;
   text: string;
   attachments?: Attachment[];
+  uploads?: UploadRef[];
   at: number;
 };
 
@@ -280,7 +283,7 @@ export function timelineWithSending(state: ConversationState): TimelineItem[] {
     ...state.timeline,
     ...sending
       .filter((p) => !state.queuedPrompts.some((q) => q.promptId === p.promptId))
-      .map((p): TimelineItem => ({ type: "prompt", promptId: p.promptId, deviceId: p.deviceId, text: p.text, attachments: p.attachments, at: p.at })),
+      .map((p): TimelineItem => ({ type: "prompt", promptId: p.promptId, deviceId: p.deviceId, text: p.text, attachments: p.attachments, uploads: p.uploads, at: p.at })),
   ];
 }
 
@@ -348,7 +351,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
 
     case "prompt_queued":
       s.sendingPrompts = withoutSending(s, e.promptId);
-      s.queuedPrompts = [...s.queuedPrompts, { promptId: e.promptId, deviceId: e.deviceId, text: e.text }];
+      s.queuedPrompts = [...s.queuedPrompts, { promptId: e.promptId, deviceId: e.deviceId, text: e.text, ...(e.uploads ? { uploads: e.uploads } : {}) }];
       return s;
 
     case "turn_started":
@@ -381,6 +384,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
             deviceId: e.deviceId,
             text: e.text,
             attachments: e.attachments,
+            uploads: e.uploads,
             afterBlockIndex: item.turn.blocks.length - 1,
             at: e.ts,
           };
@@ -397,7 +401,7 @@ export function applyEvent(prev: ConversationState, e: SessionEvent): Conversati
       // follow-ups were typed.
       s.timeline = [
         ...s.timeline,
-        { type: "prompt", promptId: e.promptId, deviceId: e.deviceId, text: e.text, attachments: e.attachments, at: e.ts },
+        { type: "prompt", promptId: e.promptId, deviceId: e.deviceId, text: e.text, attachments: e.attachments, uploads: e.uploads, at: e.ts },
       ];
       return s;
     }

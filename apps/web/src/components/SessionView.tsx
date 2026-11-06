@@ -1,4 +1,6 @@
 import { pickAnchor as pickScrollAnchor, restoreAnchor, type ScrollAnchor } from "../lib/scrollAnchor.js";
+import { formatBytes, uploadFile } from "../lib/upload.js";
+import { MAX_UPLOAD_BYTES, type UploadRef } from "@renki/protocol";
 import {
   classifyAttachment,
   EFFORT_LEVELS,
@@ -984,6 +986,13 @@ const TimelineRow = memo(function TimelineRow({ item, animate = false, first = f
               ))}
             </div>
           )}
+          {item.uploads && item.uploads.length > 0 && (
+            <div className={`flex flex-wrap gap-1.5 ${item.text || item.attachments?.length ? "mt-2" : ""}`}>
+              {item.uploads.map((u) => (
+                <UploadChip key={u.id} upload={{ id: u.id, name: u.name, size: u.size, progress: 1, ref: u }} />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1381,6 +1390,13 @@ function SteeredPrompt({ prompt }: { prompt: SteeredPromptView }) {
           >
             {prompt.attachments.map((a, i) => (
               <AttachmentChip key={i} attachment={a} siblings={prompt.attachments} />
+            ))}
+          </div>
+        )}
+        {prompt.uploads && prompt.uploads.length > 0 && (
+          <div className={`flex flex-wrap gap-1.5 ${prompt.text || prompt.attachments?.length ? "mt-2" : ""}`}>
+            {prompt.uploads.map((u) => (
+              <UploadChip key={u.id} upload={{ id: u.id, name: u.name, size: u.size, progress: 1, ref: u }} />
             ))}
           </div>
         )}
@@ -2354,6 +2370,54 @@ function AskUserQuestionCard({
 /** A picked attachment before it's sent — same wire shape as `Attachment` plus client-only bookkeeping. */
 type PendingAttachment = Attachment & { id: string };
 
+/** A file going by reference: uploading (no ref yet), uploaded (ref), or failed (error). */
+type PendingUpload = { id: string; name: string; size: number; progress: number; ref?: UploadRef; error?: string };
+
+/** Small enough, and a kind the model takes (or a zip), to ride inline in the message. Big photos get shrunk, so they count. */
+function goesInline(file: File): boolean {
+  const mediaType = classifyAttachment(file);
+  if (!mediaType) return false;
+  if (/^image\/(png|jpeg|webp)$/.test(mediaType)) return true;
+  return file.size <= MAX_ATTACHMENT_BYTES;
+}
+
+/** A file sent by reference: its name and size, and while it uploads, how far it's got. */
+function UploadChip({ upload, onRemove }: { upload: PendingUpload; onRemove?: () => void }) {
+  const pending = !upload.ref && !upload.error;
+  return (
+    <div
+      className={`relative flex items-center gap-1.5 overflow-hidden rounded-xl border bg-(--renki-surface) py-1 pr-2 pl-1.5 text-xs ${
+        upload.error ? "border-(--renki-danger)/60" : "border-(--renki-border)"
+      }`}
+      title={upload.error ? `${upload.name}: ${upload.error}` : upload.name}
+    >
+      {pending && (
+        <span
+          className="absolute inset-y-0 left-0 bg-(--renki-accent)/15 transition-[width] duration-200"
+          style={{ width: `${Math.round(upload.progress * 100)}%` }}
+        />
+      )}
+      <span className={`codicon ${upload.error ? "codicon-warning text-(--renki-danger)" : "codicon-file"} relative text-(--renki-fg-muted)`} />
+      <span className="relative max-w-40 truncate text-(--renki-fg)">{upload.name}</span>
+      <span className="relative text-(--renki-fg-muted) tabular-nums">
+        {upload.error ? "failed" : pending ? `${Math.round(upload.progress * 100)}%` : formatBytes(upload.size)}
+      </span>
+      {onRemove && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
+          className="relative text-(--renki-fg-muted) hover:text-(--renki-danger)"
+          title="Remove"
+        >
+          <span className="codicon codicon-close" />
+        </button>
+      )}
+    </div>
+  );
+}
+
 /**
  * A big PNG/JPEG/WebP scaled to fit MAX_IMAGE_EDGE and re-encoded as JPEG, or
  * null when it's small enough already (or the browser can't decode it — the
@@ -2607,6 +2671,7 @@ export function Composer({
       maxThinkingTokens?: number | null;
       permissionMode?: PermissionModeKey;
       attachments?: Attachment[];
+      uploads?: UploadRef[];
     },
   ) => void | Promise<void>;
   busy: boolean;
@@ -2617,7 +2682,7 @@ export function Composer({
   /** ⌘/Ctrl+Enter with nothing typed: send the first suggested reply. */
   onQuickReply?: () => void;
 }) {
-  const { rest, realtime } = useClient();
+  const { rest, realtime, config } = useClient();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Restore whatever was half-typed for THIS session — switching sessions or
@@ -2639,6 +2704,10 @@ export function Composer({
     (restored.current?.attachments ?? []).map((a) => ({ ...a, id: crypto.randomUUID() })),
   );
   const [draftNote, setDraftNote] = useState(restored.current?.attachmentsDropped ?? false);
+  /** Files going by reference (too big, or a kind that can't go inline): uploaded as soon as they're added. Not kept in drafts. */
+  const [uploads, setUploads] = useState<PendingUpload[]>([]);
+  const uploadCancels = useRef(new Map<string, () => void>());
+  const uploading = uploads.some((u) => !u.ref && !u.error);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [shrunkNote, setShrunkNote] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -2815,7 +2884,11 @@ export function Composer({
 
   function send() {
     const t = text.trim();
-    if ((!t && attachments.length === 0) || disabled || sending) return;
+    if ((!t && attachments.length === 0 && uploads.length === 0) || disabled || sending) return;
+    // Wait for big files to finish uploading; one that failed has to be removed (or re-added) first.
+    if (uploading) return setAttachError("Wait for the upload to finish.");
+    if (uploads.some((u) => u.error)) return setAttachError("Remove the file that didn't upload, or add it again.");
+    const refs = uploads.map((u) => u.ref!);
     const result = onSend(t, {
       model: model || undefined,
       maxThinkingTokens: effort?.maxThinkingTokens ?? undefined,
@@ -2824,10 +2897,12 @@ export function Composer({
         attachments.length > 0
           ? attachments.map(({ id: _id, ...a }) => a)
           : undefined,
+      uploads: refs.length > 0 ? refs : undefined,
     });
-    const before = { text, attachments };
+    const before = { text, attachments, uploads };
     setText("");
     setAttachments([]);
+    setUploads([]);
     setAttachError(null);
     setShrunkNote(null);
     setDraftNote(false);
@@ -2839,6 +2914,7 @@ export function Composer({
     result.catch(() => {
       setText(before.text);
       setAttachments(before.attachments);
+      setUploads(before.uploads);
       setSending(false);
     });
   }
@@ -2856,9 +2932,11 @@ export function Composer({
       return;
     }
 
-    const results = await Promise.all(
-      list.slice(0, room).map(readFileAsAttachment),
-    );
+    const picked = list.slice(0, room);
+    // Images, PDFs, text and zips small enough go inline (images straight to the model);
+    // anything bigger, or of another kind, is uploaded and sent by reference.
+    const byReference = picked.filter((f) => !goesInline(f));
+    const results = await Promise.all(picked.filter(goesInline).map(readFileAsAttachment));
     const errors = results
       .filter((r): r is { error: string } => "error" in r)
       .map((r) => r.error);
@@ -2869,21 +2947,28 @@ export function Composer({
 
     // The whole message has to fit in one API request: keep files in order
     // until the next one wouldn't fit.
+    // Past the model's per-message cap, the rest go by reference instead of being dropped.
     let total = attachments.reduce((sum, a) => sum + attachmentBytes(a), 0);
     const accepted: PendingAttachment[] = [];
     let shrunk = 0;
-    for (const r of results) {
-      if ("error" in r) continue;
-      total += attachmentBytes(r);
-      if (total > MAX_PROMPT_ATTACHMENT_BYTES) {
-        errors.unshift(
-          `Attachments can be ${MAX_PROMPT_ATTACHMENT_BYTES / (1024 * 1024)}MB per message in total. Dropped ${r.name} and any after it.`,
-        );
-        break;
+    const inlineFiles = picked.filter(goesInline);
+    results.forEach((r, i) => {
+      if ("error" in r) return;
+      if (total + attachmentBytes(r) > MAX_PROMPT_ATTACHMENT_BYTES) {
+        byReference.push(inlineFiles[i]!);
+        return;
       }
+      total += attachmentBytes(r);
       const { shrunk: wasShrunk, ...a } = r;
       if (wasShrunk) shrunk++;
       accepted.push(a);
+    });
+    for (const file of byReference) {
+      if (file.size > MAX_UPLOAD_BYTES) {
+        errors.push(`${file.name}: too large (max ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB).`);
+        continue;
+      }
+      startUpload(file);
     }
 
     if (accepted.length > 0) setAttachments((prev) => [...prev, ...accepted]);
@@ -2893,6 +2978,25 @@ export function Composer({
         ? `Shrank ${shrunk} large image${shrunk === 1 ? "" : "s"} to ${MAX_IMAGE_EDGE}px.`
         : null,
     );
+  }
+
+  /** Uploads one file in the background, its chip showing how far it's got. */
+  function startUpload(file: File) {
+    const id = crypto.randomUUID();
+    setUploads((prev) => [...prev, { id, name: file.name, size: file.size, progress: 0 }]);
+    const { done, cancel } = uploadFile(file, config, (progress) =>
+      setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, progress } : u))),
+    );
+    uploadCancels.current.set(id, cancel);
+    done
+      .then((ref) => setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, ref, progress: 1 } : u))))
+      .catch((err: Error) => setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, error: err.message } : u))))
+      .finally(() => uploadCancels.current.delete(id));
+  }
+
+  function removeUpload(id: string) {
+    uploadCancels.current.get(id)?.();
+    setUploads((prev) => prev.filter((u) => u.id !== id));
   }
 
   function removeAttachment(id: string) {
@@ -3046,7 +3150,7 @@ export function Composer({
             dragOver ? "ring-2 ring-(--renki-accent)/40" : ""
           }`}
         >
-          {attachments.length > 0 && (
+          {(attachments.length > 0 || uploads.length > 0) && (
             <div className="flex flex-wrap gap-1.5 px-3 pt-2">
               {attachments.map((a) => (
                 <AttachmentChip
@@ -3055,6 +3159,9 @@ export function Composer({
                   siblings={attachments}
                   onRemove={() => removeAttachment(a.id)}
                 />
+              ))}
+              {uploads.map((u) => (
+                <UploadChip key={u.id} upload={u} onRemove={() => removeUpload(u.id)} />
               ))}
             </div>
           )}
@@ -3109,7 +3216,7 @@ export function Composer({
               }
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                if ((e.metaKey || e.ctrlKey) && onQuickReply && !text.trim() && attachments.length === 0) onQuickReply();
+                if ((e.metaKey || e.ctrlKey) && onQuickReply && !text.trim() && attachments.length === 0 && uploads.length === 0) onQuickReply();
                 else send();
               }
             }}
@@ -3214,7 +3321,7 @@ export function Composer({
                   onClick={send}
                   aria-label="Send"
                   title={loading ? "Loading… you can send in a moment" : "Send (Enter)"}
-                  disabled={disabled || sending || (!text.trim() && attachments.length === 0)}
+                  disabled={disabled || sending || uploading || (!text.trim() && attachments.length === 0 && uploads.length === 0)}
                   className="grid h-8 w-8 place-items-center rounded-full bg-(--renki-accent) text-(--renki-accent-fg) transition hover:brightness-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100"
                 >
                   <span className="codicon codicon-arrow-up text-base" />

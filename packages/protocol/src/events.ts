@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AttachmentView } from "./attachments.js";
+import { AttachmentView, UploadRef } from "./attachments.js";
 import { DeviceId, MergeConflictMeta, PermissionDecision, SessionPurpose, SessionStatus } from "./domain.js";
 
 /**
@@ -76,6 +76,8 @@ const payloads = [
     deviceId: DeviceId,
     text: z.string(),
     attachments: z.array(AttachmentView).optional(),
+    /** Big files sent with it by reference (see UploadRef): shown as chips, never inline. */
+    uploads: z.array(UploadRef).optional(),
     /**
      * True when this prompt was delivered INTO a turn that was already running
      * (the controller typed while Claude was working). The CLI picks it up at
@@ -114,6 +116,7 @@ const payloads = [
     promptId: z.string(),
     deviceId: DeviceId,
     text: z.string(),
+    uploads: z.array(UploadRef).optional(),
   }),
 
   /** A streamed token/chunk of an assistant turn. Concatenate deltas per (turnId, blockIndex). */

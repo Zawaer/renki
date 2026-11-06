@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Attachment, MAX_ATTACHMENTS_PER_PROMPT } from "./attachments.js";
+import { Attachment, MAX_ATTACHMENTS_PER_PROMPT, UploadRef } from "./attachments.js";
 import { PermissionDecision, Session } from "./domain.js";
 import { SessionEvent } from "./events.js";
 
@@ -80,6 +80,8 @@ export const ClientMessage = z.discriminatedUnion("type", [
     promptId: z.string(),
     text: z.string(),
     attachments: z.array(Attachment).max(MAX_ATTACHMENTS_PER_PROMPT).optional(),
+    /** Files uploaded beforehand (POST /uploads), by reference: see UploadRef. */
+    uploads: z.array(UploadRef).max(MAX_ATTACHMENTS_PER_PROMPT).optional(),
     model: z.string().optional(),
     maxThinkingTokens: z.number().int().nullable().optional(),
     permissionMode: z.enum(["default", "acceptEdits", "plan", "auto"]).optional(),

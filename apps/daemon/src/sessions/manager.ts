@@ -42,7 +42,9 @@ import { derivePlaceholderTitle, generateSessionTitle } from "../claude/titler.j
 import { EFFORT_LEVELS } from "@renki/client-core";
 import { SessionError } from "./errors.js";
 import { shrinkImages } from "../claude/shrinkImages.js";
-import { attachmentBytes, MAX_PROMPT_ATTACHMENT_BYTES } from "@renki/protocol";
+import { attachmentBytes, MAX_PROMPT_ATTACHMENT_BYTES, type UploadRef } from "@renki/protocol";
+import { describeUpload } from "../claude/archives.js";
+import type { Uploads } from "../uploads.js";
 import { diskBytes, slimFolder, slimNotices, type SlimOutcome } from "./slim.js";
 import { renkiPromptAppend } from "../claude/systemPrompt.js";
 import { accountsNote } from "./accountsNote.js";
@@ -96,6 +98,8 @@ type ResumePrompt = {
   deviceId: string;
   text: string;
   attachments?: Attachment[];
+  /** What Claude is told about files sent by reference (see SubmitPromptInput.uploadNote). */
+  uploadNote?: string;
   model?: string;
   maxThinkingTokens?: number | null;
   permissionMode?: PermissionMode;
@@ -155,6 +159,10 @@ export type SubmitPromptInput = {
   promptId: string;
   text: string;
   attachments?: Attachment[];
+  /** Files uploaded beforehand (POST /uploads), by reference: claimed into the chat when the prompt arrives. */
+  uploads?: UploadRef[];
+  /** Filled in by submitPrompt from `uploads`: where each file now is, for Claude. Never shown in the bubble. */
+  uploadNote?: string;
   resolvePermission: PermissionResolver;
   model?: string;
   maxThinkingTokens?: number | null;
@@ -179,6 +187,11 @@ export class SessionManager {
   /** Chats folded for clients, so opening one sends its latest turns instead of its whole log. */
   readonly folded: FoldedChats;
   private autoSwitch: RateLimitAutoSwitch | null = null;
+  /** Files sent by reference (see ../uploads.ts); null until wired, as in tests that don't need it. */
+  private uploads: Uploads | null = null;
+  setUploads(uploads: Uploads): void {
+    this.uploads = uploads;
+  }
   private mac: { bridge: MacBridge; jobs: MacJobs; builds: MacBuilds } | null = null;
   private broadcast: SessionBroadcast | null = null;
   /** sessionId -> prompts submitted while busy, FIFO; drained in submitPrompt's loop. */
@@ -427,7 +440,7 @@ export class SessionManager {
     const carryOn = restartContinueText(hadAgents);
     const next: ResumePrompt = prompt
       ? this.turnMadeProgress(id, prompt.promptId)
-        ? { ...prompt, text: carryOn, attachments: undefined }
+        ? { ...prompt, text: carryOn, attachments: undefined, uploadNote: undefined }
         : prompt
       : { ...pinned, text: carryOn };
     const state: ResumeState = {
@@ -1329,8 +1342,20 @@ export class SessionManager {
     if (session.status === "trashed") throw new SessionError("session_trashed", "Session is in the trash. Restore it first.");
     if (session.controller !== input.deviceId)
       throw new SessionError("not_controller", "Only the controlling device can send prompts.");
-    if (!input.text.trim() && !input.attachments?.length)
+    if (!input.text.trim() && !input.attachments?.length && !input.uploads?.length)
       throw new SessionError("invalid_request", "Prompt text or at least one attachment is required.");
+
+    // Files sent by reference move into this chat's attachments folder now, and Claude is told where.
+    if (input.uploads?.length && input.uploadNote === undefined) {
+      if (!this.uploads) throw new SessionError("invalid_request", "This daemon doesn't take uploads.");
+      const notes: string[] = [];
+      for (const ref of input.uploads) {
+        const path = this.uploads.claim(ref, resolve(this.archiveDirFor(input.sessionId), "uploads"));
+        if (!path) throw new SessionError("invalid_request", `${ref.name} isn't on the daemon any more (uploads keep for a day). Attach it again.`);
+        notes.push(describeUpload(ref.name, path, ref.size));
+      }
+      input = { ...input, uploadNote: notes.join("\n") + "\n\n" };
+    }
 
     // Big images get shrunk here for the clients that can't do it themselves,
     // then the whole message has to fit in one API request.
@@ -1367,6 +1392,7 @@ export class SessionManager {
           deviceId: input.deviceId,
           text: input.text,
           attachments: input.attachments,
+          ...(input.uploads?.length ? { uploads: input.uploads } : {}),
           steered: true,
         });
         this.patch(input.sessionId, { lastActivityAt: Date.now() });
@@ -1382,6 +1408,7 @@ export class SessionManager {
         promptId: input.promptId,
         deviceId: input.deviceId,
         text: input.text,
+        ...(input.uploads?.length ? { uploads: input.uploads } : {}),
       });
       return;
     }
@@ -1444,7 +1471,7 @@ export class SessionManager {
     }
     const { note, told } = timeZoneNote(input.timeZone, hostTimeZone(), this.toldTimeZone.get(input.sessionId));
     if (told) this.toldTimeZone.set(input.sessionId, told);
-    return prefix + (note ?? "");
+    return prefix + (note ?? "") + (input.uploadNote ?? "");
   }
 
   /** Runs exactly one Claude turn for an already-idle session. `paused` means it stopped on a limit and a resume is scheduled. */
@@ -1469,6 +1496,7 @@ export class SessionManager {
       deviceId: input.deviceId,
       text: input.text,
       attachments: input.attachments,
+      ...(input.uploads?.length ? { uploads: input.uploads } : {}),
     });
 
     // Instant, LLM-free placeholder — shown right away (same idea as the
@@ -1477,7 +1505,7 @@ export class SessionManager {
     // An attachment-only prompt (no caption) falls back to the file's own
     // name rather than titler's generic "New session".
     if (session.title == null) {
-      const placeholderSource = input.text || input.attachments?.[0]?.name || "";
+      const placeholderSource = input.text || input.attachments?.[0]?.name || input.uploads?.[0]?.name || "";
       this.patch(input.sessionId, { title: derivePlaceholderTitle(placeholderSource), titleSource: "placeholder", titleGenAttempts: 0 });
       // The title is normally upgraded when the turn ends, from what Claude
       // said. A first turn that runs on for many minutes kept the raw first
@@ -1851,6 +1879,7 @@ export class SessionManager {
         promptId: `resume_${randomUUID()}`,
         text: state.prompt.text,
         attachments: state.prompt.attachments,
+        uploadNote: state.prompt.uploadNote,
         model: state.prompt.model,
         maxThinkingTokens: state.prompt.maxThinkingTokens,
         permissionMode: state.prompt.permissionMode,
@@ -2292,6 +2321,7 @@ function toResumePrompt(input: SubmitPromptInput): ResumePrompt & { promptId: st
     deviceId: input.deviceId,
     text: input.text,
     attachments: input.attachments,
+    ...(input.uploadNote ? { uploadNote: input.uploadNote } : {}),
     model: input.model,
     maxThinkingTokens: input.maxThinkingTokens,
     permissionMode: input.permissionMode,

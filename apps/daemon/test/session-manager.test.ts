@@ -817,6 +817,36 @@ describe("attachRepo", () => {
   });
 });
 
+describe("files sent by reference", () => {
+  it("moves the upload into the chat, tells Claude where it is, and keeps it out of the bubble", async () => {
+    const { manager, config, repoId } = setup();
+    const { Uploads } = await import("../src/uploads.js");
+    const { Readable } = await import("node:stream");
+    const uploads = new Uploads(config.dataDir);
+    manager.setUploads(uploads);
+    const ref = await uploads.save(Readable.from([Buffer.from("glTF")]), "legion.glb");
+    const s = await newSession(manager, repoId);
+    manager.takeControl(s.id, "d1");
+    let sent = "";
+    runTurn.mockReset().mockImplementation(async (args: { prompt: string }) => {
+      sent = args.prompt;
+      return okTurn;
+    });
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p1", text: "make a 3D view", uploads: [ref], resolvePermission: noopResolve });
+    const path = resolve(config.dataDir, "attachments", s.id, "uploads", ref.id, "legion.glb");
+    expect(existsSync(path)).toBe(true);
+    expect(sent).toContain(`It's at ${path}`);
+    expect(sent.endsWith("make a 3D view")).toBe(true);
+    const submitted = manager.events.read(s.id).find((e) => e.kind === "prompt_submitted");
+    expect(submitted).toMatchObject({ text: "make a 3D view", uploads: [ref] });
+
+    // Sent once already: a second message naming it is refused, not silently empty.
+    await expect(
+      manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p2", text: "again", uploads: [ref], resolvePermission: noopResolve }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+  });
+});
+
 describe("move_into_repo", () => {
   it("is offered only to repo-less chats, and moves the chat once its turn ends", async () => {
     const { manager, repoId } = setup();

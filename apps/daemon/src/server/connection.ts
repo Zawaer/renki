@@ -113,6 +113,7 @@ export class Connection {
             promptId: msg.promptId,
             text: msg.text,
             attachments: msg.attachments,
+            uploads: msg.uploads,
             model: msg.model,
             maxThinkingTokens: msg.maxThinkingTokens,
             permissionMode: msg.permissionMode,

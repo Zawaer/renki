@@ -39,6 +39,23 @@ export const SHRINK_IMAGE_ABOVE_BYTES = 1.5 * 1024 * 1024;
  */
 export const MAX_PROMPT_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 
+/**
+ * A file too big, or of a kind, that can't ride along inline: uploaded on its
+ * own first (POST /uploads streams it to the daemon's disk) and referred to by
+ * id when the message is sent. Claude is told where it is and reads it with
+ * its own tools; a zip is unpacked. Nothing of it goes into the message, the
+ * event log or the model request, so it can be big and any type (a 3D model,
+ * a video, a dataset).
+ */
+export const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
+export const UploadId = z.string().regex(/^u_[0-9a-f]{24}$/);
+export const UploadRef = z.object({
+  id: UploadId,
+  name: z.string().min(1).max(255),
+  size: z.number().int().min(0).max(MAX_UPLOAD_BYTES),
+});
+export type UploadRef = z.infer<typeof UploadRef>;
+
 /** An attachment's decoded size, from its base64 length. */
 export function attachmentBytes(a: { data: string }): number {
   return Math.floor((a.data.length * 3) / 4);

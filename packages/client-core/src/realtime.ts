@@ -2,6 +2,7 @@ import {
   type Attachment,
   type ClientMessage,
   type GatewayApproval,
+  type UploadRef,
   type PermissionDecision,
   type Session,
   type SessionComposer,
@@ -371,13 +372,15 @@ export class RealtimeClient {
       maxThinkingTokens?: number | null;
       permissionMode?: PermissionModeKey;
       attachments?: Attachment[];
+      /** Files uploaded beforehand (POST /uploads), sent by reference. */
+      uploads?: UploadRef[];
     },
   ): string {
     const promptId = genId("p");
     // Show it straight away rather than after the round trip to the daemon and back —
     // but only if it can actually go: send() drops a message while offline, and a bubble
     // for something that was never sent would be a lie.
-    if (this.isOpen()) this.echoPrompt(sessionId, promptId, text, opts?.attachments);
+    if (this.isOpen()) this.echoPrompt(sessionId, promptId, text, opts?.attachments, opts?.uploads);
     this.send({ type: "submit_prompt", sessionId, promptId, text, ...opts, timeZone: localTimeZone() });
     return promptId;
   }
@@ -385,9 +388,9 @@ export class RealtimeClient {
   /** How long a local echo waits for the daemon's confirmation before it's taken back. */
   private static readonly ECHO_TIMEOUT_MS = 30_000;
 
-  private echoPrompt(sessionId: string, promptId: string, text: string, attachments?: Attachment[]): void {
+  private echoPrompt(sessionId: string, promptId: string, text: string, attachments?: Attachment[], uploads?: UploadRef[]): void {
     const store = this.conversation(sessionId);
-    store.update((s) => addSendingPrompt(s, { promptId, deviceId: this.opts.deviceId, text, attachments, at: Date.now() }));
+    store.update((s) => addSendingPrompt(s, { promptId, deviceId: this.opts.deviceId, text, attachments, ...(uploads?.length ? { uploads } : {}), at: Date.now() }));
     // A message nobody ever confirms (lost, or silently refused) must not sit there for good.
     const timer = setTimeout(() => store.update((s) => dropSendingPrompt(s, promptId)), RealtimeClient.ECHO_TIMEOUT_MS);
     (timer as { unref?: () => void }).unref?.();

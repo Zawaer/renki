@@ -290,8 +290,8 @@ export class RestClient {
    * host. Distinct from `connectUsageKey`, which only connects a read-only
    * usage session key.
    */
-  async addSetupTokenAccount(token: string): Promise<AddSetupTokenResponse> {
-    return this.post<AddSetupTokenResponse>("/accounts/setup-token", { token });
+  async addSetupTokenAccount(token: string, email?: string): Promise<AddSetupTokenResponse> {
+    return this.post<AddSetupTokenResponse>("/accounts/setup-token", email ? { token, email } : { token });
   }
 
   /** The daemon host's own Tailscale hostname, if it can detect one — used to suggest a pairing URL. */

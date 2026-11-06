@@ -748,3 +748,12 @@ describe("adding a coding account", () => {
     expect((cswap as any).addToken).not.toHaveBeenCalled();
   });
 });
+
+describe("adding a coding account with its email", () => {
+  it("passes the email to cswap, so usage tracking can match the account", async () => {
+    const { rotator, cswap } = setup({ accounts: [] });
+    (cswap as any).addToken = vi.fn(async () => {});
+    await rotator.addSetupToken("sk-ant-oat01-abc", "me@gmail.com");
+    expect((cswap as any).addToken).toHaveBeenCalledWith("sk-ant-oat01-abc", "me@gmail.com");
+  });
+});

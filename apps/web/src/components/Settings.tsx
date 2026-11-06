@@ -826,6 +826,7 @@ function AddCodingAccount({ onAdded }: { onAdded: () => void }) {
   const { rest } = useClient();
   const [open, setOpen] = useState(false);
   const [token, setToken] = useState("");
+  const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -835,10 +836,11 @@ function AddCodingAccount({ onAdded }: { onAdded: () => void }) {
     setBusy(true);
     setMsg(null);
     try {
-      const res = await rest.addSetupTokenAccount(trimmed);
+      const res = await rest.addSetupTokenAccount(trimmed, email.trim() || undefined);
       if (res.ok) {
         setMsg({ ok: true, text: res.email ? `Added ${res.email}.` : "Account added." });
         setToken("");
+        setEmail("");
         onAdded();
       } else {
         setMsg({ ok: false, text: res.message ?? "Couldn't add that account." });
@@ -872,6 +874,17 @@ function AddCodingAccount({ onAdded }: { onAdded: () => void }) {
         rows={2}
         className="renki-input w-full resize-none border-transparent bg-(--renki-surface) font-mono text-[12px]"
       />
+      <input
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="The account's email, e.g. you@gmail.com"
+        spellCheck={false}
+        className="renki-input w-full border-transparent bg-(--renki-surface) text-[12.5px]"
+      />
+      <p className="text-[12px] leading-relaxed text-(--renki-fg-muted)">
+        A setup token doesn't say whose it is, so give the email it belongs to. Usage tracking finds the account by it.
+      </p>
       <div className="flex items-center justify-between">
         <button onClick={() => setOpen(false)} className="text-(--renki-fg-muted) hover:text-(--renki-fg)">
           Cancel

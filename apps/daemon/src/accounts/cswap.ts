@@ -51,9 +51,11 @@ export class Cswap {
    * own docs recommend (`claude setup-token | cswap add-token -`), so it
    * never appears in a process listing or in our own error messages.
    */
-  async addToken(token: string): Promise<void> {
+  /** `email` names the account: a setup token can't tell cswap whose it is (see AddSetupTokenRequest). */
+  async addToken(token: string, email?: string): Promise<void> {
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(this.bin, ["add-token", "-"], { stdio: ["pipe", "pipe", "pipe"] });
+      const args = ["add-token", "-", ...(email ? ["--email", email] : [])];
+      const child = spawn(this.bin, args, { stdio: ["pipe", "pipe", "pipe"] });
       let stdout = "";
       let stderr = "";
       const timer = setTimeout(() => {

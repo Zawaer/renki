@@ -257,6 +257,12 @@ export type UsageLoginResponse = z.infer<typeof UsageLoginResponse>;
  */
 export const AddSetupTokenRequest = z.object({
   token: z.string().min(1),
+  /**
+   * The account's email. A setup token can't read it, so without one cswap names
+   * the account setup-token-N@token.local and usage tracking (matched by email)
+   * can't find it.
+   */
+  email: z.string().trim().email().optional(),
 });
 export type AddSetupTokenRequest = z.infer<typeof AddSetupTokenRequest>;
 

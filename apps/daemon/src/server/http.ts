@@ -584,7 +584,7 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
   app.post("/accounts/setup-token", async (req, reply) => {
     const parsed = AddSetupTokenRequest.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request" });
-    return accounts.addSetupToken(parsed.data.token);
+    return accounts.addSetupToken(parsed.data.token, parsed.data.email);
   });
 
   // Remove a previously-connected usage key (e.g. the wrong org got picked).

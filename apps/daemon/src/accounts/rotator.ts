@@ -370,7 +370,7 @@ export class AccountRotator {
    * back as `{ ok: false, message }` so the REST layer can pass them straight
    * through, and the raw token is never included in any log line here.
    */
-  async addSetupToken(token: string): Promise<{ ok: boolean; email: string | null; message: string | null }> {
+  async addSetupToken(token: string, email?: string): Promise<{ ok: boolean; email: string | null; message: string | null }> {
     // A claude.ai browser session key looks like any other sk-ant- string, and cswap
     // stores what it doesn't recognise as an API key, which can't run a single turn.
     if (/^sk-ant-sid/i.test(token.trim())) {
@@ -383,7 +383,7 @@ export class AccountRotator {
     }
     const before = await this.cswap.list().catch(() => ({ activeAccountNumber: null, accounts: [] as Account[] }));
     try {
-      await this.cswap.addToken(token);
+      await this.cswap.addToken(token, email);
     } catch (err) {
       return { ok: false, email: null, message: err instanceof Error ? err.message : "add-token failed" };
     }

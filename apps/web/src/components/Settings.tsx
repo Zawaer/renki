@@ -524,6 +524,21 @@ function RotationSettings({
     setThreshold(String(rotation.threshold));
   }, [rotation.threshold]);
   useEffect(() => setEnabled(rotation.enabled), [rotation.enabled]);
+  const [soonest, setSoonest] = useState(rotation.soonestReset);
+  useEffect(() => setSoonest(rotation.soonestReset), [rotation.soonestReset]);
+
+  async function toggleSoonest() {
+    const next = !soonest;
+    setSoonest(next);
+    try {
+      await rest.updateRotation({ soonestReset: next });
+    } catch (err) {
+      setSoonest(!next);
+      alert(err instanceof Error ? err.message : "Couldn't save this setting.");
+    } finally {
+      onChanged();
+    }
+  }
 
   async function toggleEnabled() {
     const next = !enabled;
@@ -599,8 +614,19 @@ function RotationSettings({
         </div>
       )}
       {enabled && accounts.length > 1 && (
+        <div className="mt-3 flex items-center justify-between gap-4 border-t border-(--renki-border)/60 pt-3">
+          <div className="min-w-0">
+            <div className="text-[13px] font-medium text-(--renki-fg)">Use the limit that resets soonest</div>
+            <div className="mt-0.5 text-xs text-(--renki-fg-muted)">
+              Run on the account whose usage window resets first, since what's left in it is lost at the reset. Switches only for a gap of 30 minutes or more, because a switch makes each chat re-read its context once.
+            </div>
+          </div>
+          <Switch checked={soonest} onChange={toggleSoonest} label="Use the limit that resets soonest" />
+        </div>
+      )}
+      {enabled && accounts.length > 1 && (
         <div className="mt-3 border-t border-(--renki-border)/60 pt-3">
-          <div className="text-[13px] text-(--renki-fg-muted)">Prefer</div>
+          <div className="text-[13px] text-(--renki-fg-muted)">{soonest ? "When it's a tie, prefer" : "Prefer"}</div>
           <div className="mt-2">
             <Select
               value={rotation.preferredEmail ?? ""}
@@ -612,9 +638,11 @@ function RotationSettings({
             />
           </div>
           <div className="mt-2 text-xs text-(--renki-fg-muted)">
-            {rotation.preferredEmail
-              ? "Sessions run as this account whenever it has headroom, borrow another only while it's over the threshold, and come back as soon as it resets — so the other account's quota stays free for use elsewhere."
-              : "Any account with headroom will do."}
+            {soonest
+              ? "Used when no account's limit resets sooner than the others'."
+              : rotation.preferredEmail
+                ? "Sessions run as this account whenever it has headroom, borrow another only while it's over the threshold, and come back as soon as it resets — so the other account's quota stays free for use elsewhere."
+                : "Any account with headroom will do."}
           </div>
         </div>
       )}

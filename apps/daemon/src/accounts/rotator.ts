@@ -9,7 +9,21 @@ import { Cswap } from "./cswap.js";
 import { type ResumePlan, type ResumeReadiness, accountFreeAt, planResume } from "./resumePlan.js";
 import type { UsageSource } from "./usage.js";
 
-type PersistedRotationSettings = { enabled?: boolean; threshold?: number; preferredEmail?: string | null; autoResume?: boolean };
+type PersistedRotationSettings = {
+  enabled?: boolean;
+  threshold?: number;
+  preferredEmail?: string | null;
+  autoResume?: boolean;
+  soonestReset?: boolean;
+};
+
+/**
+ * In "soonest reset" mode, a switch has to win at least this much: the other
+ * account's quota must expire this much sooner. Every switch makes each chat's
+ * next turn re-read its context without the prompt cache, which costs usage
+ * too, so a few minutes' difference isn't worth it.
+ */
+export const SOONEST_RESET_MIN_GAIN_MS = 30 * 60_000;
 
 /**
  * Outcome of a hard rate-limit switch. `reason` is user-facing: it's shown in
@@ -55,6 +69,8 @@ export class AccountRotator {
   private preferredEmail: string | null = null;
   /** Continue a rate-limited turn once a limit resets — see planResume/prepareResume. */
   private autoResume = true;
+  /** Run on the account whose quota expires soonest — see evaluateSoonestReset. */
+  private soonestReset = false;
   /** How many accounts cswap listed last time anything asked — see rotatingAccounts. */
   private accountCount = 0;
 
@@ -83,6 +99,7 @@ export class AccountRotator {
       if (typeof raw.threshold === "number" && raw.threshold >= 1 && raw.threshold <= 100) this.threshold = raw.threshold;
       if (typeof raw.preferredEmail === "string" || raw.preferredEmail === null) this.preferredEmail = raw.preferredEmail;
       if (typeof raw.autoResume === "boolean") this.autoResume = raw.autoResume;
+      if (typeof raw.soonestReset === "boolean") this.soonestReset = raw.soonestReset;
     } catch (err) {
       logger.warn("could not read rotation config", { path, err: String(err) });
     }
@@ -97,6 +114,7 @@ export class AccountRotator {
         threshold: this.threshold,
         preferredEmail: this.preferredEmail,
         autoResume: this.autoResume,
+        soonestReset: this.soonestReset,
       };
       writeFileSync(path, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
     } catch (err) {
@@ -105,13 +123,14 @@ export class AccountRotator {
   }
 
   /** Update the rotation policy from Settings. Persists so it survives a restart. */
-  updateSettings(patch: { enabled?: boolean; threshold?: number; preferredEmail?: string | null; autoResume?: boolean }): RotationStatus {
+  updateSettings(patch: { enabled?: boolean; threshold?: number; preferredEmail?: string | null; autoResume?: boolean; soonestReset?: boolean }): RotationStatus {
     if (patch.enabled !== undefined) this.enabled = patch.enabled;
+    if (patch.soonestReset !== undefined) this.soonestReset = patch.soonestReset;
     if (patch.autoResume !== undefined) this.autoResume = patch.autoResume;
     if (patch.preferredEmail !== undefined) this.preferredEmail = patch.preferredEmail?.toLowerCase() || null;
     if (patch.threshold !== undefined) this.threshold = patch.threshold;
     this.persistSettings();
-    logger.info("rotation settings updated", { enabled: this.enabled, threshold: this.threshold, autoResume: this.autoResume });
+    logger.info("rotation settings updated", { enabled: this.enabled, threshold: this.threshold, autoResume: this.autoResume, soonestReset: this.soonestReset });
     return this.status();
   }
 
@@ -174,7 +193,7 @@ export class AccountRotator {
     // Straight to the preferred account when it's usable — that's the whole
     // point of naming one, and it's what the periodic check would do next tick.
     const preferred = this.preferredEmail ? candidates.find((a) => a.email.toLowerCase() === this.preferredEmail) : undefined;
-    const target = preferred ?? candidates[0];
+    const target = this.soonestReset ? this.bySoonestReset(candidates)[0] : (preferred ?? candidates[0]);
     if (!target) {
       logger.info("rate-limit switch skipped: every other account is at its limit", { before });
       return { switched: false, active: before, reason: "Every account is at its limit, so there's nothing to switch to." };
@@ -269,7 +288,9 @@ export class AccountRotator {
 
     if (this.enabled) {
       const free = accounts.filter((a) => !a.active && accountFreeAt(a, model, now)?.at === now);
-      const target = free.find((a) => a.email.toLowerCase() === this.preferredEmail) ?? free[0];
+      const target = this.soonestReset
+        ? this.bySoonestReset(free)[0]
+        : (free.find((a) => a.email.toLowerCase() === this.preferredEmail) ?? free[0]);
       if (target) {
         if (this.anyBusy()) {
           return { proceed: false, plan: { at: now + 60_000, reason: "Waiting for another session's turn to finish before switching account." } };
@@ -379,7 +400,66 @@ export class AccountRotator {
       lastHoldReason: this.lastHoldReason,
       preferredEmail: this.preferredEmail,
       autoResume: this.autoResume,
+      soonestReset: this.soonestReset,
     };
+  }
+
+  /**
+   * When this account's unused quota runs out: the soonest reset among its
+   * windows that are open (they reset in the future) and still have room.
+   * Infinity when nothing of it is expiring (a fresh 5h window only opens on
+   * first use), so it never outranks an account whose quota is about to go.
+   */
+  private quotaExpiresAt(account: Account, now = Date.now()): number {
+    if (!account.usage) return Number.POSITIVE_INFINITY;
+    let soonest = Number.POSITIVE_INFINITY;
+    for (const w of [account.usage.fiveHour, account.usage.sevenDay]) {
+      const at = w.resetsAt ? Date.parse(w.resetsAt) : Number.NaN;
+      if (Number.isFinite(at) && at > now && w.pct < this.threshold) soonest = Math.min(soonest, at);
+    }
+    return soonest;
+  }
+
+  /** Soonest-expiring quota first; ties go to the preferred account, then to the most weekly room left. */
+  private bySoonestReset(accounts: Account[]): Account[] {
+    const now = Date.now();
+    return [...accounts].sort((a, b) => {
+      const ea = this.quotaExpiresAt(a, now);
+      const eb = this.quotaExpiresAt(b, now);
+      if (ea !== eb) return ea < eb ? -1 : 1;
+      const pa = a.email.toLowerCase() === this.preferredEmail ? 0 : 1;
+      const pb = b.email.toLowerCase() === this.preferredEmail ? 0 : 1;
+      if (pa !== pb) return pa - pb;
+      return (a.usage?.sevenDay.pct ?? 100) - (b.usage?.sevenDay.pct ?? 100);
+    });
+  }
+
+  /**
+   * Use it or lose it: run on the account with headroom whose quota expires
+   * soonest. Moves off the active account only when another one's expires at
+   * least SOONEST_RESET_MIN_GAIN_MS sooner, or the active one is out of room.
+   */
+  private async evaluateSoonestReset(accounts: Account[], active: Account, cooldownMs: number): Promise<void> {
+    const usable = accounts.filter((a) => this.hasHeadroom(a));
+    if (usable.length === 0) return this.hold(active.usageStatus === "ok" ? "all accounts at limit" : "usage unavailable");
+    const best = this.bySoonestReset(usable)[0]!;
+    if (best.active) return this.hold(null);
+    if (this.hasHeadroom(active)) {
+      const gain = this.quotaExpiresAt(active) - this.quotaExpiresAt(best);
+      if (!(gain >= SOONEST_RESET_MIN_GAIN_MS)) return this.hold(null);
+    }
+    if (this.lastSwitchAt && Date.now() - this.lastSwitchAt < cooldownMs) return this.hold("cooldown");
+    const newActive = await this.cswap.switchTo(best.number);
+    this.onSwitched?.();
+    this.lastSwitchAt = Date.now();
+    this.lastHoldReason = null;
+    const at = this.quotaExpiresAt(best);
+    logger.info("switched to the account whose quota expires soonest", {
+      from: active.number,
+      to: newActive,
+      email: best.email,
+      expiresAt: Number.isFinite(at) ? new Date(at).toISOString() : null,
+    });
   }
 
   /** Worst window across every limit an account reports — what the threshold is measured against. */
@@ -432,6 +512,7 @@ export class AccountRotator {
 
     const active = accounts.find((a) => a.active);
     if (!active) return this.claimAnAccount(accounts, cooldownMs);
+    if (this.soonestReset) return this.evaluateSoonestReset(accounts, active, cooldownMs);
 
     /**
      * A preferred account is one you want to be on whenever it can work —
@@ -514,6 +595,7 @@ export class AccountRotator {
 
     const preferred = this.preferredEmail ? accounts.find((a) => a.email.toLowerCase() === this.preferredEmail) : undefined;
     const target =
+      (this.soonestReset ? this.bySoonestReset(accounts.filter((a) => this.hasHeadroom(a)))[0] : undefined) ??
       (preferred && this.hasHeadroom(preferred) ? preferred : undefined) ??
       accounts.find((a) => this.hasHeadroom(a)) ??
       preferred ??

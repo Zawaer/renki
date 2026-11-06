@@ -448,7 +448,7 @@ describe("AccountRotator settings persistence", () => {
     expect(status.threshold).toBe(75);
 
     const persisted = JSON.parse(readFileSync(config.rotationConfigPath, "utf8"));
-    expect(persisted).toEqual({ enabled: true, threshold: 75, preferredEmail: null, autoResume: true });
+    expect(persisted).toEqual({ enabled: true, threshold: 75, preferredEmail: null, autoResume: true, soonestReset: false });
 
     // A fresh instance pointed at the same path picks up the persisted override.
     const reloaded = new AccountRotator(config, fakeManager(false), fakeUsage());
@@ -642,5 +642,78 @@ describe("AccountRotator.reportLimit", () => {
     const { rotator, cswap } = setup({ accounts: [account({ active: true })], activeAccountNumber: 1 });
     await rotator.reportLimit(null);
     expect(cswap.list).not.toHaveBeenCalled();
+  });
+});
+
+describe("soonest-reset mode (use it or lose it)", () => {
+  const inMin = (m: number) => new Date(Date.now() + m * 60_000).toISOString();
+  const usage = (h5: number, h5Reset: string | null, d7 = 20, d7Reset: string | null = inMin(5 * 24 * 60)) => ({
+    fiveHour: { pct: h5, resetsAt: h5Reset },
+    sevenDay: { pct: d7, resetsAt: d7Reset },
+    extra: null,
+  });
+  const soonest = (accounts: Account[], extra: Parameters<typeof setup>[0] extends infer O ? Partial<O> : never = {}) => {
+    const s = setup({ accounts, activeAccountNumber: accounts.find((a) => a.active)?.number ?? null, cooldownMs: 0, ...extra });
+    (s.rotator as any).soonestReset = true;
+    return s;
+  };
+
+  it("moves to the account whose 5h window resets soonest, even with the active one healthy", async () => {
+    const { rotator, cswap } = soonest([
+      account({ number: 1, email: "a@x", active: true, usage: usage(20, inMin(240)) }),
+      account({ number: 2, email: "b@x", usage: usage(40, inMin(45)) }),
+    ]);
+    await rotator.tick();
+    expect(cswap.switchTo).toHaveBeenCalledWith(2);
+  });
+
+  it("stays put for a small difference: a switch costs every chat its prompt cache", async () => {
+    const { rotator, cswap } = soonest([
+      account({ number: 1, email: "a@x", active: true, usage: usage(20, inMin(60)) }),
+      account({ number: 2, email: "b@x", usage: usage(20, inMin(45)) }),
+    ]);
+    await rotator.tick();
+    expect(cswap.switchTo).not.toHaveBeenCalled();
+  });
+
+  it("prefers quota that's expiring over a fresh account whose window hasn't opened", async () => {
+    const { rotator, cswap } = soonest([
+      account({ number: 1, email: "fresh@x", active: true, usage: usage(0, null, 10, null) }),
+      account({ number: 2, email: "open@x", usage: usage(30, inMin(120)) }),
+    ]);
+    await rotator.tick();
+    expect(cswap.switchTo).toHaveBeenCalledWith(2);
+  });
+
+  it("skips accounts out of room, and leaves the active one when it runs out", async () => {
+    const { rotator, cswap } = soonest([
+      account({ number: 1, email: "a@x", active: true, usage: usage(96, inMin(30)) }),
+      account({ number: 2, email: "b@x", usage: usage(10, inMin(200), 99) }), // weekly spent
+      account({ number: 3, email: "c@x", usage: usage(10, inMin(300)) }),
+    ]);
+    await rotator.tick();
+    expect(cswap.switchTo).toHaveBeenCalledWith(3);
+  });
+
+  it("breaks ties with the preferred account", async () => {
+    const { rotator, cswap } = soonest([
+      account({ number: 1, email: "a@x", active: true, usage: usage(0, null, 10, null) }),
+      account({ number: 2, email: "b@x", usage: usage(0, null, 10, null) }),
+    ]);
+    (rotator as any).preferredEmail = "b@x";
+    await rotator.tick();
+    expect(cswap.switchTo).not.toHaveBeenCalled(); // nothing expiring anywhere: no reason to move
+    const claim = soonest([
+      account({ number: 1, email: "a@x", usage: usage(0, null, 10, null) }),
+      account({ number: 2, email: "b@x", usage: usage(0, null, 10, null) }),
+    ]);
+    (claim.rotator as any).preferredEmail = "b@x";
+    await claim.rotator.tick();
+    expect(claim.cswap.switchTo).toHaveBeenCalledWith(2);
+  });
+
+  it("persists the setting", () => {
+    const { rotator } = setup({ accounts: [] });
+    expect(rotator.updateSettings({ soonestReset: true }).soonestReset).toBe(true);
   });
 });

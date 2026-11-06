@@ -139,6 +139,12 @@ export const RotationStatus = z.object({
    * only the active one's.
    */
   autoResume: z.boolean().default(true),
+  /**
+   * Use it or lose it: among accounts with headroom, run on the one whose
+   * current usage window resets soonest, since what's left in it is gone at
+   * the reset. The preferred account only breaks ties then.
+   */
+  soonestReset: z.boolean().default(false),
 });
 export type RotationStatus = z.infer<typeof RotationStatus>;
 
@@ -173,6 +179,7 @@ export const UpdateRotationRequest = z.object({
   /** An account's email to prefer, or null to clear the preference. Omit to leave it alone. */
   preferredEmail: z.string().nullable().optional(),
   autoResume: z.boolean().optional(),
+  soonestReset: z.boolean().optional(),
 });
 export type UpdateRotationRequest = z.infer<typeof UpdateRotationRequest>;
 

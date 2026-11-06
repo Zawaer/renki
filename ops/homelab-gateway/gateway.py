@@ -72,7 +72,13 @@ def merge_added_apps(policy, added):
             check_app_dir(policy, d)
         except Refused:
             continue
-        policy["apps"][name] = {"mode": "deploy", "dir": d, "git": bool(app.get("git")), "services": services, "added": True}
+        binds = []
+        for b in app.get("binds") or []:
+            src = b.get("source") if isinstance(b, dict) else None
+            if isinstance(src, str) and src == os.path.realpath(src) and bind_refusal(policy, src) is None:
+                binds.append({"source": src, "rw": bool(b.get("rw"))})
+        policy["apps"][name] = {"mode": "deploy", "dir": d, "git": bool(app.get("git")), "services": services,
+                                "added": True, "binds": binds}
 
 
 def cap(text, limit):
@@ -202,9 +208,19 @@ def do_deploy(policy, name):
             return rc, out + "git pull failed; nothing was rebuilt.\n"
     if app.get("added"):
         full = app_dir(policy, app)
-        risks = compose_risks(policy, full, compose_config(full))
-        if risks:
-            return 2, out + "refused: the compose file now reaches outside its folder, so it wasn't deployed:\n  " + "\n  ".join(risks) + "\n"
+        hard, binds = compose_findings(policy, full, compose_config(full), app.get("binds", []))
+        refused = [f"mounts {short(policy, s)}: {bind_refusal(policy, s)}" for s, _ in binds if bind_refusal(policy, s)]
+        if hard or refused:
+            return 2, out + "refused: the compose file now does things an app may never do, so it wasn't deployed:\n  " + "\n  ".join(hard + refused) + "\n"
+        if binds:
+            # Folders outside its own: the user decides, once per folder, on the phone.
+            summary = (f"{name}'s compose file now uses folders outside ~/{app['dir']}:\n"
+                       + "\n".join(bind_label(policy, s, rw) for s, rw in binds)
+                       + "\nAllow it, and deploy?")
+            if not request_approval(policy, "deploy", [name], summary):
+                return 3, out + "denied: the new folders weren't approved on the phone in time; nothing was rebuilt.\n"
+            allow_binds(name, binds)
+            out += "approved on the phone: " + ", ".join(short(policy, s) for s, _ in binds) + "\n"
     rc, o = compose(policy, app, "up", "-d", "--build", *app.get("services", []), timeout=t)
     return rc, out + "$ docker compose up -d --build " + " ".join(app.get("services", [])) + "\n" + o
 
@@ -642,36 +658,98 @@ def compose_config(full):
         raise Refused("couldn't read the compose config")
 
 
-def compose_risks(policy, full, config):
-    """Everything in a compose config that reaches outside its own folder. Empty means fine."""
-    risks, full = [], os.path.realpath(full)
+# Folders no app may mount, whatever the user approves: with these a container owns the machine,
+# Renki, the gateway, or the keys. Everything else inside the home folder can be asked for.
+NEVER_BIND = ("/etc", "/proc", "/sys", "/dev", "/root", "/boot", "/run", "/var/run", "/var/lib/docker",
+              "/var/lib/homelab-gateway", "/usr", "/bin", "/sbin", "/lib")
+NEVER_BIND_IN_HOME = (".ssh", ".homelab-gateway", ".config", ".claude", ".gnupg", ".docker", "renki")
+
+
+def bind_refusal(policy, src):
+    """Why `src` may never be mounted into an app, or None if the user may allow it."""
+    home = os.path.realpath(policy["run_as_home"])
+    if "docker.sock" in src:
+        return "the Docker socket"
+    if src == "/" or src == home:
+        return "the whole disk or home folder"
+    if any(src == p or src.startswith(p + "/") for p in NEVER_BIND):
+        return "a system folder"
+    if not src.startswith(home + "/"):
+        return "outside the home folder"
+    top = src[len(home) + 1:].split("/")[0]
+    if top in NEVER_BIND_IN_HOME:
+        return "keys or settings, or Renki's own data"
+    return None
+
+
+def bind_label(policy, src, rw):
+    """How the phone names a folder an app wants: protected ones say so."""
+    prot = any(src == p or src.startswith(p + "/") for p in (os.path.realpath(x) for x in policy.get("protected_paths", [])))
+    return f"- {short(policy, src)} ({'can change files' if rw else 'read only'}{', on your protected list' if prot else ''})"
+
+
+def short(policy, path):
+    home = os.path.realpath(policy["run_as_home"])
+    return "~" + path[len(home):] if path.startswith(home + "/") else path
+
+
+def compose_findings(policy, full, config, allowed=()):
+    """(hard, binds): what an app may never do, and folders outside its own it mounts that aren't
+    allowed yet, as (source, writable). Both empty means it may deploy as it is."""
+    hard, binds, full = [], {}, os.path.realpath(full)
+    ok = {(b["source"], b["rw"]) for b in allowed}
     for sname, svc in (config.get("services") or {}).items():
         if svc.get("privileged"):
-            risks.append(f"{sname}: privileged")
+            hard.append(f"{sname}: privileged")
         for key in ("network_mode", "pid", "ipc", "userns_mode", "uts", "cgroup"):
             v = str(svc.get(key) or "")
             if v == "host" or v.startswith("container:"):
-                risks.append(f"{sname}: {key} {v}")
+                hard.append(f"{sname}: {key} {v}")
         for key in ("cap_add", "devices", "security_opt", "device_cgroup_rules", "volumes_from"):
             if svc.get(key):
-                risks.append(f"{sname}: {key}")
+                hard.append(f"{sname}: {key}")
         cname = svc.get("container_name")
         if cname and is_protected(policy, cname):
-            risks.append(f"{sname}: container_name {cname} is protected")
+            hard.append(f"{sname}: container_name {cname} is protected")
         for vol in svc.get("volumes") or []:
             if not isinstance(vol, dict):
-                risks.append(f"{sname}: a volume compose didn't normalize")
+                hard.append(f"{sname}: a volume compose didn't normalize")
                 continue
             if vol.get("type") != "bind":
                 continue  # named volumes and tmpfs stay inside Docker
             src = os.path.realpath(vol.get("source") or "/")
+            rw = not vol.get("read_only")
             if "docker.sock" in src:
-                risks.append(f"{sname}: mounts the Docker socket")
-            elif src in SAFE_BIND_SOURCES and vol.get("read_only"):
+                hard.append(f"{sname}: mounts the Docker socket")
+            elif src in SAFE_BIND_SOURCES and not rw:
                 continue
-            elif src != full and not src.startswith(full + "/"):
-                risks.append(f"{sname}: mounts {src}")
-    return risks
+            elif src == full or src.startswith(full + "/"):
+                continue
+            elif (src, rw) in ok or (src, True) in ok:
+                continue  # allowed before (read-write covers read-only)
+            else:
+                binds[src] = binds.get(src, False) or rw
+    return hard, sorted(binds.items())
+
+
+def compose_risks(policy, full, config):
+    """Everything in a compose config that reaches outside its own folder. Empty means fine."""
+    hard, binds = compose_findings(policy, full, config)
+    return hard + [f"mounts {src}" for src, _ in binds]
+
+
+def allow_binds(name, binds, added_path=None):
+    """Record folders the user approved for an added app; the gateway alone writes this file."""
+    path = added_path or ADDED_APPS_PATH
+    added = read_added_apps(path)
+    entry = added.get(name)
+    if not isinstance(entry, dict):
+        return
+    have = {b["source"]: bool(b.get("rw")) for b in entry.get("binds") or [] if isinstance(b, dict) and "source" in b}
+    for src, rw in binds:
+        have[src] = have.get(src, False) or rw
+    entry["binds"] = [{"source": s, "rw": rw} for s, rw in sorted(have.items())]
+    write_added_app(path, name, entry)
 
 
 def check_new_app(policy, name, d, services):
@@ -685,15 +763,16 @@ def check_new_app(policy, name, d, services):
     if not any(os.path.isfile(os.path.join(full, f)) for f in COMPOSE_FILES):
         raise Refused(f"no compose file in ~/{d}")
     config = compose_config(full)
-    risks = compose_risks(policy, full, config)
-    if risks:
-        raise Refused("the compose file reaches outside its folder, so it can't be added this way:\n  " + "\n  ".join(risks))
+    hard, binds = compose_findings(policy, full, config)
+    refused = [f"mounts {short(policy, s)}: {bind_refusal(policy, s)}" for s, _ in binds if bind_refusal(policy, s)]
+    if hard or refused:
+        raise Refused("the compose file does things an app may never do, so it can't be added:\n  " + "\n  ".join(hard + refused))
     known = sorted((config.get("services") or {}).keys())
     services = services or known
     unknown = [x for x in services if x not in known]
     if unknown or not services:
         raise Refused("unknown services: " + ", ".join(unknown) + " (the compose file has: " + ", ".join(known) + ")")
-    return full, services
+    return full, services, binds
 
 
 def write_added_app(path, name, entry):
@@ -742,15 +821,18 @@ def v_add_app(policy, args, added_path=None):
         if rc != 0:
             raise Refused(f"git clone {url} failed:\n" + out[-1500:])
         cloned = f"$ git clone {url} ~/{d}\n" + out
-    full, services = check_new_app(policy, name, d, services)
+    full, services, binds = check_new_app(policy, name, d, services)
     git = os.path.isdir(os.path.join(full, ".git"))
     summary = (f"Let Claude deploy and restart a new app '{name}' in ~/{d} (services: {', '.join(services)})"
-               + (", pulling from git first" if git else "") + ". Its compose file only uses its own folder.")
+               + (", pulling from git first" if git else "") + ". "
+               + ("Its compose file only uses its own folder." if not binds else
+                  "It also uses:\n" + "\n".join(bind_label(policy, s, rw) for s, rw in binds)))
     if not request_approval(policy, "add-app", args, summary):
         return 3, cloned + "denied: not approved on the phone in time.\n"
     policy_now = load_policy() if added_path is None else policy
     check_new_app(policy_now, name, d, services)  # again: the folder may have changed while waiting
-    write_added_app(added_path or ADDED_APPS_PATH, name, {"dir": d, "git": git, "services": services})
+    write_added_app(added_path or ADDED_APPS_PATH, name, {"dir": d, "git": git, "services": services,
+                                                          "binds": [{"source": s, "rw": rw} for s, rw in binds]})
     return 0, cloned + f"approved; '{name}' is now an app. Deploy it with: deploy {name}\n"
 
 

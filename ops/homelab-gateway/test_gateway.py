@@ -390,7 +390,7 @@ class AddAppAndRouteTest(unittest.TestCase):
         policy = json.loads(json.dumps(POLICY)); policy["run_as_home"] = self.home
         gateway.merge_added_apps(policy, gateway.read_added_apps(self.added))
         self.assertEqual(policy["apps"]["life-api"], {"mode": "deploy", "dir": "life-api", "git": False,
-                                                      "services": ["api", "db"], "added": True})
+                                                      "services": ["api", "db"], "added": True, "binds": []})
 
     def test_add_app_writes_nothing_without_approval(self):
         rc, out, _, _ = self.add(["life-api"], approve=False)
@@ -401,12 +401,67 @@ class AddAppAndRouteTest(unittest.TestCase):
                     {"devices": ["/dev/sda"]}, {"container_name": "caddy"},
                     {"volumes": [{"type": "bind", "source": "/var/run/docker.sock"}]},
                     {"volumes": [{"type": "bind", "source": "/"}]},
-                    {"volumes": [{"type": "bind", "source": os.path.join(self.home, "immich")}]},
-                    {"volumes": [{"type": "bind", "source": os.path.join(self.home, "life-api", "..", "x")}]},
+                    {"volumes": [{"type": "bind", "source": self.home}]},
+                    {"volumes": [{"type": "bind", "source": os.path.join(self.home, ".ssh")}]},
+                    {"volumes": [{"type": "bind", "source": os.path.join(self.home, "renki", "data")}]},
+                    {"volumes": [{"type": "bind", "source": "/var/lib/docker/volumes"}]},
                     {"volumes": [{"type": "bind", "source": "/etc/localtime"}]}]:  # not read-only
             with self.assertRaises(gateway.Refused, msg=str(svc)):
                 self.add(["life-api"], config={"services": {"api": svc}})
         self.assertFalse(os.path.exists(self.added))
+
+    def test_add_app_asks_for_folders_outside_its_own_and_remembers_them(self):
+        vault = os.path.join(self.home, "obsidian", "vault")
+        os.makedirs(vault)
+        self.policy["protected_paths"].append(os.path.join(self.home, "obsidian"))
+        cfg = {"services": {"api": {"volumes": [{"type": "bind", "source": vault},
+                                                {"type": "bind", "source": os.path.join(self.home, "archive"), "read_only": True}]}}}
+        rc, out, ask, _ = self.add(["life-api"], config=cfg)
+        self.assertEqual(rc, 0, out)
+        summary = ask.call_args[0][3]
+        self.assertIn("~/obsidian/vault (can change files, on your protected list)", summary)
+        self.assertIn("~/archive (read only)", summary)
+        self.assertEqual(gateway.read_added_apps(self.added)["life-api"]["binds"],
+                         [{"source": os.path.realpath(os.path.join(self.home, "archive")), "rw": False},
+                          {"source": os.path.realpath(vault), "rw": True}])
+
+    def test_deploy_asks_once_for_new_folders_then_just_deploys(self):
+        gateway.write_added_app(self.added, "life-api", {"dir": "life-api", "git": False, "services": ["api"]})
+        self.policy["apps"]["life-api"] = {"mode": "deploy", "dir": "life-api", "git": False, "services": ["api"], "added": True, "binds": []}
+        archive = os.path.realpath(os.path.join(self.home, "archive"))
+        cfg = {"services": {"api": {"volumes": [{"type": "bind", "source": archive, "read_only": True}]}}}
+        calls, run = self.fake_run(config=cfg)
+        with mock.patch.object(gateway, "run", run), mock.patch.object(gateway, "ADDED_APPS_PATH", self.added), \
+             mock.patch.object(gateway, "request_approval", return_value=False) as ask:
+            rc, out = gateway.do_deploy(self.policy, "life-api")
+        self.assertEqual(rc, 3)
+        self.assertFalse(any(c[0][:3] == ["docker", "compose", "up"] for c in calls))
+        with mock.patch.object(gateway, "run", run), mock.patch.object(gateway, "ADDED_APPS_PATH", self.added), \
+             mock.patch.object(gateway, "request_approval", return_value=True):
+            rc, out = gateway.do_deploy(self.policy, "life-api")
+        self.assertEqual(rc, 0, out)
+        self.assertTrue(any(c[0][:3] == ["docker", "compose", "up"] for c in calls))
+        # Remembered: the next load of the policy has it, and the deploy after that doesn't ask.
+        policy = json.loads(json.dumps(POLICY)); policy["run_as_home"] = self.home
+        gateway.merge_added_apps(policy, gateway.read_added_apps(self.added))
+        self.assertEqual(policy["apps"]["life-api"]["binds"], [{"source": archive, "rw": False}])
+        with mock.patch.object(gateway, "run", run), \
+             mock.patch.object(gateway, "request_approval", side_effect=AssertionError("must not ask")):
+            rc, out = gateway.do_deploy(policy, "life-api")
+        self.assertEqual(rc, 0, out)
+        # Read-only approval doesn't cover a switch to read-write.
+        cfg["services"]["api"]["volumes"][0]["read_only"] = False
+        with mock.patch.object(gateway, "run", run), mock.patch.object(gateway, "request_approval", return_value=False) as ask:
+            rc, _ = gateway.do_deploy(policy, "life-api")
+        self.assertEqual(rc, 3)
+
+    def test_merge_drops_binds_that_may_never_be_allowed(self):
+        policy = json.loads(json.dumps(self.policy))
+        gateway.merge_added_apps(policy, {"x": {"dir": "x", "services": ["a"], "binds": [
+            {"source": "/", "rw": True}, {"source": "/etc", "rw": False}, {"source": self.home + "/.ssh", "rw": False},
+            {"source": "/var/run/docker.sock", "rw": True}, {"source": self.home + "/../etc", "rw": False},
+            {"source": os.path.realpath(self.home) + "/archive", "rw": False}]}})
+        self.assertEqual(policy["apps"]["x"]["binds"], [{"source": os.path.realpath(self.home) + "/archive", "rw": False}])
 
     def test_add_app_refuses_bad_names_existing_apps_and_odd_folders(self):
         for args in [[], ["-x"], ["../x"], ["talkoot"], ["new", "--dir", "../etc"], ["new", "--dir", ".ssh"],

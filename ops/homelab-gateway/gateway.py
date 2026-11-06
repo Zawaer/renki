@@ -59,10 +59,26 @@ def read_added_apps(path):
         return {}
 
 
+def valid_binds(policy, raw):
+    out = []
+    for b in raw or []:
+        src = b.get("source") if isinstance(b, dict) else None
+        if isinstance(src, str) and src == os.path.realpath(src) and bind_refusal(policy, src) is None:
+            out.append({"source": src, "rw": bool(b.get("rw"))})
+    return out
+
+
 def merge_added_apps(policy, added):
     """Added apps are always plain `deploy` apps, re-checked on every load: a name the base policy
-    already has, a folder that is protected or another app's, or anything odd is skipped."""
+    already has, a folder that is protected or another app's, or anything odd is skipped.
+    "_binds" holds folders approved on the phone for apps of the base policy."""
+    for name, raw in (added.get("_binds") or {}).items():
+        app = policy["apps"].get(name)
+        if app and app["mode"] == "deploy" and isinstance(raw, list):
+            app["binds"] = valid_binds(policy, raw)
     for name, app in added.items():
+        if name == "_binds":
+            continue
         if not NAME_RE.match(name) or name in policy["apps"] or not isinstance(app, dict):
             continue
         d, services = app.get("dir"), app.get("services")
@@ -72,11 +88,7 @@ def merge_added_apps(policy, added):
             check_app_dir(policy, d)
         except Refused:
             continue
-        binds = []
-        for b in app.get("binds") or []:
-            src = b.get("source") if isinstance(b, dict) else None
-            if isinstance(src, str) and src == os.path.realpath(src) and bind_refusal(policy, src) is None:
-                binds.append({"source": src, "rw": bool(b.get("rw"))})
+        binds = valid_binds(policy, app.get("binds"))
         policy["apps"][name] = {"mode": "deploy", "dir": d, "git": bool(app.get("git")), "services": services,
                                 "added": True, "binds": binds}
 
@@ -206,7 +218,9 @@ def do_deploy(policy, name):
         out += "$ git pull --ff-only\n" + o
         if rc != 0:
             return rc, out + "git pull failed; nothing was rebuilt.\n"
-    if app.get("added"):
+    # Every deployable app (not the detached ones: that's Renki, which asks before every deploy):
+    # a session can commit to its repo, so what its compose file asks for is checked each time.
+    if app["mode"] == "deploy":
         full = app_dir(policy, app)
         hard, binds = compose_findings(policy, full, compose_config(full), app.get("binds", []))
         refused = [f"mounts {short(policy, s)}: {bind_refusal(policy, s)}" for s, _ in binds if bind_refusal(policy, s)]
@@ -743,13 +757,17 @@ def allow_binds(name, binds, added_path=None):
     path = added_path or ADDED_APPS_PATH
     added = read_added_apps(path)
     entry = added.get(name)
-    if not isinstance(entry, dict):
-        return
-    have = {b["source"]: bool(b.get("rw")) for b in entry.get("binds") or [] if isinstance(b, dict) and "source" in b}
+    base = not isinstance(entry, dict)  # an app of the base policy: its folders live under "_binds"
+    current = (added.get("_binds") or {}).get(name, []) if base else entry.get("binds") or []
+    have = {b["source"]: bool(b.get("rw")) for b in current if isinstance(b, dict) and "source" in b}
     for src, rw in binds:
         have[src] = have.get(src, False) or rw
-    entry["binds"] = [{"source": s, "rw": rw} for s, rw in sorted(have.items())]
-    write_added_app(path, name, entry)
+    merged = [{"source": s, "rw": rw} for s, rw in sorted(have.items())]
+    if base:
+        write_added_app(path, "_binds", {**(added.get("_binds") or {}), name: merged})
+    else:
+        entry["binds"] = merged
+        write_added_app(path, name, entry)
 
 
 def check_new_app(policy, name, d, services):

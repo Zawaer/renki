@@ -15,6 +15,8 @@ class Fake:
         self.envs = getattr(self, "envs", []) + [env]
         if cmd[:3] == ["docker", "ps", "-a"] and "{{.Names}}" in cmd[-1]:
             return 0, "\n".join(self.containers) + "\n"
+        if cmd[:3] == ["docker", "compose", "config"]:
+            return 0, '{"services": {}}'
         return 0, "ok\n"
 
 
@@ -46,12 +48,13 @@ class GatewayTest(unittest.TestCase):
         self.assertEqual(rc, 0)
         cmds = [c for c, _ in fake.calls]
         self.assertEqual(cmds[0], ["git", "pull", "--ff-only"])
-        self.assertEqual(cmds[1], ["docker", "compose", "up", "-d", "--build", "talkoot", "scout"])
-        self.assertEqual(fake.calls[1][1], "/home/zawaer/talkoot")
+        self.assertEqual(cmds[1][:3], ["docker", "compose", "config"])  # what it asks for, checked first
+        self.assertEqual(cmds[2], ["docker", "compose", "up", "-d", "--build", "talkoot", "scout"])
+        self.assertEqual(fake.calls[2][1], "/home/zawaer/talkoot")
 
     def test_deploy_without_git_skips_pull(self):
         rc, out, fake, _ = self.go("deploy scout-tool")
-        self.assertEqual([c[0][:2] for c in fake.calls], [["docker", "compose"]])
+        self.assertEqual([c[0][:3] for c in fake.calls], [["docker", "compose", "config"], ["docker", "compose", "up"]])
 
     def test_read_only_and_unknown_apps_cannot_deploy_or_restart(self):
         for c in ["deploy immich", "restart dawarich", "deploy caddy", "deploy nonsense", "deploy ../etc", "deploy talkoot extra"]:
@@ -454,6 +457,27 @@ class AddAppAndRouteTest(unittest.TestCase):
         with mock.patch.object(gateway, "run", run), mock.patch.object(gateway, "request_approval", return_value=False) as ask:
             rc, _ = gateway.do_deploy(policy, "life-api")
         self.assertEqual(rc, 3)
+
+    def test_older_apps_get_the_same_check_and_remember_approvals(self):
+        # talkoot is in the base policy (not added): a compose change of its own is checked too.
+        self.policy["apps"]["talkoot"]["git"] = False
+        bad = {"services": {"talkoot": {"volumes": [{"type": "bind", "source": "/var/run/docker.sock"}]}}}
+        calls, run = self.fake_run(config=bad)
+        with mock.patch.object(gateway, "run", run):
+            rc, out = gateway.do_deploy(self.policy, "talkoot")
+        self.assertEqual(rc, 2); self.assertIn("Docker socket", out)
+        self.assertFalse(any(c[0][:3] == ["docker", "compose", "up"] for c in calls))
+        archive = os.path.realpath(os.path.join(self.home, "archive"))
+        ok = {"services": {"talkoot": {"volumes": [{"type": "bind", "source": archive, "read_only": True}]}}}
+        calls, run = self.fake_run(config=ok)
+        with mock.patch.object(gateway, "run", run), mock.patch.object(gateway, "ADDED_APPS_PATH", self.added), \
+             mock.patch.object(gateway, "request_approval", return_value=True):
+            rc, out = gateway.do_deploy(self.policy, "talkoot")
+        self.assertEqual(rc, 0, out)
+        policy = json.loads(json.dumps(POLICY)); policy["run_as_home"] = self.home
+        gateway.merge_added_apps(policy, gateway.read_added_apps(self.added))
+        self.assertEqual(policy["apps"]["talkoot"]["binds"], [{"source": archive, "rw": False}])
+        self.assertNotIn("_binds", policy["apps"])
 
     def test_merge_drops_binds_that_may_never_be_allowed(self):
         policy = json.loads(json.dumps(self.policy))

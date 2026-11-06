@@ -26,6 +26,16 @@ type PersistedRotationSettings = {
 export const SOONEST_RESET_MIN_GAIN_MS = 30 * 60_000;
 
 /**
+ * An account cswap holds as a plain API key rather than a subscription login.
+ * Never switched to automatically: a real key bills per token instead of using
+ * the plan, and a key that isn't one (a claude.ai session cookie pasted by
+ * mistake, 2026-11-07) fails every turn. Switching by hand still works.
+ */
+export function isApiKeyAccount(a: Account): boolean {
+  return a.usageStatus === "api_key" || a.email.toLowerCase().endsWith("@token.local");
+}
+
+/**
  * Outcome of a hard rate-limit switch. `reason` is user-facing: it's shown in
  * the transcript when nothing moved, so the notice can say *why* no retry
  * happened instead of the old catch-all "no other account available".
@@ -287,7 +297,7 @@ export class AccountRotator {
     if (active && (!activeFree || activeFree.at <= now)) return { proceed: true };
 
     if (this.enabled) {
-      const free = accounts.filter((a) => !a.active && accountFreeAt(a, model, now)?.at === now);
+      const free = accounts.filter((a) => !a.active && !isApiKeyAccount(a) && accountFreeAt(a, model, now)?.at === now);
       const target = this.soonestReset
         ? this.bySoonestReset(free)[0]
         : (free.find((a) => a.email.toLowerCase() === this.preferredEmail) ?? free[0]);
@@ -361,6 +371,16 @@ export class AccountRotator {
    * through, and the raw token is never included in any log line here.
    */
   async addSetupToken(token: string): Promise<{ ok: boolean; email: string | null; message: string | null }> {
+    // A claude.ai browser session key looks like any other sk-ant- string, and cswap
+    // stores what it doesn't recognise as an API key, which can't run a single turn.
+    if (/^sk-ant-sid/i.test(token.trim())) {
+      return {
+        ok: false,
+        email: null,
+        message:
+          "That's a claude.ai session key (from the browser), which is for usage tracking. For a coding account, run `claude setup-token` signed in as that account and paste what it prints.",
+      };
+    }
     const before = await this.cswap.list().catch(() => ({ activeAccountNumber: null, accounts: [] as Account[] }));
     try {
       await this.cswap.addToken(token);
@@ -483,7 +503,7 @@ export class AccountRotator {
    * read, because a turn has already failed on the current one.
    */
   private switchCandidates(accounts: Account[], includeUnknownUsage: boolean): Account[] {
-    const others = accounts.filter((a) => !a.active);
+    const others = accounts.filter((a) => !a.active && !isApiKeyAccount(a));
     const withHeadroom = others.filter((a) => this.hasHeadroom(a));
     if (withHeadroom.length > 0 || !includeUnknownUsage) return withHeadroom;
     return others.filter((a) => a.usageStatus !== "ok" || !a.usage);
@@ -594,12 +614,14 @@ export class AccountRotator {
     if (this.lastSwitchAt && Date.now() - this.lastSwitchAt < cooldownMs) return this.hold("cooldown");
 
     const preferred = this.preferredEmail ? accounts.find((a) => a.email.toLowerCase() === this.preferredEmail) : undefined;
+    const logins = accounts.filter((a) => !isApiKeyAccount(a));
     const target =
-      (this.soonestReset ? this.bySoonestReset(accounts.filter((a) => this.hasHeadroom(a)))[0] : undefined) ??
+      (this.soonestReset ? this.bySoonestReset(logins.filter((a) => this.hasHeadroom(a)))[0] : undefined) ??
       (preferred && this.hasHeadroom(preferred) ? preferred : undefined) ??
-      accounts.find((a) => this.hasHeadroom(a)) ??
+      logins.find((a) => this.hasHeadroom(a)) ??
       preferred ??
-      accounts[0]!;
+      logins[0];
+    if (!target) return this.hold("no subscription accounts");
 
     const newActive = await this.cswap.switchTo(target.number);
     this.onSwitched?.();

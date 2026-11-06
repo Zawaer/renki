@@ -717,3 +717,34 @@ describe("soonest-reset mode (use it or lose it)", () => {
     expect(rotator.updateSettings({ soonestReset: true }).soonestReset).toBe(true);
   });
 });
+
+describe("API-key accounts", () => {
+  const key = (n: number) => account({ number: n, email: `api-key-${n}@token.local`, usageStatus: "api_key", usage: undefined });
+
+  it("are never the target of a rate-limit switch, even with nothing else left", async () => {
+    const { rotator, cswap } = setup({
+      accounts: [account({ number: 1, active: true, usage: { fiveHour: { pct: 100, resetsAt: null }, sevenDay: { pct: 50, resetsAt: null }, extra: null } }), key(4)],
+      activeAccountNumber: 1,
+    });
+    const r = await rotator.rateLimitSwitch();
+    expect(r.switched).toBe(false);
+    expect(cswap.switchTo).not.toHaveBeenCalled();
+  });
+
+  it("are never claimed when cswap reports nothing active", async () => {
+    const { rotator, cswap } = setup({ accounts: [key(4), account({ number: 2, email: "b@x" })] });
+    await rotator.tick();
+    expect(cswap.switchTo).toHaveBeenCalledWith(2);
+  });
+});
+
+describe("adding a coding account", () => {
+  it("refuses a claude.ai session key, saying what it's for", async () => {
+    const { rotator, cswap } = setup({ accounts: [] });
+    (cswap as any).addToken = vi.fn(async () => {});
+    const r = await rotator.addSetupToken("sk-ant-sid01-abc");
+    expect(r.ok).toBe(false);
+    expect(r.message).toMatch(/usage tracking.*claude setup-token/);
+    expect((cswap as any).addToken).not.toHaveBeenCalled();
+  });
+});

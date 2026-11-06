@@ -4,6 +4,11 @@ services:
     # default 20), so it always gets to note unfinished turns — they continue
     # after the restart — before it's killed. Generous in case the grace is raised.
     stop_grace_period: 11m
+    # A small init as PID 1, so processes a session's commands leave behind (a
+    # background shell that outlives its parent, say) are reaped. Without it they
+    # were handed to the daemon, which never reaps them: ~200 zombies an hour.
+    # The init passes SIGTERM on, so the shutdown grace above still applies.
+    init: true
     build: .
     container_name: renki-daemon
     restart: unless-stopped

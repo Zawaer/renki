@@ -64,6 +64,11 @@ import { projectDir } from "./transcripts.js";
  * so a dead process is simply replaced by a fresh one that resumes it.
  */
 
+/** How long a message from the user waits behind a running step before that step is moved to the background (see steer). */
+export const STEER_BACKGROUND_AFTER_MS = 8_000;
+/** Steps that can run long and that the SDK can move to the background. */
+const BACKGROUNDABLE_TOOLS = new Set(["Bash", "Agent", "Task"]);
+
 export type LiveSessionOptions = {
   cwd: string;
   /** Where zip attachments are unpacked for Claude to read (see ./archives.ts); readable without a prompt. Zips are refused without it. */
@@ -90,6 +95,8 @@ export type LiveSessionOptions = {
   homelabBlocked?: () => boolean;
   /** The `mac` MCP server (phone tools via the user's Mac, see ../mac/tools.ts), when this session may use it. */
   mac?: { server: McpSdkServerConfigWithInstance; callIds: MacCallIds };
+  /** How long a mid-turn message waits behind a running step before it's backgrounded; STEER_BACKGROUND_AFTER_MS unless set (tests). */
+  steerBackgroundAfterMs?: number;
   /** Lets the chat move itself into a repo (see ./moveIntoRepo.ts); only for repo-less chats. */
   moveIntoRepo?: MoveRequester;
   /** Added to the move's approval card (e.g. a warning that the repo lacks homelab access). */
@@ -210,6 +217,12 @@ export class LiveClaudeSession {
    * holds that Task block, which is where clients render them.
    */
   private readonly toolUseTurn = new Map<string, string>();
+  /**
+   * Main-thread Bash and Agent calls still running in the foreground, by
+   * tool_use id: what a message from the user has to wait behind (see steer).
+   */
+  private readonly foregroundTools = new Set<string>();
+  private steerTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * Anthropic's raw stream numbers content blocks PER underlying model call —
    * a tool round-trip starts a brand-new message whose own blocks count from
@@ -404,6 +417,36 @@ export class LiveClaudeSession {
     this.channel.push({ ...this.promptMessage(args), uuid: randomUUID() as SDKUserMessage["uuid"] });
     this.steered.push(args.promptId);
     this._lastActivityAt = Date.now();
+    this.backgroundIfStillBlocked();
+  }
+
+  /**
+   * A message sent mid-turn is read only at the next step boundary, so one long
+   * command (a four-minute test run) used to keep it waiting for the whole
+   * time. If a foreground Bash command or agent that was already running is
+   * still running STEER_BACKGROUND_AFTER_MS later, move it to the background
+   * (the SDK's Ctrl+B): the step returns at once, Claude reads the message, and
+   * the work carries on and reports when it settles. Quick steps just finish.
+   */
+  private backgroundIfStillBlocked(): void {
+    if (this.foregroundTools.size === 0 || this.steerTimer) return;
+    const waitingOn = new Set(this.foregroundTools);
+    this.steerTimer = setTimeout(() => {
+      this.steerTimer = null;
+      if (this.closed || !this.busy) return;
+      if (![...waitingOn].some((id) => this.foregroundTools.has(id))) return;
+      const background = (this.q as { backgroundTasks?: () => Promise<boolean> }).backgroundTasks;
+      if (typeof background !== "function") return;
+      background
+        .call(this.q)
+        .then((moved) => {
+          if (!moved) return;
+          logger.info("moved a long step to the background so a message from the user gets read", { cwd: this.opts.cwd });
+          this.opts.emit({ kind: "notice", text: "Moved the running step to the background, so Claude can read your message.", level: "info" });
+        })
+        .catch((err) => logger.warn("backgrounding a step for a message failed", { err: String(err) }));
+    }, this.opts.steerBackgroundAfterMs ?? STEER_BACKGROUND_AFTER_MS);
+    (this.steerTimer as { unref?: () => void }).unref?.();
   }
 
   /**
@@ -639,8 +682,17 @@ export class LiveClaudeSession {
         // spawns can be routed back here even turns later (see toolUseTurn).
         const content = (message.message as { content?: unknown }).content;
         if (Array.isArray(content)) {
-          for (const block of content as Array<{ type?: string; id?: string }>) {
+          for (const block of content as Array<{ type?: string; id?: string; name?: string; input?: { run_in_background?: unknown } }>) {
             if (block?.type === "tool_use" && block.id) this.toolUseTurn.set(block.id, turnId);
+            if (
+              block?.type === "tool_use" &&
+              block.id &&
+              !message.parent_tool_use_id &&
+              BACKGROUNDABLE_TOOLS.has(block.name ?? "") &&
+              block.input?.run_in_background !== true
+            ) {
+              this.foregroundTools.add(block.id);
+            }
           }
         }
         // This message is done — its local indices are now spoken for. Shift
@@ -662,6 +714,9 @@ export class LiveClaudeSession {
           Array.isArray(message.message.content) &&
           message.message.content.some((b) => (b as { type?: string }).type === "tool_result");
         if (!hasToolResult) break;
+        for (const b of message.message.content as Array<{ type?: string; tool_use_id?: string }>) {
+          if (b?.type === "tool_result" && b.tool_use_id) this.foregroundTools.delete(b.tool_use_id);
+        }
         handleToolResults(message.message, this.turnFor(message.parent_tool_use_id), this.opts.emit);
         break;
       }
@@ -714,6 +769,8 @@ export class LiveClaudeSession {
       }
 
       case "result": {
+        // The turn is over: anything still listed was interrupted or backgrounded, and won't report here.
+        this.foregroundTools.clear();
         this.endTurn(message);
         break;
       }
@@ -863,6 +920,7 @@ export class LiveClaudeSession {
   private finish(reason: string): void {
     if (this.closed) return;
     this.closed = true;
+    if (this.steerTimer) clearTimeout(this.steerTimer);
     this.channel.close();
     const failure = this.failedResult(reason, this.inflight?.sawRateLimitError ?? classifyRateLimit(reason));
     if (this.inflight) {

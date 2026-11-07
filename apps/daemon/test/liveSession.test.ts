@@ -516,6 +516,35 @@ describe("LiveClaudeSession steering", () => {
     expect(events.filter((e) => e.kind === "turn_result")[1]).toMatchObject({ promptId: "p3", promptIds: ["p3"] });
   });
 
+  it("moves a long foreground step to the background so a message gets read, but leaves a quick one alone", async () => {
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const { live, fake, events } = makeLive({ steerBackgroundAfterMs: 60 });
+    const background = vi.fn(async () => true);
+    (fake.query as unknown as { backgroundTasks: typeof background }).backgroundTasks = background;
+    const t = live.runTurn({ prompt: "long task", promptId: "p1", resolvePermission: allow });
+    await wait(0);
+    await fake.emit(assistant("running tests", { toolUseId: "tu-long" }));
+
+    live.steer({ prompt: "quick question", promptId: "p2" });
+    await wait(20);
+    expect(background).not.toHaveBeenCalled(); // grace period
+    await wait(80);
+    expect(background).toHaveBeenCalledTimes(1);
+    expect(events.some((e) => e.kind === "notice" && /background/.test((e as { text: string }).text))).toBe(true);
+
+    // A step that finishes within the grace period isn't touched.
+    await fake.emit({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tu-long", content: "ok" }] }, parent_tool_use_id: null } as never);
+    await fake.emit(assistant("next step", { toolUseId: "tu-quick" }));
+    live.steer({ prompt: "another", promptId: "p3" });
+    await wait(20);
+    await fake.emit({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tu-quick", content: "ok" }] }, parent_tool_use_id: null } as never);
+    await wait(100);
+    expect(background).toHaveBeenCalledTimes(1);
+
+    await fake.emit(okResult as never);
+    await t;
+  });
+
   it("refuses to steer when nothing is running (the caller runs it as a normal turn instead)", () => {
     const { live } = makeLive();
     expect(() => live.steer({ prompt: "x", promptId: "p1" })).toThrow(/no turn in flight/);

@@ -63,7 +63,7 @@ import {
   timelineWithSending,
 } from "@renki/client-core";
 import type { Account, AttachmentView, CapabilitiesResponse, Session, SessionComposer, SessionResume } from "@renki/protocol";
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, Fragment } from "react";
+import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, Fragment } from "react";
 import { useClient, useStoreValue } from "../lib/client.js";
 import { setTabTitle } from "../lib/attention.js";
 import { hostOpenFile, isHosted } from "../lib/host.js";
@@ -301,6 +301,13 @@ export function SessionView({
   const takeOver = () => {
     if (!isController) realtime.takeControl(sessionId);
   };
+  const sendNow = useMemo(
+    () => () => {
+      if (!isController) realtime.takeControl(sessionId);
+      realtime.sendNow(sessionId);
+    },
+    [isController, realtime, sessionId],
+  );
   const status = conv.status ?? "idle";
   /** Not "open" means what's on screen may be behind the daemon. */
   const connection = useStoreValue(realtime.status);
@@ -530,6 +537,7 @@ export function SessionView({
                   Loading earlier messages
                 </div>
               )}
+              <SendNowContext.Provider value={sendNow}>
               {groupNotices(rows).map(({ start, items }) => {
                 const at = older + start;
                 return items.length > 1 ? (
@@ -538,6 +546,7 @@ export function SessionView({
                   <TimelineRow key={at} item={items[0]!} first={at === 0} animate={settledCount.current !== null && at >= settledCount.current} />
                 );
               })}
+              </SendNowContext.Provider>
               {replies && (
                 <SuggestedReplies
                   question={replies.question}
@@ -1301,7 +1310,7 @@ function AssistantTurn({ turn, animate = false }: { turn: TurnView; animate?: bo
         <div className="text-xs text-(--renki-fg-muted)">{label}</div>
       )}
       {steeredAfter(-1).map((p) => (
-        <SteeredPrompt key={p.promptId} prompt={p} />
+        <SteeredPrompt key={p.promptId} prompt={p} waiting={running && turn.blocks.length - 1 <= p.afterBlockIndex} />
       ))}
       {segments.map((seg) => {
         const last = seg.kind === "group" ? seg.items[seg.items.length - 1]!.index : seg.index;
@@ -1324,7 +1333,7 @@ function AssistantTurn({ turn, animate = false }: { turn: TurnView; animate?: bo
             </div>
             <ToolImages images={segmentImages(seg)} />
             {steeredAfter(last).map((p) => (
-              <SteeredPrompt key={p.promptId} prompt={p} />
+              <SteeredPrompt key={p.promptId} prompt={p} waiting={running && turn.blocks.length - 1 <= p.afterBlockIndex} />
             ))}
           </Fragment>
         );
@@ -1380,7 +1389,17 @@ function AssistantTurn({ turn, animate = false }: { turn: TurnView; animate?: bo
 }
 
 /** A prompt the controller sent while this turn was already running — shown inside the turn, where Claude picked it up. */
-function SteeredPrompt({ prompt }: { prompt: SteeredPromptView }) {
+/** "Send now" for a message sent mid-turn (see SteeredPrompt); null where it can't be used. */
+const SendNowContext = createContext<(() => void) | null>(null);
+
+/**
+ * `waiting`: the turn is still running and Claude hasn't written anything since
+ * this message arrived, so it's probably still waiting behind a long step:
+ * offer "Send now", which moves that step to the background so Claude reads it.
+ */
+function SteeredPrompt({ prompt, waiting = false }: { prompt: SteeredPromptView; waiting?: boolean }) {
+  const sendNow = useContext(SendNowContext);
+  const [sent, setSent] = useState(false);
   return (
     <div className="renki-enter group flex items-center justify-end gap-1" data-testid="steered-prompt" data-anchor={`p:${prompt.promptId}`}>
       {prompt.text && <CopyButton text={prompt.text} label="Copy message" />}
@@ -1412,6 +1431,20 @@ function SteeredPrompt({ prompt }: { prompt: SteeredPromptView }) {
         <div className="mt-1.5 flex items-center gap-1 text-[11px] text-(--renki-fg-muted)">
           <span className="codicon codicon-debug-step-into text-[11px]" /> Sent
           while Claude was working
+          {waiting && sendNow && (
+            <button
+              type="button"
+              disabled={sent}
+              onClick={() => {
+                setSent(true);
+                sendNow();
+              }}
+              className="ml-auto rounded-md px-1.5 py-0.5 font-medium text-(--renki-link) hover:bg-(--renki-hover) disabled:opacity-60"
+              title="Move the step Claude is waiting on to the background, so it reads this now. The work keeps running."
+            >
+              {sent ? "Sending…" : "Send now"}
+            </button>
+          )}
         </div>
       </div>
     </div>

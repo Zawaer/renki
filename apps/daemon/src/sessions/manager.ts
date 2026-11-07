@@ -2003,6 +2003,15 @@ export class SessionManager {
    * through the normal `runTurn` result path (a `turn_result` with
    * `interrupted: true`), just early, so no separate event kind is needed here.
    */
+  /** "Send now": move the step a mid-turn message waits behind to the background (see LiveClaudeSession.backgroundNow). */
+  sendNow(id: string, deviceId: string): void {
+    const session = this.getSession(id);
+    if (session.controller !== deviceId) throw new SessionError("not_controller", "Only the controller can do that.");
+    const live = this.live.get(id);
+    if (!live?.busy) return; // the turn ended meanwhile: the message is already being read
+    live.backgroundNow().catch((err) => logger.warn("send now failed", { id, err: String(err) }));
+  }
+
   interruptSession(id: string, deviceId: string): void {
     const session = this.getSession(id);
     if (session.controller !== deviceId) throw new SessionError("not_controller", "Only the controller can stop a turn.");

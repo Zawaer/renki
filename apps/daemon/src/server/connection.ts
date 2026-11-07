@@ -137,6 +137,11 @@ export class Connection {
         return;
       }
 
+      case "send_now": {
+        this.manager.sendNow(msg.sessionId, this.deviceId);
+        return;
+      }
+
       case "set_permission_mode": {
         this.manager.setPermissionMode(msg.sessionId, this.deviceId, msg.mode);
         // No direct reply: this only affects the live turn's next tool checks;

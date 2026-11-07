@@ -545,6 +545,23 @@ describe("LiveClaudeSession steering", () => {
     await t;
   });
 
+  it("Send now moves the running step to the background at once, and the fallback timer then stands down", async () => {
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const { live, fake } = makeLive({ steerBackgroundAfterMs: 60 });
+    const background = vi.fn(async () => true);
+    (fake.query as unknown as { backgroundTasks: typeof background }).backgroundTasks = background;
+    const t = live.runTurn({ prompt: "long task", promptId: "p1", resolvePermission: allow });
+    await wait(0);
+    await fake.emit(assistant("running tests", { toolUseId: "tu-long" }));
+    live.steer({ prompt: "quick question", promptId: "p2" });
+    expect(await live.backgroundNow()).toBe(true);
+    await wait(100);
+    expect(background).toHaveBeenCalledTimes(1);
+    await fake.emit(okResult as never);
+    await t;
+    expect(await live.backgroundNow()).toBe(false); // nothing running any more
+  });
+
   it("refuses to steer when nothing is running (the caller runs it as a normal turn instead)", () => {
     const { live } = makeLive();
     expect(() => live.steer({ prompt: "x", promptId: "p1" })).toThrow(/no turn in flight/);

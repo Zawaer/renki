@@ -415,6 +415,11 @@ export class RealtimeClient {
     this.send({ type: "interrupt", sessionId });
   }
 
+  /** "Send now" on a message sent mid-turn: Claude's running step goes to the background so it reads the message at once. */
+  sendNow(sessionId: string): void {
+    this.send({ type: "send_now", sessionId });
+  }
+
   /** Cancel a session's scheduled resume, or run it now instead of waiting for the reset. */
   resumeAction(sessionId: string, action: "cancel" | "now"): void {
     this.send({ type: "resume_action", sessionId, action });

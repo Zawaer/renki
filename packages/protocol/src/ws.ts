@@ -126,6 +126,16 @@ export const ClientMessage = z.discriminatedUnion("type", [
   }),
 
   /**
+   * "Send now" on a message sent mid-turn: move the step Claude is waiting on
+   * (a foreground command or agent) to the background, so it reads the
+   * message at once. The work keeps running. Controller only.
+   */
+  z.object({
+    type: z.literal("send_now"),
+    sessionId: z.string(),
+  }),
+
+  /**
    * Push a live permission-mode change to the turn currently running for this
    * session, if any — lets the controller flip modes (e.g. right after
    * resolving a pending approval) without waiting for the next prompt. Only

@@ -65,7 +65,7 @@ import { projectDir } from "./transcripts.js";
  */
 
 /** How long a message from the user waits behind a running step before that step is moved to the background (see steer). */
-export const STEER_BACKGROUND_AFTER_MS = 8_000;
+export const STEER_BACKGROUND_AFTER_MS = 60_000;
 /** Steps that can run long and that the SDK can move to the background. */
 const BACKGROUNDABLE_TOOLS = new Set(["Bash", "Agent", "Task"]);
 
@@ -421,10 +421,32 @@ export class LiveClaudeSession {
   }
 
   /**
+   * Move the foreground steps (Bash commands, agents) to the background now, so
+   * a message waiting behind them is read: the "Send now" button, and the
+   * fallback below. The work keeps running and reports when it settles.
+   */
+  async backgroundNow(): Promise<boolean> {
+    if (this.closed || !this.busy) return false;
+    if (this.steerTimer) {
+      clearTimeout(this.steerTimer);
+      this.steerTimer = null;
+    }
+    const background = (this.q as { backgroundTasks?: () => Promise<boolean> }).backgroundTasks;
+    if (typeof background !== "function") return false;
+    const moved = await background.call(this.q);
+    if (moved) {
+      logger.info("moved a step to the background so a message from the user gets read", { cwd: this.opts.cwd });
+      this.opts.emit({ kind: "notice", text: "Moved the running step to the background, so Claude can read your message.", level: "info" });
+    }
+    return moved;
+  }
+
+  /**
    * A message sent mid-turn is read only at the next step boundary, so one long
    * command (a four-minute test run) used to keep it waiting for the whole
-   * time. If a foreground Bash command or agent that was already running is
-   * still running STEER_BACKGROUND_AFTER_MS later, move it to the background
+   * time. The user can press "Send now" (backgroundNow); failing that, if a
+   * foreground Bash command or agent that was already running is still
+   * running STEER_BACKGROUND_AFTER_MS later, move it to the background
    * (the SDK's Ctrl+B): the step returns at once, Claude reads the message, and
    * the work carries on and reports when it settles. Quick steps just finish.
    */
@@ -435,16 +457,7 @@ export class LiveClaudeSession {
       this.steerTimer = null;
       if (this.closed || !this.busy) return;
       if (![...waitingOn].some((id) => this.foregroundTools.has(id))) return;
-      const background = (this.q as { backgroundTasks?: () => Promise<boolean> }).backgroundTasks;
-      if (typeof background !== "function") return;
-      background
-        .call(this.q)
-        .then((moved) => {
-          if (!moved) return;
-          logger.info("moved a long step to the background so a message from the user gets read", { cwd: this.opts.cwd });
-          this.opts.emit({ kind: "notice", text: "Moved the running step to the background, so Claude can read your message.", level: "info" });
-        })
-        .catch((err) => logger.warn("backgrounding a step for a message failed", { err: String(err) }));
+      this.backgroundNow().catch((err) => logger.warn("backgrounding a step for a message failed", { err: String(err) }));
     }, this.opts.steerBackgroundAfterMs ?? STEER_BACKGROUND_AFTER_MS);
     (this.steerTimer as { unref?: () => void }).unref?.();
   }

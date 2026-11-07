@@ -58,7 +58,7 @@ import {
 } from "@renki/client-core";
 import type { AttachmentView, CapabilitiesResponse, Session, SessionResume } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
-import { Fragment, memo, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, Fragment, memo, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -503,6 +503,13 @@ export function SessionView({
   function takeOver() {
     if (!isController) realtime.takeControl(sessionId);
   }
+  const sendNow = useMemo(
+    () => () => {
+      if (!isController) realtime.takeControl(sessionId);
+      realtime.sendNow(sessionId);
+    },
+    [isController, realtime, sessionId],
+  );
 
   function send() {
     const t = text.trim();
@@ -710,6 +717,7 @@ export function SessionView({
           style={styles.timeline}
         >
         <SearchFlashContext.Provider value={flash}>
+        <SendNowContext.Provider value={sendNow}>
         <FlatList
           ref={scrollRef}
           inverted
@@ -770,6 +778,7 @@ export function SessionView({
             }, 100);
           }}
         />
+        </SendNowContext.Provider>
         </SearchFlashContext.Provider>
         </FadeIn>
         {rows.length === 0 && (
@@ -1582,7 +1591,7 @@ function AssistantTurn({
     <View style={styles.turn}>
       {label && <Text style={styles.meta}>{label}</Text>}
       {steeredAfter(-1).map((p) => (
-        <SteeredPrompt key={p.promptId} prompt={p} colors={colors} styles={styles} onPreview={onPreview} />
+        <SteeredPrompt key={p.promptId} prompt={p} colors={colors} styles={styles} onPreview={onPreview} waiting={turn.status === "running" && turn.blocks.length - 1 <= p.afterBlockIndex} />
       ))}
       {groupTurnBlocks(turn.blocks, new Set(turn.steeredPrompts.map((p) => p.afterBlockIndex))).map((seg) => {
         const last = seg.kind === "group" ? seg.items[seg.items.length - 1]!.index : seg.index;
@@ -1595,7 +1604,7 @@ function AssistantTurn({
             )}
             <ToolImages images={segmentImages(seg)} styles={styles} />
             {steeredAfter(last).map((p) => (
-              <SteeredPrompt key={p.promptId} prompt={p} colors={colors} styles={styles} onPreview={onPreview} />
+              <SteeredPrompt key={p.promptId} prompt={p} colors={colors} styles={styles} onPreview={onPreview} waiting={turn.status === "running" && turn.blocks.length - 1 <= p.afterBlockIndex} />
             ))}
           </Fragment>
         );
@@ -1702,17 +1711,29 @@ function FilesChanged({ changes, colors, styles }: { changes: FileChange[]; colo
 }
 
 /** A prompt sent while this turn was already running — shown inside the turn, where Claude picked it up. */
+/** "Send now" for a message sent mid-turn (see SteeredPrompt). */
+const SendNowContext = createContext<(() => void) | null>(null);
+
+/**
+ * `waiting`: the turn is running and Claude hasn't written anything since this
+ * message arrived, so it's probably waiting behind a long step: offer "Send
+ * now", which moves that step to the background so Claude reads it now.
+ */
 function SteeredPrompt({
   prompt,
   colors,
   styles,
   onPreview,
+  waiting = false,
 }: {
   prompt: SteeredPromptView;
   colors: ThemeColors;
   styles: Styles;
   onPreview: OpenPreview;
+  waiting?: boolean;
 }) {
+  const sendNow = useContext(SendNowContext);
+  const [sent, setSent] = useState(false);
   return (
     <LongPressToRead title="Your message" text={prompt.text} style={[styles.promptWrap, styles.steeredWrap]}>
       {prompt.text.length > 0 && <PromptText text={prompt.text} anchor={`p:${prompt.promptId}`} styles={styles} />}
@@ -1730,7 +1751,21 @@ function SteeredPrompt({
           ))}
         </View>
       )}
-      <Text style={styles.meta}>Sent while Claude was working</Text>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <Text style={styles.meta}>Sent while Claude was working</Text>
+        {waiting && sendNow && (
+          <TouchableOpacity
+            disabled={sent}
+            onPress={() => {
+              setSent(true);
+              sendNow();
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={[styles.promptMore, { marginTop: 0, color: colors.accent }, sent && { opacity: 0.6 }]}>{sent ? "Sending…" : "Send now"}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
       <SearchFlash anchor={`p:${prompt.promptId}`} inset={0} rounding={radius.lg} />
     </LongPressToRead>
   );

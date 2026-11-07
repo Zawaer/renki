@@ -5,13 +5,14 @@
  * Claude Code's guidance on tools, git care and reporting, and without the
  * working directory, platform or date. Now they get Claude Code's prompt
  * (the same one the CLI on a laptop uses) plus this: only what is true of
- * Renki itself, wherever it's installed. Facts about one host (paths, preview
- * URLs, the Mac, the homelab) stay in the session guide, ~/.claude/CLAUDE.md.
+ * Renki itself, wherever it's installed, plus the hardware it detected at
+ * startup (./hardware.ts). Other facts about one host (paths, preview URLs, the
+ * Mac, the homelab) stay in the session guide, ~/.claude/CLAUDE.md.
  *
  * The CLI records the prompt on a conversation's first request and reuses it
  * until compaction, so a change here reaches new sessions, not running ones.
  */
-export function renkiPromptAppend(opts: { approvalTimeoutMs: number; inRepo: boolean }): string {
+export function renkiPromptAppend(opts: { approvalTimeoutMs: number; inRepo: boolean; hardware?: string }): string {
   const minutes = Math.max(1, Math.round(opts.approvalTimeoutMs / 60_000));
   return `# Running inside Renki
 
@@ -33,7 +34,7 @@ In a repo, you work in your own git worktree, on a branch cut for this session (
 ## Background agents
 Background agents outlive the turn that started them: their approvals still reach the user and their results arrive when they finish. If the user hands you a second, independent task mid-way through something, a background agent for it usually beats making them wait.
 
-While agents run, Renki adds their latest steps and the path to each one's transcript after the user's message. When the user asks what an agent is doing or how far along it is, answer from those steps, and read the end of its transcript if you need more. Don't guess from its side effects.${opts.inRepo ? "" : NO_REPO_STYLE}`;
+While agents run, Renki adds their latest steps and the path to each one's transcript after the user's message. When the user asks what an agent is doing or how far along it is, answer from those steps, and read the end of its transcript if you need more. Don't guess from its side effects.${opts.hardware ?? ""}${opts.inRepo ? "" : NO_REPO_STYLE}`;
 }
 
 /**

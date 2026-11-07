@@ -47,6 +47,7 @@ import { describeUpload } from "../claude/archives.js";
 import type { Uploads } from "../uploads.js";
 import { diskBytes, slimFolder, slimNotices, type SlimOutcome } from "./slim.js";
 import { renkiPromptAppend } from "../claude/systemPrompt.js";
+import { detectHardware, hardwareNote } from "../claude/hardware.js";
 import { accountsNote } from "./accountsNote.js";
 import { hostTimeZone, timeZoneNote } from "./timeZoneNote.js";
 import { dueForPurge, purgeAtFor } from "./trash.js";
@@ -200,6 +201,12 @@ export class SessionManager {
   private readonly pendingMoves = new Map<string, MoveTarget>();
   /** Settings > Homelab access. */
   readonly homelabAccess: HomelabAccess;
+  /** The machine sessions run on (./claude/hardware.ts), detected on first use. */
+  private hardware: string | undefined;
+  private hardwareNote(): string {
+    this.hardware ??= hardwareNote(detectHardware(this.config.dataDir));
+    return this.hardware;
+  }
   /** sessionId -> requestIds of permission_requests awaiting a decision. */
   private readonly pendingPermissions = new Map<string, Set<string>>();
   /**
@@ -2117,7 +2124,11 @@ export class SessionManager {
       model: first.model,
       permissionMode: first.permissionMode,
       maxThinkingTokens: first.maxThinkingTokens,
-      systemPromptAppend: renkiPromptAppend({ approvalTimeoutMs: this.config.permissionTimeoutMs, inRepo: Boolean(this.getSession(sessionId).repoId) }),
+      systemPromptAppend: renkiPromptAppend({
+        approvalTimeoutMs: this.config.permissionTimeoutMs,
+        inRepo: Boolean(this.getSession(sessionId).repoId),
+        hardware: this.hardwareNote(),
+      }),
       forcePermissionPrompts: this.config.forcePermissionPrompts,
       enableRtk: this.config.enableRtk,
       rtkBin: this.config.rtkBin,

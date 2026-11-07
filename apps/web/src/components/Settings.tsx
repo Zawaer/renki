@@ -616,12 +616,12 @@ function RotationSettings({
       {enabled && accounts.length > 1 && (
         <div className="mt-3 flex items-center justify-between gap-4 border-t border-(--renki-border)/60 pt-3">
           <div className="min-w-0">
-            <div className="text-[13px] font-medium text-(--renki-fg)">Use the limit that resets soonest</div>
+            <div className="text-[13px] font-medium text-(--renki-fg)">Use up weekly limits before they reset</div>
             <div className="mt-0.5 text-xs text-(--renki-fg-muted)">
-              Run on the account whose usage window resets first, since what's left in it is lost at the reset. Switches only for a gap of 30 minutes or more, because a switch makes each chat re-read its context once.
+              Run on the account whose weekly quota is most at risk of going unused: the most left over, with the least time until its week resets. A full 5-hour window only pauses an account. Switches only for a clear difference, because a switch makes each chat re-read its context once.
             </div>
           </div>
-          <Switch checked={soonest} onChange={toggleSoonest} label="Use the limit that resets soonest" />
+          <Switch checked={soonest} onChange={toggleSoonest} label="Use up weekly limits before they reset" />
         </div>
       )}
       {enabled && accounts.length > 1 && (
@@ -639,7 +639,7 @@ function RotationSettings({
           </div>
           <div className="mt-2 text-xs text-(--renki-fg-muted)">
             {soonest
-              ? "Used when no account's limit resets sooner than the others'."
+              ? "Used when two accounts are equally urgent."
               : rotation.preferredEmail
                 ? "Sessions run as this account whenever it has headroom, borrow another only while it's over the threshold, and come back as soon as it resets — so the other account's quota stays free for use elsewhere."
                 : "Any account with headroom will do."}

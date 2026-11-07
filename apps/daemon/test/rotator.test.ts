@@ -645,67 +645,71 @@ describe("AccountRotator.reportLimit", () => {
   });
 });
 
-describe("soonest-reset mode (use it or lose it)", () => {
-  const inMin = (m: number) => new Date(Date.now() + m * 60_000).toISOString();
-  const usage = (h5: number, h5Reset: string | null, d7 = 20, d7Reset: string | null = inMin(5 * 24 * 60)) => ({
-    fiveHour: { pct: h5, resetsAt: h5Reset },
-    sevenDay: { pct: d7, resetsAt: d7Reset },
+describe("use-it-or-lose-it mode: weekly quota most at risk first", () => {
+  const inH = (h: number) => new Date(Date.now() + h * 3_600_000).toISOString();
+  const usage = (h5: number, d7: number, weekResetH: number | null, h5ResetH: number | null = null) => ({
+    fiveHour: { pct: h5, resetsAt: h5ResetH === null ? null : inH(h5ResetH) },
+    sevenDay: { pct: d7, resetsAt: weekResetH === null ? null : inH(weekResetH) },
     extra: null,
   });
-  const soonest = (accounts: Account[], extra: Parameters<typeof setup>[0] extends infer O ? Partial<O> : never = {}) => {
-    const s = setup({ accounts, activeAccountNumber: accounts.find((a) => a.active)?.number ?? null, cooldownMs: 0, ...extra });
+  const mode = (accounts: Account[]) => {
+    const s = setup({ accounts, activeAccountNumber: accounts.find((a) => a.active)?.number ?? null, cooldownMs: 0, threshold: 95 });
     (s.rotator as any).soonestReset = true;
     return s;
   };
 
-  it("moves to the account whose 5h window resets soonest, even with the active one healthy", async () => {
-    const { rotator, cswap } = soonest([
-      account({ number: 1, email: "a@x", active: true, usage: usage(20, inMin(240)) }),
-      account({ number: 2, email: "b@x", usage: usage(40, inMin(45)) }),
+  it("today's case: moves to the account whose big weekly leftover expires first", async () => {
+    // otamaps active, 28% of its week used, 7 days left; gmail 11% used, its week ends in ~5 days.
+    const { rotator, cswap } = mode([
+      account({ number: 1, email: "otamaps@x", active: true, usage: usage(40, 28, 7 * 24) }),
+      account({ number: 3, email: "stuhi@x", usage: usage(4, 95, 3 * 24) }), // week spent: not usable
+      account({ number: 6, email: "gmail@x", usage: usage(0, 11, 2.5 * 24) }),
     ]);
     await rotator.tick();
-    expect(cswap.switchTo).toHaveBeenCalledWith(2);
+    expect(cswap.switchTo).toHaveBeenCalledWith(6);
   });
 
-  it("stays put for a small difference: a switch costs every chat its prompt cache", async () => {
-    const { rotator, cswap } = soonest([
-      account({ number: 1, email: "a@x", active: true, usage: usage(20, inMin(60)) }),
-      account({ number: 2, email: "b@x", usage: usage(20, inMin(45)) }),
+  it("a ticking 5-hour clock no longer pulls it to an account", async () => {
+    const { rotator, cswap } = mode([
+      account({ number: 1, email: "a@x", active: true, usage: usage(20, 30, 2 * 24, 4) }),
+      account({ number: 2, email: "b@x", usage: usage(40, 30, 6 * 24, 0.5) }), // 5h resets soon, but its week has days left
     ]);
     await rotator.tick();
     expect(cswap.switchTo).not.toHaveBeenCalled();
   });
 
-  it("prefers quota that's expiring over a fresh account whose window hasn't opened", async () => {
-    const { rotator, cswap } = soonest([
-      account({ number: 1, email: "fresh@x", active: true, usage: usage(0, null, 10, null) }),
-      account({ number: 2, email: "open@x", usage: usage(30, inMin(120)) }),
+  it("a full 5-hour window pauses an account, however urgent its week", async () => {
+    const { rotator, cswap } = mode([
+      account({ number: 1, email: "a@x", active: true, usage: usage(30, 50, 6 * 24) }),
+      account({ number: 2, email: "b@x", usage: usage(100, 5, 12, 2) }),
     ]);
     await rotator.tick();
-    expect(cswap.switchTo).toHaveBeenCalledWith(2);
+    expect(cswap.switchTo).not.toHaveBeenCalled();
   });
 
-  it("skips accounts out of room, and leaves the active one when it runs out", async () => {
-    const { rotator, cswap } = soonest([
-      account({ number: 1, email: "a@x", active: true, usage: usage(96, inMin(30)) }),
-      account({ number: 2, email: "b@x", usage: usage(10, inMin(200), 99) }), // weekly spent
-      account({ number: 3, email: "c@x", usage: usage(10, inMin(300)) }),
+  it("stays put for a small edge: a switch costs every chat its prompt cache", async () => {
+    const { rotator, cswap } = mode([
+      account({ number: 1, email: "a@x", active: true, usage: usage(10, 40, 48) }),
+      account({ number: 2, email: "b@x", usage: usage(10, 38, 48) }), // only slightly more left
+    ]);
+    await rotator.tick();
+    expect(cswap.switchTo).not.toHaveBeenCalled();
+  });
+
+  it("leaves an account that runs out, for the most urgent of the rest", async () => {
+    const { rotator, cswap } = mode([
+      account({ number: 1, email: "a@x", active: true, usage: usage(97, 50, 24) }),
+      account({ number: 2, email: "b@x", usage: usage(10, 20, 6 * 24) }),
+      account({ number: 3, email: "c@x", usage: usage(10, 20, 2 * 24) }),
     ]);
     await rotator.tick();
     expect(cswap.switchTo).toHaveBeenCalledWith(3);
   });
 
   it("breaks ties with the preferred account", async () => {
-    const { rotator, cswap } = soonest([
-      account({ number: 1, email: "a@x", active: true, usage: usage(0, null, 10, null) }),
-      account({ number: 2, email: "b@x", usage: usage(0, null, 10, null) }),
-    ]);
-    (rotator as any).preferredEmail = "b@x";
-    await rotator.tick();
-    expect(cswap.switchTo).not.toHaveBeenCalled(); // nothing expiring anywhere: no reason to move
-    const claim = soonest([
-      account({ number: 1, email: "a@x", usage: usage(0, null, 10, null) }),
-      account({ number: 2, email: "b@x", usage: usage(0, null, 10, null) }),
+    const claim = mode([
+      account({ number: 1, email: "a@x", usage: usage(0, 10, null) }),
+      account({ number: 2, email: "b@x", usage: usage(0, 10, null) }),
     ]);
     (claim.rotator as any).preferredEmail = "b@x";
     await claim.rotator.tick();

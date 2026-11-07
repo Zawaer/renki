@@ -18,12 +18,14 @@ type PersistedRotationSettings = {
 };
 
 /**
- * In "soonest reset" mode, a switch has to win at least this much: the other
- * account's quota must expire this much sooner. Every switch makes each chat's
- * next turn re-read its context without the prompt cache, which costs usage
- * too, so a few minutes' difference isn't worth it.
+ * In the use-it-or-lose-it mode, another account has to be at least this much
+ * more urgent (see weeklyUrgency) before Renki moves to it. Every switch makes
+ * each chat's next turn re-read its context without the prompt cache, which
+ * costs usage too, so a small edge isn't worth it.
  */
-export const SOONEST_RESET_MIN_GAIN_MS = 30 * 60_000;
+export const URGENCY_SWITCH_RATIO = 1.25;
+/** A week whose reset time isn't known is treated as this far from resetting (a whole week). */
+const UNKNOWN_WEEK_LEFT_HOURS = 7 * 24;
 
 /**
  * An account cswap holds as a plain API key rather than a subscription login.
@@ -79,7 +81,7 @@ export class AccountRotator {
   private preferredEmail: string | null = null;
   /** Continue a rate-limited turn once a limit resets — see planResume/prepareResume. */
   private autoResume = true;
-  /** Run on the account whose quota expires soonest — see evaluateSoonestReset. */
+  /** Spend the weekly quota most at risk of going unused first — see evaluateSoonestReset. */
   private soonestReset = false;
   /** How many accounts cswap listed last time anything asked — see rotatingAccounts. */
   private accountCount = 0;
@@ -425,60 +427,63 @@ export class AccountRotator {
   }
 
   /**
-   * When this account's unused quota runs out: the soonest reset among its
-   * windows that are open (they reset in the future) and still have room.
-   * Infinity when nothing of it is expiring (a fresh 5h window only opens on
-   * first use), so it never outranks an account whose quota is about to go.
+   * How much of this account's weekly quota goes to waste per hour if it sits
+   * unused: what's left of the week below the threshold, over the hours until
+   * the week resets. The weekly limits are what cap total usage; unused 5-hour
+   * capacity can still be spent later in the week, so the 5-hour window only
+   * gates (hasHeadroom) and never pulls toward an account. Zero with nothing
+   * left. Percentages only: a bigger plan's 10% counts the same as a smaller one's.
    */
-  private quotaExpiresAt(account: Account, now = Date.now()): number {
-    if (!account.usage) return Number.POSITIVE_INFINITY;
-    let soonest = Number.POSITIVE_INFINITY;
-    for (const w of [account.usage.fiveHour, account.usage.sevenDay]) {
-      const at = w.resetsAt ? Date.parse(w.resetsAt) : Number.NaN;
-      if (Number.isFinite(at) && at > now && w.pct < this.threshold) soonest = Math.min(soonest, at);
-    }
-    return soonest;
+  private weeklyUrgency(account: Account, now = Date.now()): number {
+    if (!account.usage) return 0;
+    const week = account.usage.sevenDay;
+    const left = Math.max(0, this.threshold - week.pct) / 100;
+    const at = week.resetsAt ? Date.parse(week.resetsAt) : Number.NaN;
+    const hours = Number.isFinite(at) && at > now ? Math.max(0.25, (at - now) / 3_600_000) : UNKNOWN_WEEK_LEFT_HOURS;
+    return left / hours;
   }
 
-  /** Soonest-expiring quota first; ties go to the preferred account, then to the most weekly room left. */
+  /** Most weekly quota at risk first; ties go to the preferred account, then to the soonest week reset. */
   private bySoonestReset(accounts: Account[]): Account[] {
     const now = Date.now();
+    const weekAt = (a: Account) => (a.usage?.sevenDay.resetsAt ? Date.parse(a.usage.sevenDay.resetsAt) : Number.POSITIVE_INFINITY);
     return [...accounts].sort((a, b) => {
-      const ea = this.quotaExpiresAt(a, now);
-      const eb = this.quotaExpiresAt(b, now);
-      if (ea !== eb) return ea < eb ? -1 : 1;
+      const ua = this.weeklyUrgency(a, now);
+      const ub = this.weeklyUrgency(b, now);
+      if (ua !== ub) return ub - ua;
       const pa = a.email.toLowerCase() === this.preferredEmail ? 0 : 1;
       const pb = b.email.toLowerCase() === this.preferredEmail ? 0 : 1;
       if (pa !== pb) return pa - pb;
-      return (a.usage?.sevenDay.pct ?? 100) - (b.usage?.sevenDay.pct ?? 100);
+      return weekAt(a) - weekAt(b);
     });
   }
 
   /**
-   * Use it or lose it: run on the account with headroom whose quota expires
-   * soonest. Moves off the active account only when another one's expires at
-   * least SOONEST_RESET_MIN_GAIN_MS sooner, or the active one is out of room.
+   * Use it or lose it: run on the account with headroom whose weekly quota is
+   * most at risk of going unused (weeklyUrgency). Moves off the active account
+   * only when another is URGENCY_SWITCH_RATIO times as urgent, or the active
+   * one is out of room on either window.
    */
   private async evaluateSoonestReset(accounts: Account[], active: Account, cooldownMs: number): Promise<void> {
-    const usable = accounts.filter((a) => this.hasHeadroom(a));
+    const usable = accounts.filter((a) => this.hasHeadroom(a) && !isApiKeyAccount(a));
     if (usable.length === 0) return this.hold(active.usageStatus === "ok" ? "all accounts at limit" : "usage unavailable");
     const best = this.bySoonestReset(usable)[0]!;
     if (best.active) return this.hold(null);
     if (this.hasHeadroom(active)) {
-      const gain = this.quotaExpiresAt(active) - this.quotaExpiresAt(best);
-      if (!(gain >= SOONEST_RESET_MIN_GAIN_MS)) return this.hold(null);
+      const now = Date.now();
+      if (!(this.weeklyUrgency(best, now) >= this.weeklyUrgency(active, now) * URGENCY_SWITCH_RATIO)) return this.hold(null);
     }
     if (this.lastSwitchAt && Date.now() - this.lastSwitchAt < cooldownMs) return this.hold("cooldown");
     const newActive = await this.cswap.switchTo(best.number);
     this.onSwitched?.();
     this.lastSwitchAt = Date.now();
     this.lastHoldReason = null;
-    const at = this.quotaExpiresAt(best);
-    logger.info("switched to the account whose quota expires soonest", {
+    logger.info("switched to the account whose weekly quota is most at risk", {
       from: active.number,
       to: newActive,
       email: best.email,
-      expiresAt: Number.isFinite(at) ? new Date(at).toISOString() : null,
+      weeklyPct: best.usage?.sevenDay.pct ?? null,
+      weekResetsAt: best.usage?.sevenDay.resetsAt ?? null,
     });
   }
 

@@ -141,8 +141,9 @@ export const RotationStatus = z.object({
   autoResume: z.boolean().default(true),
   /**
    * Use it or lose it: among accounts with headroom, run on the one whose
-   * current usage window resets soonest, since what's left in it is gone at
-   * the reset. The preferred account only breaks ties then.
+   * weekly quota is most at risk of going unused (what's left of its week over
+   * the time until it resets). The 5-hour window only decides whether an
+   * account can be used right now. The preferred account only breaks ties.
    */
   soonestReset: z.boolean().default(false),
 });

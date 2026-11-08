@@ -293,6 +293,16 @@ describe("backgroundWorkOf", () => {
     expect(work[0]!.path).toEqual(["tu_a"]);
   });
 
+  it("leaves out a background call that was refused before it started", () => {
+    const denied = tool("Agent", { description: "Run Difix server", run_in_background: true }, {
+      toolUseId: "tu_d",
+      result: { ok: false, summary: "Permission for this action was denied" } as never,
+    });
+    expect(backgroundWorkOf([turnItem([denied])])).toEqual([]);
+    expect(backgroundTasksOf([turnItem([denied])])[0]!.status).toBe("failed");
+    expect(agentMapOf([turnItem([denied])])[0]!.status).toBe("failed");
+  });
+
   it("lists an agent resumed with SendMessage under its original task, until it reports back", () => {
     const original = tool("Agent", { description: "Build 3D fly-through", run_in_background: true }, {
       toolUseId: "tu_a",

@@ -339,6 +339,15 @@ export function backgroundTasksOf(timeline: TimelineItem[]): BackgroundTaskView[
   return out.reverse();
 }
 
+/**
+ * A background call refused before it started — denied by a permission check,
+ * or a bad input. Its result is the error, not the "launched" acknowledgement,
+ * and no completion ever follows, so it must not count as running.
+ */
+function neverStarted(b: ToolBlock): boolean {
+  return !b.backgroundTask && b.result?.ok === false;
+}
+
 function taskView(b: ToolBlock): BackgroundTaskView {
   return {
     toolUseId: b.toolUseId,
@@ -346,8 +355,8 @@ function taskView(b: ToolBlock): BackgroundTaskView {
     label: describeTool(b.toolName, b.toolInput).label,
     status: b.macBuild
       ? b.macBuild.state === "running" ? "running" : b.macBuild.state === "succeeded" ? "completed" : "failed"
-      : (b.backgroundTask?.status ?? "running"),
-    summary: b.macBuild ? (b.macBuild.state === "running" ? `${b.macBuild.phase}${b.macBuild.detail ? ` · ${b.macBuild.detail}` : ""}` : b.macBuild.detail) : (b.backgroundTask?.summary ?? null),
+      : (b.backgroundTask?.status ?? (neverStarted(b) ? "failed" : "running")),
+    summary: b.macBuild ? (b.macBuild.state === "running" ? `${b.macBuild.phase}${b.macBuild.detail ? ` · ${b.macBuild.detail}` : ""}` : b.macBuild.detail) : (b.backgroundTask?.summary ?? (neverStarted(b) ? (b.result?.summary ?? null) : null)),
   };
 }
 
@@ -396,7 +405,7 @@ export function backgroundWorkOf(timeline: TimelineItem[]): BackgroundWork[] {
       const isAgent = AGENT_TOOL_NAMES.has(b.toolName) || resumed != null;
       const path = [...ancestors, b.toolUseId];
       const inBackground = (b.toolInput as { run_in_background?: unknown } | null)?.run_in_background === true || resumed != null;
-      if (inBackground && !b.backgroundTask && !b.macBuild && !(!isAgent && isServer(b.toolInput))) {
+      if (inBackground && !b.backgroundTask && !neverStarted(b) && !b.macBuild && !(!isAgent && isServer(b.toolInput))) {
         const steps = b.subagent?.blocks.filter((x) => x?.kind === "tool_use") ?? [];
         const newest = steps[steps.length - 1];
         const input = (b.toolInput ?? {}) as { description?: unknown; summary?: unknown };
@@ -487,11 +496,12 @@ function agentNode(b: ToolBlock, turnRunning: boolean, children: AgentNode[]): A
   const background = input.run_in_background === true || !!b.backgroundTask;
   let status: AgentNode["status"];
   if (b.backgroundTask) status = b.backgroundTask.status === "completed" ? "done" : b.backgroundTask.status;
+  else if (neverStarted(b)) status = "failed";
   else if (background) status = "running";
   else if (b.result) status = b.result.ok ? "done" : "failed";
   else status = turnRunning ? "running" : "stopped";
   // A background agent's own result is only the "launched" acknowledgement.
-  const answer = b.backgroundTask?.summary ?? (background ? null : (b.result?.summary ?? null));
+  const answer = b.backgroundTask?.summary ?? (background && !neverStarted(b) ? null : (b.result?.summary ?? null));
   return {
     toolUseId: b.toolUseId,
     type: typeof input.subagent_type === "string" && input.subagent_type ? input.subagent_type : (b.subagent?.subagentType ?? "Agent"),

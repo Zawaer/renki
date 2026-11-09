@@ -29,7 +29,7 @@ describe("describeConnectionError", () => {
 
 describe("describeUnreachable", () => {
   it("asks about Tailscale for a tailnet address or MagicDNS name", () => {
-    expect(describeUnreachable("http://100.98.104.77:4517").viaTailscale).toBe(true);
+    expect(describeUnreachable("http://100.64.0.10:4517").viaTailscale).toBe(true);
     expect(describeUnreachable("https://homelab.tail1234.ts.net").body).toMatch(/Tailscale/);
   });
   it("doesn't for anything else", () => {

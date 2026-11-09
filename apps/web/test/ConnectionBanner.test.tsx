@@ -14,7 +14,7 @@ afterEach(() => {
 describe("ConnectionBanner", () => {
   it("says the host is unreachable after a while down — naming Tailscale for a tailnet host — and goes when it's back", () => {
     vi.useFakeTimers();
-    const baseUrl = "http://100.98.104.77:4517";
+    const baseUrl = "http://100.64.0.10:4517";
     const realtime = new RealtimeClient({ baseUrl, token: "t", deviceId: "d1" });
     const rest = new RestClient({ baseUrl, token: "t" });
     const config = { baseUrl, token: "t", deviceId: "d1", deviceName: "Test" };

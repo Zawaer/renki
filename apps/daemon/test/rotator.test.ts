@@ -659,10 +659,10 @@ describe("use-it-or-lose-it mode: weekly quota most at risk first", () => {
   };
 
   it("today's case: moves to the account whose big weekly leftover expires first", async () => {
-    // otamaps active, 28% of its week used, 7 days left; gmail 11% used, its week ends in ~5 days.
+    // work active, 28% of its week used, 7 days left; gmail 11% used, its week ends in ~5 days.
     const { rotator, cswap } = mode([
-      account({ number: 1, email: "otamaps@x", active: true, usage: usage(40, 28, 7 * 24) }),
-      account({ number: 3, email: "stuhi@x", usage: usage(4, 95, 3 * 24) }), // week spent: not usable
+      account({ number: 1, email: "work@x", active: true, usage: usage(40, 28, 7 * 24) }),
+      account({ number: 3, email: "school@x", usage: usage(4, 95, 3 * 24) }), // week spent: not usable
       account({ number: 6, email: "gmail@x", usage: usage(0, 11, 2.5 * 24) }),
     ]);
     await rotator.tick();

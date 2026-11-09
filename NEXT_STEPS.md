@@ -538,7 +538,7 @@ features. The throughline for everything below: shrink "found the repo" →
       none, because rotation can then see the limit), under the same rails as
       any switch: never mid-turn, cooldown-limited, and only with rotation
       enabled. Verified live: the first tick after deploy claimed
-      `toivo@stuhi.org` and cswap now agrees it's active. Also fixed the
+      account #3 and cswap now agrees it's active. Also fixed the
       related parse bug this surfaced — `readActiveNumber` read the *list*
       response's fields, which don't exist on a switch response (`to.number`
       does), so every successful switch reported `null`: a missing "(now #3)"
@@ -546,9 +546,9 @@ features. The throughline for everything below: shrink "found the repo" →
       over REST.
 - [x] **The rate-limit retry switched onto the exhausted account and called it
       a success (2026-09-10).** Toivo asked why a turn hit a usage limit when
-      `toivo@stuhi.org` sat at 91%, and the answer was that stuhi was never the
+      account #3 sat at 91%, and the answer was that #3 was never the
       account in play: the reset time in the error (12:10pm UTC) belonged to
-      `toivo@otamaps.fi`, which the periodic check had rotated onto at 09:16
+      account #1, which the periodic check had rotated onto at 09:16
       and which then ran itself to 100%. Three prompts in a row at 09:53 each
       logged `rate-limit switch {"active":1}` — a "switch" to the account that
       was already active and already spent — and each retry died with the same

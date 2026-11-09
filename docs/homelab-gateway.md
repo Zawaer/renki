@@ -48,7 +48,7 @@ extra Python packages); the YAML below is the readable summary. Tiers 0, 1 and 2
 apps:
   deploy:            # tier 1 allowed without asking
     - talkoot
-    - pihi
+    - puntari
     - scout-tool
     - otaindex
     - contacts           # about-me/contacts
@@ -131,7 +131,7 @@ is covered at once by the sessions' "All repositories" token.
 
 ## Per-project access
 
-`RENKI_HOMELAB_REPOS` (daemon environment, e.g. `renki,talkoot,pihi`) lists the repos
+`RENKI_HOMELAB_REPOS` (daemon environment, e.g. `renki,talkoot,puntari`) lists the repos
 whose sessions may use `homelab`. Unset = every session may; set but empty = none; `@plain`
 covers repo-less sessions. For any other session the daemon registers a `PreToolUse` hook
 (`apps/daemon/src/claude/homelabGuard.ts`) that refuses Bash commands that run `homelab` or

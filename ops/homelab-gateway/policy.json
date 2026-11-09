@@ -10,12 +10,12 @@
         "scout"
       ]
     },
-    "pihi": {
+    "puntari": {
       "mode": "deploy",
-      "dir": "pihi",
+      "dir": "puntari",
       "git": true,
       "services": [
-        "pihi"
+        "puntari"
       ]
     },
     "scout-tool": {

@@ -10,8 +10,8 @@ describe("HomelabAccess", () => {
     const dir = mkdtempSync(resolve(tmpdir(), "access-"));
     expect(new HomelabAccess(dir, ["talkoot"]).get()).toEqual(["talkoot"]);
     const a = new HomelabAccess(dir, ["talkoot"]);
-    expect(a.set(["Matka", "matka", " pihi ", "@plain"])).toEqual(["@plain", "matka", "pihi"]);
-    expect(new HomelabAccess(dir, ["talkoot"]).get()).toEqual(["@plain", "matka", "pihi"]);
+    expect(a.set(["Matka", "matka", " puntari ", "@plain"])).toEqual(["@plain", "matka", "puntari"]);
+    expect(new HomelabAccess(dir, ["talkoot"]).get()).toEqual(["@plain", "matka", "puntari"]);
     a.set(null);
     expect(a.get()).toBeNull();
   });

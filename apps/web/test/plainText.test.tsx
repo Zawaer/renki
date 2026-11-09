@@ -21,11 +21,11 @@ describe("markdownToPlainText", () => {
   - nested
 - b
 
-| | Friend | Pihi |
+| | Friend | Puntari |
 |---|---|---|
 | Total | €10,240 | €9,900 |`;
     expect(markdownToPlainText(md)).toBe(
-      "See the invoice (https://x.y/z) or https://a.b\n\n• a\n  • nested\n• b\n\n · Friend · Pihi\nTotal · €10,240 · €9,900",
+      "See the invoice (https://x.y/z) or https://a.b\n\n• a\n  • nested\n• b\n\n · Friend · Puntari\nTotal · €10,240 · €9,900",
     );
   });
 });

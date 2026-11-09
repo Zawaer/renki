@@ -2,7 +2,8 @@ import { Children, cloneElement, type ComponentProps, isValidElement, memo, type
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Collapsible } from "./ui.js";
-import { parseFileLink } from "@renki/client-core";
+import { isUiFence, parseFileLink, parseUiBlock, type UiBlock } from "@renki/client-core";
+import { GenUi, GenUiPending } from "./GenUi.js";
 import { useFileLinkTarget } from "../lib/fileLinks.js";
 
 /**
@@ -108,6 +109,29 @@ function withMarkers(children: ReactNode, marker: (index: number) => string): Re
 // Headings a step above body size, with more room above than below, so a
 // long reply's sections show at a glance instead of reading as one block.
 // (The top margin beats the container's space-y, which sits in :where().)
+function CodeBlock({ node, ...p }: ComponentProps<"pre"> & { node?: unknown }) {
+  return (
+    <Collapsible text={hastText(node)} copyLabel="Copy code">
+      <pre
+        className="overflow-x-auto rounded-xl border border-(--renki-border) bg-(--renki-bg-inset) p-3.5 font-(family-name:--renki-font-mono) text-xs leading-relaxed text-(--renki-fg) [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit"
+        {...p}
+      />
+    </Collapsible>
+  );
+}
+
+/** A ```renki-ui block's component, or null when this code block isn't one (or doesn't parse). */
+function uiBlockOf(node: unknown): UiBlock | null {
+  if (!isUiNode(node)) return null;
+  return parseUiBlock(hastText(node));
+}
+
+function isUiNode(node: unknown): boolean {
+  const code = (node as { children?: { tagName?: string; properties?: { className?: unknown } }[] } | undefined)?.children?.[0];
+  const classes = code?.tagName === "code" ? code.properties?.className : undefined;
+  return Array.isArray(classes) && classes.some((c) => typeof c === "string" && isUiFence(c.replace(/^language-/, "")));
+}
+
 const components: Components = {
   h1: ({ node, ...p }) => <h1 className="mt-6 text-[18px] leading-snug font-semibold text-(--renki-fg) first:mt-0" {...p} />,
   h2: ({ node, ...p }) => <h2 className="mt-6 text-[16.5px] leading-snug font-semibold text-(--renki-fg) first:mt-0" {...p} />,
@@ -148,14 +172,11 @@ const components: Components = {
   // Fenced blocks: copyable, and clipped when long enough to bury the rest of
   // the reply. The descendant selectors neutralize the inline-code pill so the
   // code sits flush inside the block.
-  pre: ({ node, ...p }) => (
-    <Collapsible text={hastText(node)} copyLabel="Copy code">
-      <pre
-        className="overflow-x-auto rounded-xl border border-(--renki-border) bg-(--renki-bg-inset) p-3.5 font-(family-name:--renki-font-mono) text-xs leading-relaxed text-(--renki-fg) [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit"
-        {...p}
-      />
-    </Collapsible>
-  ),
+  pre: ({ node, ...p }) => {
+    const ui = uiBlockOf(node);
+    if (ui) return <GenUi block={ui} />;
+    return <CodeBlock node={node} {...p} />;
+  },
   // Tables like the Claude app's: a rounded frame, a semibold header, only
   // horizontal rules between rows (each body cell's top border), body-size
   // text. The frame scrolls sideways rather than crushing columns: cells keep
@@ -198,10 +219,23 @@ export const Markdown = memo(function Markdown({
 
 const wrapWordsPlugins = [rehypeWrapWords];
 
+/**
+ * While a reply streams, a UI block that doesn't parse yet is most likely
+ * still arriving: show a placeholder rather than half a JSON object.
+ */
+const streamingComponents: Components = {
+  ...components,
+  pre: ({ node, ...p }) => {
+    if (!isUiNode(node)) return <CodeBlock node={node} {...p} />;
+    const ui = parseUiBlock(hastText(node));
+    return ui ? <GenUi block={ui} /> : <GenUiPending />;
+  },
+};
+
 /** One finished paragraph (or list, table, code block) of a streaming reply; parsed once. */
 const StreamingChunk = memo(function StreamingChunk({ content }: { content: string }) {
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={wrapWordsPlugins} components={components}>
+    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={wrapWordsPlugins} components={streamingComponents}>
       {content}
     </ReactMarkdown>
   );

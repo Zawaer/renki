@@ -2,6 +2,7 @@ import type { Nodes, Root } from "mdast";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { gfmFromMarkdown } from "mdast-util-gfm";
 import { gfm } from "micromark-extension-gfm";
+import { uiFallbackMarkdown } from "@renki/client-core";
 
 /**
  * A reply as plain text, for the copy button: what it reads as, not its
@@ -11,7 +12,7 @@ import { gfm } from "micromark-extension-gfm";
  * row. The phone has the same thing (apps/mobile Markdown.tsx), on its own parser.
  */
 export function markdownToPlainText(md: string): string {
-  const tree: Root = fromMarkdown(md, { extensions: [gfm()], mdastExtensions: [gfmFromMarkdown()] });
+  const tree: Root = fromMarkdown(uiFallbackMarkdown(md), { extensions: [gfm()], mdastExtensions: [gfmFromMarkdown()] });
   return blocks(tree.children, 0).replace(/\n{3,}/g, "\n\n").trim();
 }
 

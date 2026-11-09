@@ -79,6 +79,7 @@ import { JsonCode, ShellCode } from "./Code.js";
 import { UsageLimits } from "./UsageLimits.js";
 import { WorkspacePanel, type FileOpenRequest, type WorkspaceTab } from "./WorkspacePanel.js";
 import { FileLinkContext, type FileLinkTarget } from "../lib/fileLinks.js";
+import { GenUiReplyContext } from "./GenUi.js";
 import { Markdown } from "./Markdown.js";
 import { AgentMapButton } from "./AgentMap.js";
 import { ExportDialog } from "./ExportDialog.js";
@@ -345,6 +346,8 @@ export function SessionView({
   const replies =
     suggestion && suggestion.turnId !== dismissedReplies && status !== "archived" && status !== "trashed" ? suggestion : null;
   const background = useMemo(() => backgroundWorkOf(conv.timeline), [conv.timeline]);
+  /** A choice in a reply (see GenUi) can be picked while the chat takes messages. */
+  const canReply = conv.status !== null && status !== "archived" && status !== "trashed";
   const sendReply = (text: string) => {
     takeOver();
     stickToBottom.current = true;
@@ -538,6 +541,7 @@ export function SessionView({
                 </div>
               )}
               <SendNowContext.Provider value={sendNow}>
+              <GenUiReplyContext.Provider value={canReply ? sendReply : null}>
               {groupNotices(rows).map(({ start, items }) => {
                 const at = older + start;
                 return items.length > 1 ? (
@@ -546,6 +550,7 @@ export function SessionView({
                   <TimelineRow key={at} item={items[0]!} first={at === 0} animate={settledCount.current !== null && at >= settledCount.current} />
                 );
               })}
+              </GenUiReplyContext.Provider>
               </SendNowContext.Provider>
               {replies && (
                 <SuggestedReplies

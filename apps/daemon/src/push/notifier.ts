@@ -1,5 +1,5 @@
 import { classifyRateLimit } from "../claude/runner.js";
-import { describeTool, parseAskUserQuestion } from "@renki/client-core";
+import { describeTool, parseAskUserQuestion, uiFallbackMarkdown } from "@renki/client-core";
 import type { Session, SessionEvent } from "@renki/protocol";
 import type { Config } from "../config.js";
 import { logger } from "../logger.js";
@@ -184,7 +184,7 @@ export class Notifier {
     const events = this.manager.events.read(sessionId);
     for (let i = events.length - 1; i >= 0; i--) {
       const e = events[i]!;
-      if (e.kind === "assistant_block" && e.turnId === turnId && e.blockKind === "text" && !e.parentToolUseId && e.text) return e.text;
+      if (e.kind === "assistant_block" && e.turnId === turnId && e.blockKind === "text" && !e.parentToolUseId && e.text) return uiFallbackMarkdown(e.text);
     }
     return null;
   }

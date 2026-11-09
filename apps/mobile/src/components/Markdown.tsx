@@ -4,7 +4,7 @@ import { Platform, ScrollView, StyleSheet, Text, type TextStyle, TouchableOpacit
 import MarkdownDisplay, { MarkdownIt } from "react-native-markdown-display";
 import { radius, type ThemeColors, useTheme } from "../theme";
 import { FadeIn } from "./Motion";
-import { parseFileLink, syntaxLanguageForFence } from "@renki/client-core";
+import { parseFileLink, syntaxLanguageForFence, uiFallbackMarkdown } from "@renki/client-core";
 import { useFileLinkTarget } from "../lib/fileLinks";
 import { SyntaxText } from "./SyntaxText";
 import { useOpenReader } from "./TextReader";
@@ -282,9 +282,12 @@ export const Markdown = memo(function Markdown({
       ? StyleSheet.create({ ...shared, body: { color: colors.faint, fontSize: 14, lineHeight: 20, fontStyle: "italic" } })
       : StyleSheet.create({ ...shared, body: { color: colors.text, fontSize: 15, lineHeight: 21 } });
   }, [colors, isMuted]);
+  // The phone doesn't draw generative UI yet (web does): ```renki-ui blocks
+  // show as their plain Markdown version. See client-core genui.ts.
+  const shown = useMemo(() => uiFallbackMarkdown(content), [content]);
   return (
     <MD style={style} rules={rules} markdownit={parser} onLinkPress={handleLinkPress}>
-      {content}
+      {shown}
     </MD>
   );
 });
@@ -298,7 +301,7 @@ type MdToken = { type: string; tag: string; content: string; info: string; marku
  * link keeps its URL after the text, a table becomes one line per row.
  */
 export function markdownToPlainText(md: string): string {
-  const tokens = parser.parse(md, {}) as MdToken[];
+  const tokens = parser.parse(uiFallbackMarkdown(md), {}) as MdToken[];
   let out = "";
   const lists: { ordered: boolean; n: number }[] = [];
   let cellsInRow = 0;

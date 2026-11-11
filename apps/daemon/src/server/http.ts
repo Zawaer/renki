@@ -98,8 +98,8 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
   };
   // Homelab gateway requests waiting for the phone: every tab shows them (see gateway/approvals.ts).
   const gatewayApprovals = config.gatewayApprovalsUrl ? new GatewayApprovals(config.gatewayApprovalsUrl) : null;
-  gatewayApprovals?.onChange((pending) => {
-    for (const conn of liveConnections) conn.notify({ type: "gateway_approvals", pending });
+  gatewayApprovals?.onChange((pending, window) => {
+    for (const conn of liveConnections) conn.notify({ type: "gateway_approvals", pending, window });
   });
   gatewayApprovals?.start();
   app.addHook("onClose", async () => gatewayApprovals?.stop());
@@ -107,6 +107,15 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
     if (!gatewayApprovals) return reply.code(404).send({ error: "not_configured" });
     try {
       return { pending: await gatewayApprovals.resend() };
+    } catch (err) {
+      return reply.code(502).send({ error: "unreachable", message: String(err) });
+    }
+  });
+  app.post("/gateway-approvals/window/close", async (_req, reply) => {
+    if (!gatewayApprovals) return reply.code(404).send({ error: "not_configured" });
+    try {
+      await gatewayApprovals.closeWindow();
+      return { ok: true };
     } catch (err) {
       return reply.code(502).send({ error: "unreachable", message: String(err) });
     }
@@ -716,7 +725,7 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
       const deviceName = req.query.deviceName?.trim() || null;
       const conn = new Connection(socket, deviceId, deviceName, manager, broker, devices, () => liveConnections.delete(conn));
       liveConnections.add(conn);
-      if (gatewayApprovals) conn.notify({ type: "gateway_approvals", pending: gatewayApprovals.current() });
+      if (gatewayApprovals) conn.notify({ type: "gateway_approvals", pending: gatewayApprovals.current(), window: gatewayApprovals.window() });
       logger.info("connection opened", { deviceId, deviceName });
     },
   );

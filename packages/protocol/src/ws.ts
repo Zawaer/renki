@@ -235,7 +235,8 @@ export const ServerMessage = z.discriminatedUnion("type", [
    * sent on connect and whenever the list changes. Only what the phone will
    * show; approving still happens on the phone alone.
    */
-  z.object({ type: z.literal("gateway_approvals"), pending: z.array(GatewayApproval) }),
+  /** `window`: while a time window is open (`homelab open-window`), when it closes, in ms; null when none. */
+  z.object({ type: z.literal("gateway_approvals"), pending: z.array(GatewayApproval), window: z.number().nullable().optional() }),
 
   z.object({ type: z.literal("pong") }),
 ]);

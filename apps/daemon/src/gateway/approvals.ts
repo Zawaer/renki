@@ -12,8 +12,10 @@ import { logger } from "../logger.js";
  */
 export class GatewayApprovals {
   private pending: GatewayApproval[] = [];
+  /** When `homelab sh` stops running without asking (ms), or null: see `homelab open-window`. */
+  private windowUntil: number | null = null;
   private timer: NodeJS.Timeout | null = null;
-  private readonly listeners = new Set<(pending: GatewayApproval[]) => void>();
+  private readonly listeners = new Set<(pending: GatewayApproval[], window: number | null) => void>();
   private failing = false;
 
   constructor(
@@ -42,17 +44,26 @@ export class GatewayApprovals {
     return this.pending.filter((p) => p.expires > Date.now());
   }
 
-  onChange(cb: (pending: GatewayApproval[]) => void): () => void {
+  window(): number | null {
+    return this.windowUntil !== null && this.windowUntil > Date.now() ? this.windowUntil : null;
+  }
+
+  onChange(cb: (pending: GatewayApproval[], window: number | null) => void): () => void {
     this.listeners.add(cb);
     return () => this.listeners.delete(cb);
   }
 
   async poll(): Promise<void> {
     let next: GatewayApproval[];
+    let nextWindow: number | null;
     try {
       const res = await this.fetchImpl(`${this.baseUrl}/v1/approvals/pending`, { signal: AbortSignal.timeout(2_500) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = (await res.json()) as { pending?: { id: string; verb: string; summary: string; created: number; expires: number }[] };
+      const body = (await res.json()) as {
+        pending?: { id: string; verb: string; summary: string; created: number; expires: number }[];
+        window?: number | null;
+      };
+      nextWindow = typeof body.window === "number" ? body.window * 1000 : null;
       next = (body.pending ?? []).map((p) => ({ id: p.id, verb: p.verb, summary: p.summary, created: p.created * 1000, expires: p.expires * 1000 }));
       if (this.failing) logger.info("gateway approvals reachable again");
       this.failing = false;
@@ -60,11 +71,20 @@ export class GatewayApprovals {
       if (!this.failing) logger.warn("can't list gateway approvals", { err: String(err) });
       this.failing = true;
       next = this.current(); // keep what we knew until each one expires
+      nextWindow = this.window();
     }
     const key = (l: GatewayApproval[]) => l.map((p) => p.id).join(",");
-    if (key(next) === key(this.pending)) return;
+    if (key(next) === key(this.pending) && nextWindow === this.windowUntil) return;
     this.pending = next;
-    for (const cb of this.listeners) cb(next);
+    this.windowUntil = nextWindow;
+    for (const cb of this.listeners) cb(next, nextWindow);
+  }
+
+  /** End an open time window now. Needs no token on the gateway's side: it only takes access away. */
+  async closeWindow(): Promise<void> {
+    const res = await this.fetchImpl(`${this.baseUrl}/v1/window/close`, { method: "POST", signal: AbortSignal.timeout(5_000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await this.poll();
   }
 
   /** Push every waiting request to the phone again (a notification swiped away loses its token). */

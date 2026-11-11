@@ -113,6 +113,8 @@ export class RealtimeClient {
   readonly lastError = new Store<WsError | null>(null);
   /** Homelab gateway requests waiting for the user's phone (empty when none, or when the daemon doesn't track them). */
   readonly gatewayApprovals = new Store<GatewayApproval[]>([]);
+  /** While a homelab time window is open (`homelab open-window`), when it closes (ms); null when none. */
+  readonly gatewayWindow = new Store<number | null>(null);
 
   private ws: WebSocket | null = null;
   private readonly conversations = new Map<string, Store<ConversationState>>();
@@ -630,6 +632,7 @@ export class RealtimeClient {
         return;
       case "gateway_approvals":
         this.gatewayApprovals.set(msg.pending);
+        this.gatewayWindow.set(msg.window ?? null);
         return;
       case "subscribed":
       case "pong":

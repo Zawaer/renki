@@ -36,7 +36,10 @@ Renki container --(ssh, forced command, key without a shell)--> gateway (host, o
 | 2 approval | `create-repo <name> [--public]` | an empty GitHub repo under the policy's owner, private unless `--public`; refuses names that exist |
 | 2 approval | `add-app <name> [--dir d] [--repo r] [--services a,b]` | a new `deploy` app in `~/<dir>` (cloned from `<owner>/<repo>` first with `--repo`). Refused if its compose file does what an app never may (privileged, host network/pid, cap_add, devices, docker.sock, or a bind of a system folder, the whole home, keys, settings or Renki's data). Other folders outside its own are listed in the phone approval (read only or can change files, flagged when on the protected list) and remembered per app; a later deploy that needs a new one, or read-write where read-only was approved, asks the phone again before rebuilding. Stored in `/var/lib/homelab-gateway/added-apps.json`, which only the gateway writes; `policy.json` wins on a name clash |
 | 2 approval | `add-route <name>[.internal] <container>:<port>` | appends a `<name>.internal` site to the Caddyfile for a container of a deployable app on `homelab_net`, validates, reloads; puts the file back if it doesn't validate |
-| never | anything else | `down -v`, `volume rm`, `system prune`, `rm` outside policy, docker run/exec, shell |
+| 2 approval | `sh <command>` | runs the command with `bash -lc` as the homelab user, in its home, after the phone shows the exact command and you approve; no approval while a time window is open |
+| 2 approval | `sudo <command>` | the same as root: you type your sudo password in the phone's approval, every time (see below) |
+| 2 approval | `open-window [minutes]` | after one approval, `sh` runs without asking for that long (default 30, at most 120); `close-window` ends it, `window` shows it |
+| never | anything else | any verb not listed; `sh` and `sudo` are the way to do something new, and they always show you the command |
 
 ## Policy
 
@@ -88,7 +91,7 @@ limits:
 
 ## Approval (tier 2)
 
-`rm-path` and `remove-container` never run on a session's say-so.
+No tier-2 verb runs on a session's say-so (`sh` inside a time window is the one exception, see below).
 
 1. The gateway checks the request against the policy first (only inside a deployable app's
    own folder, never `.git`, never a protected path, no symlinks or `..`; only *stopped*
@@ -115,6 +118,30 @@ phone's notifications can approve. There is a small window between the final che
 re-check narrow it, and the request is still limited to an app's own folder.
 
 Fallback on the host (not reachable over the SSH key): `sudo homelab-gateway --admin approve <id>`.
+
+## Host commands: `sh`, `sudo` and the time window
+
+The fixed verbs cover the everyday jobs. For the rest (renaming an app's folder, moving files,
+docker commands, systemd units) a session runs `homelab sh '<command>'`. This is a full shell as the
+homelab user, which is in the docker group and so close to root. What limits it is that you read the
+exact command on the phone before it runs. Unlike the other approvals, the text you approve here was
+written by the session, so read it.
+
+`homelab sudo '<command>'` runs a command as root. The approval asks for your sudo password, and sudo
+itself checks it (`sudo -k -S`: never a cached login, none left behind). No sudoers rule is involved.
+The password never travels in the clear and never passes the daemon: the push carries a one-time pad
+next to the token; the phone XORs the password with it and sends only that to the approval service,
+which keeps it for the second until the waiting gateway reads it, deletes it and undoes the XOR with
+the pad it kept in memory.
+
+`homelab open-window [minutes]` is for a long job you're watching. After one approval, `sh` runs
+without asking until the window closes; every command is still in the audit log. Sessions share one
+container and one key, so the gateway can't tell chats apart: a window is open to **every** chat with
+homelab access, and the approval says so. Every Renki tab shows a banner while it is open, with
+"End now" (`POST /v1/window/close` on the approval service, which needs no token since it only takes
+access away). `sudo` asks every time, window or not. A command run in a window runs as the homelab
+user, which can write the gateway's state folder, so it could extend the window itself: treat an open
+window as trusting the chat with the host for that long.
 
 ## Creating GitHub repos
 

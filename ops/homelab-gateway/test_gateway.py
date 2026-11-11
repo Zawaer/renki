@@ -591,5 +591,136 @@ class PendingListTest(unittest.TestCase):
         self.assertNotIn("token_sha256", json.dumps(pending))
 
 
+class HostCommandTest(unittest.TestCase):
+    """sh, sudo and the time window."""
+
+    def setUp(self):
+        self.dir = os.path.realpath(tempfile.mkdtemp())
+        self.window = os.path.join(self.dir, "window.json")
+        self.policy = json.loads(json.dumps(POLICY))
+        self.policy["approval"] = {"timeout_seconds": 3, "url": "https://x", "push_db": ""}
+
+    def approver(self, answer):
+        asked = []
+        def approve(policy, verb, args, summary, **kw):
+            asked.append((verb, args, summary, kw)); return answer
+        return asked, approve
+
+    def test_sh_asks_with_the_exact_command_then_runs_it(self):
+        asked, approve = self.approver(True)
+        fake = Fake()
+        with mock.patch.object(gateway, "run", fake):
+            rc, out = gateway.v_sh(self.policy, 'grep "a b" f && mv ~/x ~/y', window_path=self.window, approve=approve)
+        self.assertEqual(rc, 0)
+        self.assertIn('grep "a b" f && mv ~/x ~/y', asked[0][2])
+        self.assertEqual(fake.calls, [(["bash", "-lc", 'grep "a b" f && mv ~/x ~/y'], "/home/zawaer")])
+
+    def test_sh_denied_runs_nothing(self):
+        _, approve = self.approver(False)
+        fake = Fake()
+        with mock.patch.object(gateway, "run", fake):
+            rc, out = gateway.v_sh(self.policy, "ls", window_path=self.window, approve=approve)
+        self.assertEqual(rc, 3); self.assertEqual(fake.calls, [])
+
+    def test_sh_in_an_open_window_runs_without_asking_until_it_closes(self):
+        gateway.open_window(30, self.window)
+        asked, approve = self.approver(False)
+        fake = Fake()
+        with mock.patch.object(gateway, "run", fake):
+            rc, out = gateway.v_sh(self.policy, "ls", window_path=self.window, approve=approve)
+            self.assertEqual((rc, asked), (0, []))
+            self.assertIn("time window", out)
+            gateway.close_window(self.window)
+            gateway.v_sh(self.policy, "ls", window_path=self.window, approve=approve)
+        self.assertEqual(len(asked), 1)
+
+    def test_window_expires(self):
+        gateway.open_window(1, self.window, now=1000)
+        self.assertIsNotNone(gateway.window_until(self.window, now=1030))
+        self.assertIsNone(gateway.window_until(self.window, now=1061))
+
+    def test_open_window_needs_approval_and_a_sane_length(self):
+        asked, approve = self.approver(True)
+        rc, _ = gateway.v_open_window(self.policy, ["45"], window_path=self.window, approve=approve)
+        self.assertEqual(rc, 0)
+        self.assertIn("45 minutes", asked[0][2]); self.assertIn("Any chat", asked[0][2])
+        self.assertIsNotNone(gateway.window_until(self.window))
+        for bad in (["0"], ["999"], ["x"], ["1", "2"]):
+            with self.assertRaises(gateway.Refused):
+                gateway.v_open_window(self.policy, bad, window_path=self.window, approve=approve)
+        _, deny = self.approver(False)
+        gateway.close_window(self.window)
+        self.assertEqual(gateway.v_open_window(self.policy, [], window_path=self.window, approve=deny)[0], 3)
+        self.assertIsNone(gateway.window_until(self.window))
+
+    def test_sudo_asks_for_a_password_even_in_a_window_and_feeds_it_to_sudo(self):
+        gateway.open_window(30, self.window)
+        asked, approve = self.approver("hunter2")
+        with mock.patch.object(gateway.subprocess, "run") as run:
+            run.return_value = mock.Mock(returncode=0, stdout="done\n", stderr="")
+            rc, out = gateway.v_sudo(self.policy, "systemctl restart x", approve=approve)
+        self.assertEqual(rc, 0)
+        self.assertTrue(asked[0][3].get("password"))
+        self.assertIn("ROOT", asked[0][2])
+        args, kw = run.call_args
+        self.assertEqual(args[0], ["sudo", "-k", "-S", "-p", "", "--", "bash", "-lc", "systemctl restart x"])
+        self.assertEqual(kw["input"], "hunter2\n")
+        self.assertNotIn("hunter2", out)
+
+    def test_sudo_with_a_wrong_password_says_so(self):
+        _, approve = self.approver("nope")
+        with mock.patch.object(gateway.subprocess, "run") as run:
+            run.return_value = mock.Mock(returncode=1, stdout="", stderr="Sorry, try again.\nsudo: 1 incorrect password attempt\n")
+            rc, out = gateway.v_sudo(self.policy, "id", approve=approve)
+        self.assertEqual(rc, 1); self.assertIn("didn't accept the password", out)
+
+    def test_handle_passes_sh_through_unsplit(self):
+        with mock.patch.object(gateway, "v_sh", return_value=(0, "ok")) as v, \
+             mock.patch.object(gateway, "AUDIT_LOG", os.path.join(self.dir, "audit.log")):
+            gateway.RAW_VERBS["sh"] = v
+            try:
+                gateway.handle('sh echo "a  b" | wc -c', self.policy, disabled_path=os.path.join(self.dir, "D"))
+            finally:
+                gateway.RAW_VERBS["sh"] = gateway.v_sh
+        self.assertEqual(v.call_args[0][1], 'echo "a  b" | wc -c')
+
+    def test_kill_switch_stops_sh(self):
+        dis = os.path.join(self.dir, "DISABLED"); open(dis, "w").close()
+        fake = Fake()
+        with mock.patch.object(gateway, "run", fake), mock.patch.object(gateway, "AUDIT_LOG", os.path.join(self.dir, "a.log")):
+            rc, out = gateway.handle("sh ls", self.policy, disabled_path=dis)
+        self.assertEqual(rc, 2); self.assertEqual(fake.calls, [])
+
+    def test_empty_or_huge_commands_are_refused(self):
+        for raw in ("", "   ", "x" * 5000):
+            with self.assertRaises(gateway.Refused):
+                gateway.check_command(raw)
+
+    # --- the password's way from the phone to sudo
+    def test_password_travels_sealed_and_is_deleted_after_use(self):
+        got = {}
+        def notify(**kw):
+            got.update(kw); return True
+        def sleeper(_):
+            if gateway.read_decision(self.dir, got["data"]["id"]) is None:
+                pad = bytes.fromhex(got["data"]["pad"])
+                sealed = gateway.seal_password("pä55 word", pad)
+                code, _ = gateway.decide(self.dir, got["data"]["id"], got["data"]["token"], "approve", secret=sealed)
+                self.assertEqual(code, 200)
+                self.assertNotIn("pä55", open(os.path.join(self.dir, got["data"]["id"] + ".secret")).read())
+        pw = gateway.request_approval(self.policy, "sudo", ["id"], "s", notify=notify, approval_dir=self.dir, sleep=sleeper, password=True)
+        self.assertEqual(pw, "pä55 word")
+        self.assertFalse(os.path.exists(os.path.join(self.dir, got["data"]["id"] + ".secret")))
+        self.assertNotIn(got["data"]["pad"], open(os.path.join(self.dir, got["data"]["id"] + ".json")).read())
+
+    def test_password_request_cannot_be_approved_without_one(self):
+        aid, token = gateway.create_approval(self.dir, "sudo", ["id"], "s", 60, password=True)
+        self.assertEqual(gateway.decide(self.dir, aid, token, "approve")[0], 400)
+        self.assertEqual(gateway.decide(self.dir, aid, token, "approve", secret="zz")[0], 400)
+        self.assertIsNone(gateway.read_decision(self.dir, aid))
+        self.assertEqual(gateway.decide(self.dir, aid, token, "deny")[0], 200)  # denying needs none
+        self.assertTrue(gateway.peek(self.dir, aid, token)[1]["password"])
+
+
 if __name__ == "__main__":
     unittest.main()

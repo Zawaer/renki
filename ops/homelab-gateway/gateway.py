@@ -378,12 +378,14 @@ def list_pending(approval_dir, now=None):
     return sorted(out, key=lambda r: r["created"])
 
 
-def create_approval(approval_dir, verb, args, summary, ttl, now=None):
+def create_approval(approval_dir, verb, args, summary, ttl, now=None, password=False):
     now = time.time() if now is None else now
     os.makedirs(approval_dir, mode=0o700, exist_ok=True)
     aid, token = secrets.token_hex(5), secrets.token_urlsafe(32)
     rec = {"id": aid, "verb": verb, "args": args, "summary": summary, "created": now,
            "expires": now + ttl, "token_sha256": hashlib.sha256(token.encode()).hexdigest()}
+    if password:
+        rec["password"] = True
     tmp = _rec_path(approval_dir, aid) + ".tmp"
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w") as f:
@@ -414,7 +416,48 @@ def write_decision(approval_dir, aid, decision):
 _bad_attempts = {}
 
 
-def decide(approval_dir, aid, token, decision, now=None):
+def _secret_path(approval_dir, aid):
+    return os.path.join(approval_dir, aid + ".secret")
+
+
+# A root command's approval carries the user's sudo password, typed on the phone. The phone never
+# sends it in the clear: it XORs it with a one-time pad that came in the push (like the token, the
+# pad exists only there and in the waiting gateway's memory). The approval service stores only that
+# ciphertext, for the second or so until the gateway reads and deletes it.
+PAD_BYTES = 128
+SECRET_RE = re.compile(r"^[0-9a-f]{%d}$" % (PAD_BYTES * 2))
+
+
+def seal_password(password, pad):
+    """What the phone does (here for tests): password, zero-padded to the pad's length, XOR pad, hex."""
+    data = password.encode("utf-8")
+    if len(data) >= len(pad):
+        raise ValueError("password too long")
+    data += b"\x00" * (len(pad) - len(data))
+    return bytes(a ^ b for a, b in zip(data, pad)).hex()
+
+
+def open_password(secret_hex, pad):
+    data = bytes(a ^ b for a, b in zip(bytes.fromhex(secret_hex), pad))
+    return data.rstrip(b"\x00").decode("utf-8", "replace")
+
+
+def take_secret(approval_dir, aid):
+    """Read and delete the sealed password the phone sent with its approval (None if there is none)."""
+    path = _secret_path(approval_dir, aid)
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return None
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def decide(approval_dir, aid, token, decision, now=None, secret=None):
     """The approval service's whole job. Returns (http_status, body)."""
     now = time.time() if now is None else now
     if not ID_RE.match(aid or "") or decision not in ("approve", "deny") or not isinstance(token, str):
@@ -434,6 +477,16 @@ def decide(approval_dir, aid, token, decision, now=None):
         if _bad_attempts[aid] >= 5:
             write_decision(approval_dir, aid, "deny")
         return 403, {"error": "forbidden"}
+    if decision == "approve" and rec.get("password"):
+        if not isinstance(secret, str) or not SECRET_RE.match(secret):
+            return 400, {"error": "password needed"}
+        # Written before the decision, so the gateway finds it the moment it sees "approve".
+        try:
+            fd = os.open(_secret_path(approval_dir, aid), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            return 409, {"error": "already decided"}
+        with os.fdopen(fd, "w") as f:
+            f.write(secret)
     if not write_decision(approval_dir, aid, "approve" if decision == "approve" else "deny"):
         return 409, {"error": "already decided"}
     return 200, {"ok": True, "decision": decision, "summary": rec["summary"]}
@@ -452,7 +505,7 @@ def peek(approval_dir, aid, token, now=None):
     if not hmac.compare_digest(hashlib.sha256((token or "").encode()).hexdigest(), rec["token_sha256"]):
         return 403, {"error": "forbidden"}
     state = read_decision(approval_dir, aid) or ("expired" if now > rec["expires"] else "pending")
-    return 200, {"summary": rec["summary"], "state": state, "expires": rec["expires"]}
+    return 200, {"summary": rec["summary"], "state": state, "expires": rec["expires"], "password": bool(rec.get("password"))}
 
 
 def push_tokens_from_db(db_path):
@@ -480,21 +533,33 @@ def send_push(tokens, title, body, data):
         return False
 
 
-def request_approval(policy, verb, args, summary, notify=None, approval_dir=None, sleep=time.sleep, now=time.time):
-    """Block until the phone decides. Returns True only for an in-time approval."""
+def request_approval(policy, verb, args, summary, notify=None, approval_dir=None, sleep=time.sleep, now=time.time,
+                     password=False):
+    """Block until the phone decides. Returns True only for an in-time approval; with password=True,
+    the password typed on the phone (a str) instead of True."""
     cfg = approval_cfg(policy)
     approval_dir = approval_dir or APPROVAL_DIR
     ttl = int(cfg.get("timeout_seconds", 300))
-    aid, token = create_approval(approval_dir, verb, args, summary, ttl, now())
+    aid, token = create_approval(approval_dir, verb, args, summary, ttl, now(), password=password)
+    pad = secrets.token_bytes(PAD_BYTES) if password else None
+    data = {"kind": "gateway-approval", "id": aid, "token": token, "url": cfg.get("url", "")}
+    if pad:
+        data["pad"] = pad.hex()
     notify = notify or (lambda **kw: send_push(push_tokens_from_db(cfg.get("push_db", "")), kw["title"], kw["body"], kw["data"]))
-    delivered = notify(title="Approve on the homelab?", body=summary,
-                       data={"kind": "gateway-approval", "id": aid, "token": token, "url": cfg.get("url", "")})
+    delivered = notify(title="Approve on the homelab?", body=summary, data=data)
     deadline = now() + ttl
     resends, last_sent = 0, now()
     while now() < deadline:
         d = read_decision(approval_dir, aid)
         if d is not None:
-            return d == "approve"
+            sealed = take_secret(approval_dir, aid)
+            if d != "approve":
+                return False
+            if not password:
+                return True
+            if not sealed or not SECRET_RE.match(sealed):
+                raise Refused("approved without a password; nothing was run")
+            return open_password(sealed, pad)
         if os.path.exists(_resend_path(approval_dir, aid)):
             try:
                 os.remove(_resend_path(approval_dir, aid))
@@ -502,8 +567,7 @@ def request_approval(policy, verb, args, summary, notify=None, approval_dir=None
                 pass
             if resends < MAX_RESENDS and now() - last_sent >= RESEND_GAP_SECONDS:
                 # The same request and token again, so whichever copy the phone answers counts.
-                delivered = notify(title="Approve on the homelab?", body=summary,
-                                   data={"kind": "gateway-approval", "id": aid, "token": token, "url": cfg.get("url", "")}) or delivered
+                delivered = notify(title="Approve on the homelab?", body=summary, data=data) or delivered
                 resends, last_sent = resends + 1, now()
         sleep(1)
     write_decision(approval_dir, aid, "deny")  # nobody answered: closed for good
@@ -911,8 +975,129 @@ def v_add_route(policy, args):
     return rc, f"approved; https://{fqdn} -> {container}:{port}\n" + out2
 
 
+# ---- host commands (sh, sudo, the time window) --------------------------------
+#
+# Everything above is a fixed verb. These run a command the session wrote, so the user reads the
+# command itself on the phone before it runs: `sh` as the homelab user, `sudo` as root with the
+# user's own password typed on the phone (sudo checks it; no sudoers rule is involved). A time
+# window lets `sh` run without asking for a while, for a long job the user is watching. Sessions
+# share one container and one key, so a window is open to every chat that has homelab access, and
+# the approval says so. `sudo` asks every time, window or not.
+
+WINDOW_PATH = "/var/lib/homelab-gateway/window.json"
+WINDOW_DEFAULT_MIN, WINDOW_MAX_MIN = 30, 120
+SH_MAX_CHARS = 4000
+SH_TIMEOUT = 1500  # under the 30 min a session's Bash call can wait
+
+
+def window_until(path=None, now=None):
+    """When the open window closes (unix seconds), or None when there is none."""
+    now = time.time() if now is None else now
+    try:
+        with open(path or WINDOW_PATH) as f:
+            until = float(json.load(f).get("until", 0))
+    except (OSError, ValueError, AttributeError, TypeError):
+        return None
+    return until if until > now else None
+
+
+def open_window(minutes, path=None, now=None):
+    now = time.time() if now is None else now
+    until = now + minutes * 60
+    path = path or WINDOW_PATH
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump({"until": until, "opened": now}, f)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+    return until
+
+
+def close_window(path=None):
+    try:
+        os.remove(path or WINDOW_PATH)
+        return True
+    except FileNotFoundError:
+        return False
+
+
+def check_command(cmd):
+    cmd = (cmd or "").strip()
+    if not cmd:
+        raise Refused("usage: sh <command>  |  sudo <command>")
+    if len(cmd) > SH_MAX_CHARS:
+        raise Refused(f"command longer than {SH_MAX_CHARS} characters; put it in a script file and run that")
+    if "\x00" in cmd:
+        raise Refused("bad command")
+    return cmd
+
+
+def clock(ts):
+    return time.strftime("%H:%M", time.localtime(ts))
+
+
+def v_sh(policy, raw, window_path=None, approve=None):
+    cmd = check_command(raw)
+    approve = approve or request_approval
+    until = window_until(window_path)
+    if until is None:
+        summary = f"Run on the homelab as {os.path.basename(policy['run_as_home'])}:\n{cmd}"
+        if not approve(policy, "sh", [cmd], summary):
+            return 3, "denied: not approved on the phone in time.\n"
+        how = "approved"
+    else:
+        how = f"time window open until {clock(until)}"
+    rc, out = run(["bash", "-lc", cmd], cwd=policy["run_as_home"], timeout=SH_TIMEOUT)
+    return rc, f"[{how}; exit {rc}]\n" + out
+
+
+def v_sudo(policy, raw, approve=None):
+    cmd = check_command(raw)
+    approve = approve or request_approval
+    summary = f"Run as ROOT on the homelab:\n{cmd}\n\nEnter your sudo password to approve."
+    password = approve(policy, "sudo", [cmd], summary, password=True)
+    if not password:
+        return 3, "denied: not approved on the phone in time.\n"
+    # -k: use the password just given, never a cached sudo login, and leave none behind.
+    # -S: read it from stdin (the command then gets EOF there). -p '': no prompt text in the output.
+    p = subprocess.run(["sudo", "-k", "-S", "-p", "", "--", "bash", "-lc", cmd], cwd=policy["run_as_home"],
+                       input=password + "\n", capture_output=True, text=True, timeout=SH_TIMEOUT)
+    out = (p.stdout or "") + (p.stderr or "")
+    if p.returncode != 0 and re.search(r"incorrect password|Sorry, try again|no password was provided", out):
+        return p.returncode, "approved, but sudo didn't accept the password; nothing was run. Ask again.\n"
+    return p.returncode, f"[approved, as root; exit {p.returncode}]\n" + out
+
+
+def v_open_window(policy, args, window_path=None, approve=None):
+    if len(args) > 1 or (args and not re.fullmatch(r"[0-9]{1,3}", args[0])):
+        raise Refused(f"usage: open-window [minutes]  (default {WINDOW_DEFAULT_MIN}, at most {WINDOW_MAX_MIN})")
+    minutes = int(args[0]) if args else WINDOW_DEFAULT_MIN
+    if not 1 <= minutes <= WINDOW_MAX_MIN:
+        raise Refused(f"between 1 and {WINDOW_MAX_MIN} minutes")
+    approve = approve or request_approval
+    user = os.path.basename(policy["run_as_home"])
+    summary = (f"Let Renki run commands on the homelab as {user} without asking, for {minutes} minutes. "
+               "Any chat with homelab access can use it. Root commands still need your password.")
+    if not approve(policy, "open-window", [str(minutes)], summary):
+        return 3, "denied: not approved on the phone in time.\n"
+    until = open_window(minutes, window_path)
+    return 0, f"approved; `homelab sh` runs without asking until {clock(until)}. End it early with `homelab close-window`.\n"
+
+
+def v_close_window(policy, args, window_path=None):
+    if args:
+        raise Refused("usage: close-window")
+    return 0, "window closed.\n" if close_window(window_path) else "no window was open.\n"
+
+
+def v_window(policy, args, window_path=None):
+    until = window_until(window_path)
+    return 0, (f"open until {clock(until)}\n" if until else "closed: `homelab sh` asks on the phone each time.\n")
+
+
 class ApprovalHandler(BaseHTTPRequestHandler):
     approval_dir = APPROVAL_DIR
+    window_path = WINDOW_PATH
 
     def _reply(self, code, body):
         raw = json.dumps(body).encode()
@@ -928,7 +1113,7 @@ class ApprovalHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if re.fullmatch(r"/v1/approvals/pending(?:\?.*)?", self.path):
-            return self._reply(200, {"pending": list_pending(self.approval_dir)})
+            return self._reply(200, {"pending": list_pending(self.approval_dir), "window": window_until(self.window_path)})
         aid = self._parts()
         token = (self.headers.get("x-approval-token") or "")
         self._reply(*(peek(self.approval_dir, aid, token) if aid else (404, {"error": "not found"})))
@@ -936,6 +1121,9 @@ class ApprovalHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if re.fullmatch(r"/v1/approvals/resend(?:\?.*)?", self.path):
             return self._reply(200, {"pending": request_resend(self.approval_dir)})
+        if re.fullmatch(r"/v1/window/close(?:\?.*)?", self.path):
+            # Closing only takes access away, so it needs no token (Renki's "End now" uses it).
+            return self._reply(200, {"closed": close_window(self.window_path)})
         aid = self._parts()
         if not aid:
             return self._reply(404, {"error": "not found"})
@@ -944,7 +1132,7 @@ class ApprovalHandler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(n) or b"{}")
         except ValueError:
             return self._reply(400, {"error": "bad request"})
-        self._reply(*decide(self.approval_dir, aid, body.get("token"), body.get("decision")))
+        self._reply(*decide(self.approval_dir, aid, body.get("token"), body.get("decision"), secret=body.get("secret")))
 
     def log_message(self, fmt, *a):
         pass
@@ -961,8 +1149,13 @@ VERBS = {
     "caddy-reload": v_caddy_reload, "job": v_job,
     "rm-path": v_rm_path, "remove-container": v_remove_container, "create-repo": v_create_repo,
     "add-app": v_add_app, "add-route": v_add_route,
+    "open-window": v_open_window, "close-window": v_close_window, "window": v_window,
 }
-HELP = "verbs: " + ", ".join(sorted(VERBS)) + "  (rm-path, remove-container, create-repo, add-app and add-route wait for approval on the phone)"
+# Take the rest of the line as written, not split into words: ssh joins the client's arguments with
+# spaces, so `homelab sh 'grep "a b" f'` arrives as `sh grep "a b" f`, and the remainder is the command.
+RAW_VERBS = {"sh": v_sh, "sudo": v_sudo}
+HELP = ("verbs: " + ", ".join(sorted([*VERBS, *RAW_VERBS])) + "  (rm-path, remove-container, create-repo, add-app, add-route, "
+        "open-window and sudo wait for approval on the phone; sh does too unless a time window is open)")
 
 
 def audit(entry):
@@ -980,14 +1173,19 @@ def handle(command, policy=None, disabled_path=DISABLED_PATH):
     try:
         if os.path.exists(disabled_path):
             raise Refused("gateway disabled (kill switch is on)")
-        argv = shlex.split(command or "")
-        if not argv:
-            raise Refused(HELP)
-        verb, args = argv[0], argv[1:]
-        if verb not in VERBS:
-            raise Refused(f"unknown verb '{verb}'. {HELP}")
-        policy = policy or load_policy()
-        rc, out = VERBS[verb](policy, args)
+        head, _, rest = (command or "").strip().partition(" ")
+        if head in RAW_VERBS:
+            policy = policy or load_policy()
+            rc, out = RAW_VERBS[head](policy, rest)
+        else:
+            argv = shlex.split(command or "")
+            if not argv:
+                raise Refused(HELP)
+            verb, args = argv[0], argv[1:]
+            if verb not in VERBS:
+                raise Refused(f"unknown verb '{verb}'. {HELP}")
+            policy = policy or load_policy()
+            rc, out = VERBS[verb](policy, args)
         result = "ok" if rc == 0 else f"exit {rc}"
         out = cap(out, policy["limits"]["output_max_bytes"])
     except Refused as e:

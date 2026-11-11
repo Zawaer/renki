@@ -7,7 +7,7 @@ import {
   peekGatewayApproval,
 } from "@renki/client-core";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Platform, StyleSheet, Text, ToastAndroid, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Platform, StyleSheet, Text, TextInput, ToastAndroid, TouchableOpacity, View } from "react-native";
 import { radius, type ThemeColors } from "../theme";
 import { Sheet } from "./Sheet";
 
@@ -46,6 +46,8 @@ export function GatewayApprovalSheet({
   const [misses, setMisses] = useState(0);
   const [busy, setBusy] = useState<"approve" | "deny" | null>(null);
   const [now, setNow] = useState(Date.now());
+  /** The sudo password for a root command. Kept only in this popup; cleared whenever it changes request or closes. */
+  const [password, setPassword] = useState("");
   const id = pending?.approval.id;
 
   useEffect(() => {
@@ -54,6 +56,7 @@ export function GatewayApprovalSheet({
     setPeek(undefined);
     setMisses(0);
     setBusy(null);
+    setPassword("");
     let live = true;
     // Keep asking until the homelab answers: right after the phone wakes, the tailnet can take a
     // while to come back, and one failed (or hung) try used to leave the popup spinning for good.
@@ -81,8 +84,10 @@ export function GatewayApprovalSheet({
   async function answer(decision: "approve" | "deny") {
     if (!pending) return;
     setBusy(decision);
-    const outcome = await answerGatewayApproval(pending.approval, decision);
+    const needsPassword = decision === "approve" && peek?.password;
+    const outcome = await answerGatewayApproval(pending.approval, decision, undefined, needsPassword ? password : undefined);
     setBusy(null);
+    if (outcome !== "failed") setPassword("");
     toast(describeGatewayOutcome(outcome, decision));
     if (outcome !== "failed") onClose(true);
   }
@@ -124,7 +129,23 @@ export function GatewayApprovalSheet({
 
         {shown && peek && !expired && !settled && (
           <>
-            <Text style={styles.summary}>{peek.summary}</Text>
+            <Text style={[styles.summary, peek.password && styles.root]}>{peek.summary}</Text>
+            {peek.password && (
+              <TextInput
+                style={styles.password}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Your sudo password"
+                placeholderTextColor={colors.faint}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="off"
+                importantForAutofill="no"
+                textContentType="none"
+                returnKeyType="done"
+              />
+            )}
             <Text style={styles.dim}>
               A Renki session asked for this. Waiting for you: {formatTimeLeft(peek.expires, now)} left, then it is denied.
             </Text>
@@ -132,7 +153,11 @@ export function GatewayApprovalSheet({
               <TouchableOpacity style={[styles.deny, busy && styles.busy]} disabled={busy !== null} onPress={() => void answer("deny")}>
                 {busy === "deny" ? <ActivityIndicator color={colors.text} /> : <Text style={styles.denyText}>Deny</Text>}
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.approve, busy && styles.busy]} disabled={busy !== null} onPress={() => void answer("approve")}>
+              <TouchableOpacity
+                style={[styles.approve, (busy || (peek.password && !password)) && styles.busy]}
+                disabled={busy !== null || (peek.password && !password)}
+                onPress={() => void answer("approve")}
+              >
                 {busy === "approve" ? <ActivityIndicator color={colors.accentFg} /> : <Text style={styles.approveText}>Approve</Text>}
               </TouchableOpacity>
             </View>
@@ -165,6 +190,15 @@ function makeStyles(colors: ThemeColors) {
     secondary: { backgroundColor: colors.inset, borderRadius: radius.pill, alignItems: "center", paddingVertical: 13 },
     secondaryText: { color: colors.text, fontSize: 15, fontWeight: "600" },
     busy: { opacity: 0.6 },
+    root: { color: colors.danger },
+    password: {
+      color: colors.text,
+      backgroundColor: colors.inset,
+      borderRadius: radius.md,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      fontSize: 16,
+    },
     later: { color: colors.faint, fontSize: 14, textAlign: "center", paddingVertical: 4 },
   });
 }

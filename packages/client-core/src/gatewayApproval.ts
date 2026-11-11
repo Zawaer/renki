@@ -7,11 +7,13 @@
  * this path, on purpose: sessions can read everything the daemon can.
  */
 
-export type GatewayApproval = { id: string; token: string; url: string };
+/** `pad`: for a root command, the one-time pad (hex) the password is sealed with before it leaves the phone. */
+export type GatewayApproval = { id: string; token: string; url: string; pad?: string };
 
 export type GatewayOutcome = "done" | "already_answered" | "expired" | "failed";
 
 const ID = /^[0-9a-f]{10}$/;
+const PAD = /^(?:[0-9a-f]{2}){16,512}$/;
 
 /**
  * Every call here gives up after a few seconds. A phone just woken up may not have its tailnet
@@ -35,19 +37,43 @@ export function parseGatewayApproval(data: unknown): GatewayApproval | null {
   if (typeof token !== "string" || token.length < 20 || token.length > 200) return null;
   // Only ever talk to an https address: the token is a bearer secret.
   if (typeof url !== "string" || !/^https:\/\/[^/\s]+\/?$/.test(url)) return null;
-  return { id, token, url: url.replace(/\/$/, "") };
+  const pad = typeof d.pad === "string" && PAD.test(d.pad) ? d.pad : undefined;
+  return { id, token, url: url.replace(/\/$/, ""), ...(pad ? { pad } : {}) };
+}
+
+/**
+ * The sudo password as it leaves the phone: UTF-8, zero-padded to the pad's length, XOR the pad,
+ * as hex. The pad came only in the notification, so the approval service (which stores this for a
+ * moment) can't read it; only the waiting gateway, which holds the pad in memory, can.
+ * Null when the password doesn't fit.
+ */
+export function sealPassword(password: string, padHex: string): string | null {
+  const pad = new Uint8Array(padHex.length / 2);
+  for (let i = 0; i < pad.length; i++) pad[i] = parseInt(padHex.slice(i * 2, i * 2 + 2), 16);
+  const data = new TextEncoder().encode(password);
+  if (data.length >= pad.length) return null;
+  let out = "";
+  for (let i = 0; i < pad.length; i++) out += ((data[i] ?? 0) ^ pad[i]!).toString(16).padStart(2, "0");
+  return out;
 }
 
 export async function answerGatewayApproval(
   approval: GatewayApproval,
   decision: "approve" | "deny",
   fetchImpl: typeof fetch = fetch,
+  password?: string,
 ): Promise<GatewayOutcome> {
+  let secret: string | undefined;
+  if (decision === "approve" && password !== undefined) {
+    if (!approval.pad) return "failed";
+    secret = sealPassword(password, approval.pad) ?? undefined;
+    if (!secret) return "failed";
+  }
   try {
     const res = await withTimeout(fetchImpl, `${approval.url}/v1/approvals/${approval.id}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ token: approval.token, decision }),
+      body: JSON.stringify({ token: approval.token, decision, ...(secret ? { secret } : {}) }),
     });
     if (res.ok) return "done";
     if (res.status === 409) return "already_answered";
@@ -83,6 +109,8 @@ export type GatewayPeek = {
   state: "pending" | "approve" | "deny" | "expired";
   /** Unix seconds. */
   expires: number;
+  /** A root command: approving needs the user's sudo password. */
+  password: boolean;
 };
 
 /**
@@ -94,12 +122,13 @@ export async function peekGatewayApproval(approval: GatewayApproval, fetchImpl: 
   try {
     const res = await withTimeout(fetchImpl, `${approval.url}/v1/approvals/${approval.id}`, { headers: { "x-approval-token": approval.token } });
     // Reached, but the homelab no longer has it (cleaned up long after it closed): closed, not unreachable.
-    if (res.status === 404) return { summary: "This request is no longer on the homelab.", state: "expired", expires: 0 };
+    if (res.status === 404) return { summary: "This request is no longer on the homelab.", state: "expired", expires: 0, password: false };
     if (!res.ok) return null;
     const body = (await res.json()) as Partial<GatewayPeek>;
+    const password = body.password === true;
     if (typeof body.summary !== "string" || typeof body.expires !== "number") return null;
     const state = body.state === "approve" || body.state === "deny" || body.state === "expired" ? body.state : "pending";
-    return { summary: body.summary, state, expires: body.expires };
+    return { summary: body.summary, state, expires: body.expires, password };
   } catch {
     return null;
   }

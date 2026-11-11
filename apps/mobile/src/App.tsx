@@ -335,7 +335,8 @@ function Main({
       const data = res.notification.request.content.data ?? {};
       const gateway = parseGatewayApproval(data);
       if (gateway) {
-        if (res.actionIdentifier === "approve" || res.actionIdentifier === "deny") {
+        // A root command needs the sudo password typed in the popup, so its Approve button opens that.
+        if (res.actionIdentifier === "deny" || (res.actionIdentifier === "approve" && !gateway.pad)) {
           answerGatewayFromButton(gateway, res.actionIdentifier);
           void Notifications.dismissNotificationAsync(res.notification.request.identifier).catch(() => {});
         } else {

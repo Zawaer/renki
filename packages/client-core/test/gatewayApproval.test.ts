@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { answerGatewayApproval, describeGatewayOutcome, formatTimeLeft, parseGatewayApproval, peekGatewayApproval } from "../src/gatewayApproval";
+import { answerGatewayApproval, describeGatewayOutcome, formatTimeLeft, parseGatewayApproval, peekGatewayApproval, sealPassword } from "../src/gatewayApproval";
 
 const good = { kind: "gateway-approval", id: "0123456789", token: "t".repeat(43), url: "https://approvals.internal" };
 
@@ -64,7 +64,7 @@ describe("peekGatewayApproval", () => {
       seen = { url, init };
       return new Response(JSON.stringify({ summary: "Create a private GitHub repo Zawaer/x (empty).", state: "pending", expires: 1_800_000_300 }), { status: 200 });
     }) as unknown as typeof fetch;
-    expect(await peekGatewayApproval(approval, spy)).toEqual({ summary: "Create a private GitHub repo Zawaer/x (empty).", state: "pending", expires: 1_800_000_300 });
+    expect(await peekGatewayApproval(approval, spy)).toEqual({ summary: "Create a private GitHub repo Zawaer/x (empty).", state: "pending", expires: 1_800_000_300, password: false });
     expect(seen!.url).toBe("https://approvals.internal/v1/approvals/0123456789");
     expect((seen!.init.headers as Record<string, string>)["x-approval-token"]).toBe("t".repeat(43));
     expect(seen!.url).not.toContain("t".repeat(43)); // the token never goes in the URL
@@ -112,5 +112,42 @@ describe("gateway calls on a phone that just woke up", () => {
   it("treat a request the homelab no longer has as closed, not unreachable", async () => {
     const gone = (async () => ({ ok: false, status: 404, json: async () => ({}) })) as unknown as typeof fetch;
     expect(await peekGatewayApproval(approval, gone)).toMatchObject({ state: "expired" });
+  });
+});
+
+describe("root commands: the sudo password", () => {
+  const pad = "a5".repeat(128);
+  const approval = { id: "0123456789", token: "t".repeat(43), url: "https://approvals.internal", pad };
+
+  it("keeps the pad from the notification", () => {
+    expect(parseGatewayApproval({ kind: "gateway-approval", id: approval.id, token: approval.token, url: approval.url, pad })).toEqual(approval);
+    expect(parseGatewayApproval({ kind: "gateway-approval", id: approval.id, token: approval.token, url: approval.url, pad: "zz" })).not.toHaveProperty("pad");
+  });
+
+  it("seals the password with the pad (the gateway's open_password undoes it)", () => {
+    const sealed = sealPassword("pä55", pad)!;
+    expect(sealed).toHaveLength(256);
+    expect(sealed).not.toContain(Buffer.from("pä55").toString("hex"));
+    const back = Buffer.from(sealed, "hex").map((b, i) => b ^ 0xa5);
+    expect(Buffer.from(back).toString("utf8").replace(/\0+$/, "")).toBe("pä55");
+    expect(sealPassword("x".repeat(128), pad)).toBeNull();
+  });
+
+  it("sends only the sealed password, and only when approving", async () => {
+    const bodies: unknown[] = [];
+    const spy = (async (_u: string, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)));
+      return new Response("{}", { status: 200 });
+    }) as unknown as typeof fetch;
+    expect(await answerGatewayApproval(approval, "approve", spy, "secret!")).toBe("done");
+    expect(await answerGatewayApproval(approval, "deny", spy, "secret!")).toBe("done");
+    expect(JSON.stringify(bodies)).not.toContain("secret!");
+    expect(bodies[0]).toMatchObject({ decision: "approve", secret: sealPassword("secret!", pad) });
+    expect(bodies[1]).toEqual({ token: approval.token, decision: "deny" });
+  });
+
+  it("peek says when a password is needed", async () => {
+    const res = (async () => new Response(JSON.stringify({ summary: "s", state: "pending", expires: 1, password: true }), { status: 200 })) as unknown as typeof fetch;
+    expect((await peekGatewayApproval(approval, res))?.password).toBe(true);
   });
 });

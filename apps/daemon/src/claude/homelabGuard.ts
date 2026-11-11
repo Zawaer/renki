@@ -30,7 +30,7 @@ export function homelabAllowed(allowed: string[] | null | undefined, repoId: str
   return allowed.includes(repoId.toLowerCase()) || allowed.includes(repoName.toLowerCase());
 }
 
-const VERBS = "status|logs|top|deploy|restart|builder-prune|caddy-reload|backup-audit|job|rm-path|remove-container|create-repo|add-app|add-route";
+const VERBS = "status|logs|top|deploy|restart|builder-prune|caddy-reload|backup-audit|job|rm-path|remove-container|create-repo|add-app|add-route|sh|sudo|open-window|close-window|window";
 const PREFIX_WORDS = new Set(["sudo", "env", "command", "exec", "nohup", "time", "nice", "stdbuf", "timeout", "xargs", "builtin"]);
 
 /** Why this Bash command would reach the gateway, or null if it wouldn't. */

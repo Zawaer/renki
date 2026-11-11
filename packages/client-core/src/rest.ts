@@ -246,6 +246,11 @@ export class RestClient {
     return this.post<{ pending: number }>("/gateway-approvals/resend", {});
   }
 
+  /** End the homelab time window now, so `homelab sh` asks on the phone again. */
+  async closeGatewayWindow(): Promise<void> {
+    await this.post<{ ok: boolean }>("/gateway-approvals/window/close", {});
+  }
+
   /** Settings > Homelab access: which repos' chats may run the `homelab` command (null = every chat). */
   async getHomelabAccess(): Promise<HomelabAccessResponse> {
     return this.get<HomelabAccessResponse>("/homelab-access");

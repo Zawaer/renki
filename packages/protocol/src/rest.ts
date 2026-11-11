@@ -171,6 +171,11 @@ export const AttachRepoRequest = z
   .refine((r) => (r.repoId ? 1 : 0) + (r.github ? 1 : 0) === 1, { message: "Give exactly one of repoId or github." });
 export type AttachRepoRequest = z.infer<typeof AttachRepoRequest>;
 
+/** Rename a project: Renki's clone of the repo, and the name every chat in it is listed under. */
+export const RenameRepoRequest = z.object({ name: z.string().trim().min(1).max(100) });
+export type RenameRepoRequest = z.infer<typeof RenameRepoRequest>;
+export type RenameRepoResponse = { repoId: string; repoName: string; sessions: number };
+
 /**
  * Repins one or more of a session's composer settings. Omitted fields keep
  * their current value, so a client that only changed the effort picker sends

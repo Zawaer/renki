@@ -1975,3 +1975,50 @@ describe("restarting without losing work", () => {
     expect(runTurn).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("renaming a project", () => {
+  it("moves the clone, keeps every chat's worktree working, and carries homelab access along", async () => {
+    const { manager, config, repoId } = setup();
+    const a = await newSession(manager, repoId);
+    const b = await newSession(manager, repoId);
+    manager.homelabAccess.set([repoId, "other"]);
+
+    const out = await manager.renameRepo(repoId, "Life");
+    expect(out).toEqual({ repoId: "life", repoName: "Life", sessions: 2 });
+    expect(existsSync(resolve(config.reposRoot, repoId))).toBe(false);
+    expect(existsSync(resolve(config.reposRoot, "Life"))).toBe(true);
+
+    const { simpleGit } = await import("simple-git");
+    for (const s of [a, b]) {
+      const after = manager.getSession(s.id);
+      expect(after).toMatchObject({ repoId: "life", repoName: "Life", worktreePath: s.worktreePath });
+      // The worktree still finds its repo: git works in it.
+      expect((await simpleGit(after.worktreePath).revparse(["--abbrev-ref", "HEAD"])).trim()).toBe(s.branch);
+      expect(manager.events.read(s.id).at(-1)).toMatchObject({ kind: "notice", text: `Project renamed from ${repoId} to Life.` });
+    }
+    expect(manager.homelabAccess.get()).toEqual(["life", "other"]);
+    // New chats go into it under the new name.
+    expect((await manager.createSession({ repoId: "life", baseBranch: "main" })).repoName).toBe("Life");
+  });
+
+  it("refuses a taken name, a bad name, and while a chat is working", async () => {
+    const { manager, config, repoId } = setup();
+    makeTestRepo(config.reposRoot, "taken");
+    const s = await newSession(manager, repoId);
+    await expect(manager.renameRepo(repoId, "taken")).rejects.toThrow(/already a project/);
+    await expect(manager.renameRepo(repoId, "../evil")).rejects.toThrow(SessionError);
+    await expect(manager.renameRepo(repoId, "-x")).rejects.toThrow(SessionError);
+    await expect(manager.renameRepo("nope", "x")).rejects.toThrow(/Unknown repo/);
+
+    manager.takeControl(s.id, "d1");
+    let renamed: unknown = null;
+    runTurn.mockReset().mockImplementation(async () => {
+      // Still inside the turn when the rename looks.
+      renamed = await manager.renameRepo(repoId, "fresh").catch((e: Error) => e);
+      return okTurn;
+    });
+    await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p1", text: "hi", resolvePermission: noopResolve });
+    expect(String(renamed)).toMatch(/has finished working/);
+    expect(manager.getSession(s.id).repoId).toBe(repoId);
+  });
+});

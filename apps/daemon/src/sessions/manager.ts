@@ -16,7 +16,9 @@ import type {
 } from "@renki/protocol";
 import { desc, eq, isNotNull, ne } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { rm } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import type { Config } from "../config.js";
@@ -31,7 +33,7 @@ import { baseStatusOf, catchUpWithBase } from "../git/baseSync.js";
 import { createWorktree, removeWorktree, restoreWorktree } from "../git/worktrees.js";
 import { newSessionId } from "../ids.js";
 import { logger } from "../logger.js";
-import { findRepo, scanRepos } from "../repos.js";
+import { findRepo, repoSlug, scanRepos } from "../repos.js";
 import { cloneGithubRepo, parseRepoRef } from "../github.js";
 import { hasCapabilities, setCapabilities } from "../claude/capabilities.js";
 import { LiveClaudeSession } from "../claude/liveSession.js";
@@ -832,6 +834,86 @@ export class SessionManager {
     logger.info("session attached to repo", { id, repo: repo.name, branch: created.branch, carried });
     this.refreshUnpushed(id);
     return this.getSession(id);
+  }
+
+  /**
+   * Rename a project: Renki's clone of the repo (the folder under the repos root), and with it the
+   * project's id, which every chat in it, Settings > Homelab access and stats are keyed by.
+   *
+   * The chats' worktrees live elsewhere (worktreesDir) and stay put; each one's `.git` file points
+   * at the clone, so `git worktree repair` points them at its new place. Claude's transcripts are
+   * keyed by the worktree path, so conversations carry on as they were. Only while none of the
+   * project's chats is working (a turn, background tasks, a Mac build): their `claude` processes
+   * are closed first so nothing runs git mid-move. The GitHub repo is not touched.
+   */
+  async renameRepo(repoId: string, newName: string): Promise<{ repoId: string; repoName: string; sessions: number }> {
+    const name = newName.trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(name) || name.endsWith(".git")) {
+      throw new SessionError("invalid_request", "Use letters, digits, dots, dashes and underscores, starting with a letter or digit.");
+    }
+    const repo = await findRepo(this.config, repoId);
+    if (!repo) throw new SessionError("repo_not_found", `Unknown repo: ${repoId}`);
+    if (name === repo.name) return { repoId: repo.id, repoName: repo.name, sessions: 0 };
+    const newId = repoSlug(name);
+    const target = resolve(this.config.reposRoot, name);
+    const sameFolder = newId === repo.id; // only the case changed
+    if (!sameFolder && (existsSync(target) || (await scanRepos(this.config)).some((r) => r.id === newId))) {
+      throw new SessionError("invalid_request", `There's already a project called ${name}.`);
+    }
+
+    const rows = this.db.select().from(sessions).where(eq(sessions.repoId, repo.id)).all();
+    const open = rows.filter((r) => r.status !== "deleted");
+    if (!sameFolder && this.db.select().from(sessions).where(eq(sessions.repoId, newId)).all().some((r) => r.status !== "deleted")) {
+      throw new SessionError("invalid_request", `Chats from an earlier project called ${name} still exist; delete them first.`);
+    }
+    for (const row of open) {
+      const live = this.live.get(row.id);
+      const working =
+        row.status === "busy" ||
+        this.inflight.has(row.id) ||
+        (this.queues.get(row.id)?.length ?? 0) > 0 ||
+        row.hasPendingPermission ||
+        (live && !live.isClosed && (live.busy || live.backgroundTaskCount > 0)) ||
+        this.buildsRunning(row.id);
+      if (working) {
+        throw new SessionError("session_busy", `Wait until "${row.title || "a chat"}" in ${repo.name} has finished working, then rename.`);
+      }
+    }
+
+    for (const row of open) this.closeLive(row.id, "project renamed");
+    renameSync(repo.path, target);
+    try {
+      await promisify(execFile)("git", ["-C", target, "worktree", "repair"], { timeout: 60_000 });
+    } catch (err) {
+      // repair exits non-zero when it found (and fixed) broken links; only log it.
+      logger.info("git worktree repair after rename", { repo: name, out: String(err).slice(0, 500) });
+    }
+
+    const inside = (p: string) => p === repo.path || p.startsWith(repo.path + sep);
+    for (const row of rows) {
+      this.db
+        .update(sessions)
+        .set({
+          repoId: newId,
+          repoName: name,
+          ...(inside(row.worktreePath) ? { worktreePath: target + row.worktreePath.slice(repo.path.length) } : {}),
+          updatedAt: Date.now(),
+        })
+        .where(eq(sessions.id, row.id))
+        .run();
+    }
+    for (const row of open) {
+      this.events.append(row.id, { kind: "notice", text: `Project renamed from ${repo.name} to ${name}.`, level: "info" });
+      this.broadcast?.onSessionChanged(this.getSession(row.id));
+    }
+    for (const [id, move] of this.pendingMoves) if (move.repoId === repo.id) this.pendingMoves.set(id, { ...move, repoId: newId, label: name });
+
+    const access = this.homelabAccess.get();
+    if (access && (access.includes(repo.id) || access.includes(repo.name.toLowerCase()))) {
+      this.homelabAccess.set([...access.filter((r) => r !== repo.id && r !== repo.name.toLowerCase()), newId]);
+    }
+    logger.info("project renamed", { from: repo.name, to: name, sessions: open.length });
+    return { repoId: newId, repoName: name, sessions: open.length };
   }
 
   /** attachRepo by a repo Renki has, or by a GitHub repo it clones first (what "Move into repo…" and move_into_repo both use). */

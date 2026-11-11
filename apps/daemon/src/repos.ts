@@ -82,6 +82,11 @@ export async function originRepo(repoPath: string): Promise<string | null> {
   }
 }
 
+/** A repo's id: its folder name, lowercased, with anything unusual as dashes. */
+export function repoSlug(name: string): string {
+  return slug(name);
+}
+
 function slug(name: string): string {
   return name
     .toLowerCase()

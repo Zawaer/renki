@@ -22,6 +22,7 @@ import type {
   PullBranchResponse,
   RenameSessionResponse,
   AttachRepoRequest,
+  RenameRepoResponse,
   UpdateSessionComposerRequest,
   UpdateSessionComposerResponse,
   RestoreSessionResponse,
@@ -135,6 +136,11 @@ export class RestClient {
   }
 
   /** Move a repo-less chat into a repo: one on the host by id, or `{ github: "owner/name" }`, cloned first if needed. */
+  /** Rename a project (Renki's clone of the repo; not the GitHub repo). Refused while one of its chats is working. */
+  async renameRepo(repoId: string, name: string): Promise<RenameRepoResponse> {
+    return this.post<RenameRepoResponse>(`/repos/${encodeURIComponent(repoId)}/rename`, { name });
+  }
+
   async attachRepo(sessionId: string, target: AttachRepoRequest): Promise<Session> {
     const res = await this.post<{ session: Session }>(`/sessions/${encodeURIComponent(sessionId)}/attach-repo`, target);
     return res.session;

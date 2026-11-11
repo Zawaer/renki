@@ -17,6 +17,7 @@ import {
   SwitchAccountRequest,
   UpdateRotationRequest,
   UpdateHomelabAccessRequest,
+  RenameRepoRequest,
   MAX_ATTACHMENT_BYTES,
   MAX_UPLOAD_BYTES,
   MAX_ATTACHMENTS_PER_PROMPT,
@@ -432,6 +433,16 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues });
     try {
       return { session: manager.renameSession(req.params.id, parsed.data.title) };
+    } catch (err) {
+      return sendSessionError(reply, err);
+    }
+  });
+
+  app.post<{ Params: { id: string } }>("/repos/:id/rename", async (req, reply) => {
+    const parsed = RenameRepoRequest.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues });
+    try {
+      return await manager.renameRepo(req.params.id, parsed.data.name);
     } catch (err) {
       return sendSessionError(reply, err);
     }

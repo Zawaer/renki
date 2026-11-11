@@ -6,6 +6,7 @@ import { clearComposerPrefs, clearDraft } from "../lib/composerPrefs.js";
 import { useLiveSessions } from "../lib/liveSessions.js";
 import { useClient } from "../lib/client.js";
 import { AttachRepoDialog } from "./AttachRepoDialog.js";
+import { RenameProjectDialog } from "./RenameProjectDialog.js";
 import { ExportDialog } from "./ExportDialog.js";
 import { Button, Eyebrow, Reveal, SessionGlyph, Skeleton } from "./ui.js";
 
@@ -43,6 +44,7 @@ export function SessionList({
   const [showTrash, setShowTrash] = useState(false);
   const [exporting, setExporting] = useState<Session | null>(null);
   const [attaching, setAttaching] = useState<Session | null>(null);
+  const [renamingProject, setRenamingProject] = useState<{ repoId: string; name: string } | null>(null);
   const [emptying, setEmptying] = useState(false);
 
   const active = useMemo(() => activeSessions(sessions), [sessions]);
@@ -268,6 +270,15 @@ export function SessionList({
                 </button>
                 {g.repoId && (
                   <button
+                    onClick={() => setRenamingProject({ repoId: g.repoId!, name: g.name })}
+                    title={`Rename ${g.name}`}
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-(--renki-fg-muted) opacity-0 transition-opacity group-hover/hdr:opacity-100 hover:bg-(--renki-hover) hover:text-(--renki-fg) focus-visible:opacity-100"
+                  >
+                    <span className="codicon codicon-edit text-[12px]" />
+                  </button>
+                )}
+                {g.repoId && (
+                  <button
                     onClick={() => navigate(`/?${new URLSearchParams({ repo: g.repoId!, new: String(Date.now()) })}`)}
                     title={`New session in ${g.name}`}
                     className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-(--renki-fg-muted) opacity-0 transition-opacity group-hover/hdr:opacity-100 hover:bg-(--renki-hover) hover:text-(--renki-fg) focus-visible:opacity-100"
@@ -356,6 +367,18 @@ export function SessionList({
 
       {exporting && (
         <ExportDialog sessionId={exporting.id} title={exporting.title || exporting.repoName} onClose={() => setExporting(null)} />
+      )}
+
+      {renamingProject && (
+        <RenameProjectDialog
+          repoId={renamingProject.repoId}
+          name={renamingProject.name}
+          onClose={() => setRenamingProject(null)}
+          onRenamed={() => {
+            setRenamingProject(null);
+            refresh();
+          }}
+        />
       )}
 
       {attaching && (

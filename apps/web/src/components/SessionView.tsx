@@ -172,6 +172,18 @@ export function SessionView({
   const [exporting, setExporting] = useState(false);
   const stickToBottom = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
+  /**
+   * The end of the transcript is in view, give or take its bottom padding. "Jump to latest"
+   * hides then even when the view isn't stuck: it floats over the last thing on screen, and
+   * that's usually the suggested replies you came down to tap.
+   */
+  const [nearEnd, setNearEnd] = useState(true);
+  function measureNearEnd() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight <= NEAR_END_PX;
+    setNearEnd((was) => (was === near ? was : near));
+  }
 
   /**
    * Set while "Jump to latest" scrolls smoothly down: the animation's own
@@ -196,6 +208,7 @@ export function SessionView({
     const el = scrollRef.current;
     if (!el) return;
     pickAnchor();
+    measureNearEnd();
     const fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     if (autoScrolling.current) {
       if (fromBottom > 24) return;
@@ -252,6 +265,7 @@ export function SessionView({
     const observer = new ResizeObserver(() => {
       if (stickToBottom.current && !autoScrolling.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
       else holdAnchor();
+      measureNearEnd();
     });
     observer.observe(content);
     return () => observer.disconnect();
@@ -564,7 +578,7 @@ export function SessionView({
             </div>
           )}
         </div>
-        {!atBottom && rows.length > 0 && (
+        {!atBottom && !nearEnd && rows.length > 0 && (
           <div className="pointer-events-none sticky bottom-4 flex h-0 items-end justify-center">
             <button
               onClick={jumpToLatest}
@@ -830,6 +844,9 @@ function BackgroundWorkRow({ work }: { work: BackgroundWork }) {
  * anything else, or the X, puts the card away. Nothing waits on it: the turn
  * has already ended.
  */
+/** How close to the end counts as "there" for hiding "Jump to latest": the transcript's 24px bottom padding, plus a little. */
+const NEAR_END_PX = 40;
+
 function SuggestedReplies({
   question,
   replies,

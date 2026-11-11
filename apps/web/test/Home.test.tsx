@@ -24,6 +24,9 @@ const day = (key: string, turnCount: number): StatsResponse["daily"][number] => 
 function renderHome(stats: StatsResponse, sessions: Session[] = [], entry = "/") {
   const realtime = new RealtimeClient({ baseUrl: "http://test.invalid", token: "t", deviceId: "d1" });
   const rest = new RestClient({ baseUrl: "http://test.invalid", token: "t" });
+  rest.listRepos = async () => [{ id: "life", name: "life", path: "/r/life", defaultBranch: "main", remote: "Zawaer/life" }];
+  rest.listGithubRepos = async () =>
+    ({ available: true, login: "Zawaer", repos: [{ fullName: "Zawaer/life", name: "life", description: null, isPrivate: true }] }) as never;
   rest.getStats = async () => stats;
   rest.listSessions = async () => sessions;
   const config = { baseUrl: "http://test.invalid", token: "t", deviceId: "d1", deviceName: "Test" };
@@ -66,6 +69,11 @@ describe("Home: a /new link", () => {
     await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/new?project=life"));
     expect(box.value).toBe(prompt);
     expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("picks the project the link names", async () => {
+    renderHome(noStats, [], `/new?project=life#prompt=${encodeURIComponent("hi")}`);
+    await waitFor(() => expect(screen.getByRole("button", { name: /life/ })).toBeInTheDocument());
   });
 
   it("ignores a prompt on any other address", async () => {

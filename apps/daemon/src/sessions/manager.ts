@@ -2112,6 +2112,18 @@ export class SessionManager {
     return !homelabAllowed(this.homelabAccess.get(), session.repoId, session.repoName);
   }
 
+  /**
+   * request_homelab_access's handler, run only after the user approved the card: turns this chat's
+   * project on in Settings > Homelab access (or `@plain` for a chat without a repo).
+   */
+  private grantHomelabAccess(sessionId: string): { ok: boolean; text: string } {
+    const session = this.getSession(sessionId);
+    const access = this.homelabAccess.get();
+    if (homelabAllowed(access, session.repoId, session.repoName)) return { ok: true, text: "Homelab access is already on for this project. Run the command again." };
+    this.homelabAccess.set([...(access ?? []), session.repoId ? session.repoId : "@plain"]);
+    return { ok: true, text: "Homelab access is on for this project now. Run the refused command again and carry on." };
+  }
+
   private macFor(sessionId: string, cwd: string) {
     if (!this.mac) return undefined;
     const session = this.getSession(sessionId);
@@ -2145,6 +2157,10 @@ export class SessionManager {
       mac: this.macFor(sessionId, cwd),
       moveIntoRepo: this.getSession(sessionId).repoId ? undefined : (repo) => this.requestMove(sessionId, repo),
       moveIntoRepoNote: (repo) => this.moveAccessNote(sessionId, repo),
+      homelabAccess: {
+        request: async () => this.grantHomelabAccess(sessionId),
+        project: () => this.getSession(sessionId).repoName || "chats without a repo",
+      },
       // Cheap to skip once the daemon already knows this — it's static per
       // `claude` install, not per-session.
       onCapabilities: hasCapabilities() ? undefined : setCapabilities,

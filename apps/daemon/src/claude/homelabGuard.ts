@@ -54,8 +54,8 @@ export function homelabCommandReason(command: string): string | null {
 
 const DENY_MESSAGE =
   "This project doesn't have homelab access, so the `homelab` command is off here. " +
-  "Don't look for another way to reach the homelab. Tell the user what you wanted to do and why; " +
-  "they can turn it on for this project in Renki's Settings > Homelab access if they want.";
+  "Don't look for another way to reach the homelab. If the user wants this done, call request_homelab_access " +
+  "with one short line on what you want to do: the user approves it in the chat, then run this command again.";
 
 export function createHomelabGuardHook(blocked: () => boolean = () => true): HookCallbackMatcher {
   return {

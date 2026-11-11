@@ -9,6 +9,7 @@ import { AgentWatch } from "./agentWatch.js";
 import { unpackArchives } from "./archives.js";
 import { createRtkPreToolUseHook } from "./rtk.js";
 import { createHomelabGuardHook } from "./homelabGuard.js";
+import { createHomelabAccessHook, createHomelabAccessTool, type HomelabAccessRequester } from "./homelabAccessRequest.js";
 import { createMoveIntoRepoHook, createMoveIntoRepoTool, type MoveNote, type MoveRequester } from "./moveIntoRepo.js";
 import { MAC_FREE_TOOLS, MAC_SERVER, type MacCallIds, createMacApprovalHook } from "../mac/tools.js";
 import { RENKI_SERVER, SUGGEST_REPLIES_TOOL, createRepliesGuardHook, createRepliesMcpServer, createRepliesStopHook, replyStateAfter } from "./replies.js";
@@ -93,6 +94,8 @@ export type LiveSessionOptions = {
   rtkBin?: string;
   /** Asked on every Bash command that would reach the homelab gateway: true refuses it (see ./homelabGuard.ts). */
   homelabBlocked?: () => boolean;
+  /** Lets a chat whose project lacks homelab access ask for it (see ./homelabAccessRequest.ts). */
+  homelabAccess?: { request: HomelabAccessRequester; project: () => string };
   /** The `mac` MCP server (phone tools via the user's Mac, see ../mac/tools.ts), when this session may use it. */
   mac?: { server: McpSdkServerConfigWithInstance; callIds: MacCallIds };
   /** How long a mid-turn message waits behind a running step before it's backgrounded; STEER_BACKGROUND_AFTER_MS unless set (tests). */
@@ -278,6 +281,7 @@ export class LiveClaudeSession {
       ...(opts.homelabBlocked ? [createHomelabGuardHook(opts.homelabBlocked)] : []),
       ...(opts.mac ? [createMacApprovalHook(opts.mac.callIds)] : []),
       ...(opts.moveIntoRepo ? [createMoveIntoRepoHook(opts.moveIntoRepoNote)] : []),
+      ...(opts.homelabAccess ? [createHomelabAccessHook(opts.homelabAccess.project)] : []),
       ...(opts.enableRtk ? [createRtkPreToolUseHook(opts.rtkBin ?? "rtk")] : []),
       createRepliesGuardHook(() => this.replyWritten),
     ];
@@ -301,7 +305,10 @@ export class LiveClaudeSession {
       ...(opts.maxThinkingTokens != null ? { maxThinkingTokens: opts.maxThinkingTokens } : {}),
       ...(opts.forcePermissionPrompts ? { settingSources: [] } : {}),
       hooks: { ...(preToolUseHooks.length ? { PreToolUse: preToolUseHooks } : {}), PostToolUse: [createRepliesStopHook()] },
-      mcpServers: { [RENKI_SERVER]: createRepliesMcpServer(opts.moveIntoRepo ? [createMoveIntoRepoTool(opts.moveIntoRepo)] : []), ...(opts.mac ? { [MAC_SERVER]: opts.mac.server } : {}) },
+      mcpServers: { [RENKI_SERVER]: createRepliesMcpServer([
+          ...(opts.moveIntoRepo ? [createMoveIntoRepoTool(opts.moveIntoRepo)] : []),
+          ...(opts.homelabAccess ? [createHomelabAccessTool(opts.homelabAccess.request)] : []),
+        ]), ...(opts.mac ? { [MAC_SERVER]: opts.mac.server } : {}) },
       allowedTools: [SUGGEST_REPLIES_TOOL, ...(opts.mac ? MAC_FREE_TOOLS : [])],
       // Route every permission decision through the current resolver. Only
       // fires for tools the permission system doesn't auto-resolve (edits,
@@ -579,7 +586,7 @@ export class LiveClaudeSession {
     const resolver = this.resolver;
     if (!resolver) return { behavior: "deny", message: "No controller available." };
 
-    // Only the reasons Renki's own hooks write (move_into_repo, the phone tools) are shown on the card;
+    // Only the reasons Renki's own hooks write (move_into_repo, request_homelab_access, the phone tools) are shown on the card;
     // Claude Code's own reasons for other tools aren't meant as user-facing text.
     const reason = decisionReason && (toolName.startsWith(`mcp__${RENKI_SERVER}__`) || toolName.startsWith(`mcp__${MAC_SERVER}__`)) ? decisionReason.slice(0, 500) : undefined;
     this.opts.emit({ kind: "permission_request", requestId, turnId, toolName, toolInput: input, ...(reason ? { reason } : {}) });

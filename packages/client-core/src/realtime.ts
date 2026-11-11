@@ -21,6 +21,7 @@ import {
   dropAllSendingPrompts,
   dropPendingPermission,
   dropSendingPrompt,
+  sendingNotIn,
   initialConversation,
   prependOlder,
   restoreBlockGaps,
@@ -588,7 +589,7 @@ export class RealtimeClient {
         if (local.lastSeq >= 0) return;
         const state = restoreBlockGaps(msg.state as unknown as ConversationState);
         // The composer and this device's unconfirmed sends aren't in the log; keep what's here.
-        store.set({ ...state, sessionId: msg.sessionId, lastSeq: msg.upToSeq, composer: local.composer, sendingPrompts: local.sendingPrompts });
+        store.set({ ...state, sessionId: msg.sessionId, lastSeq: msg.upToSeq, composer: local.composer, sendingPrompts: sendingNotIn(state, local.sendingPrompts) });
         if (this.opts.cache) this.scheduleSave(msg.sessionId);
         this.fillOlder(msg.sessionId);
         return;

@@ -161,6 +161,24 @@ describe("RealtimeClient: local echo", () => {
     expect(client.conversation("s1").get().sendingPrompts).toEqual([]);
   });
 
+  it("isn't shown twice when the chat's first snapshot already has the message (a new chat)", () => {
+    const { client, socket } = connect();
+    const promptId = client.submitPrompt("s1", "hello");
+    // Folded on the daemon: the prompt was confirmed before this device subscribed.
+    const state = applyEvents(idle(), [ev(1, { kind: "prompt_submitted", promptId, deviceId: "d1", text: "hello" })]);
+    socket.receive({ type: "snapshot", sessionId: "s1", state, upToSeq: 1 });
+    const conv = client.conversation("s1").get();
+    expect(conv.sendingPrompts).toEqual([]);
+    expect(timelineWithSending(conv).filter((i) => i.type === "prompt")).toHaveLength(1);
+  });
+
+  it("keeps an echo the snapshot doesn't have yet", () => {
+    const { client, socket } = connect();
+    const promptId = client.submitPrompt("s1", "hello");
+    socket.receive({ type: "snapshot", sessionId: "s1", state: idle(), upToSeq: 0 });
+    expect(client.conversation("s1").get().sendingPrompts.map((p) => p.promptId)).toEqual([promptId]);
+  });
+
   it("takes the echo back if nothing ever confirms it", () => {
     vi.useFakeTimers();
     const { client } = connect();

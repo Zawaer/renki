@@ -267,6 +267,26 @@ export function dropPendingPermission(state: ConversationState, requestId: strin
     : state;
 }
 
+/**
+ * Local echoes that `state` doesn't already account for. A snapshot folds the
+ * daemon's log up to some point; a prompt confirmed before it has no live
+ * prompt_submitted to come and clear its echo, so the echo (kept across the
+ * snapshot) would show the message twice until it timed out. Seen on a new
+ * chat: its first message is often confirmed before the subscribe's snapshot.
+ */
+export function sendingNotIn(state: ConversationState, sending: SendingPromptView[] | undefined): SendingPromptView[] {
+  if (!sending?.length) return [];
+  const seen = new Set<string>(state.queuedPrompts.map((q) => q.promptId));
+  for (const item of state.timeline) {
+    if (item.type === "prompt") seen.add(item.promptId);
+    else if (item.type === "turn") {
+      if (item.turn.promptId) seen.add(item.turn.promptId);
+      for (const p of item.turn.steeredPrompts) seen.add(p.promptId);
+    }
+  }
+  return sending.filter((p) => !seen.has(p.promptId));
+}
+
 export function dropAllSendingPrompts(state: ConversationState): ConversationState {
   return state.sendingPrompts?.length ? { ...state, sendingPrompts: [] } : state;
 }

@@ -11,7 +11,10 @@ app="$dest/Renki Mac.app"
 build="$(mktemp -d)"
 trap 'rm -rf "$build"' EXIT
 mkdir -p "$build/Renki Mac.app/Contents/MacOS" "$build/Renki Mac.app/Contents/Resources"
-swiftc -O -o "$build/Renki Mac.app/Contents/MacOS/RenkiMac" "$here/RenkiMac.swift" -framework AppKit -framework ServiceManagement
+# Several files: the one with top-level code has to be called main.swift.
+cp "$here/RenkiMac.swift" "$build/main.swift"
+swiftc -O -o "$build/Renki Mac.app/Contents/MacOS/RenkiMac" "$build/main.swift" "$here/Approvals.swift" \
+  -framework AppKit -framework ServiceManagement -framework CryptoKit -framework LocalAuthentication -framework Security
 cp "$here/../dist/renki-mac-node.mjs" "$build/Renki Mac.app/Contents/Resources/"
 cp -R "$here/../dist/runner-image" "$build/Renki Mac.app/Contents/Resources/"
 # The app icon, drawn by the app itself from Renki's mark (one source for this and the menu bar icon).

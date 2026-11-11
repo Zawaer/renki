@@ -857,5 +857,60 @@ class TouchIdTest(unittest.TestCase):
         self.assertFalse(gateway.desktop_present(self.dir, self.web.approvers_path, now=1100))
 
 
+
+
+class NativeMacTest(TouchIdTest):
+    """The Renki Mac app: a Secure Enclave key, enrolled with the same root-made link."""
+
+    def enroll_native(self, code="c0de"):
+        import hashlib
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+        with open(self.web.enroll_path, "w") as f:
+            json.dump({"name": "mac", "code_sha256": hashlib.sha256(code.encode()).hexdigest(), "expires": 9e12}, f)
+        o = self.web.enroll_options({"code": code})
+        spki = self.key.public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+        sig = self.key.sign(o["challenge"].encode(), ec.ECDSA(hashes.SHA256()))
+        return self.web.enroll_native({"code": code, "challenge": o["challenge"], "publicKey": gateway.b64u(spki), "signature": gateway.b64u(sig)})
+
+    def native(self, aid, view, key=None, challenge=None):
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import ec
+        c = challenge or view["challenge"]
+        sig = (key or self.key).sign(gateway.native_message(aid, c), ec.ECDSA(hashes.SHA256()))
+        return {"decision": "approve", "id": self.cred_id, "challenge": c, "signature": gateway.b64u(sig)}
+
+    def test_native_key_approves_and_a_made_up_one_doesnt(self):
+        from cryptography.hazmat.primitives.asymmetric import ec
+        self.cred_id = self.enroll_native()["id"]
+        aid, _ = gateway.create_approval(self.dir, "sh", ["ls"], "Run ls", 60)
+        self.assertEqual(self.web.view(aid)["devices"], [])  # not offered to the browser page
+        with self.assertRaises(gateway.Refused):
+            self.web.answer(aid, self.native(aid, self.web.view(aid), key=ec.generate_private_key(ec.SECP256R1())))
+        other, _ = gateway.create_approval(self.dir, "sh", ["rm"], "Run rm", 60)
+        with self.assertRaises(gateway.Refused):  # a signature for another request
+            v = self.web.view(other)
+            self.web.answer(aid, self.native(other, v))
+        self.assertIsNone(gateway.read_decision(self.dir, aid))
+        self.assertEqual(self.web.answer(aid, self.native(aid, self.web.view(aid)))["decision"], "approve")
+
+    def test_native_enroll_needs_proof_of_the_key(self):
+        import hashlib
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+        with open(self.web.enroll_path, "w") as f:
+            json.dump({"name": "mac", "code_sha256": hashlib.sha256(b"c0de").hexdigest(), "expires": 9e12}, f)
+        o = self.web.enroll_options({"code": "c0de"})
+        spki = self.key.public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+        from cryptography.hazmat.primitives import hashes
+        bad = ec.generate_private_key(ec.SECP256R1()).sign(o["challenge"].encode(), ec.ECDSA(hashes.SHA256()))
+        with self.assertRaises(gateway.Refused):
+            self.web.enroll_native({"code": "c0de", "challenge": o["challenge"], "publicKey": gateway.b64u(spki), "signature": gateway.b64u(bad)})
+
+    def test_pkcs1_is_offered_for_the_mac_app(self):
+        key = gateway.new_password_key()
+        self.assertTrue(gateway.pkcs1_of(gateway.public_key_b64(key)))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -162,6 +162,13 @@ proves itself with a passkey instead, a key in its secure enclave that signs onl
   the phone's notification waits 30 seconds; approved on the Mac meanwhile, the phone never buzzes.
   "Phone" in the banner sends it at once. A chat faking presence can only delay a notification.
 - The phone asks for a fingerprint (or its PIN) before approving, against someone holding it unlocked.
+- **The Renki Mac app** does the same natively, without a browser or a password manager in the way:
+  menu > Set Up Homelab Approvals…, paste the enroll link, Touch ID once. It makes a P-256 key in
+  the Mac's Secure Enclave (it never leaves the chip; signing needs Touch ID or the Mac's password),
+  polls the approval service directly (never through Renki) and pops up a window per request with
+  the command, a password field for root, and Deny / Approve. It signs
+  `renki-approval-v1\n<id>\n<challenge>\napprove`; the service checks it against the enrolled key.
+  While you've touched the Mac in the last two minutes it reports "at the Mac", so the phone waits 30 s.
 
 ## Creating GitHub repos
 

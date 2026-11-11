@@ -25,6 +25,15 @@ Settings live in `~/Library/Application Support/Renki/mac-node.json`.
 `"verbs": { "shell": false }` switches a verb off on this Mac, whatever the
 daemon asks for. Logs are in `~/Library/Logs/Renki/mac-node.log`.
 
+## Homelab approvals (Touch ID)
+
+When a Renki chat asks the homelab gateway for something that needs you (a host command, a root
+command, a time window), this app pops up a window with the command and asks for Touch ID; root
+commands also take your sudo password there. Set up once: on the homelab run
+`sudo homelab-gateway --admin enroll mac`, then menu > **Set Up Homelab Approvals…** and paste the link.
+It talks to `https://approvals.internal` directly, works whether or not the Mac is lent, and signs
+with a Secure Enclave key (`Approvals.swift`, docs/homelab-gateway.md).
+
 ## Build jobs (`mac_build`)
 
 Sessions can run build jobs on the Mac, such as a fast Android build with warm Gradle caches, and get the APK

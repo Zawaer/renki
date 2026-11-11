@@ -652,6 +652,20 @@ def open_rsa_password(b64, key):
     return plain.decode("utf-8", "replace")
 
 
+def native_message(aid, challenge):
+    return f"renki-approval-v1\n{aid}\n{challenge}\napprove".encode()
+
+
+def pkcs1_of(spki_b64):
+    """The same RSA public key as PKCS#1, which is what macOS's SecKeyCreateWithData takes."""
+    if not spki_b64:
+        return None
+    import base64
+    from cryptography.hazmat.primitives import serialization
+    key = serialization.load_der_public_key(base64.b64decode(spki_b64))
+    return base64.b64encode(key.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.PKCS1)).decode()
+
+
 def read_approvers(path=None):
     try:
         with open(path or APPROVERS_PATH) as f:
@@ -785,6 +799,37 @@ class WebApprovals:
             pass
         return {"ok": True, "name": rec["name"]}
 
+    def enroll_native(self, body, now=None):
+        """The Renki Mac app: a P-256 key in the Mac's Secure Enclave, which signs only after Touch ID.
+        It proves it holds the key by signing the challenge (as UTF-8 text)."""
+        from cryptography.exceptions import InvalidSignature
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+        now = time.time() if now is None else now
+        rec = self._enroll_rec(body.get("code"), now)
+        challenge = body.get("challenge")
+        if not isinstance(challenge, str):
+            raise Refused("bad request")
+        self._use_challenge(challenge, "enroll", now)
+        spki = unb64u(body.get("publicKey"))
+        key = serialization.load_der_public_key(spki)
+        if not isinstance(key, ec.EllipticCurvePublicKey) or key.curve.name != "secp256r1":
+            raise Refused("only P-256 keys are supported")
+        try:
+            key.verify(unb64u(body.get("signature")), challenge.encode(), ec.ECDSA(hashes.SHA256()))
+        except InvalidSignature:
+            raise Refused("the key's signature didn't check out")
+        cred_id = "mac-" + hashlib.sha256(spki).hexdigest()[:24]
+        pem = key.public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()
+        devices = [a for a in read_approvers(self.approvers_path) if a["id"] != cred_id]
+        devices.append({"id": cred_id, "pem": pem, "name": rec["name"], "added": now, "kind": "native"})
+        write_approvers(devices, self.approvers_path)
+        try:
+            os.remove(self.enroll_path)
+        except OSError:
+            pass
+        return {"ok": True, "name": rec["name"], "id": cred_id}
+
     # -- approving
     def view(self, aid, now=None):
         now = time.time() if now is None else now
@@ -798,8 +843,10 @@ class WebApprovals:
         state = read_decision(self.dir, aid) or ("expired" if now > rec["expires"] else "pending")
         return {
             "state": state, "summary": rec["summary"], "expires": rec["expires"], "password": bool(rec.get("password")),
-            "pubkey": rec.get("pubkey"), "challenge": self._challenge("approve:" + aid, now) if state == "pending" else None,
-            "devices": [a["id"] for a in read_approvers(self.approvers_path)],
+            "pubkey": rec.get("pubkey"), "pubkey_pkcs1": pkcs1_of(rec.get("pubkey")),
+            "challenge": self._challenge("approve:" + aid, now) if state == "pending" else None,
+            # Passkeys only: the browser page offers these (the Mac app signs with its own key).
+            "devices": [a["id"] for a in read_approvers(self.approvers_path) if a.get("kind") != "native"],
         }
 
     def answer(self, aid, body, now=None):
@@ -825,14 +872,23 @@ class WebApprovals:
         cred = next((a for a in read_approvers(self.approvers_path) if a["id"] == body.get("id")), None)
         if not cred:
             raise Refused("this device isn't set up to approve; add it with the enroll command")
-        cd, auth, sig = unb64u(body.get("clientDataJSON")), unb64u(body.get("authenticatorData")), unb64u(body.get("signature"))
-        challenge = json.loads(cd.decode()).get("challenge", "")
-        self._use_challenge(challenge, "approve:" + aid, now)
-        check_client_data(cd, "webauthn.get", challenge, self.origin)
-        check_auth_data(auth, self.rpid)
         key = serialization.load_pem_public_key(cred["pem"].encode())
+        if cred.get("kind") == "native":
+            # The Mac app signs "renki-approval-v1\n<id>\n<challenge>\napprove" with its Secure Enclave key.
+            challenge = body.get("challenge")
+            if not isinstance(challenge, str):
+                raise Refused("bad request")
+            self._use_challenge(challenge, "approve:" + aid, now)
+            signed = native_message(aid, challenge)
+        else:
+            cd, auth = unb64u(body.get("clientDataJSON")), unb64u(body.get("authenticatorData"))
+            challenge = json.loads(cd.decode()).get("challenge", "")
+            self._use_challenge(challenge, "approve:" + aid, now)
+            check_client_data(cd, "webauthn.get", challenge, self.origin)
+            check_auth_data(auth, self.rpid)
+            signed = auth + hashlib.sha256(cd).digest()
         try:
-            key.verify(sig, auth + hashlib.sha256(cd).digest(), ec.ECDSA(hashes.SHA256()))
+            key.verify(unb64u(body.get("signature")), signed, ec.ECDSA(hashes.SHA256()))
         except InvalidSignature:
             raise Refused("Touch ID signature didn't check out")
         if rec.get("password"):
@@ -1527,6 +1583,8 @@ class ApprovalHandler(BaseHTTPRequestHandler):
                 return self._web(self.web.enroll_options, body)
             if path == "/v1/enroll/finish":
                 return self._web(self.web.enroll_finish, body)
+            if path == "/v1/enroll/native":
+                return self._web(self.web.enroll_native, body)
             m = re.fullmatch(r"/v1/web/([0-9a-f]{10})", path)
             if m:
                 return self._web(self.web.answer, m.group(1), body)
@@ -1623,7 +1681,8 @@ def admin_enroll(name, policy=None, path=None, now=None):
     home = os.stat(policy["run_as_home"])
     os.chown(path, home.st_uid, home.st_gid)  # the approval service (the homelab user) removes it once used
     os.chmod(path, 0o600)
-    print(f"Open this on the device to add, within 10 minutes:\n  https://{rp_id(policy)}/enroll#{code}")
+    print(f"Within 10 minutes, paste this into the Renki Mac app (menu > Set Up Homelab Approvals…),\n"
+          f"or open it in a browser to use a passkey instead:\n  https://{rp_id(policy)}/enroll#{code}")
     return 0
 
 

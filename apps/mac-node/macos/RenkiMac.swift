@@ -91,6 +91,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var lastStderr = ""
     private var restartWork: DispatchWorkItem?
     private var stdoutBuffer = Data()
+    /** Homelab approvals with Touch ID (Approvals.swift): on whenever this Mac is set up, lending or not. */
+    private let approvals = ApprovalWatcher()
 
     private var enabled: Bool {
         get { UserDefaults.standard.bool(forKey: "lending") }
@@ -108,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             DispatchQueue.main.async { self?.refreshWindow() }
         }
         if enabled { start() }
+        approvals.start()
         render()
         // Hidden from the menu bar: opening the app is the only way in, so show the window.
         if !item.isVisible { showWindow() }
@@ -376,6 +379,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         menu.addItem(lend)
         menu.addItem(.separator())
 
+        if ApproverStore.isSetUp {
+            menu.addItem(disabled(approvals.lastError.map { "Homelab approvals: can't reach (\($0))" } ?? "Homelab approvals: on, with Touch ID"))
+            menu.addItem(action("Stop Approving on This Mac", #selector(forgetApprovals)))
+        } else {
+            menu.addItem(action("Set Up Homelab Approvals…", #selector(setUpApprovals)))
+        }
+        menu.addItem(.separator())
+
         let login = NSMenuItem(title: "Open at Login", action: #selector(toggleLogin), keyEquivalent: "")
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         login.target = self
@@ -415,6 +426,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             alert.runModal()
         }
         refreshWindow()
+    }
+
+    @objc private func setUpApprovals() {
+        runApprovalSetup { message in
+            let alert = NSAlert()
+            alert.messageText = message
+            alert.runModal()
+        }
+    }
+
+    @objc private func forgetApprovals() {
+        let alert = NSAlert()
+        alert.messageText = "Stop approving homelab requests on this Mac?"
+        alert.informativeText = "The key is deleted here. To remove it on the homelab too: sudo homelab-gateway --admin remove-approver mac"
+        alert.addButton(withTitle: "Stop")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn { ApproverStore.forget() }
     }
 
     @objc private func openConfig() {

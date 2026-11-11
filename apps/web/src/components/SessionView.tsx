@@ -2704,7 +2704,7 @@ function ImagePreviewDialog({
 }
 
 /** Where the home screen's composer keeps its draft — it has no session yet. */
-const NEW_CHAT_DRAFT = "__new";
+export const NEW_CHAT_DRAFT = "__new";
 
 export function Composer({
   sessionId,

@@ -1,8 +1,8 @@
 import { RealtimeClient, RestClient } from "@renki/client-core";
 import type { Session, StatsResponse } from "@renki/protocol";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
-import { afterEach, describe, expect, it } from "vitest";
+import { MemoryRouter, useLocation } from "react-router-dom";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Home } from "../src/components/Home.js";
 import { ClientContext } from "../src/lib/client.js";
 import { cleanupRoots, render } from "./render.js";
@@ -21,20 +21,59 @@ const day = (key: string, turnCount: number): StatsResponse["daily"][number] => 
   okCount: turnCount,
 });
 
-function renderHome(stats: StatsResponse, sessions: Session[] = []) {
+function renderHome(stats: StatsResponse, sessions: Session[] = [], entry = "/") {
   const realtime = new RealtimeClient({ baseUrl: "http://test.invalid", token: "t", deviceId: "d1" });
   const rest = new RestClient({ baseUrl: "http://test.invalid", token: "t" });
   rest.getStats = async () => stats;
   rest.listSessions = async () => sessions;
   const config = { baseUrl: "http://test.invalid", token: "t", deviceId: "d1", deviceName: "Test" };
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[entry]}>
       <ClientContext.Provider value={{ rest, realtime, config }}>
         <Home />
+        <LocationProbe />
       </ClientContext.Provider>
     </MemoryRouter>,
   );
+  return { realtime };
 }
+
+/** Prints the router's current address, so a test can see what the address bar would show. */
+function LocationProbe() {
+  const { pathname, search, hash } = useLocation();
+  return <div data-testid="location">{pathname + search + hash}</div>;
+}
+
+const noStats: StatsResponse = {
+  daily: [],
+  monthly: [],
+  byRepo: [],
+  byModel: [],
+  byClientType: [],
+  lifetime: { key: "lifetime", costUsd: 0, inputTokens: 0, outputTokens: 0, durationMs: 0, turnCount: 0, okCount: 0 },
+  firstTurnAt: null,
+};
+
+describe("Home: a /new link", () => {
+  afterEach(() => localStorage.clear());
+
+  it("fills the composer with the linked prompt, sends nothing, and takes the prompt out of the address", async () => {
+    const prompt = "Homelab check backups is red: last run failed.\nFind the cause and propose a fix.";
+    const { realtime } = renderHome(noStats, [], `/new?project=life#prompt=${encodeURIComponent(prompt)}`);
+    const submit = vi.spyOn(realtime, "submitPrompt");
+    const box = (await screen.findByRole("textbox")) as HTMLTextAreaElement;
+    expect(box.value).toBe(prompt);
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/new?project=life"));
+    expect(box.value).toBe(prompt);
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("ignores a prompt on any other address", async () => {
+    renderHome(noStats, [], "/#prompt=sneaky");
+    const box = (await screen.findByRole("textbox")) as HTMLTextAreaElement;
+    expect(box.value).toBe("");
+  });
+});
 
 describe("Home", () => {
   it("shows headline tiles, streaks, a heatmap and the perspective line from the daily buckets", async () => {

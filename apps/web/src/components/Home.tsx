@@ -23,9 +23,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useLiveSessions } from "../lib/liveSessions.js";
 import { useClient, useStoreValue } from "../lib/client.js";
-import { loadDeviceDefaults } from "../lib/composerPrefs.js";
+import { loadDeviceDefaults, saveDraft } from "../lib/composerPrefs.js";
+import { matchesProject, parseNewChatLink } from "../lib/newChatLink.js";
 import { RepoPicker, useRepoChoices } from "./RepoPicker.js";
-import { AttachmentChip, Composer } from "./SessionView.js";
+import { AttachmentChip, Composer, NEW_CHAT_DRAFT } from "./SessionView.js";
 import { Skeleton } from "./ui.js";
 
 type Range = "all" | "30d" | "7d" | "1d";
@@ -61,7 +62,16 @@ const LEAVE_MS = 360;
  * transition carries that bubble to the top of the new chat while the
  * composer stays put and the chat's header drops in (see index.css).
  */
-function NewChat({ initialRepoId, onLeaving }: { initialRepoId: string | null; onLeaving: (leaving: boolean) => void }) {
+function NewChat({
+  initialRepoId,
+  initialProject,
+  onLeaving,
+}: {
+  initialRepoId: string | null;
+  /** A project named by a /new link (see newChatLink.ts): a folder or GitHub name, not an id. */
+  initialProject: string | null;
+  onLeaving: (leaving: boolean) => void;
+}) {
   const { rest, realtime } = useClient();
   const navigate = useNavigate();
   const connection = useStoreValue(realtime.status);
@@ -70,13 +80,13 @@ function NewChat({ initialRepoId, onLeaving }: { initialRepoId: string | null; o
   // The sidebar's per-repo "+" lands here with that repo picked.
   const preselected = useRef(false);
   useEffect(() => {
-    if (preselected.current || !initialRepoId || !repos.choices) return;
-    const match = repos.choices.find((c) => c.local?.id === initialRepoId);
+    if (preselected.current || (!initialRepoId && !initialProject) || !repos.choices) return;
+    const match = repos.choices.find((c) => (initialRepoId ? c.local?.id === initialRepoId : matchesProject(c, initialProject!)));
     if (match && repos.github) {
       preselected.current = true;
       setRepo(match);
     }
-  }, [initialRepoId, repos]);
+  }, [initialRepoId, initialProject, repos]);
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** The message on its way, shown as the bubble it's about to become. */
@@ -175,7 +185,18 @@ function NewChat({ initialRepoId, onLeaving }: { initialRepoId: string | null; o
 export function Home() {
   const { rest } = useClient();
   const navigate = useNavigate();
-  const { search } = useLocation();
+  const { pathname, search, hash } = useLocation();
+  const link = useMemo(() => parseNewChatLink(pathname, search, hash), [pathname, search, hash]);
+  // A /new link's prompt becomes the new chat's draft before the composer
+  // reads it, then leaves the address bar, so a reload or a shared screenshot
+  // doesn't carry it. It's only filled in: the user still presses send.
+  const linkedPrompt = link?.prompt ?? null;
+  const placed = useRef<string | null>(null);
+  if (linkedPrompt === null) placed.current = null;
+  else if (placed.current !== hash) {
+    placed.current = hash;
+    saveDraft(NEW_CHAT_DRAFT, linkedPrompt, []);
+  }
   /** A chat is being started: the dashboard steps aside for it. */
   const [leaving, setLeaving] = useState(false);
   const [stats, setStats] = useState<StatsResponse | null>(null);
@@ -183,6 +204,9 @@ export function Home() {
   const [failed, setFailed] = useState(false);
   const [range, setRange] = useState<Range>("all");
   const [tab, setTab] = useState<Tab>("overview");
+  useEffect(() => {
+    if (linkedPrompt !== null) navigate({ pathname, search }, { replace: true });
+  }, [linkedPrompt, navigate, pathname, search]);
 
   const refresh = useCallback(() => {
     rest
@@ -374,7 +398,12 @@ export function Home() {
 
       {/* Where it sits in a chat, so starting one only has to move the message. Keyed on the
           query so "New" in the sidebar starts it over (and focuses it) even from here. */}
-      <NewChat key={search} initialRepoId={new URLSearchParams(search).get("repo")} onLeaving={setLeaving} />
+      <NewChat
+        key={search + (linkedPrompt !== null ? hash : "")}
+        initialRepoId={new URLSearchParams(search).get("repo")}
+        initialProject={link?.project ?? null}
+        onLeaving={setLeaving}
+      />
     </div>
   );
 }

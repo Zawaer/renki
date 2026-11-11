@@ -641,11 +641,11 @@ class HostCommandTest(unittest.TestCase):
 
     def test_open_window_needs_approval_and_a_sane_length(self):
         asked, approve = self.approver(True)
-        rc, _ = gateway.v_open_window(self.policy, ["45"], window_path=self.window, approve=approve)
+        rc, _ = gateway.v_open_window(self.policy, ["20"], window_path=self.window, approve=approve)
         self.assertEqual(rc, 0)
-        self.assertIn("45 minutes", asked[0][2]); self.assertIn("Any chat", asked[0][2])
+        self.assertIn("20 minutes", asked[0][2]); self.assertIn("Any chat", asked[0][2])
         self.assertIsNotNone(gateway.window_until(self.window))
-        for bad in (["0"], ["999"], ["x"], ["1", "2"]):
+        for bad in (["0"], ["31"], ["60"], ["999"], ["x"], ["1", "2"]):
             with self.assertRaises(gateway.Refused):
                 gateway.v_open_window(self.policy, bad, window_path=self.window, approve=approve)
         _, deny = self.approver(False)

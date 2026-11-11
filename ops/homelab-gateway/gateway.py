@@ -985,7 +985,7 @@ def v_add_route(policy, args):
 # the approval says so. `sudo` asks every time, window or not.
 
 WINDOW_PATH = "/var/lib/homelab-gateway/window.json"
-WINDOW_DEFAULT_MIN, WINDOW_MAX_MIN = 30, 120
+WINDOW_DEFAULT_MIN, WINDOW_MAX_MIN = 30, 30
 SH_MAX_CHARS = 4000
 SH_TIMEOUT = 1500  # under the 30 min a session's Bash call can wait
 

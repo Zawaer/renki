@@ -38,7 +38,7 @@ Renki container --(ssh, forced command, key without a shell)--> gateway (host, o
 | 2 approval | `add-route <name>[.internal] <container>:<port>` | appends a `<name>.internal` site to the Caddyfile for a container of a deployable app on `homelab_net`, validates, reloads; puts the file back if it doesn't validate |
 | 2 approval | `sh <command>` | runs the command with `bash -lc` as the homelab user, in its home, after the phone shows the exact command and you approve; no approval while a time window is open |
 | 2 approval | `sudo <command>` | the same as root: you type your sudo password in the phone's approval, every time (see below) |
-| 2 approval | `open-window [minutes]` | after one approval, `sh` runs without asking for that long (default 30, at most 120); `close-window` ends it, `window` shows it |
+| 2 approval | `open-window [minutes]` | after one approval, `sh` runs without asking for that long (30 minutes, at most); `close-window` ends it, `window` shows it |
 | never | anything else | any verb not listed; `sh` and `sudo` are the way to do something new, and they always show you the command |
 
 ## Policy

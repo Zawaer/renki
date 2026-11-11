@@ -1,6 +1,6 @@
 import { RealtimeClient, RestClient } from "@renki/client-core";
 import type { Session, StatsResponse } from "@renki/protocol";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Home } from "../src/components/Home.js";
@@ -78,6 +78,19 @@ describe("Home: a /new link", () => {
     arrive({ available: true, login: "Zawaer", repos: [{ fullName: "Zawaer/life", name: "life", description: null, isPrivate: true }] });
     await new Promise((r) => setTimeout(r, 20));
     expect(screen.getByRole("button", { name: /life/ })).toBeInTheDocument();
+  });
+
+  it("waits to send until a project only GitHub knows is found, but lets you type", async () => {
+    let arrive!: (v: unknown) => void;
+    const { realtime } = renderHome(noStats, [], "/new?project=matka#prompt=hi", new Promise((r) => (arrive = r)));
+    act(() => (realtime.status as unknown as { set(v: string): void }).set("open"));
+    const box = (await screen.findByRole("textbox")) as HTMLTextAreaElement;
+    await waitFor(() => expect(box.value).toBe("hi"));
+    expect(box).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+    arrive({ available: true, login: "Zawaer", repos: [{ fullName: "Zawaer/matka", name: "matka", description: null, isPrivate: true }] });
+    await waitFor(() => expect(screen.getByRole("button", { name: /matka/ })).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
   });
 
   it("picks the project the link names", async () => {

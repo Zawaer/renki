@@ -90,6 +90,12 @@ function NewChat({
     if (match) setRepo((cur) => (cur === null || cur.key === earlier ? match : cur));
     preselected.current = repos.github ? "done" : (match?.key ?? null);
   }, [initialRepoId, initialProject, repos]);
+  /**
+   * A repo was asked for but isn't found yet: the local checkouts didn't have
+   * it and GitHub's list (seconds) hasn't come. Sending now would start the
+   * chat with no repo, so it waits; typing doesn't.
+   */
+  const findingRepo = Boolean(initialRepoId || initialProject) && repo === null && repos.github === null;
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** The message on its way, shown as the bubble it's about to become. */
@@ -165,8 +171,8 @@ function NewChat({
       <Composer
         sessionId={null}
         composer={null}
-        disabled={connection !== "open"}
-        loading={false}
+        disabled={connection !== "open" || findingRepo}
+        loading={connection === "open" && findingRepo}
         reason="Connecting to the daemon…"
         placeholder="Describe a task or ask a question"
         onSend={start}

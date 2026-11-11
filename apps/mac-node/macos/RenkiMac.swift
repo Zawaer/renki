@@ -84,6 +84,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private let lendBox = NSButton(checkboxWithTitle: "Lend this Mac to Renki", target: nil, action: nil)
     private let menuBarBox = NSButton(checkboxWithTitle: "Show in menu bar", target: nil, action: nil)
     private let loginBox = NSButton(checkboxWithTitle: "Open at login", target: nil, action: nil)
+    private let approvalsLabel = NSTextField(labelWithString: "")
+    private let approvalsButton = NSButton(title: "", target: nil, action: nil)
     private var process: Process?
     private var state: AgentState = .off
     private var activeCalls = 0
@@ -308,13 +310,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 NSButton(title: "Quit", target: NSApp, action: #selector(NSApplication.terminate(_:))),
             ])
             buttons.spacing = 8
-            let stack = NSStackView(views: [header, lendBox, menuBarBox, loginBox, buttons])
+            approvalsLabel.font = .systemFont(ofSize: 12)
+            approvalsLabel.textColor = .secondaryLabelColor
+            approvalsLabel.lineBreakMode = .byTruncatingTail
+            approvalsButton.target = self
+            approvalsButton.action = #selector(toggleApprovals)
+            approvalsButton.controlSize = .small
+            let approvalsTitle = NSTextField(labelWithString: "Homelab approvals")
+            approvalsTitle.font = .systemFont(ofSize: 13, weight: .medium)
+            let approvalsText = NSStackView(views: [approvalsTitle, approvalsLabel])
+            approvalsText.orientation = .vertical
+            approvalsText.alignment = .leading
+            approvalsText.spacing = 2
+            let approvalsRow = NSStackView(views: [approvalsText, NSView(), approvalsButton])
+            approvalsRow.spacing = 8
+            approvalsRow.translatesAutoresizingMaskIntoConstraints = false
+            approvalsRow.widthAnchor.constraint(equalToConstant: 304).isActive = true
+            let stack = NSStackView(views: [header, lendBox, menuBarBox, loginBox, approvalsRow, buttons])
             stack.orientation = .vertical
             stack.alignment = .leading
             stack.spacing = 10
             stack.edgeInsets = NSEdgeInsets(top: 16, left: 18, bottom: 16, right: 18)
             stack.setCustomSpacing(16, after: header)
             stack.setCustomSpacing(16, after: loginBox)
+            stack.setCustomSpacing(16, after: approvalsRow)
             stack.translatesAutoresizingMaskIntoConstraints = false
             let content = NSView()
             content.addSubview(stack)
@@ -342,6 +361,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         lendBox.state = enabled ? .on : .off
         menuBarBox.state = item.isVisible ? .on : .off
         loginBox.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        if ApproverStore.isSetUp {
+            approvalsLabel.stringValue = approvals.lastError.map { "Can't reach the homelab: \($0)" } ?? "On: approve with Touch ID on this Mac"
+            approvalsButton.title = "Stop…"
+        } else {
+            approvalsLabel.stringValue = "Off: requests go to the phone"
+            approvalsButton.title = "Set Up…"
+        }
         w.layoutIfNeeded()
     }
 
@@ -428,11 +454,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         refreshWindow()
     }
 
+    @objc private func toggleApprovals() {
+        if ApproverStore.isSetUp { forgetApprovals() } else { setUpApprovals() }
+    }
+
     @objc private func setUpApprovals() {
-        runApprovalSetup { message in
+        runApprovalSetup { [weak self] message in
             let alert = NSAlert()
             alert.messageText = message
             alert.runModal()
+            self?.refreshWindow()
         }
     }
 
@@ -443,6 +474,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         alert.addButton(withTitle: "Stop")
         alert.addButton(withTitle: "Cancel")
         if alert.runModal() == .alertFirstButtonReturn { ApproverStore.forget() }
+        refreshWindow()
     }
 
     @objc private func openConfig() {

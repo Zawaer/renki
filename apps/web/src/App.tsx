@@ -16,7 +16,7 @@ import { SessionView } from "./components/SessionView.js";
 import { Settings } from "./components/Settings.js";
 import { Setup } from "./components/Setup.js";
 import { StatsView } from "./components/StatsView.js";
-import { PhoneApprovalBanner } from "./components/PhoneApprovalBanner.js";
+import { HomelabWindowChip, PhoneApprovalBanner } from "./components/PhoneApprovalBanner.js";
 import { useAttentionAlerts } from "./lib/attention.js";
 import { injectedConfig } from "./lib/host.js";
 
@@ -227,6 +227,9 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
               <span className={`h-2 w-2 rounded-full ${status === "connecting" ? "bg-(--renki-warning) animate-pulse" : "bg-(--renki-danger)"}`} />
             </span>
           )}
+          <span className="mb-1">
+            <HomelabWindowChip compact />
+          </span>
           <HeaderButton active={onStats} title="Stats" icon="graph-line" onClick={() => navigate(onStats ? "/" : "/stats")} />
           <HeaderButton active={onSettings} title="Settings" icon="gear" onClick={() => navigate(onSettings ? "/" : "/settings")} />
         </aside>
@@ -280,6 +283,7 @@ function Workspace({ onReset, managed }: { onReset: () => void; managed: boolean
         <div className="flex shrink-0 items-center gap-0.5 border-t border-(--renki-border) p-2">
           {status === "open" ? <AccountsBar /> : <ConnectionAlert status={status} />}
           <div className="ml-auto flex items-center gap-0.5">
+            <HomelabWindowChip />
             <HeaderButton active={onStats} title="Stats" icon="graph-line" onClick={() => navigate(onStats ? "/" : "/stats")} />
             <HeaderButton active={onSettings} title="Settings" icon="gear" onClick={() => navigate(onSettings ? "/" : "/settings")} />
           </div>

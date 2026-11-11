@@ -236,7 +236,15 @@ export const ServerMessage = z.discriminatedUnion("type", [
    * show; approving still happens on the phone alone.
    */
   /** `window`: while a time window is open (`homelab open-window`), when it closes, in ms; null when none. */
-  z.object({ type: z.literal("gateway_approvals"), pending: z.array(GatewayApproval), window: z.number().nullable().optional() }),
+  /** `approvers`: devices set up to approve with Touch ID (0 or missing: only the phone can). */
+  z.object({
+    type: z.literal("gateway_approvals"),
+    pending: z.array(GatewayApproval),
+    window: z.number().nullable().optional(),
+    approvers: z.number().optional(),
+    /** The approval service's address, where a browser approves with Touch ID. */
+    url: z.string().nullable().optional(),
+  }),
 
   z.object({ type: z.literal("pong") }),
 ]);

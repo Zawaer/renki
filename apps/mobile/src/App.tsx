@@ -38,11 +38,16 @@ import { StatsView } from "./screens/StatsView";
 import { PaletteProvider, type ThemeColors, useTheme } from "./theme";
 import { TextReaderProvider } from "./components/TextReader";
 import { UpdateBanner } from "./components/UpdateBanner";
+import { confirmIdentity } from "./lib/confirmIdentity";
 
 // Show notifications while the app is foregrounded too.
 /** The Approve / Deny buttons on a gateway approval notification answer straight away, with a toast. */
 function answerGatewayFromButton(approval: GatewayApproval, decision: "approve" | "deny"): void {
-  void answerGatewayApproval(approval, decision).then((outcome) => {
+  void (async () => {
+    if (decision === "approve" && !(await confirmIdentity("Approve on the homelab"))) return "cancelled" as const;
+    return answerGatewayApproval(approval, decision);
+  })().then((outcome) => {
+    if (outcome === "cancelled") return;
     const message = describeGatewayOutcome(outcome, decision);
     if (Platform.OS === "android") ToastAndroid.show(message, ToastAndroid.LONG);
     else Alert.alert(message);

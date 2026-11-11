@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Platform, StyleSheet, Text, TextInput, ToastAndroid, TouchableOpacity, View } from "react-native";
 import { radius, type ThemeColors } from "../theme";
 import { Sheet } from "./Sheet";
+import { confirmIdentity } from "../lib/confirmIdentity";
 
 /** One request the homelab gateway is waiting on, and where it came from. */
 export type PendingApproval = {
@@ -83,6 +84,7 @@ export function GatewayApprovalSheet({
 
   async function answer(decision: "approve" | "deny") {
     if (!pending) return;
+    if (decision === "approve" && !(await confirmIdentity("Approve on the homelab"))) return;
     setBusy(decision);
     const needsPassword = decision === "approve" && peek?.password;
     const outcome = await answerGatewayApproval(pending.approval, decision, undefined, needsPassword ? password : undefined);

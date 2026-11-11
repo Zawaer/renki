@@ -378,7 +378,7 @@ def list_pending(approval_dir, now=None):
     return sorted(out, key=lambda r: r["created"])
 
 
-def create_approval(approval_dir, verb, args, summary, ttl, now=None, password=False):
+def create_approval(approval_dir, verb, args, summary, ttl, now=None, password=False, pubkey=None):
     now = time.time() if now is None else now
     os.makedirs(approval_dir, mode=0o700, exist_ok=True)
     aid, token = secrets.token_hex(5), secrets.token_urlsafe(32)
@@ -386,6 +386,8 @@ def create_approval(approval_dir, verb, args, summary, ttl, now=None, password=F
            "expires": now + ttl, "token_sha256": hashlib.sha256(token.encode()).hexdigest()}
     if password:
         rec["password"] = True
+    if pubkey:
+        rec["pubkey"] = pubkey  # the browser encrypts a password typed on the Mac to this (see WebApprovals)
     tmp = _rec_path(approval_dir, aid) + ".tmp"
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w") as f:
@@ -534,22 +536,33 @@ def send_push(tokens, title, body, data):
 
 
 def request_approval(policy, verb, args, summary, notify=None, approval_dir=None, sleep=time.sleep, now=time.time,
-                     password=False):
-    """Block until the phone decides. Returns True only for an in-time approval; with password=True,
-    the password typed on the phone (a str) instead of True."""
+                     password=False, desktop=None):
+    """Block until a decision. Returns True only for an in-time approval; with password=True, the
+    password typed on the phone or the Mac (a str) instead of True.
+
+    The phone is pushed at once, unless you're at the Mac (a Renki tab open there, and a Mac set up
+    to approve with Touch ID): then the push waits DESKTOP_GRACE_SECONDS, and an approval given on
+    the Mac meanwhile means the phone never buzzes. A chat faking "at the Mac" can only delay it."""
     cfg = approval_cfg(policy)
     approval_dir = approval_dir or APPROVAL_DIR
     ttl = int(cfg.get("timeout_seconds", 300))
-    aid, token = create_approval(approval_dir, verb, args, summary, ttl, now(), password=password)
     pad = secrets.token_bytes(PAD_BYTES) if password else None
+    rsa_key = new_password_key() if password else None
+    aid, token = create_approval(approval_dir, verb, args, summary, ttl, now(), password=password,
+                                 pubkey=public_key_b64(rsa_key) if rsa_key else None)
     data = {"kind": "gateway-approval", "id": aid, "token": token, "url": cfg.get("url", "")}
     if pad:
         data["pad"] = pad.hex()
     notify = notify or (lambda **kw: send_push(push_tokens_from_db(cfg.get("push_db", "")), kw["title"], kw["body"], kw["data"]))
-    delivered = notify(title="Approve on the homelab?", body=summary, data=data)
+    at_desk = desktop() if desktop else desktop_present(approval_dir, now=now())
+    push_at = now() + (DESKTOP_GRACE_SECONDS if at_desk else 0)
+    delivered, pushed = False, False
     deadline = now() + ttl
     resends, last_sent = 0, now()
     while now() < deadline:
+        if not pushed and now() >= push_at:
+            delivered = notify(title="Approve on the homelab?", body=summary, data=data)
+            pushed, last_sent = True, now()
         d = read_decision(approval_dir, aid)
         if d is not None:
             sealed = take_secret(approval_dir, aid)
@@ -557,6 +570,8 @@ def request_approval(policy, verb, args, summary, notify=None, approval_dir=None
                 return False
             if not password:
                 return True
+            if sealed and sealed.startswith("rsa:") and rsa_key:
+                return open_rsa_password(sealed[4:], rsa_key)
             if not sealed or not SECRET_RE.match(sealed):
                 raise Refused("approved without a password; nothing was run")
             return open_password(sealed, pad)
@@ -565,15 +580,274 @@ def request_approval(policy, verb, args, summary, notify=None, approval_dir=None
                 os.remove(_resend_path(approval_dir, aid))
             except OSError:
                 pass
-            if resends < MAX_RESENDS and now() - last_sent >= RESEND_GAP_SECONDS:
+            if pushed and resends < MAX_RESENDS and now() - last_sent >= RESEND_GAP_SECONDS:
                 # The same request and token again, so whichever copy the phone answers counts.
                 delivered = notify(title="Approve on the homelab?", body=summary, data=data) or delivered
                 resends, last_sent = resends + 1, now()
+            elif not pushed:
+                push_at = now()  # "send to phone" from the Mac: don't wait out the grace
         sleep(1)
     write_decision(approval_dir, aid, "deny")  # nobody answered: closed for good
     if not delivered:
         raise Refused("no phone could be notified (is the Renki app registered for push?); denied")
     return False
+
+
+# ---- approving on the Mac: Touch ID (WebAuthn passkeys) ---------------------
+#
+# The phone is trusted because the one-time token only reaches it. A browser tab has no such secret
+# (anything Renki's page can do, a chat can do), so the Mac proves itself with a passkey instead:
+# a key in the Mac's secure enclave that signs only after Touch ID. Devices are added with
+# `sudo homelab-gateway --admin enroll <name>` on the host (root, so no chat can start it), which
+# prints a link that is good for ten minutes and one device.
+#
+# The sudo password typed on the Mac goes straight to this service over HTTPS, encrypted in the
+# browser (RSA-OAEP) to a key pair the waiting gateway made for this one request and keeps in memory.
+
+APPROVERS_PATH = "/var/lib/homelab-gateway/approvers.json"
+ENROLL_PATH = "/var/lib/homelab-gateway/enroll.json"
+DESKTOP_SEEN = "desktop-seen"  # in the approval dir: touched while a Renki tab on a computer is open
+DESKTOP_FRESH_SECONDS = 20
+DESKTOP_GRACE_SECONDS = 30
+ENROLL_TTL = 600
+CHALLENGE_TTL = 180
+B64URL_RE = re.compile(r"^[A-Za-z0-9_-]{1,4096}$")
+
+
+def b64u(data):
+    import base64
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def unb64u(text):
+    import base64
+    if not isinstance(text, str) or not B64URL_RE.match(text):
+        raise ValueError("bad base64url")
+    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+
+
+def new_password_key():
+    try:
+        from cryptography.hazmat.primitives.asymmetric import rsa
+    except ImportError:
+        return None  # without it, root commands can only be approved on the phone
+    return rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+
+def public_key_b64(key):
+    from cryptography.hazmat.primitives import serialization
+    import base64
+    der = key.public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+    return base64.b64encode(der).decode()
+
+
+def open_rsa_password(b64, key):
+    import base64
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import padding
+    try:
+        plain = key.decrypt(base64.b64decode(b64), padding.OAEP(mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=None))
+    except Exception:  # noqa: BLE001
+        raise Refused("couldn't read the password sent from the Mac; nothing was run")
+    return plain.decode("utf-8", "replace")
+
+
+def read_approvers(path=None):
+    try:
+        with open(path or APPROVERS_PATH) as f:
+            data = json.load(f)
+        return [a for a in data.get("devices", []) if isinstance(a, dict) and "id" in a and "pem" in a]
+    except (OSError, ValueError, AttributeError):
+        return []
+
+
+def write_approvers(devices, path=None):
+    path = path or APPROVERS_PATH
+    tmp = path + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump({"devices": devices}, f, indent=2)
+    os.replace(tmp, path)
+
+
+def mark_desktop(approval_dir, now=None):
+    path = os.path.join(approval_dir, DESKTOP_SEEN)
+    try:
+        with open(path, "a"):
+            pass
+        t = time.time() if now is None else now
+        os.utime(path, (t, t))
+    except OSError:
+        pass
+
+
+def desktop_present(approval_dir, approvers_path=None, now=None):
+    """A Renki tab on a computer reported in lately, and some device can approve with Touch ID."""
+    now = time.time() if now is None else now
+    try:
+        fresh = now - os.path.getmtime(os.path.join(approval_dir, DESKTOP_SEEN)) <= DESKTOP_FRESH_SECONDS
+    except OSError:
+        return False
+    return fresh and bool(read_approvers(approvers_path))
+
+
+def rp_id(policy):
+    url = approval_cfg(policy).get("url", "")
+    return re.sub(r"^https://|/.*$", "", url)
+
+
+def check_client_data(raw, kind, challenge, origin):
+    cd = json.loads(raw.decode("utf-8"))
+    if cd.get("type") != kind:
+        raise Refused("wrong kind of passkey response")
+    if cd.get("origin") != origin:
+        raise Refused("passkey response from the wrong site")
+    if cd.get("challenge") != challenge:
+        raise Refused("passkey response for a different request")
+
+
+def check_auth_data(auth, rpid, need_uv=True):
+    if len(auth) < 37 or auth[:32] != hashlib.sha256(rpid.encode()).digest():
+        raise Refused("passkey made for a different site")
+    flags = auth[32]
+    if not flags & 0x01 or (need_uv and not flags & 0x04):
+        raise Refused("Touch ID (or the device password) is needed")
+
+
+class WebApprovals:
+    """The approval service's Touch ID side. Challenges live in this process's memory only."""
+
+    def __init__(self, policy, approval_dir=None, approvers_path=None, enroll_path=None):
+        self.policy = policy
+        self.dir = approval_dir or APPROVAL_DIR
+        self.approvers_path = approvers_path or APPROVERS_PATH
+        self.enroll_path = enroll_path or ENROLL_PATH
+        self.rpid = rp_id(policy)
+        self.origin = "https://" + self.rpid
+        self.challenges = {}  # challenge -> (purpose, expires)
+
+    def _challenge(self, purpose, now):
+        self.challenges = {c: v for c, v in self.challenges.items() if v[1] > now}
+        c = b64u(secrets.token_bytes(32))
+        self.challenges[c] = (purpose, now + CHALLENGE_TTL)
+        return c
+
+    def _use_challenge(self, c, purpose, now):
+        v = self.challenges.pop(c, None)
+        if not v or v[0] != purpose or v[1] < now:
+            raise Refused("this page is out of date; reload it")
+
+    # -- adding a device
+    def _enroll_rec(self, code, now):
+        try:
+            with open(self.enroll_path) as f:
+                rec = json.load(f)
+        except (OSError, ValueError):
+            raise Refused("no device is being added; run the enroll command on the homelab")
+        if now > rec.get("expires", 0) or not hmac.compare_digest(hashlib.sha256((code or "").encode()).hexdigest(), rec.get("code_sha256", "")):
+            raise Refused("this link is wrong or has run out; run the enroll command again")
+        return rec
+
+    def enroll_options(self, body, now=None):
+        now = time.time() if now is None else now
+        rec = self._enroll_rec(body.get("code"), now)
+        return {
+            "challenge": self._challenge("enroll", now),
+            "rp": {"id": self.rpid, "name": "Homelab approvals"},
+            "user": {"id": b64u(hashlib.sha256(rec["name"].encode()).digest()[:16]), "name": rec["name"], "displayName": rec["name"]},
+            "exclude": [a["id"] for a in read_approvers(self.approvers_path)],
+        }
+
+    def enroll_finish(self, body, now=None):
+        """The browser's getPublicKey() (SPKI) and getAuthenticatorData(); attestation is not checked
+        (the enroll link, which only root can make, is what proves the device is yours)."""
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+        now = time.time() if now is None else now
+        rec = self._enroll_rec(body.get("code"), now)
+        cd = unb64u(body.get("clientDataJSON"))
+        challenge = json.loads(cd.decode()).get("challenge", "")
+        self._use_challenge(challenge, "enroll", now)
+        check_client_data(cd, "webauthn.create", challenge, self.origin)
+        check_auth_data(unb64u(body.get("authenticatorData")), self.rpid)
+        key = serialization.load_der_public_key(unb64u(body.get("publicKey")))
+        if not isinstance(key, ec.EllipticCurvePublicKey):
+            raise Refused("only ES256 passkeys are supported")
+        cred_id = body.get("id")
+        unb64u(cred_id)
+        pem = key.public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()
+        devices = [a for a in read_approvers(self.approvers_path) if a["id"] != cred_id]
+        devices.append({"id": cred_id, "pem": pem, "name": rec["name"], "added": now})
+        write_approvers(devices, self.approvers_path)
+        try:
+            os.remove(self.enroll_path)  # one device per link
+        except OSError:
+            pass
+        return {"ok": True, "name": rec["name"]}
+
+    # -- approving
+    def view(self, aid, now=None):
+        now = time.time() if now is None else now
+        if not ID_RE.match(aid or ""):
+            raise Refused("bad request")
+        try:
+            with open(_rec_path(self.dir, aid)) as f:
+                rec = json.load(f)
+        except (OSError, ValueError):
+            return {"state": "gone"}
+        state = read_decision(self.dir, aid) or ("expired" if now > rec["expires"] else "pending")
+        return {
+            "state": state, "summary": rec["summary"], "expires": rec["expires"], "password": bool(rec.get("password")),
+            "pubkey": rec.get("pubkey"), "challenge": self._challenge("approve:" + aid, now) if state == "pending" else None,
+            "devices": [a["id"] for a in read_approvers(self.approvers_path)],
+        }
+
+    def answer(self, aid, body, now=None):
+        from cryptography.exceptions import InvalidSignature
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+        now = time.time() if now is None else now
+        if not ID_RE.match(aid or ""):
+            raise Refused("bad request")
+        decision = body.get("decision")
+        if decision not in ("approve", "deny"):
+            raise Refused("bad request")
+        try:
+            with open(_rec_path(self.dir, aid)) as f:
+                rec = json.load(f)
+        except (OSError, ValueError):
+            raise Refused("this request is no longer on the homelab")
+        if now > rec["expires"]:
+            raise Refused("too late: this request expired")
+        if decision == "deny":
+            # Saying no takes nothing: a chat denying its own request gains nothing.
+            return {"ok": write_decision(self.dir, aid, "deny"), "decision": "deny"}
+        cred = next((a for a in read_approvers(self.approvers_path) if a["id"] == body.get("id")), None)
+        if not cred:
+            raise Refused("this device isn't set up to approve; add it with the enroll command")
+        cd, auth, sig = unb64u(body.get("clientDataJSON")), unb64u(body.get("authenticatorData")), unb64u(body.get("signature"))
+        challenge = json.loads(cd.decode()).get("challenge", "")
+        self._use_challenge(challenge, "approve:" + aid, now)
+        check_client_data(cd, "webauthn.get", challenge, self.origin)
+        check_auth_data(auth, self.rpid)
+        key = serialization.load_pem_public_key(cred["pem"].encode())
+        try:
+            key.verify(sig, auth + hashlib.sha256(cd).digest(), ec.ECDSA(hashes.SHA256()))
+        except InvalidSignature:
+            raise Refused("Touch ID signature didn't check out")
+        if rec.get("password"):
+            enc = body.get("password")
+            if not isinstance(enc, str) or not re.fullmatch(r"[A-Za-z0-9+/=]{100,1000}", enc):
+                raise Refused("password needed")
+            try:
+                fd = os.open(_secret_path(self.dir, aid), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            except FileExistsError:
+                raise Refused("already answered")
+            with os.fdopen(fd, "w") as f:
+                f.write("rsa:" + enc)
+        if not write_decision(self.dir, aid, "approve"):
+            raise Refused("already answered")
+        return {"ok": True, "decision": "approve"}
 
 
 def human_size(n):
@@ -1095,43 +1369,167 @@ def v_window(policy, args, window_path=None):
     return 0, (f"open until {clock(until)}\n" if until else "closed: `homelab sh` asks on the phone each time.\n")
 
 
+WEB_CSS = """
+:root{color-scheme:light dark;--bg:#faf8f5;--fg:#1d1a17;--muted:#6f6760;--card:#fff;--border:#e6e0d8;--accent:#d97a3a;--accent-fg:#fff;--danger:#c83a37}
+@media (prefers-color-scheme:dark){:root{--bg:#171310;--fg:#ede6de;--muted:#9c938a;--card:#211c18;--border:#352d27;--accent:#e8955a;--accent-fg:#1d1209;--danger:#ea6b62}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;display:flex;justify-content:center;padding:32px 16px}
+main{width:100%;max-width:560px}h1{font-size:18px;margin:0 0 4px}.muted{color:var(--muted);font-size:13px}
+pre{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;white-space:pre-wrap;word-break:break-word;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;margin:16px 0}
+.root{color:var(--danger)}input{width:100%;font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--fg);margin-bottom:12px}
+.row{display:flex;gap:10px}button{flex:1;font:inherit;font-weight:600;padding:11px;border-radius:999px;border:0;cursor:pointer}
+.approve{background:var(--accent);color:var(--accent-fg)}.deny{background:var(--card);color:var(--fg);border:1px solid var(--border)}
+button:disabled{opacity:.55;cursor:default}#msg{margin-top:14px;min-height:20px}
+"""
+
+WEB_JS = r"""
+const $=s=>document.querySelector(s);const enc=b=>btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const dec=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));
+const say=t=>{$('#msg').textContent=t};
+async function api(path,body){const r=await fetch(path,body?{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}:{});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j}
+async function sealPassword(pw,pubkey){const k=await crypto.subtle.importKey('spki',Uint8Array.from(atob(pubkey),c=>c.charCodeAt(0)),{name:'RSA-OAEP',hash:'SHA-256'},false,['encrypt']);
+ const c=await crypto.subtle.encrypt({name:'RSA-OAEP'},k,new TextEncoder().encode(pw));return btoa(String.fromCharCode(...new Uint8Array(c)))}
+async function approvePage(){
+ const aid=location.pathname.split('/').pop();let v;
+ try{v=await api('/v1/web/'+aid)}catch(e){say(e.message);return}
+ if(v.state!=='pending'){$('#summary').textContent=v.summary||'';say(v.state==='approve'?'Already approved.':v.state==='deny'?'Already denied.':'This request has closed.');return}
+ $('#summary').textContent=v.summary;if(v.password){$('#summary').classList.add('root');$('#pw').hidden=false;$('#pw').focus()}
+ const left=()=>{const s=Math.max(0,Math.ceil(v.expires-Date.now()/1000));$('#left').textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0')+' left, then it is denied.';if(!s){say('Ran out of time.');$('#a').disabled=$('#d').disabled=true}};left();setInterval(left,1000);
+ $('#a').disabled=$('#d').disabled=false;
+ if(!v.devices.length){$('#a').disabled=true;say('This Mac is not set up to approve yet. On the homelab, run: sudo homelab-gateway --admin enroll mac');}
+ if(v.password&&!v.pubkey){$('#a').disabled=true;say('Approve this one on your phone.')}
+ $('#d').onclick=async()=>{try{await api('/v1/web/'+aid,{decision:'deny'});say('Denied.');done()}catch(e){say(e.message)}};
+ $('#a').onclick=async()=>{
+  const pw=$('#pw').value;if(v.password&&!pw){say('Type your sudo password first.');return}
+  $('#a').disabled=true;say('Waiting for Touch ID…');
+  try{const cred=await navigator.credentials.get({publicKey:{challenge:dec(v.challenge),rpId:location.hostname,userVerification:'required',allowCredentials:v.devices.map(id=>({type:'public-key',id:dec(id)})),timeout:120000}});
+   const r=cred.response;const body={decision:'approve',id:cred.id,clientDataJSON:enc(r.clientDataJSON),authenticatorData:enc(r.authenticatorData),signature:enc(r.signature)};
+   if(v.password)body.password=await sealPassword(pw,v.pubkey);
+   await api('/v1/web/'+aid,body);say('Approved.');done()}
+  catch(e){say(e.name==='NotAllowedError'?'Touch ID was cancelled. Try again.':e.message);$('#a').disabled=false;try{v=await api('/v1/web/'+aid)}catch{}}};
+}
+function done(){$('#a').disabled=$('#d').disabled=true;$('#pw').value='';setTimeout(()=>window.close(),900)}
+async function enrollPage(){
+ const code=location.hash.slice(1);if(!code){say('Open the link the enroll command printed.');return}
+ $('#a').disabled=false;
+ $('#a').onclick=async()=>{$('#a').disabled=true;try{
+  const o=await api('/v1/enroll/options',{code});
+  const cred=await navigator.credentials.create({publicKey:{challenge:dec(o.challenge),rp:o.rp,user:{id:dec(o.user.id),name:o.user.name,displayName:o.user.displayName},
+   pubKeyCredParams:[{type:'public-key',alg:-7}],authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required',residentKey:'preferred'},
+   excludeCredentials:o.exclude.map(id=>({type:'public-key',id:dec(id)})),attestation:'none',timeout:120000}});
+  const r=cred.response;
+  const j=await api('/v1/enroll/finish',{code,id:cred.id,clientDataJSON:enc(r.clientDataJSON),authenticatorData:enc(r.getAuthenticatorData()),publicKey:enc(r.getPublicKey())});
+  say('Done: '+j.name+' can now approve homelab requests with Touch ID.')}catch(e){say(e.message);$('#a').disabled=false}}
+}
+(document.body.dataset.page==='enroll'?enrollPage:approvePage)();
+"""
+
+
+def web_page(kind):
+    if kind == "enroll":
+        body = ('<h1>Approve homelab requests with Touch ID</h1><p class="muted">Adds this device as an approver. '
+                'The link works once, for ten minutes.</p><div class="row" style="margin-top:20px">'
+                '<button id="a" class="approve" disabled>Set up Touch ID</button></div><input id="pw" hidden><button id="d" hidden></button>')
+    else:
+        body = ('<h1>Approve on the homelab?</h1><p class="muted">A Renki chat asked for this. <span id="left"></span></p>'
+                '<pre id="summary">Loading…</pre><input id="pw" type="password" placeholder="Your sudo password" autocomplete="off" hidden>'
+                '<div class="row"><button id="d" class="deny" disabled>Deny</button><button id="a" class="approve" disabled>Approve with Touch ID</button></div>')
+    return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+            f'<title>Homelab approval</title><link rel="stylesheet" href="/web.css"></head><body data-page="{kind}"><main>{body}'
+            f'<div id="msg" class="muted"></div></main><script src="/web.js"></script></body></html>')
+
+
 class ApprovalHandler(BaseHTTPRequestHandler):
     approval_dir = APPROVAL_DIR
     window_path = WINDOW_PATH
+    web = None  # WebApprovals, set by serve()
 
     def _reply(self, code, body):
         raw = json.dumps(body).encode()
         self.send_response(code)
         self.send_header("content-type", "application/json")
         self.send_header("content-length", str(len(raw)))
+        self.send_header("cache-control", "no-store")
         self.end_headers()
         self.wfile.write(raw)
+
+    def _static(self, ctype, text):
+        raw = text.encode()
+        self.send_response(200)
+        self.send_header("content-type", ctype)
+        self.send_header("content-length", str(len(raw)))
+        self.send_header("cache-control", "no-store")
+        # Only this site's own script, and never inside another page (no clickjacking from Renki's tab).
+        self.send_header("content-security-policy", "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+        self.send_header("x-content-type-options", "nosniff")
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def _body(self):
+        n = min(int(self.headers.get("content-length") or 0), 16384)
+        return json.loads(self.rfile.read(n) or b"{}")
+
+    def _web(self, fn, *a):
+        if self.web is None:
+            return self._reply(404, {"error": "not set up"})
+        try:
+            return self._reply(200, fn(*a))
+        except Refused as e:
+            return self._reply(400, {"error": str(e)})
+        except (ValueError, KeyError, TypeError):
+            return self._reply(400, {"error": "bad request"})
 
     def _parts(self):
         m = re.fullmatch(r"/v1/approvals/([0-9a-f]{10})(?:\?.*)?", self.path)
         return m.group(1) if m else None
 
     def do_GET(self):
-        if re.fullmatch(r"/v1/approvals/pending(?:\?.*)?", self.path):
-            return self._reply(200, {"pending": list_pending(self.approval_dir), "window": window_until(self.window_path)})
+        path = self.path.split("?")[0]
+        if path == "/v1/approvals/pending":
+            if "desktop=1" in self.path:
+                mark_desktop(self.approval_dir)
+            return self._reply(200, {"pending": list_pending(self.approval_dir), "window": window_until(self.window_path),
+                                     "approvers": len(read_approvers(self.web.approvers_path)) if self.web else 0,
+                                     "url": self.web.origin if self.web else None})
+        if path == "/web.css":
+            return self._static("text/css; charset=utf-8", WEB_CSS)
+        if path == "/web.js":
+            return self._static("text/javascript; charset=utf-8", WEB_JS)
+        if path == "/enroll":
+            return self._static("text/html; charset=utf-8", web_page("enroll"))
+        m = re.fullmatch(r"/r/([0-9a-f]{10})", path)
+        if m:
+            return self._static("text/html; charset=utf-8", web_page("approve"))
+        m = re.fullmatch(r"/v1/web/([0-9a-f]{10})", path)
+        if m:
+            return self._web(self.web.view, m.group(1)) if self.web else self._reply(404, {"error": "not set up"})
         aid = self._parts()
         token = (self.headers.get("x-approval-token") or "")
         self._reply(*(peek(self.approval_dir, aid, token) if aid else (404, {"error": "not found"})))
 
     def do_POST(self):
-        if re.fullmatch(r"/v1/approvals/resend(?:\?.*)?", self.path):
+        path = self.path.split("?")[0]
+        if path == "/v1/approvals/resend":
             return self._reply(200, {"pending": request_resend(self.approval_dir)})
-        if re.fullmatch(r"/v1/window/close(?:\?.*)?", self.path):
+        if path == "/v1/window/close":
             # Closing only takes access away, so it needs no token (Renki's "End now" uses it).
             return self._reply(200, {"closed": close_window(self.window_path)})
+        try:
+            body = self._body()
+        except ValueError:
+            return self._reply(400, {"error": "bad request"})
+        if not isinstance(body, dict):
+            return self._reply(400, {"error": "bad request"})
+        if self.web is not None:
+            if path == "/v1/enroll/options":
+                return self._web(self.web.enroll_options, body)
+            if path == "/v1/enroll/finish":
+                return self._web(self.web.enroll_finish, body)
+            m = re.fullmatch(r"/v1/web/([0-9a-f]{10})", path)
+            if m:
+                return self._web(self.web.answer, m.group(1), body)
         aid = self._parts()
         if not aid:
             return self._reply(404, {"error": "not found"})
-        try:
-            n = min(int(self.headers.get("content-length") or 0), 4096)
-            body = json.loads(self.rfile.read(n) or b"{}")
-        except ValueError:
-            return self._reply(400, {"error": "bad request"})
         self._reply(*decide(self.approval_dir, aid, body.get("token"), body.get("decision"), secret=body.get("secret")))
 
     def log_message(self, fmt, *a):
@@ -1140,6 +1538,11 @@ class ApprovalHandler(BaseHTTPRequestHandler):
 
 def serve(policy):
     host, _, port = approval_cfg(policy).get("listen", "127.0.0.1:4530").rpartition(":")
+    try:
+        import cryptography  # noqa: F401
+        ApprovalHandler.web = WebApprovals(policy)
+    except ImportError:
+        ApprovalHandler.web = None  # Touch ID approvals need python3-cryptography; the phone still works
     ThreadingHTTPServer((host, int(port)), ApprovalHandler).serve_forever()
 
 
@@ -1199,10 +1602,49 @@ def handle(command, policy=None, disabled_path=DISABLED_PATH):
     return rc, out
 
 
+def admin_enroll(name, policy=None, path=None, now=None):
+    """`sudo homelab-gateway --admin enroll <name>`: a link that adds one device as a Touch ID approver.
+    Root only: the homelab user (and so a command run in a time window) can't make one."""
+    if os.geteuid() != 0:
+        print("run it with sudo: sudo homelab-gateway --admin enroll <name>")
+        return 2
+    if not NAME_RE.match(name or ""):
+        print("name: letters, digits, dots, dashes (e.g. mac)")
+        return 2
+    policy = policy or load_policy()
+    now = time.time() if now is None else now
+    code = secrets.token_urlsafe(24)
+    path = path or ENROLL_PATH
+    with open(path, "w") as f:
+        json.dump({"name": name, "code_sha256": hashlib.sha256(code.encode()).hexdigest(), "expires": now + ENROLL_TTL}, f)
+    home = os.stat(policy["run_as_home"])
+    os.chown(path, home.st_uid, home.st_gid)  # the approval service (the homelab user) removes it once used
+    os.chmod(path, 0o600)
+    print(f"Open this on the device to add, within 10 minutes:\n  https://{rp_id(policy)}/enroll#{code}")
+    return 0
+
+
 def admin(argv):
     """Host-only fallback: `homelab-gateway --admin approve|deny <id>`; refused over SSH."""
-    if "SSH_ORIGINAL_COMMAND" in os.environ or len(argv) != 2 or argv[0] not in ("approve", "deny") or not ID_RE.match(argv[1]):
-        print("usage (on the host): --admin approve|deny <id>")
+    if "SSH_ORIGINAL_COMMAND" in os.environ:
+        print("not over SSH")
+        return 2
+    if len(argv) == 2 and argv[0] == "enroll":
+        return admin_enroll(argv[1])
+    if len(argv) == 1 and argv[0] == "approvers":
+        for a in read_approvers():
+            print(a.get("name"), time.strftime("%Y-%m-%d", time.localtime(a.get("added", 0))), a["id"][:12])
+        return 0
+    if len(argv) == 2 and argv[0] == "remove-approver":
+        devices = read_approvers()
+        keep = [a for a in devices if a.get("name") != argv[1] and not a["id"].startswith(argv[1])]
+        write_approvers(keep)
+        d = os.stat(os.path.dirname(APPROVERS_PATH))
+        os.chown(APPROVERS_PATH, d.st_uid, d.st_gid)  # the approval service must still read it
+        print(f"removed {len(devices) - len(keep)}")
+        return 0
+    if len(argv) != 2 or argv[0] not in ("approve", "deny") or not ID_RE.match(argv[1]):
+        print("usage (on the host): --admin approve|deny <id> | enroll <name> | approvers | remove-approver <name>")
         return 2
     ok = write_decision(APPROVAL_DIR, argv[1], "approve" if argv[0] == "approve" else "deny")
     print("recorded" if ok else "already decided")

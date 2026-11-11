@@ -40,6 +40,11 @@ export class DeviceRegistry {
     return { ...session, controllerOnline: session.controller ? this.isOnline(session.controller) : false };
   }
 
+  /** Every device with a live connection right now. */
+  online(): string[] {
+    return [...this.counts.keys()];
+  }
+
   isOnline(deviceId: string): boolean {
     return (this.counts.get(deviceId) ?? 0) > 0;
   }

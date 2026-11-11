@@ -722,5 +722,140 @@ class HostCommandTest(unittest.TestCase):
         self.assertTrue(gateway.peek(self.dir, aid, token)[1]["password"])
 
 
+
+
+class TouchIdTest(unittest.TestCase):
+    """Approving on the Mac: a fake platform authenticator signs like Touch ID would."""
+
+    def setUp(self):
+        from cryptography.hazmat.primitives.asymmetric import ec
+        self.dir = os.path.realpath(tempfile.mkdtemp())
+        self.policy = json.loads(json.dumps(POLICY))
+        self.policy["approval"] = {"timeout_seconds": 3, "url": "https://approvals.internal", "push_db": ""}
+        self.web = gateway.WebApprovals(self.policy, approval_dir=self.dir, approvers_path=os.path.join(self.dir, "approvers.json"),
+                                        enroll_path=os.path.join(self.dir, "enroll.json"))
+        self.key = ec.generate_private_key(ec.SECP256R1())
+        self.cred = gateway.b64u(b"cred-1")
+
+    def client_data(self, kind, challenge, origin="https://approvals.internal"):
+        return json.dumps({"type": kind, "challenge": challenge, "origin": origin}).encode()
+
+    def auth_data(self, flags=0x05, rpid="approvals.internal"):
+        import hashlib
+        return hashlib.sha256(rpid.encode()).digest() + bytes([flags]) + b"\x00\x00\x00\x01"
+
+    def enroll(self, code="c0de"):
+        import hashlib
+        from cryptography.hazmat.primitives import serialization
+        with open(self.web.enroll_path, "w") as f:
+            json.dump({"name": "mac", "code_sha256": hashlib.sha256(code.encode()).hexdigest(), "expires": 9e12}, f)
+        o = self.web.enroll_options({"code": code})
+        spki = self.key.public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+        return self.web.enroll_finish({"code": code, "id": self.cred, "clientDataJSON": gateway.b64u(self.client_data("webauthn.create", o["challenge"])),
+                                       "authenticatorData": gateway.b64u(self.auth_data()), "publicKey": gateway.b64u(spki)})
+
+    def assertion(self, view, cd=None, auth=None, key=None):
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import ec
+        import hashlib
+        cd = cd or self.client_data("webauthn.get", view["challenge"])
+        auth = auth or self.auth_data()
+        sig = (key or self.key).sign(auth + hashlib.sha256(cd).digest(), ec.ECDSA(hashes.SHA256()))
+        return {"decision": "approve", "id": self.cred, "clientDataJSON": gateway.b64u(cd),
+                "authenticatorData": gateway.b64u(auth), "signature": gateway.b64u(sig)}
+
+    def test_enroll_needs_the_link_and_works_once(self):
+        with self.assertRaises(gateway.Refused):
+            self.web.enroll_options({"code": "nope"})
+        self.assertEqual(self.enroll()["name"], "mac")
+        self.assertEqual(len(gateway.read_approvers(self.web.approvers_path)), 1)
+        with self.assertRaises(gateway.Refused):
+            self.web.enroll_options({"code": "c0de"})  # used up
+
+    def test_touch_id_approves_and_nothing_else_does(self):
+        from cryptography.hazmat.primitives.asymmetric import ec
+        self.enroll()
+        aid, _ = gateway.create_approval(self.dir, "sh", ["ls"], "Run ls", 60)
+        v = self.web.view(aid)
+        self.assertEqual(v["state"], "pending"); self.assertEqual(v["devices"], [self.cred])
+        # another key (a chat making up a passkey), the wrong site, no Touch ID, a passkey for another site
+        cases = [
+            lambda v: self.assertion(v, key=ec.generate_private_key(ec.SECP256R1())),
+            lambda v: self.assertion(v, cd=self.client_data("webauthn.get", v["challenge"], origin="https://renki.internal")),
+            lambda v: self.assertion(v, auth=self.auth_data(flags=0x01)),
+            lambda v: self.assertion(v, auth=self.auth_data(rpid="evil.internal")),
+            lambda v: self.assertion(v, cd=self.client_data("webauthn.get", "made-up-challenge")),
+        ]
+        for make in cases:
+            with self.assertRaises(gateway.Refused):
+                self.web.answer(aid, make(self.web.view(aid)))
+        self.assertIsNone(gateway.read_decision(self.dir, aid))
+        v = self.web.view(aid)
+        good = self.assertion(v)
+        self.assertEqual(self.web.answer(aid, good)["decision"], "approve")
+        self.assertEqual(gateway.read_decision(self.dir, aid), "approve")
+        with self.assertRaises(gateway.Refused):
+            self.web.answer(aid, good)  # the challenge is single-use
+
+    def test_unenrolled_device_cannot_approve_but_anyone_can_deny(self):
+        aid, _ = gateway.create_approval(self.dir, "sh", ["ls"], "Run ls", 60)
+        v = self.web.view(aid)
+        with self.assertRaises(gateway.Refused):
+            self.web.answer(aid, self.assertion(v))
+        self.assertEqual(self.web.answer(aid, {"decision": "deny"})["decision"], "deny")
+
+    def test_sudo_password_from_the_mac_reaches_the_gateway_encrypted(self):
+        import base64
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import padding
+        self.enroll()
+        got = {}
+        def notify(**kw):
+            got.update(kw); return True
+        def sleeper(_):
+            aid = got["data"]["id"]
+            if gateway.read_decision(self.dir, aid) is not None:
+                return
+            v = self.web.view(aid)
+            pub = serialization.load_der_public_key(base64.b64decode(v["pubkey"]))
+            enc = base64.b64encode(pub.encrypt("s3cret pw".encode(), padding.OAEP(mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=None))).decode()
+            self.web.answer(aid, {**self.assertion(v), "password": enc})
+            self.assertNotIn("s3cret", open(os.path.join(self.dir, aid + ".secret")).read())
+        pw = gateway.request_approval(self.policy, "sudo", ["id"], "s", notify=notify, approval_dir=self.dir, sleep=sleeper,
+                                      password=True, desktop=lambda: False)
+        self.assertEqual(pw, "s3cret pw")
+
+    def test_phone_push_waits_while_at_the_mac_and_never_comes_if_approved_there(self):
+        self.enroll()
+        sent, t = [], [0]
+        def notify(**kw):
+            sent.append(t[0]); return True
+        def sleeper(_):
+            t[0] += 1
+            if t[0] == 10:  # approved on the Mac within the grace
+                aid = [n[:-5] for n in os.listdir(self.dir) if n.endswith(".json") and gateway.ID_RE.match(n[:-5])][0]
+                gateway.write_decision(self.dir, aid, "approve")
+        policy = dict(self.policy, approval=dict(self.policy["approval"], timeout_seconds=60))
+        ok = gateway.request_approval(policy, "sh", ["ls"], "s", notify=notify, approval_dir=self.dir, sleep=sleeper,
+                                      now=lambda: t[0], desktop=lambda: True)
+        self.assertTrue(ok); self.assertEqual(sent, [])
+
+    def test_phone_push_goes_after_the_grace(self):
+        sent, t = [], [0]
+        def notify(**kw):
+            sent.append(t[0]); return True
+        policy = dict(self.policy, approval=dict(self.policy["approval"], timeout_seconds=60))
+        gateway.request_approval(policy, "sh", ["ls"], "s", notify=notify, approval_dir=self.dir,
+                                 sleep=lambda _: t.__setitem__(0, t[0] + 1), now=lambda: t[0], desktop=lambda: True)
+        self.assertEqual(sent, [gateway.DESKTOP_GRACE_SECONDS])
+
+    def test_desktop_presence_needs_a_fresh_report_and_an_approver(self):
+        gateway.mark_desktop(self.dir, now=1000)
+        self.assertFalse(gateway.desktop_present(self.dir, self.web.approvers_path, now=1005))  # nobody enrolled
+        self.enroll()
+        self.assertTrue(gateway.desktop_present(self.dir, self.web.approvers_path, now=1005))
+        self.assertFalse(gateway.desktop_present(self.dir, self.web.approvers_path, now=1100))
+
+
 if __name__ == "__main__":
     unittest.main()

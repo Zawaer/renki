@@ -98,9 +98,12 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
     for (const conn of liveConnections) conn.notify({ type: "session", session: withPresence });
   };
   // Homelab gateway requests waiting for the phone: every tab shows them (see gateway/approvals.ts).
-  const gatewayApprovals = config.gatewayApprovalsUrl ? new GatewayApprovals(config.gatewayApprovalsUrl) : null;
-  gatewayApprovals?.onChange((pending, window) => {
-    for (const conn of liveConnections) conn.notify({ type: "gateway_approvals", pending, window });
+  // A computer is "at hand" when a connected device has no push token: phones register one, browsers don't.
+  const desktopOnline = () => devices.online().some((id) => !pushTokens.get(id));
+  const gatewayApprovals = config.gatewayApprovalsUrl ? new GatewayApprovals(config.gatewayApprovalsUrl, 3_000, fetch, desktopOnline) : null;
+  gatewayApprovals?.onChange((pending, window, approvers) => {
+    const url = gatewayApprovals?.url() ?? null;
+    for (const conn of liveConnections) conn.notify({ type: "gateway_approvals", pending, window, approvers, url });
   });
   gatewayApprovals?.start();
   app.addHook("onClose", async () => gatewayApprovals?.stop());
@@ -736,7 +739,15 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
       const deviceName = req.query.deviceName?.trim() || null;
       const conn = new Connection(socket, deviceId, deviceName, manager, broker, devices, () => liveConnections.delete(conn));
       liveConnections.add(conn);
-      if (gatewayApprovals) conn.notify({ type: "gateway_approvals", pending: gatewayApprovals.current(), window: gatewayApprovals.window() });
+      if (gatewayApprovals) {
+        conn.notify({
+          type: "gateway_approvals",
+          pending: gatewayApprovals.current(),
+          window: gatewayApprovals.window(),
+          approvers: gatewayApprovals.approvers(),
+          url: gatewayApprovals.url(),
+        });
+      }
       logger.info("connection opened", { deviceId, deviceName });
     },
   );

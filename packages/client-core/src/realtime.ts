@@ -115,6 +115,10 @@ export class RealtimeClient {
   readonly gatewayApprovals = new Store<GatewayApproval[]>([]);
   /** While a homelab time window is open (`homelab open-window`), when it closes (ms); null when none. */
   readonly gatewayWindow = new Store<number | null>(null);
+  /** Devices that can approve homelab requests with Touch ID (0: only the phone). */
+  readonly gatewayApprovers = new Store<number>(0);
+  /** Where to open a request to approve it with Touch ID (`${url}/r/<id>`); null when unknown. */
+  readonly gatewayUrl = new Store<string | null>(null);
 
   private ws: WebSocket | null = null;
   private readonly conversations = new Map<string, Store<ConversationState>>();
@@ -633,6 +637,8 @@ export class RealtimeClient {
       case "gateway_approvals":
         this.gatewayApprovals.set(msg.pending);
         this.gatewayWindow.set(msg.window ?? null);
+        this.gatewayApprovers.set(msg.approvers ?? 0);
+        this.gatewayUrl.set(msg.url ?? null);
         return;
       case "subscribed":
       case "pong":

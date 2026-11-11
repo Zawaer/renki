@@ -143,6 +143,26 @@ access away). `sudo` asks every time, window or not. A command run in a window r
 user, which can write the gateway's state folder, so it could extend the window itself: treat an open
 window as trusting the chat with the host for that long.
 
+## Approving on the Mac (Touch ID)
+
+The phone is trusted because the one-time token only reaches it. A browser has no such secret: Renki's
+own page can be driven by a chat, so an Approve button there would let a chat approve itself. The Mac
+proves itself with a passkey instead, a key in its secure enclave that signs only after Touch ID.
+
+- Add a device on the host: `sudo homelab-gateway --admin enroll mac` prints a link to
+  `https://approvals.internal/enroll#<code>`, good for ten minutes and one device. Root only, so no chat
+  (and no command in a time window) can make one. `--admin approvers` lists them, `--admin remove-approver <name>` removes one.
+- Renki's banner then has an Approve button that opens `https://approvals.internal/r/<id>`: the
+  gateway's own wording, a password field for `sudo`, and Touch ID. The service checks the signature
+  (origin, site, user verification, single-use challenge) before it records the approval. The page
+  can't be framed, and denying needs no Touch ID (a chat denying its own request gains nothing).
+- A sudo password typed there is encrypted in the browser (RSA-OAEP) to a key pair the waiting
+  gateway made for that one request and keeps in memory, so it never sits readable on disk.
+- While a computer has Renki open (a connected device without a push token) and a device is set up,
+  the phone's notification waits 30 seconds; approved on the Mac meanwhile, the phone never buzzes.
+  "Phone" in the banner sends it at once. A chat faking presence can only delay a notification.
+- The phone asks for a fingerprint (or its PIN) before approving, against someone holding it unlocked.
+
 ## Creating GitHub repos
 
 Sessions only hold a fine-grained GitHub token (no repo creation: GitHub doesn't let those create

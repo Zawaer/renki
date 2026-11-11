@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Easing, Modal, PanResponder, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Animated, Easing, Keyboard, Modal, PanResponder, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { radius, type ThemeColors } from "../theme";
 
 const DISMISS_DISTANCE = 90;
@@ -61,6 +61,20 @@ export function Sheet({
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
+  // A Modal is its own window, so the screen behind resizing for the keyboard doesn't help: lift
+  // the sheet by the keyboard's height ourselves, or a text field in it (a password) ends up under it.
+  const [keyboard, setKeyboard] = useState(0);
+  useEffect(() => {
+    if (!mounted) return;
+    const show = Keyboard.addListener("keyboardDidShow", (e) => setKeyboard(e.endCoordinates.height));
+    const hide = Keyboard.addListener("keyboardDidHide", () => setKeyboard(0));
+    return () => {
+      show.remove();
+      hide.remove();
+      setKeyboard(0);
+    };
+  }, [mounted]);
+
   useEffect(() => {
     if (visible) {
       setMounted(true);
@@ -113,7 +127,11 @@ export function Sheet({
         <Animated.View style={[styles.scrim, { opacity: backdropOpacity }]} />
         <TouchableOpacity style={styles.backdropTap} activeOpacity={1} onPress={onClose} />
         <Animated.View
-          style={[styles.sheet, { backgroundColor: colors.panel, transform: [{ translateY }] }]}
+          style={[
+            styles.sheet,
+            { backgroundColor: colors.panel, transform: [{ translateY }] },
+            keyboard > 0 && { marginBottom: keyboard, paddingBottom: 16, maxHeight: "92%" },
+          ]}
           {...panResponder.panHandlers}
         >
           <View style={[styles.handle, { backgroundColor: colors.border }]} />

@@ -7,7 +7,8 @@ import {
   peekGatewayApproval,
 } from "@renki/client-core";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Platform, StyleSheet, Text, TextInput, ToastAndroid, TouchableOpacity, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TextInput, ToastAndroid, TouchableOpacity, View } from "react-native";
 import { radius, type ThemeColors } from "../theme";
 import { Sheet } from "./Sheet";
 import { confirmIdentity } from "../lib/confirmIdentity";
@@ -131,7 +132,7 @@ export function GatewayApprovalSheet({
 
         {shown && peek && !expired && !settled && (
           <>
-            <Text style={[styles.summary, peek.password && styles.root]}>{peek.summary}</Text>
+            <Summary text={peek.summary} root={peek.password} styles={styles} colors={colors} />
             {peek.password && (
               <TextInput
                 style={styles.password}
@@ -173,6 +174,29 @@ export function GatewayApprovalSheet({
   );
 }
 
+/**
+ * What's being approved. A command request ("Run on the homelab as zawaer:\n<command>") shows the
+ * command in a box that scrolls on its own, so a long one never pushes the buttons off screen; a root
+ * one says so with a small label rather than turning the whole thing red like an error.
+ */
+function Summary({ text, root, styles, colors }: { text: string; root: boolean; styles: ReturnType<typeof makeStyles>; colors: ThemeColors }) {
+  const m = /^(Run (?:as ROOT )?on the homelab(?: as \w+)?):\n([\s\S]*?)(?:\n\nEnter your sudo password to approve\.)?$/.exec(text);
+  if (!m) return <Text style={styles.summary}>{text}</Text>;
+  return (
+    <View style={{ gap: 8 }}>
+      <View style={styles.labelRow}>
+        <Ionicons name={root ? "shield-half-outline" : "terminal-outline"} size={15} color={root ? colors.accent : colors.dim} />
+        <Text style={[styles.label, root && { color: colors.accent }]}>{root ? "Runs as root on the homelab" : "Runs on the homelab"}</Text>
+      </View>
+      <ScrollView style={styles.commandBox} contentContainerStyle={{ padding: 12 }} nestedScrollEnabled>
+        <Text style={styles.command} selectable>
+          {m[2]}
+        </Text>
+      </ScrollView>
+    </View>
+  );
+}
+
 function toast(message: string): void {
   if (Platform.OS === "android") ToastAndroid.show(message, ToastAndroid.LONG);
 }
@@ -192,7 +216,10 @@ function makeStyles(colors: ThemeColors) {
     secondary: { backgroundColor: colors.inset, borderRadius: radius.pill, alignItems: "center", paddingVertical: 13 },
     secondaryText: { color: colors.text, fontSize: 15, fontWeight: "600" },
     busy: { opacity: 0.6 },
-    root: { color: colors.danger },
+    labelRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+    label: { color: colors.dim, fontSize: 13.5, fontWeight: "600" },
+    commandBox: { maxHeight: 190, backgroundColor: colors.inset, borderRadius: radius.md },
+    command: { color: colors.text, fontSize: 13.5, lineHeight: 19, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
     password: {
       color: colors.text,
       backgroundColor: colors.inset,

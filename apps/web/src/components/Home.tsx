@@ -77,15 +77,18 @@ function NewChat({
   const connection = useStoreValue(realtime.status);
   const repos = useRepoChoices();
   const [repo, setRepo] = useState<RepoChoice | null>(null);
-  // The sidebar's per-repo "+" lands here with that repo picked.
-  const preselected = useRef(false);
+  // The sidebar's per-repo "+" (and a /new link) lands here with that repo
+  // picked. Picked from the local checkouts at once, which load in a moment;
+  // GitHub's list takes seconds, and its row for the same repo replaces the
+  // local one when it comes, unless the user has picked something else since.
+  /** The key of the row picked here, until GitHub's list settles it ("done" after). */
+  const preselected = useRef<string | null>(null);
   useEffect(() => {
-    if (preselected.current || (!initialRepoId && !initialProject) || !repos.choices) return;
+    if (preselected.current === "done" || (!initialRepoId && !initialProject) || !repos.choices) return;
     const match = repos.choices.find((c) => (initialRepoId ? c.local?.id === initialRepoId : matchesProject(c, initialProject!)));
-    if (match && repos.github) {
-      preselected.current = true;
-      setRepo(match);
-    }
+    const earlier = preselected.current;
+    if (match) setRepo((cur) => (cur === null || cur.key === earlier ? match : cur));
+    preselected.current = repos.github ? "done" : (match?.key ?? null);
   }, [initialRepoId, initialProject, repos]);
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

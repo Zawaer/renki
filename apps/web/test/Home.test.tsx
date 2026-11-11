@@ -21,12 +21,12 @@ const day = (key: string, turnCount: number): StatsResponse["daily"][number] => 
   okCount: turnCount,
 });
 
-function renderHome(stats: StatsResponse, sessions: Session[] = [], entry = "/") {
+function renderHome(stats: StatsResponse, sessions: Session[] = [], entry = "/", github?: Promise<unknown>) {
   const realtime = new RealtimeClient({ baseUrl: "http://test.invalid", token: "t", deviceId: "d1" });
   const rest = new RestClient({ baseUrl: "http://test.invalid", token: "t" });
   rest.listRepos = async () => [{ id: "life", name: "life", path: "/r/life", defaultBranch: "main", remote: "Zawaer/life" }];
-  rest.listGithubRepos = async () =>
-    ({ available: true, login: "Zawaer", repos: [{ fullName: "Zawaer/life", name: "life", description: null, isPrivate: true }] }) as never;
+  rest.listGithubRepos = (() =>
+    github ?? Promise.resolve({ available: true, login: "Zawaer", repos: [{ fullName: "Zawaer/life", name: "life", description: null, isPrivate: true }] })) as never;
   rest.getStats = async () => stats;
   rest.listSessions = async () => sessions;
   const config = { baseUrl: "http://test.invalid", token: "t", deviceId: "d1", deviceName: "Test" };
@@ -69,6 +69,15 @@ describe("Home: a /new link", () => {
     await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/new?project=life"));
     expect(box.value).toBe(prompt);
     expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("picks the project before GitHub's slower list arrives", async () => {
+    let arrive!: (v: unknown) => void;
+    renderHome(noStats, [], "/new?project=life", new Promise((r) => (arrive = r)));
+    await waitFor(() => expect(screen.getByRole("button", { name: /life/ })).toBeInTheDocument());
+    arrive({ available: true, login: "Zawaer", repos: [{ fullName: "Zawaer/life", name: "life", description: null, isPrivate: true }] });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.getByRole("button", { name: /life/ })).toBeInTheDocument();
   });
 
   it("picks the project the link names", async () => {

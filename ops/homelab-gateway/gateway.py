@@ -1375,7 +1375,7 @@ WEB_CSS = """
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;display:flex;justify-content:center;padding:32px 16px}
 main{width:100%;max-width:560px}h1{font-size:18px;margin:0 0 4px}.muted{color:var(--muted);font-size:13px}
 pre{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;white-space:pre-wrap;word-break:break-word;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;margin:16px 0}
-.root{color:var(--danger)}input{width:100%;font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--fg);margin-bottom:12px}
+.label{font-size:13px;font-weight:600;color:var(--muted);margin-top:16px}.label.root{color:var(--accent)}.label+pre{margin-top:6px}input{width:100%;font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--fg);margin-bottom:12px}
 .row{display:flex;gap:10px}button{flex:1;font:inherit;font-weight:600;padding:11px;border-radius:999px;border:0;cursor:pointer}
 .approve{background:var(--accent);color:var(--accent-fg)}.deny{background:var(--card);color:var(--fg);border:1px solid var(--border)}
 button:disabled{opacity:.55;cursor:default}#msg{margin-top:14px;min-height:20px}
@@ -1392,7 +1392,10 @@ async function approvePage(){
  const aid=location.pathname.split('/').pop();let v;
  try{v=await api('/v1/web/'+aid)}catch(e){say(e.message);return}
  if(v.state!=='pending'){$('#summary').textContent=v.summary||'';say(v.state==='approve'?'Already approved.':v.state==='deny'?'Already denied.':'This request has closed.');return}
- $('#summary').textContent=v.summary;if(v.password){$('#summary').classList.add('root');$('#pw').hidden=false;$('#pw').focus()}
+ const m=/^(Run (?:as ROOT )?on the homelab(?: as \w+)?):\n([\s\S]*?)(?:\n\nEnter your sudo password to approve\.)?$/.exec(v.summary);
+ $('#summary').textContent=m?m[2]:v.summary;
+ if(m){$('#label').textContent=v.password?'Runs as root on the homelab':'Runs on the homelab';$('#label').hidden=false;if(v.password)$('#label').classList.add('root')}
+ if(v.password){$('#pw').hidden=false;$('#pw').focus()}
  const left=()=>{const s=Math.max(0,Math.ceil(v.expires-Date.now()/1000));$('#left').textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0')+' left, then it is denied.';if(!s){say('Ran out of time.');$('#a').disabled=$('#d').disabled=true}};left();setInterval(left,1000);
  $('#a').disabled=$('#d').disabled=false;
  if(!v.devices.length){$('#a').disabled=true;say('This Mac is not set up to approve yet. On the homelab, run: sudo homelab-gateway --admin enroll mac');}
@@ -1431,7 +1434,7 @@ def web_page(kind):
                 '<button id="a" class="approve" disabled>Set up Touch ID</button></div><input id="pw" hidden><button id="d" hidden></button>')
     else:
         body = ('<h1>Approve on the homelab?</h1><p class="muted">A Renki chat asked for this. <span id="left"></span></p>'
-                '<pre id="summary">Loading…</pre><input id="pw" type="password" placeholder="Your sudo password" autocomplete="off" hidden>'
+                '<div id="label" class="label" hidden></div><pre id="summary">Loading…</pre><input id="pw" type="password" placeholder="Your sudo password" autocomplete="off" hidden>'
                 '<div class="row"><button id="d" class="deny" disabled>Deny</button><button id="a" class="approve" disabled>Approve with Touch ID</button></div>')
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<title>Homelab approval</title><link rel="stylesheet" href="/web.css"></head><body data-page="{kind}"><main>{body}'

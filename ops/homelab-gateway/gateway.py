@@ -1547,7 +1547,9 @@ class ApprovalHandler(BaseHTTPRequestHandler):
             if "desktop=1" in self.path:
                 mark_desktop(self.approval_dir)
             return self._reply(200, {"pending": list_pending(self.approval_dir), "window": window_until(self.window_path),
-                                     "approvers": len(read_approvers(self.web.approvers_path)) if self.web else 0,
+                                     # Browser passkeys only: Renki's Approve button opens the page that uses them
+                                     # (the Mac app pops up by itself).
+                                     "approvers": sum(1 for a in read_approvers(self.web.approvers_path) if a.get("kind") != "native") if self.web else 0,
                                      "url": self.web.origin if self.web else None})
         if path == "/web.css":
             return self._static("text/css; charset=utf-8", WEB_CSS)

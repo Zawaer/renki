@@ -99,40 +99,71 @@ export function SessionToolsSheet({
         </TouchableOpacity>
       )}
       {view.kind === "menu" && (
-        <View style={styles.body}>
+        <ScrollView contentContainerStyle={styles.menu}>
           <View style={styles.statusRow}>
             <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
             <Text style={styles.statusText} numberOfLines={1}>
-              {statusLine}
+              {friendlyStatus(statusLine)}
             </Text>
           </View>
-          {syncRows.map((r) => (
-            <View key={r.key} style={styles.row}>
-              <Ionicons name={r.icon} size={18} color={colors.text} />
-              <Text style={styles.rowText} numberOfLines={2}>
-                {r.label}
-              </Text>
-              {r.action && onSync && (
-                <TouchableOpacity style={styles.actionBtn} onPress={() => onSync(r.key)}>
-                  <Text style={styles.actionText}>{r.action}</Text>
-                </TouchableOpacity>
-              )}
+
+          {/* How full the conversation is, at a glance; the detail and usage limits behind it. */}
+          <TouchableOpacity style={styles.card} onPress={() => setView({ kind: "context" })} activeOpacity={0.7}>
+            <View style={styles.cardHead}>
+              <Text style={styles.cardLabel}>Context window</Text>
+              <Text style={styles.cardValue}>{context ? `${Math.round(context.percentage)}% used` : "Not known yet"}</Text>
+              <Ionicons name="chevron-forward" size={15} color={colors.faint} />
             </View>
-          ))}
-          <MenuRow icon="pie-chart-outline" label="Context window" styles={styles} colors={colors} onPress={() => setView({ kind: "context" })}>
-            {context && <Meter pct={context.percentage} colors={colors} small />}
-          </MenuRow>
-          {hasFiles && (
-            <MenuRow icon="folder-outline" label="Files" styles={styles} colors={colors} onPress={() => setView({ kind: "files", dir: "" })} />
+            {context && <Meter pct={context.percentage} colors={colors} bare />}
+          </TouchableOpacity>
+
+          {syncRows.length > 0 && (
+            <View style={styles.group}>
+              {syncRows.map((r, i) => (
+                <View key={r.key} style={[styles.groupRow, i > 0 && styles.divided]}>
+                  <Ionicons name={r.icon} size={18} color={colors.dim} />
+                  <Text style={styles.rowText} numberOfLines={2}>
+                    {r.label}
+                  </Text>
+                  {r.action && onSync && (
+                    <TouchableOpacity style={styles.actionBtn} onPress={() => onSync(r.key)}>
+                      <Text style={styles.actionText}>{r.action}</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))}
+            </View>
           )}
-          {hasTree && (
-            <MenuRow icon="git-compare-outline" label="Changes" styles={styles} colors={colors} onPress={() => setView({ kind: "changes" })} />
-          )}
-          <MenuRow icon="git-network-outline" label="Agents & background tasks" styles={styles} colors={colors} onPress={onAgents}>
-            {running > 0 && <Text style={styles.runningText}>{running} running</Text>}
-          </MenuRow>
-          <MenuRow icon="download-outline" label="Export chat…" styles={styles} colors={colors} onPress={onExport} />
-        </View>
+
+          <View style={styles.group}>
+            {[
+              hasFiles && { key: "files", icon: "folder-outline" as const, label: "Files", onPress: () => setView({ kind: "files", dir: "" }) },
+              hasTree && { key: "changes", icon: "git-compare-outline" as const, label: "Changes", onPress: () => setView({ kind: "changes" }) },
+              {
+                key: "agents",
+                icon: "git-network-outline" as const,
+                label: "Agents & tasks",
+                onPress: onAgents,
+                badge: running > 0 ? `${running} running` : null,
+              },
+              { key: "export", icon: "share-outline" as const, label: "Export chat", onPress: onExport },
+            ]
+              .filter((r): r is Exclude<typeof r, false> => Boolean(r))
+              .map((r, i) => (
+                <TouchableOpacity key={r.key} style={[styles.groupRow, i > 0 && styles.divided]} onPress={r.onPress} activeOpacity={0.6}>
+                  <Ionicons name={r.icon} size={19} color={colors.dim} />
+                  <Text style={styles.rowText}>{r.label}</Text>
+                  {"badge" in r && r.badge && (
+                    <View style={styles.badge}>
+                      <View style={[styles.badgeDot, { backgroundColor: colors.ok }]} />
+                      <Text style={styles.badgeText}>{r.badge}</Text>
+                    </View>
+                  )}
+                  <Ionicons name="chevron-forward" size={15} color={colors.faint} />
+                </TouchableOpacity>
+              ))}
+          </View>
+        </ScrollView>
       )}
       {view.kind === "context" && <ContextView context={context} colors={colors} styles={styles} />}
       {view.kind === "files" &&
@@ -160,34 +191,23 @@ export function SessionToolsSheet({
 
 type Styles = ReturnType<typeof makeStyles>;
 
-function MenuRow({
-  icon,
-  label,
-  onPress,
-  styles,
-  colors,
-  children,
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  onPress: () => void;
-  styles: Styles;
-  colors: ThemeColors;
-  children?: React.ReactNode;
-}) {
-  return (
-    <TouchableOpacity style={styles.row} onPress={onPress}>
-      <Ionicons name={icon} size={18} color={colors.text} />
-      <Text style={styles.rowText}>{label}</Text>
-      {children}
-      <Ionicons name="chevron-forward" size={16} color={colors.faint} />
-    </TouchableOpacity>
-  );
+/** "busy · Web has control" reads as "Working · Web has control". */
+function friendlyStatus(line: string): string {
+  const words: Record<string, string> = { busy: "Working", idle: "Idle", starting: "Starting", archived: "Archived", trashed: "In the trash", error: "Stopped by an error" };
+  const [head, ...rest] = line.split(" · ");
+  return [words[head!] ?? head!.charAt(0).toUpperCase() + head!.slice(1), ...rest].join(" · ");
 }
 
-function Meter({ pct: raw, colors, small = false }: { pct: number; colors: ThemeColors; small?: boolean }) {
+function Meter({ pct: raw, colors, small = false, bare = false }: { pct: number; colors: ThemeColors; small?: boolean; bare?: boolean }) {
   const pct = Math.max(0, Math.min(100, Math.round(raw)));
   const tone = pct >= 90 ? colors.danger : pct >= 70 ? colors.busy : colors.accent;
+  // Just the bar, full width: the context card says the number itself.
+  if (bare)
+    return (
+      <View style={{ height: 4, borderRadius: 2, backgroundColor: withAlpha(colors.text, 0.08), overflow: "hidden" }}>
+        <View style={{ width: `${pct}%`, height: "100%", borderRadius: 2, backgroundColor: tone }} />
+      </View>
+    );
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: small ? 0 : 1 }}>
       <View style={{ width: small ? 56 : undefined, flex: small ? undefined : 1, height: 6, borderRadius: 3, backgroundColor: colors.inset, overflow: "hidden" }}>
@@ -406,14 +426,23 @@ function makeStyles(colors: ThemeColors) {
   return StyleSheet.create({
     body: { paddingHorizontal: 18, paddingBottom: 20 },
     list: { paddingHorizontal: 12, paddingBottom: 20 },
-    row: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14 },
+    menu: { paddingHorizontal: 14, paddingBottom: 12, gap: 10 },
+    card: { backgroundColor: colors.inset, borderRadius: radius.lg, paddingHorizontal: 16, paddingVertical: 14, gap: 10 },
+    cardHead: { flexDirection: "row", alignItems: "center", gap: 8 },
+    cardLabel: { flex: 1, color: colors.text, fontSize: 15 },
+    cardValue: { color: colors.dim, fontSize: 13, fontVariant: ["tabular-nums"] },
+    group: { backgroundColor: colors.inset, borderRadius: radius.lg, overflow: "hidden" },
+    groupRow: { flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: 16, paddingVertical: 15 },
+    divided: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+    badge: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: withAlpha(colors.ok, 0.12), borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 3 },
+    badgeDot: { width: 6, height: 6, borderRadius: 3 },
+    badgeText: { color: colors.ok, fontSize: 12, fontWeight: "600", fontVariant: ["tabular-nums"] },
     rowText: { flex: 1, color: colors.text, fontSize: 15 },
-    statusRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingBottom: 6 },
+    statusRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 4, paddingBottom: 2 },
     statusDot: { width: 8, height: 8, borderRadius: 4 },
     statusText: { flex: 1, color: colors.dim, fontSize: 13 },
     actionBtn: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 7 },
     actionText: { color: colors.accentFg, fontSize: 13, fontWeight: "700" },
-    runningText: { color: colors.ok, fontSize: 13, fontVariant: ["tabular-nums"] },
     backRow: { flexDirection: "row", alignItems: "center", gap: 2, paddingHorizontal: 14, paddingBottom: 8 },
     backText: { color: colors.dim, fontSize: 13 },
     label: { color: colors.text, fontSize: 14, fontWeight: "600", marginBottom: 8 },

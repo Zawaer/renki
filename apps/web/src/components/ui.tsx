@@ -254,7 +254,7 @@ export function Select({
 /**
  * Copy-to-clipboard button. Quiet by default, revealed on hover of an
  * ancestor marked `group`; confirms with a check for a moment so you know it
- * landed. No-ops (silently) where the clipboard API is unavailable, e.g. an
+ * landed (forced visible then, whatever opacity the caller set). No-ops (silently) where the clipboard API is unavailable, e.g. an
  * insecure origin.
  */
 export function CopyButton({ text, label = "Copy", className = "" }: { text: string; label?: string; className?: string }) {
@@ -281,7 +281,7 @@ export function CopyButton({ text, label = "Copy", className = "" }: { text: str
       title={copied ? "Copied" : label}
       aria-label={copied ? "Copied" : label}
       className={`inline-flex h-6 w-6 items-center justify-center rounded-md text-(--renki-fg-muted) opacity-0 transition-[opacity,color,background-color] group-hover:opacity-100 hover:bg-(--renki-hover) hover:text-(--renki-fg) focus-visible:opacity-100 ${
-        copied ? "text-(--renki-success) opacity-100" : ""
+        copied ? "text-(--renki-success) opacity-100!" : ""
       } ${className}`}
     >
       <span className={`codicon ${copied ? "codicon-check" : "codicon-copy"} text-[13px]`} />
@@ -409,9 +409,10 @@ export function Collapsible({
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-linear-to-t from-(--renki-bg-inset) to-transparent" />
         )}
       </div>
+      {/* A touch screen has no hover to reveal it, so there it always shows. */}
       {!hideCopy && (
         <div className="absolute top-1.5 right-1.5">
-          <CopyButton text={text} label={copyLabel} className="bg-(--renki-surface)/85 opacity-0 backdrop-blur-sm" />
+          <CopyButton text={text} label={copyLabel} className="bg-(--renki-surface)/85 opacity-0 backdrop-blur-sm pointer-coarse:opacity-100" />
         </div>
       )}
       {long && (

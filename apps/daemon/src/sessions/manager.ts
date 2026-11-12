@@ -902,10 +902,8 @@ export class SessionManager {
         .where(eq(sessions.id, row.id))
         .run();
     }
-    for (const row of open) {
-      this.events.append(row.id, { kind: "notice", text: `Project renamed from ${repo.name} to ${name}.`, level: "info" });
-      this.broadcast?.onSessionChanged(this.getSession(row.id));
-    }
+    // No notice in each chat: the user renamed it themselves, and the sidebar and header already say the new name.
+    for (const row of open) this.broadcast?.onSessionChanged(this.getSession(row.id));
     for (const [id, move] of this.pendingMoves) if (move.repoId === repo.id) this.pendingMoves.set(id, { ...move, repoId: newId, label: name });
 
     const access = this.homelabAccess.get();
@@ -1462,10 +1460,8 @@ export class SessionManager {
     // A new message takes over from a waiting resume: whatever it asks for is
     // what the user wants next, and it hits the same limit (and schedules its
     // own wait) if the limit is still in force.
-    if (session.resume) {
-      this.clearResume(input.sessionId);
-      this.events.append(input.sessionId, { kind: "notice", text: "Automatic resume cancelled: you sent a new message.", level: "info" });
-    }
+    // No notice: the message itself, right below the pause, says the wait is over.
+    if (session.resume) this.clearResume(input.sessionId);
 
     if (session.status === "busy") {
       const live = this.live.get(input.sessionId);
@@ -1927,17 +1923,19 @@ export class SessionManager {
 
     this.clearResume(sessionId);
     if (ready.proceed && ready.note) this.events.append(sessionId, { kind: "notice", text: ready.note, level: "info" });
-    this.events.append(sessionId, {
-      kind: "notice",
-      text: force
-        ? "Continuing now, as requested."
-        : state.kind === "restart"
-          ? "Renki is back. Continuing."
-          : state.kind === "switched"
-            ? "Continuing on the new account."
-            : "Usage limit reset. Continuing.",
-      level: "info",
-    });
+    // "Continue now" was the user's own click: the turn starting is all the answer it needs.
+    if (!force) {
+      this.events.append(sessionId, {
+        kind: "notice",
+        text:
+          state.kind === "restart"
+            ? "Renki is back. Continuing."
+            : state.kind === "switched"
+              ? "Continuing on the new account."
+              : "Usage limit reset. Continuing.",
+        level: "info",
+      });
+    }
     logger.info("running scheduled resume", { sessionId, attempt: state.attempt + 1, force });
 
     const resolvePermission = this.resolverFor?.(sessionId);

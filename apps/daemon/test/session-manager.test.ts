@@ -1737,6 +1737,8 @@ describe("resuming after a usage limit", () => {
     await manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p2", text: "something else", resolvePermission: noopResolve });
     expect(manager.getSession(s.id).resume).toBeNull();
     expect(texts()).toEqual(["fix the bug", "something else"]);
+    // The message itself says the wait is over: no notice repeating it.
+    expect(manager.events.read(s.id).some((e) => e.kind === "notice" && e.text.startsWith("Automatic resume cancelled"))).toBe(false);
   });
 
   it("can be cancelled, by anyone once nobody holds the lock", async () => {
@@ -1994,7 +1996,7 @@ describe("renaming a project", () => {
       expect(after).toMatchObject({ repoId: "life", repoName: "Life", worktreePath: s.worktreePath });
       // The worktree still finds its repo: git works in it.
       expect((await simpleGit(after.worktreePath).revparse(["--abbrev-ref", "HEAD"])).trim()).toBe(s.branch);
-      expect(manager.events.read(s.id).at(-1)).toMatchObject({ kind: "notice", text: `Project renamed from ${repoId} to Life.` });
+      expect(manager.events.read(s.id).some((e) => e.kind === "notice" && e.text.startsWith("Project renamed"))).toBe(false);
     }
     expect(manager.homelabAccess.get()).toEqual(["life", "other"]);
     // New chats go into it under the new name.

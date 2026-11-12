@@ -91,6 +91,17 @@ describe("computeInsights", () => {
     expect(r.achievements.find((x) => x.id === "comeback")?.achieved).toBe(true);
   });
 
+  it("ends a pause at the continuation \"Continue now\" starts, which leaves no notice", () => {
+    const { db, addSession, add } = setup();
+    addSession("s1", "shop");
+    add("s1", MON, { kind: "notice", text: "Paused on a usage limit. Waiting. The turn will continue automatically then.", level: "warn" });
+    add("s1", MON + H, { kind: "prompt_submitted", promptId: "p2", deviceId: "web_1", text: RESUME_CONTINUE_TEXT });
+
+    const r = computeInsights(db, "UTC", MON + 4 * H);
+    expect(r.limits).toMatchObject({ pauses: 1, pausedMs: H });
+    expect(r.prompts.count).toBe(0);
+  });
+
   it("counts turn time with nobody connected as hands-off", () => {
     const { db, addSession, turn } = setup();
     addSession("s1", "shop");

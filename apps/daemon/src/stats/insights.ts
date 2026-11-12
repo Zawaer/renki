@@ -304,20 +304,18 @@ export function computeInsights(db: DB, tzName: string | undefined, now = Date.n
       }
 
       case "prompt_submitted": {
-        if (AUTO_PROMPTS.has(e.text)) {
-          // A pause or restart being picked back up.
-          break;
-        }
-        promptLengths.push(e.text.length);
-        yourWords += wordCount(e.text);
-        if (e.steered) steered++;
-        if (!firstPrompt.has(row.sessionId)) firstPrompt.set(row.sessionId, e.text);
-        // You sent something yourself: whatever pause there was is over.
+        // Any prompt ends a pause: one you sent, or the pause or restart being
+        // picked back up ("Continue now" leaves no notice of its own).
         const since = pausedSince.get(row.sessionId);
         if (since != null) {
           pausedMs += row.ts - since;
           pausedSince.delete(row.sessionId);
         }
+        if (AUTO_PROMPTS.has(e.text)) break;
+        promptLengths.push(e.text.length);
+        yourWords += wordCount(e.text);
+        if (e.steered) steered++;
+        if (!firstPrompt.has(row.sessionId)) firstPrompt.set(row.sessionId, e.text);
         break;
       }
 
@@ -387,6 +385,7 @@ export function computeInsights(db: DB, tzName: string | undefined, now = Date.n
         } else if (
           // Matched by prefix: older logs say "reset — continuing.", newer "reset. Continuing."
           text.startsWith("Usage limit reset") ||
+          // The next two are no longer written, but older logs have them.
           text === "Continuing now, as requested." ||
           text.startsWith("Automatic resume cancelled") ||
           text.startsWith("Still limited after")

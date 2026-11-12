@@ -1865,16 +1865,16 @@ function SteeredPrompt({
       )}
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <Text style={styles.meta}>Sent while Claude was working</Text>
-        {waiting && sendNow && (
+        {/* Once tapped it's gone at once, the message counted as sent: Claude reads it within moments. */}
+        {waiting && sendNow && !sent && (
           <TouchableOpacity
-            disabled={sent}
             onPress={() => {
               setSent(true);
               sendNow();
             }}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Text style={[styles.promptMore, { marginTop: 0, color: colors.accent }, sent && { opacity: 0.6 }]}>{sent ? "Sending…" : "Send now"}</Text>
+            <Text style={[styles.promptMore, { marginTop: 0, color: colors.accent }]}>Send now</Text>
           </TouchableOpacity>
         )}
       </View>

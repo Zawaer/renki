@@ -443,7 +443,7 @@ export class LiveClaudeSession {
     const moved = await background.call(this.q);
     if (moved) {
       logger.info("moved a step to the background so a message from the user gets read", { cwd: this.opts.cwd });
-      this.opts.emit({ kind: "notice", text: "Moved the running step to the background, so Claude can read your message.", level: "info" });
+      // No notice in the chat: the user asked for exactly this with "Send now", and the message shows as sent.
     }
     return moved;
   }

@@ -1453,18 +1453,18 @@ function SteeredPrompt({ prompt, waiting = false }: { prompt: SteeredPromptView;
         <div className="mt-1.5 flex items-center gap-1 text-[11px] text-(--renki-fg-muted)">
           <span className="codicon codicon-debug-step-into text-[11px]" /> Sent
           while Claude was working
-          {waiting && sendNow && (
+          {/* Once clicked it's gone at once, the message counted as sent: Claude reads it within moments. */}
+          {waiting && sendNow && !sent && (
             <button
               type="button"
-              disabled={sent}
               onClick={() => {
                 setSent(true);
                 sendNow();
               }}
-              className="ml-auto rounded-md px-1.5 py-0.5 font-medium text-(--renki-link) hover:bg-(--renki-hover) disabled:opacity-60"
+              className="ml-auto rounded-md px-1.5 py-0.5 font-medium text-(--renki-link) hover:bg-(--renki-hover)"
               title="Move the step Claude is waiting on to the background, so it reads this now. The work keeps running."
             >
-              {sent ? "Sending…" : "Send now"}
+              Send now
             </button>
           )}
         </div>

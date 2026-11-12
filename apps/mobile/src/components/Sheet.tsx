@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Easing, Keyboard, Modal, PanResponder, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Animated, Easing, LayoutAnimation, Modal, PanResponder, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
+import { KeyboardEvents } from "react-native-keyboard-controller";
 import { radius, type ThemeColors } from "../theme";
 
 const DISMISS_DISTANCE = 90;
@@ -63,11 +64,18 @@ export function Sheet({
 
   // A Modal is its own window, so the screen behind resizing for the keyboard doesn't help: lift
   // the sheet by the keyboard's height ourselves, or a text field in it (a password) ends up under it.
+  // keyboard-controller's events, not React Native's: it sets a Modal's window to "adjust nothing"
+  // and reports that window's keyboard itself, where RN's Keyboard module watches the main window
+  // and never saw a keyboard opened from inside the sheet. "Will" so the sheet rises with it.
   const [keyboard, setKeyboard] = useState(0);
   useEffect(() => {
     if (!mounted) return;
-    const show = Keyboard.addListener("keyboardDidShow", (e) => setKeyboard(e.endCoordinates.height));
-    const hide = Keyboard.addListener("keyboardDidHide", () => setKeyboard(0));
+    const move = (height: number, duration: number) => {
+      LayoutAnimation.configureNext(LayoutAnimation.create(Math.max(120, Math.min(duration || 250, 350)), "easeInEaseOut", "opacity"));
+      setKeyboard(height);
+    };
+    const show = KeyboardEvents.addListener("keyboardWillShow", (e) => move(e.height, e.duration));
+    const hide = KeyboardEvents.addListener("keyboardWillHide", (e) => move(0, e.duration));
     return () => {
       show.remove();
       hide.remove();
@@ -119,11 +127,27 @@ export function Sheet({
     [translateY],
   );
 
+  // The Modal's root has come up 0x0 now and then (opened as the keyboard was closing), which drew the
+  // sheet's contents squashed into the top-left corner instead of the sheet. Size it from the window
+  // until the root reports a real size of its own.
+  const screen = useWindowDimensions();
+  const [root, setRoot] = useState<{ width: number; height: number } | null>(null);
+  const size = root && root.width > 0 && root.height > 0 ? root : { width: screen.width, height: screen.height };
+
   if (!mounted) return null;
 
   return (
     <Modal transparent visible animationType="none" onRequestClose={onClose}>
-      <View style={styles.backdropFill}>
+      {/* Measures the Modal's own root (see `size`). */}
+      <View
+        pointerEvents="none"
+        style={StyleSheet.absoluteFill}
+        onLayout={(e) => {
+          const { width, height } = e.nativeEvent.layout;
+          setRoot((cur) => (cur && cur.width === width && cur.height === height ? cur : { width, height }));
+        }}
+      />
+      <View style={[styles.backdropFill, { width: size.width, height: size.height }]}>
         <Animated.View style={[styles.scrim, { opacity: backdropOpacity }]} />
         <TouchableOpacity style={styles.backdropTap} activeOpacity={1} onPress={onClose} />
         <Animated.View
@@ -156,7 +180,7 @@ const styles = StyleSheet.create({
   // root) so the scrim always covers the true screen bottom — including any
   // gesture-nav inset — with no gap where the screen behind could show
   // through under the sheet.
-  backdropFill: { ...StyleSheet.absoluteFillObject, justifyContent: "flex-end" },
+  backdropFill: { position: "absolute", top: 0, left: 0, justifyContent: "flex-end" },
   scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.55)" },
   backdropTap: { ...StyleSheet.absoluteFillObject },
   sheet: {

@@ -65,6 +65,7 @@ import {
   Animated,
   FlatList,
   Image,
+  Keyboard,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Platform,
@@ -603,6 +604,16 @@ export function SessionView({
   const composerOpen = focused || text.length > 0 || attachments.length > 0 || uploads.length > 0;
   // Mid-turn, Stop only while the composer is empty: once there's something
   // to send, the button queues it instead.
+  /**
+   * Opens one of the composer's sheets with the keyboard put away first: a Modal shown while the
+   * keyboard was still closing sometimes came up with a 0x0 root, its contents squashed into the
+   * screen's top-left corner instead of the sheet.
+   */
+  const openSheet = (open: (v: boolean) => void) => {
+    Keyboard.dismiss();
+    open(true);
+  };
+
   const sendButton =
     status === "busy" && !text.trim() && attachments.length === 0 && uploads.length === 0 ? (
       <TouchableOpacity
@@ -937,7 +948,7 @@ export function SessionView({
         <View style={[styles.composerPill, composerOpen && styles.composerPillOpen]}>
           <View style={styles.composerRow}>
             {!composerOpen && (
-              <TouchableOpacity key="add" style={styles.roundIconBtn} onPress={() => setAttachMenuOpen(true)} accessibilityLabel="Add to chat">
+              <TouchableOpacity key="add" style={styles.roundIconBtn} onPress={() => openSheet(setAttachMenuOpen)} accessibilityLabel="Add to chat">
                 <Ionicons name="add" size={22} color={colors.text} />
               </TouchableOpacity>
             )}
@@ -963,10 +974,10 @@ export function SessionView({
           </View>
           {composerOpen && (
             <View style={styles.composerRow}>
-              <TouchableOpacity style={styles.roundIconBtn} onPress={() => setAttachMenuOpen(true)} accessibilityLabel="Add to chat">
+              <TouchableOpacity style={styles.roundIconBtn} onPress={() => openSheet(setAttachMenuOpen)} accessibilityLabel="Add to chat">
                 <Ionicons name="add" size={22} color={colors.text} />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modelChip} onPress={() => setModelSheetOpen(true)} accessibilityLabel="Model and effort">
+              <TouchableOpacity style={styles.modelChip} onPress={() => openSheet(setModelSheetOpen)} accessibilityLabel="Model and effort">
                 <Text style={styles.modelChipText} numberOfLines={1}>
                   {modelLabel} <Text style={styles.modelChipEffort}>{effort?.label ?? "Medium"}</Text>
                 </Text>
@@ -2603,7 +2614,9 @@ const makeStyles = (colors: ThemeColors) =>
       borderRadius: radius.pill,
       paddingVertical: 5,
       paddingHorizontal: 10,
-      maxWidth: 160,
+      maxWidth: 240,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
     },
     attachThumb: { width: 20, height: 20, borderRadius: radius.xs },
     toolImageRow: { flexDirection: "row", gap: 8 },
@@ -2614,7 +2627,8 @@ const makeStyles = (colors: ThemeColors) =>
       backgroundColor: colors.inset,
       overflow: "hidden",
     },
-    attachName: { flex: 1, color: colors.text, fontSize: 11 },
+    // flexShrink, not flex: 1: the chip sizes to its content, so a flex-basis of 0 squeezed the name to nothing.
+    attachName: { flexShrink: 1, color: colors.text, fontSize: 12 },
     attachError: { color: colors.danger, fontSize: 12, paddingHorizontal: 16, paddingTop: 4 },
     pickerList: { paddingHorizontal: 14, gap: 8, paddingBottom: 8 },
     pickerGroup: { borderRadius: radius.lg, backgroundColor: colors.inset, overflow: "hidden" },

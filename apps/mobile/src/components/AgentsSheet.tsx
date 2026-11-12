@@ -10,8 +10,9 @@ import { Sheet } from "./Sheet";
 /**
  * The phone's agent map: every subagent the session started, as a tree, with
  * what each was asked, how it ended, how long it took and what it cost.
- * Opened from the chat's ⋯ menu; it lists the agents and expands one to its
- * answer.
+ * Opened from the chat's ⋯ menu or the running bar above the composer; it
+ * lists the agents and expands one to its answer, with a way to its call in
+ * the transcript.
  */
 
 export function AgentsSheet({
@@ -19,12 +20,15 @@ export function AgentsSheet({
   onClose,
   agents,
   commands,
+  onShowInTranscript,
 }: {
   visible: boolean;
   onClose: () => void;
   agents: AgentNode[];
   /** Commands sent to run in the background, listed under the agents as on the web's agent map. */
   commands: BackgroundTaskView[];
+  /** Closes the sheet and scrolls the chat to this call, opened and flashed. */
+  onShowInTranscript?: (toolUseId: string) => void;
 }) {
   const colors = useTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
@@ -67,11 +71,19 @@ export function AgentsSheet({
       <ScrollView contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled">
         {agents.length === 0 && commands.length === 0 && <Text style={styles.empty}>Nothing has run in the background in this chat.</Text>}
         {agents.map((a) => (
-          <AgentTree key={a.toolUseId} node={a} now={now} expanded={expanded} onToggle={toggle} colors={colors} styles={styles} />
+          <AgentTree key={a.toolUseId} node={a} now={now} expanded={expanded} onToggle={toggle} onShow={onShowInTranscript} colors={colors} styles={styles} />
         ))}
         {commands.length > 0 && <Text style={styles.section}>Background commands</Text>}
         {commands.map((c) => (
-          <CommandRow key={c.toolUseId} task={c} open={expanded.has(c.toolUseId)} onToggle={() => toggle(c.toolUseId)} colors={colors} styles={styles} />
+          <CommandRow
+            key={c.toolUseId}
+            task={c}
+            open={expanded.has(c.toolUseId)}
+            onToggle={() => toggle(c.toolUseId)}
+            onShow={onShowInTranscript && (() => onShowInTranscript(c.toolUseId))}
+            colors={colors}
+            styles={styles}
+          />
         ))}
       </ScrollView>
     </Sheet>
@@ -83,6 +95,7 @@ function AgentTree({
   now,
   expanded,
   onToggle,
+  onShow,
   colors,
   styles,
 }: {
@@ -90,6 +103,7 @@ function AgentTree({
   now: number;
   expanded: ReadonlySet<string>;
   onToggle: (id: string) => void;
+  onShow?: (toolUseId: string) => void;
   colors: ThemeColors;
   styles: Styles;
 }) {
@@ -141,12 +155,13 @@ function AgentTree({
           ) : (
             <Text style={styles.detailMeta}>{node.status === "running" ? "Still working…" : "No answer recorded."}</Text>
           )}
+          {onShow && <ShowButton onPress={() => onShow(node.toolUseId)} colors={colors} styles={styles} />}
         </View>
       )}
       {node.children.length > 0 && (
         <View style={styles.children}>
           {node.children.map((c) => (
-            <AgentTree key={c.toolUseId} node={c} now={now} expanded={expanded} onToggle={onToggle} colors={colors} styles={styles} />
+            <AgentTree key={c.toolUseId} node={c} now={now} expanded={expanded} onToggle={onToggle} onShow={onShow} colors={colors} styles={styles} />
           ))}
         </View>
       )}
@@ -159,12 +174,14 @@ function CommandRow({
   task,
   open,
   onToggle,
+  onShow,
   colors,
   styles,
 }: {
   task: BackgroundTaskView;
   open: boolean;
   onToggle: () => void;
+  onShow?: () => void;
   colors: ThemeColors;
   styles: Styles;
 }) {
@@ -199,9 +216,19 @@ function CommandRow({
           ) : (
             <Text style={styles.detailMeta}>{task.status === "running" ? "No result yet." : "No output recorded."}</Text>
           )}
+          {onShow && <ShowButton onPress={onShow} colors={colors} styles={styles} />}
         </View>
       )}
     </View>
+  );
+}
+
+function ShowButton({ onPress, colors, styles }: { onPress: () => void; colors: ThemeColors; styles: Styles }) {
+  return (
+    <TouchableOpacity style={styles.showBtn} onPress={onPress} activeOpacity={0.7} accessibilityRole="button">
+      <Ionicons name="locate-outline" size={14} color={colors.text} />
+      <Text style={styles.showText}>Show in transcript</Text>
+    </TouchableOpacity>
   );
 }
 
@@ -261,6 +288,17 @@ const makeStyles = (colors: ThemeColors) =>
       paddingHorizontal: 10,
       paddingVertical: 4,
     },
+    showBtn: {
+      alignSelf: "flex-start",
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      backgroundColor: withAlpha(colors.text, 0.08),
+      borderRadius: radius.pill,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+    },
+    showText: { color: colors.text, fontSize: 12.5, fontWeight: "600" },
     children: {
       marginLeft: 15,
       paddingLeft: 6,

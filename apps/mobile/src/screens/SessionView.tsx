@@ -58,7 +58,7 @@ import {
 } from "@renki/client-core";
 import type { AttachmentView, CapabilitiesResponse, Session, SessionResume } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
-import { createContext, Fragment, memo, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, Fragment, memo, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -81,6 +81,8 @@ import { LongPressToRead } from "../components/TextReader";
 import { Markdown, StreamingMarkdown } from "../components/Markdown";
 import { FadeIn, PulseDot, Skeleton, animateLayout } from "../components/Motion";
 import { AgentsSheet } from "../components/AgentsSheet";
+import { GenUiReplyContext } from "../components/GenUi";
+import { BackgroundWorkBar, GitBanner, TrashedBanner } from "../components/ChatBars";
 import { Sheet } from "../components/Sheet";
 import { FileSheet, type OpenFile } from "../components/FileSheet";
 import { SessionToolsSheet } from "../components/SessionToolsSheet";
@@ -313,6 +315,8 @@ export function SessionView({
   const [unpushed, setUnpushed] = useState<Session["unpushed"]>(null);
   /** Commits on GitHub's base branch this branch lacks, unless the daemon catches it up on its own. */
   const [behind, setBehind] = useState<{ commits: number; base: string | null } | null>(null);
+  /** When a trashed session is deleted for good, for the trash banner's countdown. */
+  const [purgeAt, setPurgeAt] = useState<number | null>(null);
   /** False once the controller's last connection closed; it can't answer approvals then, so anyone may. */
   const [controllerOnline, setControllerOnline] = useState(true);
   useEffect(() => {
@@ -323,11 +327,13 @@ export function SessionView({
     setTitle(null);
     setUnpushed(null);
     setBehind(null);
+    setPurgeAt(null);
     return realtime.onSessionChanged((s) => {
       if (s.id !== sessionId) return;
       setTitle(s.title);
       setUnpushed(s.unpushed ?? null);
       setBehind(s.behind ? { commits: s.behind.commits, base: s.baseBranch } : null);
+      setPurgeAt(s.purgeAt ?? null);
       setResume(s.resume ?? null);
       setWorktreePath(s.worktreePath);
       setPlace({ repoName: s.repoName, branch: s.branch });
@@ -469,6 +475,38 @@ export function SessionView({
     });
   }
 
+  /**
+   * "Show in transcript" from the agents sheet, as on the web: open every
+   * tool row on the way to the call (the step group it's folded into, the
+   * agents it's nested in), scroll its turn into view and flash the row. The
+   * flash reuses the search jump's: the marked row measures where it landed
+   * and the list brings it to the middle.
+   */
+  const [reveal, setReveal] = useState<RevealTarget | null>(null);
+  function revealTool(toolUseId: string) {
+    let index = -1;
+    let path: string[] | null = null;
+    for (let i = 0; i < entries.length && !path; i++) {
+      const item = entries[i]!.item;
+      if (item.type !== "turn") continue;
+      path = pathToTool(item.turn.blocks, toolUseId);
+      if (path) index = i;
+    }
+    if (!path) return;
+    stickToBottom.current = false;
+    setAtBottom(false);
+    jumpIndex.current = index;
+    jumpRetries.current = 0;
+    scrollRef.current?.scrollToIndex({ index, viewPosition: 0.5, animated: false });
+    setReveal({ ids: new Set(path) });
+    setFlash({ anchor: `u:${toolUseId}`, query: "", onPlaced: centerSearchHit });
+  }
+  useEffect(() => {
+    if (!reveal) return;
+    const t = setTimeout(() => setReveal(null), 4000);
+    return () => clearTimeout(t);
+  }, [reveal]);
+
   /** The session's subagents as a tree — the header's Agents button and sheet. */
   const agents = useMemo(() => agentMapOf(conv.timeline), [conv.timeline]);
   /** Commands sent to run in the background (the web's agent map lists them too). */
@@ -504,6 +542,14 @@ export function SessionView({
   function takeOver() {
     if (!isController) realtime.takeControl(sessionId);
   }
+  /** A renki-ui choice button tapped in a reply: sent as your next message, like a suggested reply. */
+  const genUiReply = useCallback(
+    (t: string) => {
+      if (!isController) realtime.takeControl(sessionId);
+      realtime.submitPrompt(sessionId, t, promptOptsFor(conv.composer));
+    },
+    [isController, realtime, sessionId, conv.composer],
+  );
   const sendNow = useMemo(
     () => () => {
       if (!isController) realtime.takeControl(sessionId);
@@ -703,6 +749,9 @@ export function SessionView({
         </TouchableOpacity>
       </View>
 
+      {/* In the trash: when it goes and the way back; the transcript below stays readable. */}
+      {conv.status === "trashed" && <TrashedBanner sessionId={sessionId} purgeAt={purgeAt} />}
+
       {/* Timeline */}
       {/*
         keyboardShouldPersistTaps below (here and on the two other ScrollViews
@@ -729,6 +778,8 @@ export function SessionView({
         >
         <SearchFlashContext.Provider value={flash}>
         <SendNowContext.Provider value={sendNow}>
+        <GenUiReplyContext.Provider value={canSend ? genUiReply : null}>
+        <RevealContext.Provider value={reveal}>
         <FlatList
           ref={scrollRef}
           inverted
@@ -789,6 +840,8 @@ export function SessionView({
             }, 100);
           }}
         />
+        </RevealContext.Provider>
+        </GenUiReplyContext.Provider>
         </SendNowContext.Provider>
         </SearchFlashContext.Provider>
         </FadeIn>
@@ -904,6 +957,23 @@ export function SessionView({
         </View>
         </FadeIn>
       )}
+
+      {/* Background work and push/pull: one slim line each, only while there's something to say. */}
+      {background.length > 0 && <BackgroundWorkBar work={background} onPress={() => openSheet(setAgentsOpen)} />}
+      {syncRows.map((r) => (
+        <GitBanner
+          key={r.key}
+          icon={r.icon}
+          text={r.label}
+          action={r.action}
+          onAction={() => {
+            takeOver();
+            stickToBottom.current = true;
+            setAtBottom(true);
+            realtime.submitPrompt(sessionId, r.prompt, promptOptsFor(conv.composer));
+          }}
+        />
+      ))}
 
       {/* Composer */}
       {suggestions.length > 0 && (
@@ -1113,7 +1183,16 @@ export function SessionView({
 
       <ImageViewer images={preview?.images ?? []} index={preview?.index ?? null} onClose={() => setPreview(null)} />
       <FileSheet sessionId={sessionId} file={openFile} onClose={() => setOpenFile(null)} />
-      <AgentsSheet visible={agentsOpen} onClose={() => setAgentsOpen(false)} agents={agents} commands={commands} />
+      <AgentsSheet
+        visible={agentsOpen}
+        onClose={() => setAgentsOpen(false)}
+        agents={agents}
+        commands={commands}
+        onShowInTranscript={(id) => {
+          setAgentsOpen(false);
+          revealTool(id);
+        }}
+      />
     </KeyboardAvoidingView>
     </FileLinkContext.Provider>
   );
@@ -1323,6 +1402,21 @@ function ToolImageThumb({ image, styles, onPress }: { image: AttachmentView; sty
 }
 
 type TimelineEntry = { item: TimelineItem; index: number };
+
+/** The tool calls a "Show in transcript" opens: the target and every agent it's nested in. */
+type RevealTarget = { ids: ReadonlySet<string> };
+const RevealContext = createContext<RevealTarget | null>(null);
+
+/** Tool-use ids from the outermost call in `blocks` down to `toolUseId`, or null when it isn't in there. */
+function pathToTool(blocks: BlockView[], toolUseId: string): string[] | null {
+  for (const b of blocks) {
+    if (b?.kind !== "tool_use") continue;
+    if (b.toolUseId === toolUseId) return [b.toolUseId];
+    const inner = b.subagent ? pathToTool(b.subagent.blocks, toolUseId) : null;
+    if (inner) return [b.toolUseId, ...inner];
+  }
+  return null;
+}
 
 /**
  * The row a search anchor sits in, and what to mark there: the prompt, the
@@ -1658,6 +1752,13 @@ function ToolGroup({
 }) {
   const [open, setOpen] = useState(false);
   const live = summary.running && turnRunning;
+  // A "Show in transcript" for a call folded in here opens the group.
+  const reveal = useContext(RevealContext);
+  useEffect(() => {
+    if (reveal && items.some((it) => it.block.kind === "tool_use" && reveal.ids.has(it.block.toolUseId))) setOpen(true);
+    // Only when a reveal arrives (or this row mounts during one).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reveal]);
   return (
     <View style={styles.toolStep}>
       <TouchableOpacity style={styles.toolStepHeader} activeOpacity={0.7} onPress={() => {
@@ -1876,6 +1977,14 @@ function ToolStep({
     if (!wasRunning.current && nowRunning && !userToggled.current) setOpen((running && !bulky) || restingOpen);
     wasRunning.current = nowRunning;
   }, [running, agentRunning, restingOpen, bulky]);
+  // "Show in transcript" opens this row when it's the call or an agent on the way to it, and keeps it open.
+  const reveal = useContext(RevealContext);
+  const revealed = !!reveal && reveal.ids.has(block.toolUseId);
+  useEffect(() => {
+    if (!revealed) return;
+    userToggled.current = true;
+    setOpen(true);
+  }, [revealed]);
 
   // One glyph language for every step: check = finished, cross = failed,
   // spinner-ish dot = still going, square = stopped.
@@ -1925,6 +2034,7 @@ function ToolStep({
         )}
         {outcome && <Ionicons name={outcome.icon} size={13} color={outcome.color} />}
         <Ionicons name={open ? "chevron-up" : "chevron-down"} size={12} color={colors.faint} />
+        <SearchFlash anchor={`u:${block.toolUseId}`} inset={-4} rounding={radius.xs} />
       </TouchableOpacity>
       {build && <MacBuildStatus build={build} styles={styles} />}
       {open && (
@@ -1949,7 +2059,7 @@ function ToolStep({
               {truncate(block.result.summary, 800)}
             </Text>
           )}
-          {block.subagent && <SubagentActivity subagent={block.subagent} colors={colors} styles={styles} />}
+          {block.subagent && <SubagentActivity subagent={block.subagent} revealed={revealed} colors={colors} styles={styles} />}
           {block.backgroundTask && (
             <Text style={styles.toolBody}>
               {truncate(block.backgroundTask.summary, 800)}
@@ -1991,8 +2101,22 @@ function MacBuildStatus({ build, styles }: { build: MacBuildView; styles: Styles
 }
 
 /** A Task call's own nested activity, live-streamed via the Agent SDK's forwardSubagentText — collapsible, open by default while running, auto-collapses once done. Mirrors web's <details>-based SubagentActivity. */
-function SubagentActivity({ subagent, colors, styles }: { subagent: SubagentView; colors: ThemeColors; styles: Styles }) {
-  const [expanded, setExpanded] = useState(subagent.status === "running");
+function SubagentActivity({
+  subagent,
+  revealed,
+  colors,
+  styles,
+}: {
+  subagent: SubagentView;
+  /** Its agent's row is on a "Show in transcript" path: open its feed too. */
+  revealed: boolean;
+  colors: ThemeColors;
+  styles: Styles;
+}) {
+  const [expanded, setExpanded] = useState(subagent.status === "running" || revealed);
+  useEffect(() => {
+    if (revealed) setExpanded(true);
+  }, [revealed]);
   const prevStatus = useRef(subagent.status);
 
   useEffect(() => {
@@ -2423,7 +2547,7 @@ function AskUserQuestionCard({
 }
 
 /** Caps how many diff lines render before collapsing the rest into a note — a full-file Write can be thousands of lines. */
-const MAX_DIFF_LINES_SHOWN = 200;
+const MAX_DIFF_LINES_SHOWN = 400;
 
 function DiffView({ view, colors, styles }: { view: EditToolView; colors: ThemeColors; styles: Styles }) {
   const totalLines = view.hunks.reduce((n, h) => n + h.lines.length, 0);

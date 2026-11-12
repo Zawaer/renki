@@ -1,5 +1,6 @@
 import { createContext, memo, type ReactElement, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import { Platform, ScrollView, StyleSheet, Text, type TextStyle, TouchableOpacity, View, type ViewStyle } from "react-native";
 import MarkdownDisplay, { MarkdownIt } from "react-native-markdown-display";
 import { radius, type ThemeColors, useTheme } from "../theme";
@@ -129,12 +130,39 @@ function TableCell({ index, children }: { index: number; children: ReactNode }) 
 }
 
 /**
- * Code blocks get a copy button that opens just the code in the reader, where
- * it selects and copies like any Android text. Selecting it in place isn't an
- * option (see TextReader), and long-pressing the reply copies the whole
- * reply, not the command you wanted. A fence that names shell or JSON is
- * syntax-coloured.
+ * Code blocks get a copy button: a tap copies the code (a tick confirms it),
+ * a long press opens just the code in the reader to select part of it.
+ * Selecting it in place isn't an option (see TextReader), and long-pressing
+ * the reply copies the whole reply, not the command you wanted. A fence that
+ * names shell or JSON is syntax-coloured.
  */
+function CopyCodeButton({ text, colors, openReader }: { text: string; colors: ThemeColors; openReader: ReturnType<typeof useOpenReader> }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
+  return (
+    <TouchableOpacity
+      onPress={() => {
+        void Clipboard.setStringAsync(text).then(
+          () => setCopied(true),
+          () => openReader({ title: "Code", text }),
+        );
+      }}
+      onLongPress={() => openReader({ title: "Code", text })}
+      hitSlop={10}
+      accessibilityRole="button"
+      accessibilityLabel={copied ? "Copied" : "Copy code"}
+      accessibilityHint="Long press to open the code to select part of it"
+      style={{ position: "absolute", top: 8, right: 8, padding: 4 }}
+    >
+      <Ionicons name={copied ? "checkmark" : "copy-outline"} size={15} color={copied ? colors.ok : colors.dim} />
+    </TouchableOpacity>
+  );
+}
+
 function makeCodeRules(colors: ThemeColors, openReader: ReturnType<typeof useOpenReader>): Record<string, RenderRule> {
   const code: RenderRule = (node, _children, _parent, styles, inheritedStyles = {}) => {
     const text = (node.content ?? "").replace(/\n$/, "");
@@ -145,15 +173,7 @@ function makeCodeRules(colors: ThemeColors, openReader: ReturnType<typeof useOpe
           language={node.type === "fence" ? syntaxLanguageForFence(node.sourceInfo) : null}
           style={[inheritedStyles, styles[node.type], { paddingRight: 40 }]}
         />
-        <TouchableOpacity
-          onPress={() => openReader({ title: "Code", text })}
-          hitSlop={10}
-          accessibilityRole="button"
-          accessibilityLabel="Open code to copy"
-          style={{ position: "absolute", top: 8, right: 8, padding: 4 }}
-        >
-          <Ionicons name="copy-outline" size={15} color={colors.dim} />
-        </TouchableOpacity>
+        <CopyCodeButton text={text} colors={colors} openReader={openReader} />
       </View>
     );
   };

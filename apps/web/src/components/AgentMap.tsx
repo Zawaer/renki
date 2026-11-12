@@ -150,7 +150,7 @@ export function AgentMapDialog({
         aria-modal="true"
         aria-labelledby={titleId}
         onClick={(e) => e.stopPropagation()}
-        className="renki-enter flex max-h-[80vh] w-full max-w-3xl flex-col rounded-xl border border-(--renki-border) bg-(--renki-surface) shadow-(--renki-shadow-md)"
+        className="renki-enter flex max-h-[80dvh] w-full max-w-3xl flex-col rounded-xl border border-(--renki-border) bg-(--renki-surface) shadow-(--renki-shadow-md)"
       >
         <div className="flex shrink-0 items-start justify-between gap-3 px-5 pt-4 pb-3">
           <div className="min-w-0">

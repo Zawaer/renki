@@ -1231,7 +1231,7 @@ function ContextMeter({ context }: { context: ContextUsageView }) {
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="renki-enter absolute top-full right-0 z-20 mt-2 max-h-[calc(100vh-5rem)] w-80 max-w-[calc(100vw-2rem)] space-y-3 overflow-y-auto rounded-xl border border-(--renki-border) bg-(--renki-surface) p-3.5 text-xs shadow-(--renki-shadow-md)">
+          <div className="renki-enter absolute top-full right-0 z-20 mt-2 max-h-[calc(100dvh-5rem)] w-80 max-w-[calc(100vw-2rem)] space-y-3 overflow-y-auto rounded-xl border border-(--renki-border) bg-(--renki-surface) p-3.5 text-xs shadow-(--renki-shadow-md)">
             <div>
               <div className="flex items-baseline justify-between gap-2">
                 <span className="font-medium text-(--renki-fg)">Context window</span>

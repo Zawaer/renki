@@ -476,7 +476,7 @@ function FilesTab({ sessionId, openRequest }: { sessionId: string; openRequest: 
             <img
               src={`data:${file.image.mediaType};base64,${file.image.data}`}
               alt={openFile}
-              className="mx-auto max-h-[75vh] max-w-full rounded-md bg-[repeating-conic-gradient(var(--renki-surface)_0_25%,transparent_0_50%)] bg-size-[16px_16px] object-contain"
+              className="mx-auto max-h-[75dvh] max-w-full rounded-md bg-[repeating-conic-gradient(var(--renki-surface)_0_25%,transparent_0_50%)] bg-size-[16px_16px] object-contain"
             />
           </div>
         ) : file.binary ? (

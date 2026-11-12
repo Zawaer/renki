@@ -90,14 +90,14 @@ export function SearchPalette({ onClose, onOpen }: { onClose: () => void; onOpen
   let row = 0;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[12vh] backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 pt-[12dvh] backdrop-blur-sm" onClick={onClose}>
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Search chats"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={onKeyDown}
-        className="renki-enter flex max-h-[70vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-(--renki-border) bg-(--renki-surface) shadow-(--renki-shadow-md)"
+        className="renki-enter flex max-h-[70dvh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-(--renki-border) bg-(--renki-surface) shadow-(--renki-shadow-md)"
       >
         <div className="flex shrink-0 items-center gap-2.5 border-b border-(--renki-border) px-4">
           <span

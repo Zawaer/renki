@@ -98,7 +98,7 @@ export function ExportDialog({ sessionId, title, onClose }: { sessionId: string;
         aria-modal="true"
         aria-labelledby={titleId}
         onClick={(e) => e.stopPropagation()}
-        className="renki-enter w-full max-w-sm rounded-xl border border-(--renki-border) bg-(--renki-surface) p-5 shadow-(--renki-shadow-md)"
+        className="renki-enter max-h-full w-full max-w-sm overflow-y-auto rounded-xl border border-(--renki-border) bg-(--renki-surface) p-5 shadow-(--renki-shadow-md)"
       >
         <h2 id={titleId} className="text-[15px] font-medium tracking-tight text-(--renki-fg)">
           Export chat

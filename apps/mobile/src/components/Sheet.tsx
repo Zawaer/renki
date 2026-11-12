@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Easing, LayoutAnimation, Modal, PanResponder, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
+import { Animated, Easing, Modal, PanResponder, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
 import { KeyboardEvents } from "react-native-keyboard-controller";
 import { radius, type ThemeColors } from "../theme";
 
@@ -67,12 +67,20 @@ export function Sheet({
   // keyboard-controller's events, not React Native's: it sets a Modal's window to "adjust nothing"
   // and reports that window's keyboard itself, where RN's Keyboard module watches the main window
   // and never saw a keyboard opened from inside the sheet. "Will" so the sheet rises with it.
+  // An animated spacer under the sheet, not LayoutAnimation: that one animates whatever React
+  // commits next anywhere in the app (a reply streaming in behind the sheet).
   const [keyboard, setKeyboard] = useState(0);
+  const keyboardSpace = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (!mounted) return;
     const move = (height: number, duration: number) => {
-      LayoutAnimation.configureNext(LayoutAnimation.create(Math.max(120, Math.min(duration || 250, 350)), "easeInEaseOut", "opacity"));
       setKeyboard(height);
+      Animated.timing(keyboardSpace, {
+        toValue: height,
+        duration: Math.max(120, Math.min(duration || 250, 350)),
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start();
     };
     const show = KeyboardEvents.addListener("keyboardWillShow", (e) => move(e.height, e.duration));
     const hide = KeyboardEvents.addListener("keyboardWillHide", (e) => move(0, e.duration));
@@ -80,8 +88,9 @@ export function Sheet({
       show.remove();
       hide.remove();
       setKeyboard(0);
+      keyboardSpace.setValue(0);
     };
-  }, [mounted]);
+  }, [mounted, keyboardSpace]);
 
   useEffect(() => {
     if (visible) {
@@ -154,7 +163,7 @@ export function Sheet({
           style={[
             styles.sheet,
             { backgroundColor: colors.panel, transform: [{ translateY }] },
-            keyboard > 0 && { marginBottom: keyboard, paddingBottom: 16, maxHeight: "92%" },
+            keyboard > 0 && { paddingBottom: 16, maxHeight: "92%", flexShrink: 1 },
           ]}
           {...panResponder.panHandlers}
         >
@@ -170,6 +179,8 @@ export function Sheet({
           </View>
           {children}
         </Animated.View>
+        {/* Where the keyboard is: keeps the sheet just above it (see keyboardSpace). */}
+        <Animated.View style={{ height: keyboardSpace }} />
       </View>
     </Modal>
   );

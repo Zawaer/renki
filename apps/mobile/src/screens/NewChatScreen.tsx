@@ -148,11 +148,27 @@ export function NewChatScreen({
   const hasContent = text.trim().length > 0 || attachments.length > 0 || uploads.length > 0;
   const canSend = connection === "open" && progress === null && !findingRepo && !uploading && hasContent;
 
+  /** A send in flight, set before any await: a second tap (the button only disables a render later) is ignored. */
+  const starting = useRef(false);
+  /** The session made by a send that then failed: a retry reuses it rather than making another. */
+  const created = useRef<{ id: string; composer: { model: string; effortKey: string; permissionMode: PermissionModeKey } } | null>(null);
+
+  // While a chat is starting, back does nothing: leaving would still open the chat once it's made.
+  useEffect(() => {
+    if (progress === null) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => true);
+    return () => sub.remove();
+  }, [progress]);
+
   async function start() {
-    if (!canSend) return;
+    if (!canSend || starting.current) return;
     if (uploads.some((u) => u.error)) return setError("Remove the file that failed to upload, or try it again.");
+    starting.current = true;
     setError(null);
+    setProgress("Starting…");
     try {
+      let session = created.current;
+      if (!session) {
       let target: { repoId: string; baseBranch: string } | null = null;
       if (repo) {
         if (!repo.local) setProgress(`Cloning ${repo.fullName}…`);
@@ -166,7 +182,10 @@ export function NewChatScreen({
         effortKey,
         permissionMode: permissionMode ?? defaults.permissionMode,
       };
-      const session = await rest.createSession(target ? { ...target, composer } : { composer });
+      const made = await rest.createSession(target ? { ...target, composer } : { composer });
+      session = created.current = { id: made.id, composer };
+      }
+      const { composer } = session;
       realtime.takeControl(session.id);
       const refs = uploads.map((u) => u.ref!);
       realtime.submitPrompt(session.id, text.trim(), {
@@ -181,6 +200,7 @@ export function NewChatScreen({
       Keyboard.dismiss();
       onStarted(session.id);
     } catch (e) {
+      starting.current = false;
       setProgress(null);
       setError(e instanceof Error ? e.message : "Couldn't start the session.");
     }
@@ -279,6 +299,7 @@ export function NewChatScreen({
         <TouchableOpacity
           style={styles.backRow}
           onPress={picking ? closePicker : onBack}
+          disabled={progress !== null}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityLabel="Back"
         >

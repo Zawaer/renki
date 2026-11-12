@@ -81,10 +81,22 @@ export function GenUiPending() {
 
 type Styles = ReturnType<typeof makeStyles>;
 
+/** Choices answered in this app run, by question and options (see Choices). */
+const pickedChoices = new Map<string, number>();
+
 function Choices({ block, colors, styles }: { block: UiChoices; colors: ThemeColors; styles: Styles }) {
   const onReply = useContext(GenUiReplyContext);
-  /** Picked here, while this reply is on screen: the rest dim so it's clear what was sent. */
-  const [picked, setPicked] = useState<number | null>(null);
+  /**
+   * What was picked, the rest dimmed so it's clear what was sent. Kept outside the component too:
+   * the chat's list recycles rows and a streaming reply re-keys its blocks, and a remounted block
+   * that forgot its pick could send the same answer twice.
+   */
+  const key = useMemo(() => JSON.stringify([block.question ?? null, block.options]), [block]);
+  const [picked, setPickedState] = useState<number | null>(() => pickedChoices.get(key) ?? null);
+  const setPicked = (i: number) => {
+    pickedChoices.set(key, i);
+    setPickedState(i);
+  };
   return (
     <View style={styles.frame}>
       {block.question && <Text style={[styles.title, { marginBottom: 10 }]}>{block.question}</Text>}

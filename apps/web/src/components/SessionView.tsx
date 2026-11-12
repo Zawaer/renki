@@ -2432,7 +2432,7 @@ function UploadChip({ upload, onRemove }: { upload: PendingUpload; onRemove?: ()
   const pending = !upload.ref && !upload.error;
   return (
     <div
-      className={`relative flex items-center gap-1.5 overflow-hidden rounded-xl border bg-(--renki-surface) py-1 pr-2 pl-1.5 text-xs ${
+      className={`relative flex max-w-full min-w-0 items-center gap-1.5 overflow-hidden rounded-xl border bg-(--renki-surface) py-1 pr-2 pl-1.5 text-xs ${
         upload.error ? "border-(--renki-danger)/60" : "border-(--renki-border)"
       }`}
       title={upload.error ? `${upload.name}: ${upload.error}` : upload.name}
@@ -2443,9 +2443,9 @@ function UploadChip({ upload, onRemove }: { upload: PendingUpload; onRemove?: ()
           style={{ width: `${Math.round(upload.progress * 100)}%` }}
         />
       )}
-      <span className={`codicon ${upload.error ? "codicon-warning text-(--renki-danger)" : "codicon-file"} relative text-(--renki-fg-muted)`} />
-      <span className="relative max-w-40 truncate text-(--renki-fg)">{upload.name}</span>
-      <span className="relative text-(--renki-fg-muted) tabular-nums">
+      <span className={`codicon ${upload.error ? "codicon-warning text-(--renki-danger)" : "codicon-file"} relative shrink-0 text-(--renki-fg-muted)`} />
+      <span className="relative min-w-0 max-w-40 truncate text-(--renki-fg)">{upload.name}</span>
+      <span className="relative shrink-0 text-(--renki-fg-muted) tabular-nums">
         {upload.error ? "failed" : pending ? `${Math.round(upload.progress * 100)}%` : formatBytes(upload.size)}
       </span>
       {onRemove && (
@@ -2454,7 +2454,7 @@ function UploadChip({ upload, onRemove }: { upload: PendingUpload; onRemove?: ()
             e.stopPropagation();
             onRemove();
           }}
-          className="relative text-(--renki-fg-muted) hover:text-(--renki-danger)"
+          className="relative shrink-0 text-(--renki-fg-muted) hover:text-(--renki-danger)"
           title="Remove"
         >
           <span className="codicon codicon-close" />
@@ -2553,22 +2553,20 @@ export function AttachmentChip({
   return (
     <>
       <div
-        className={`flex items-center gap-1.5 rounded-xl border border-(--renki-border) bg-(--renki-surface) py-1 pl-1 pr-2 text-xs ${isImage ? "cursor-pointer" : ""}`}
+        className={`flex max-w-full min-w-0 items-center gap-1.5 rounded-xl border border-(--renki-border) bg-(--renki-surface) py-1 pl-1 pr-2 text-xs ${isImage ? "cursor-pointer" : ""}`}
+        title={attachment.name}
         onClick={isImage ? () => setPreviewing(true) : undefined}
       >
         {isImage ? (
           <img
             src={attachmentSource(attachment, config).urlWithToken}
             alt={attachment.name}
-            className="h-6 w-6 rounded-sm object-cover"
+            className="h-6 w-6 shrink-0 rounded-sm object-cover"
           />
         ) : (
-          <span className={`codicon ${attachment.mediaType === "application/zip" ? "codicon-file-zip" : "codicon-file"} text-(--renki-fg-muted)`} />
+          <span className={`codicon ${attachment.mediaType === "application/zip" ? "codicon-file-zip" : "codicon-file"} shrink-0 text-(--renki-fg-muted)`} />
         )}
-        <span
-          className="max-w-40 truncate text-(--renki-fg)"
-          title={attachment.name}
-        >
+        <span className="min-w-0 max-w-40 truncate text-(--renki-fg)">
           {attachment.name}
         </span>
         {onRemove && (
@@ -2577,7 +2575,7 @@ export function AttachmentChip({
               e.stopPropagation();
               onRemove();
             }}
-            className="text-(--renki-fg-muted) hover:text-(--renki-danger)"
+            className="shrink-0 text-(--renki-fg-muted) hover:text-(--renki-danger)"
             title="Remove"
           >
             <span className="codicon codicon-close" />

@@ -5,6 +5,7 @@ import { Animated, FlatList, type GestureResponderEvent, Modal, PanResponder, St
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient } from "../lib/client";
 import { MOTION } from "./Motion";
+import { ModalFrame } from "./ModalFrame";
 
 const MAX_SCALE = 4;
 const DOUBLE_TAP_SCALE = 2.5;
@@ -22,7 +23,7 @@ export function ImageViewer({ images, index, onClose }: { images: Attachment[]; 
   const visible = index != null && images.length > 0;
   return (
     <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose} statusBarTranslucent>
-      {visible && <Pager images={images} start={Math.min(index, images.length - 1)} onClose={onClose} />}
+      <ModalFrame>{visible && <Pager images={images} start={Math.min(index, images.length - 1)} onClose={onClose} />}</ModalFrame>
     </Modal>
   );
 }

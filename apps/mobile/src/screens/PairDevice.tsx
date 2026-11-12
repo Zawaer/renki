@@ -4,6 +4,7 @@ import { ActivityIndicator, Modal, StyleSheet, Text, TouchableOpacity, View } fr
 import QRCode from "react-native-qrcode-svg";
 import { useClient } from "../lib/client";
 import { radius, softShadow, type ThemeColors, useTheme, withAlpha } from "../theme";
+import { ModalFrame } from "../components/ModalFrame";
 
 /**
  * "Pair a device" — renders this phone's own working { baseUrl, token } as a QR
@@ -81,6 +82,7 @@ export function PairDevice({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <ModalFrame>
       <View style={styles.backdrop}>
         <View style={styles.card}>
           <Text style={styles.title}>Scan with another Renki device</Text>
@@ -149,6 +151,7 @@ export function PairDevice({
           </TouchableOpacity>
         </View>
       </View>
+    </ModalFrame>
     </Modal>
   );
 }

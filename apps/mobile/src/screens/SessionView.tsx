@@ -708,7 +708,7 @@ export function SessionView({
           <Ionicons name="chevron-back" size={22} color={colors.text} />
         </TouchableOpacity>
         {/* The title opens the chat's menu, like the ⋯ beside it. */}
-        <TouchableOpacity style={styles.headerCenter} onPress={() => setToolsOpen(true)} activeOpacity={0.6}>
+        <TouchableOpacity style={styles.headerCenter} onPress={() => openSheet(setToolsOpen)} activeOpacity={0.6}>
           <Text style={styles.headerTitle} numberOfLines={1}>
             {title || repoName || " "}
           </Text>
@@ -733,7 +733,7 @@ export function SessionView({
           </TouchableOpacity>
         )}
         <TouchableOpacity
-          onPress={() => setToolsOpen(true)}
+          onPress={() => openSheet(setToolsOpen)}
           hitSlop={10}
           accessibilityRole="button"
           accessibilityLabel={menuBadge ? "More, something needs a look" : "More"}

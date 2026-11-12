@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { type AppConfig, getOrCreateDeviceId } from "../lib/config";
 import { radius, type ThemeColors, useTheme } from "../theme";
+import { ModalFrame } from "../components/ModalFrame";
 
 /**
  * Point a client at a daemon and enter its token — used both for first-run
@@ -175,7 +176,9 @@ export function Setup({
       </View>
 
       <Modal visible={scanning} animationType="slide" onRequestClose={() => setScanning(false)}>
-        <QrScanner onScanned={onScanned} onCancel={() => setScanning(false)} styles={styles} />
+        <ModalFrame>
+          <QrScanner onScanned={onScanned} onCancel={() => setScanning(false)} styles={styles} />
+        </ModalFrame>
       </Modal>
     </KeyboardAvoidingView>
   );

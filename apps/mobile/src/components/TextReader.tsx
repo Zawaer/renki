@@ -4,6 +4,7 @@ import { Modal, Pressable, ScrollView, Share, StyleSheet, Text, TouchableOpacity
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { type ThemeColors, useTheme } from "../theme";
 import { markdownToPlainText } from "./Markdown";
+import { ModalFrame } from "./ModalFrame";
 
 /**
  * Long-press a message to read it in a plain full-screen view, where its text
@@ -67,6 +68,7 @@ function TextReader({ reading, onClose }: { reading: Reading | null; onClose: ()
   const styles = useMemo(() => makeStyles(colors), [colors]);
   return (
     <Modal visible={reading != null} animationType="slide" onRequestClose={onClose}>
+      <ModalFrame>
       <View style={[styles.screen, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel="Close">
@@ -91,6 +93,7 @@ function TextReader({ reading, onClose }: { reading: Reading | null; onClose: ()
           </Text>
         </ScrollView>
       </View>
+    </ModalFrame>
     </Modal>
   );
 }

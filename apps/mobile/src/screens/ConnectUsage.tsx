@@ -14,6 +14,7 @@ import {
 import { WebView } from "react-native-webview";
 import { useClient } from "../lib/client";
 import { radius, type ThemeColors, useTheme } from "../theme";
+import { ModalFrame } from "../components/ModalFrame";
 
 const CLAUDE_URL = "https://claude.ai";
 
@@ -122,6 +123,7 @@ export function ConnectUsage({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <ModalFrame>
       <View style={styles.fill}>
         <View style={styles.header}>
           <Text style={styles.title}>{orgs ? "Choose an organization" : "Connect usage"}</Text>
@@ -182,6 +184,7 @@ export function ConnectUsage({
           </>
         )}
       </View>
+    </ModalFrame>
     </Modal>
   );
 }

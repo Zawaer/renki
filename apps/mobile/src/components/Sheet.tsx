@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Easing, Modal, PanResponder, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
+import { Animated, Easing, Modal, PanResponder, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { KeyboardEvents } from "react-native-keyboard-controller";
+import { ModalFrame } from "./ModalFrame";
 import { radius, type ThemeColors } from "../theme";
 
 const DISMISS_DISTANCE = 90;
@@ -136,27 +137,11 @@ export function Sheet({
     [translateY],
   );
 
-  // The Modal's root has come up 0x0 now and then (opened as the keyboard was closing), which drew the
-  // sheet's contents squashed into the top-left corner instead of the sheet. Size it from the window
-  // until the root reports a real size of its own.
-  const screen = useWindowDimensions();
-  const [root, setRoot] = useState<{ width: number; height: number } | null>(null);
-  const size = root && root.width > 0 && root.height > 0 ? root : { width: screen.width, height: screen.height };
-
   if (!mounted) return null;
 
   return (
     <Modal transparent visible animationType="none" onRequestClose={onClose}>
-      {/* Measures the Modal's own root (see `size`). */}
-      <View
-        pointerEvents="none"
-        style={StyleSheet.absoluteFill}
-        onLayout={(e) => {
-          const { width, height } = e.nativeEvent.layout;
-          setRoot((cur) => (cur && cur.width === width && cur.height === height ? cur : { width, height }));
-        }}
-      />
-      <View style={[styles.backdropFill, { width: size.width, height: size.height }]}>
+      <ModalFrame style={styles.backdropFill}>
         <Animated.View style={[styles.scrim, { opacity: backdropOpacity }]} />
         <TouchableOpacity style={styles.backdropTap} activeOpacity={1} onPress={onClose} />
         <Animated.View
@@ -181,7 +166,7 @@ export function Sheet({
         </Animated.View>
         {/* Where the keyboard is: keeps the sheet just above it (see keyboardSpace). */}
         <Animated.View style={{ height: keyboardSpace }} />
-      </View>
+      </ModalFrame>
     </Modal>
   );
 }
@@ -191,7 +176,7 @@ const styles = StyleSheet.create({
   // root) so the scrim always covers the true screen bottom — including any
   // gesture-nav inset — with no gap where the screen behind could show
   // through under the sheet.
-  backdropFill: { position: "absolute", top: 0, left: 0, justifyContent: "flex-end" },
+  backdropFill: { justifyContent: "flex-end" },
   scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.55)" },
   backdropTap: { ...StyleSheet.absoluteFillObject },
   sheet: {

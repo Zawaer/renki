@@ -22,6 +22,10 @@ import { ActivityIndicator, BackHandler, Keyboard, ScrollView, StyleSheet, Text,
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Sheet } from "../components/Sheet";
+import { clearDraft, loadDraft, saveDraft } from "../lib/drafts";
+
+/** The drafts key for a chat that doesn't exist yet. */
+const NEW_CHAT_DRAFT = "new-chat";
 import { pickDocumentAttachments, pickImageAttachments, type PendingAttachment, type Picked } from "../lib/attachments";
 import { useClient, useStoreValue } from "../lib/client";
 import { loadDeviceDefaults, rememberDeviceDefaults } from "../lib/composerPrefs";
@@ -67,6 +71,28 @@ export function NewChatScreen({
   const [text, setText] = useState(initialPrompt ?? "");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [uploads, setUploads] = useState<PendingUpload[]>([]);
+
+  // What's typed here is kept as a draft, like a chat's, so stepping away (a notification opening
+  // another chat, the app being killed) doesn't lose it. A /new link's prompt wins over it.
+  const draftLoaded = useRef(initialPrompt !== null);
+  useEffect(() => {
+    if (draftLoaded.current) return;
+    let live = true;
+    void loadDraft(NEW_CHAT_DRAFT).then((draft) => {
+      draftLoaded.current = true;
+      if (!live || !draft) return;
+      setText((cur) => (cur ? cur : draft.text));
+      setAttachments((prev) => (prev.length > 0 ? prev : draft.attachments.map((a) => ({ ...a, id: randomUUID() }))));
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!draftLoaded.current) return;
+    const id = setTimeout(() => saveDraft(NEW_CHAT_DRAFT, text, attachments.map(({ id: _id, ...a }) => a)), 250);
+    return () => clearTimeout(id);
+  }, [text, attachments]);
   const uploadCancels = useRef(new Map<string, () => void>());
   const [repo, setRepo] = useState<RepoChoice | null>(null);
   const [picking, setPicking] = useState(false);
@@ -198,6 +224,7 @@ export function NewChatScreen({
       // Drop this screen's keyboard before the chat's composer mounts, or
       // Android's IME can stay attached to the input that's going away.
       Keyboard.dismiss();
+      clearDraft(NEW_CHAT_DRAFT);
       onStarted(session.id);
     } catch (e) {
       starting.current = false;

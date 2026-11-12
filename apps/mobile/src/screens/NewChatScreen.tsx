@@ -13,14 +13,17 @@ import {
   resolveRepoChoice,
   type PermissionModeKey,
   type RepoChoice,
+  attachmentSource,
+  type Attachment,
 } from "@renki/client-core";
 import type { CapabilitiesResponse, GithubReposResponse, Repo, UploadRef } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { randomUUID } from "expo-crypto";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, BackHandler, Keyboard, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, BackHandler, Image, Keyboard, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ImageViewer } from "../components/ImageViewer";
 import { Sheet } from "../components/Sheet";
 import { clearDraft, loadDraft, saveDraft } from "../lib/drafts";
 
@@ -70,6 +73,8 @@ export function NewChatScreen({
 
   const [text, setText] = useState(initialPrompt ?? "");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  /** The photos open full screen, and which one is showing. */
+  const [preview, setPreview] = useState<{ images: Attachment[]; index: number } | null>(null);
   const [uploads, setUploads] = useState<PendingUpload[]>([]);
 
   // What's typed here is kept as a draft, like a chat's, so stepping away (a notification opening
@@ -415,24 +420,40 @@ export function NewChatScreen({
 
           {(attachments.length > 0 || uploads.length > 0) && (
             <View style={styles.pendingAttachRow}>
-              {attachments.map((a) => (
-                <TouchableOpacity
-                  key={a.id}
-                  style={styles.attachChip}
-                  onPress={() => setAttachments((prev) => prev.filter((x) => x.id !== a.id))}
-                  accessibilityLabel={`Remove ${a.name}`}
-                >
-                  <Ionicons
-                    name={a.mediaType.startsWith("image/") ? "image-outline" : a.mediaType === "application/zip" ? "archive-outline" : "document-outline"}
-                    size={14}
-                    color={colors.dim}
-                  />
-                  <Text style={styles.attachName} numberOfLines={1}>
-                    {a.name}
-                  </Text>
-                  <Ionicons name="close" size={14} color={colors.faint} />
-                </TouchableOpacity>
-              ))}
+              {/* As in a chat and on the web: a photo shows its thumbnail and opens full screen on a tap; the ✕ removes it. */}
+              {attachments.map((a) => {
+                const isImage = a.mediaType.startsWith("image/");
+                return (
+                  <TouchableOpacity
+                    key={a.id}
+                    style={styles.attachChip}
+                    activeOpacity={isImage ? 0.7 : 1}
+                    disabled={!isImage}
+                    onPress={() => {
+                      const images = attachments.filter((x) => x.mediaType.startsWith("image/"));
+                      Keyboard.dismiss();
+                      setPreview({ images, index: Math.max(0, images.indexOf(a)) });
+                    }}
+                    accessibilityLabel={isImage ? `Preview ${a.name}` : a.name}
+                  >
+                    {isImage ? (
+                      <Image source={attachmentSource(a, config)} style={styles.attachThumb} />
+                    ) : (
+                      <Ionicons name={a.mediaType === "application/zip" ? "archive-outline" : "document-outline"} size={14} color={colors.dim} />
+                    )}
+                    <Text style={styles.attachName} numberOfLines={1}>
+                      {a.name}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => setAttachments((prev) => prev.filter((x) => x.id !== a.id))}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      accessibilityLabel={`Remove ${a.name}`}
+                    >
+                      <Ionicons name="close" size={14} color={colors.faint} />
+                    </TouchableOpacity>
+                  </TouchableOpacity>
+                );
+              })}
               {uploads.map((u) => (
                 <TouchableOpacity key={u.id} style={styles.attachChip} onPress={() => removeUpload(u.id)} accessibilityLabel={`Remove ${u.name}`}>
                   {u.ref || u.error ? (
@@ -578,6 +599,7 @@ export function NewChatScreen({
         colors={colors}
         styles={styles}
       />
+      <ImageViewer images={preview?.images ?? []} index={preview?.index ?? null} onClose={() => setPreview(null)} />
     </KeyboardAvoidingView>
   );
 }
@@ -723,6 +745,7 @@ const makeStyles = (colors: ThemeColors) =>
       borderColor: colors.border,
     },
     // flexShrink, not flex: 1: the chip sizes to its content, so a flex-basis of 0 squeezed the name to nothing.
+    attachThumb: { width: 22, height: 22, borderRadius: radius.xs },
     attachName: { flexShrink: 1, color: colors.text, fontSize: 12 },
     attachMeta: { color: colors.faint, fontSize: 11 },
 

@@ -55,6 +55,7 @@ import {
   agentMapOf,
   backgroundTasksOf,
   timelineWithSending,
+  permissionTitle,
 } from "@renki/client-core";
 import type { AttachmentView, CapabilitiesResponse, Session, SessionResume } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
@@ -1883,6 +1884,12 @@ function SteeredPrompt({
   );
 }
 
+/** An approval card's heading: what Claude wants to do, plus the tool's name only when that doesn't say it. */
+function permissionHeading(name: string, input: unknown): string {
+  const { title, detail } = permissionTitle(name, input);
+  return detail ? `${title} · ${detail}` : title;
+}
+
 /** Maps a tool name to a representative Ionicons glyph. */
 function toolIcon(name: string): keyof typeof Ionicons.glyphMap {
   const map: Partial<Record<string, keyof typeof Ionicons.glyphMap>> = {
@@ -2351,7 +2358,7 @@ function PermissionCard({
     <View style={styles.permCard}>
       <View style={styles.permHeader}>
         <Ionicons name={plan != null ? "list-outline" : "shield-checkmark-outline"} size={14} color={colors.busy} />
-        <Text style={styles.permTitle}>{plan != null ? "Plan ready for review" : `Permission: ${perm.toolName}`}</Text>
+        <Text style={styles.permTitle}>{plan != null ? "Plan ready for review" : permissionHeading(perm.toolName, perm.toolInput)}</Text>
       </View>
       {perm.reason ? <Text style={styles.permReason}>{perm.reason}</Text> : null}
       {plan != null ? (

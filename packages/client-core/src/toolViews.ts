@@ -303,8 +303,65 @@ export function describeTool(name: string, input: unknown): ToolDescription {
       return { label: "Suggested replies", meta: null };
     case "ExitPlanMode":
       return { label: "Proposed a plan", meta: null };
+    case "mcp__mac__mac_propose_job":
+      return { label: "Proposed a Mac build job", meta: str("job") };
+    case "mcp__renki__request_homelab_access":
+      return { label: "Asked for homelab access", meta: null };
     default:
-      return { label: name, meta: null };
+      return { label: toolDisplayName(name), meta: null };
+  }
+}
+
+/**
+ * A tool's name as a person would say it. MCP tools arrive as
+ * `mcp__<server>__<tool>`, which is plumbing: `mcp__mac__esp_ports` reads
+ * "Esp ports". Built-in tools (Read, Bash) are already words.
+ */
+export function toolDisplayName(name: string): string {
+  const m = /^mcp__.+?__(.+)$/.exec(name);
+  if (!m) return name;
+  const words = m[1]!.replace(/[_-]+/g, " ").trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : name;
+}
+
+/**
+ * The heading of an approval card: what Claude is asking to do, in words.
+ * `detail` is a second, quieter line for tools without a title of their own
+ * (their name, humanized), null when the title already says it all.
+ */
+export function permissionTitle(name: string, input: unknown): { title: string; detail: string | null } {
+  const inp = (input ?? {}) as Record<string, unknown>;
+  const said = (title: string) => ({ title, detail: null });
+  switch (name) {
+    case "Bash":
+      return said("Claude wants to run a command");
+    case "Edit":
+    case "MultiEdit":
+    case "NotebookEdit":
+      return said("Claude wants to edit a file");
+    case "Write":
+      return said("Claude wants to write a file");
+    case "Read":
+      return said("Claude wants to read a file");
+    case "WebFetch":
+    case "WebSearch":
+      return said("Claude wants to reach the web");
+    case "mcp__mac__mac_build":
+      return said(inp.install === true ? "Claude wants to build on your Mac and install it on your phone" : "Claude wants to build on your Mac");
+    case "mcp__mac__phone_install_apk":
+      return said("Claude wants to install an app on your phone");
+    case "mcp__mac__phone_shell":
+      return said("Claude wants to run a command on your phone");
+    case "mcp__mac__phone_input":
+      return said("Claude wants to tap and type on your phone");
+    case "mcp__mac__esp_flash":
+      return said("Claude wants to flash the board on your Mac");
+    case "mcp__mac__esp_reset":
+      return said("Claude wants to reset the board on your Mac");
+    case "mcp__mac__mac_propose_job":
+      return said("Claude wants to add a build job on your Mac");
+    default:
+      return { title: "Claude wants to use a tool", detail: toolDisplayName(name) };
   }
 }
 

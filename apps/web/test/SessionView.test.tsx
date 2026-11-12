@@ -173,7 +173,7 @@ describe("SessionView", () => {
     // Rendered as the controller: Allow/Deny should be actionable.
     renderSession(sessionId, events, "d1");
     expect(screen.getByText(/Claude wants to run/)).toBeInTheDocument();
-    expect(screen.getByText("Bash")).toBeInTheDocument();
+    expect(screen.queryByText("Bash")).not.toBeInTheDocument(); // the title says it in words; no raw tool name
     expect(screen.getByRole("button", { name: "Allow" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Deny" })).toBeInTheDocument();
     cleanupRoots();

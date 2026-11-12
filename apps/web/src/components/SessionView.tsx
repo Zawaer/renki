@@ -61,6 +61,7 @@ import {
   modelMenuLabel,
   segmentImages,
   timelineWithSending,
+  permissionTitle,
 } from "@renki/client-core";
 import type { Account, AttachmentView, CapabilitiesResponse, Session, SessionComposer, SessionResume } from "@renki/protocol";
 import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, Fragment } from "react";
@@ -2115,26 +2116,6 @@ function useThinkingVerb(live: boolean): string {
   return THINKING_VERBS[i] ?? "Thinking";
 }
 
-function permissionTitle(toolName: string): string {
-  switch (toolName) {
-    case "Bash":
-      return "Claude wants to run a command";
-    case "Edit":
-    case "MultiEdit":
-    case "NotebookEdit":
-      return "Claude wants to edit a file";
-    case "Write":
-      return "Claude wants to write a file";
-    case "Read":
-      return "Claude wants to read a file";
-    case "WebFetch":
-    case "WebSearch":
-      return "Claude wants to reach the web";
-    default:
-      return "Claude wants to run a tool";
-  }
-}
-
 /** The one line that matters for approving a Bash call: the command itself. Null for every other tool. */
 function permissionCommand(toolName: string, input: unknown): string | null {
   const command = (input as { command?: unknown } | null)?.command;
@@ -2180,6 +2161,7 @@ function PermissionCard({
     setDecided(d);
     onDecide(d, updatedInput);
   };
+  const heading = permissionTitle(perm.toolName, perm.toolInput);
   const askQuestion = parseAskUserQuestion(perm.toolName, perm.toolInput);
   const plan =
     askQuestion == null ? parsePlan(perm.toolName, perm.toolInput) : null;
@@ -2221,13 +2203,13 @@ function PermissionCard({
           <span className="font-medium">Plan ready for review</span>
         ) : (
           <span className="flex flex-wrap items-center gap-x-1.5 text-[13px]">
-            <span className="font-medium">
-              {permissionTitle(perm.toolName)}
-            </span>
-            <span className="text-(--renki-fg-muted)">·</span>
-            <span className="font-mono text-xs text-(--renki-fg-muted)">
-              {perm.toolName}
-            </span>
+            <span className="font-medium">{heading.title}</span>
+            {heading.detail && (
+              <>
+                <span className="text-(--renki-fg-muted)">·</span>
+                <span className="text-(--renki-fg-muted)">{heading.detail}</span>
+              </>
+            )}
           </span>
         )}
       </div>

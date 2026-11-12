@@ -1,4 +1,4 @@
-import type { GatewayApproval } from "@renki/protocol";
+import type { GatewayApproval, GatewaySettled } from "@renki/protocol";
 import { logger } from "../logger.js";
 
 /**
@@ -9,9 +9,15 @@ import { logger } from "../logger.js";
  * Polls the approval service's /v1/approvals/pending (ops/homelab-gateway),
  * which lists summaries only, never tokens: approving stays on the phone. A
  * poll that fails keeps the last list until it goes stale, then clears it.
+ *
+ * The same answer carries the last few requests that closed and how (approved,
+ * denied, ran out of time; by the phone, the Mac or the timeout). The phone shows
+ * them, so a request whose notification was swiped away still gets an outcome.
  */
 export class GatewayApprovals {
   private pending: GatewayApproval[] = [];
+  /** Null until a gateway that reports them answers (an older one doesn't). */
+  private recentList: GatewaySettled[] | null = null;
   /** When `homelab sh` stops running without asking (ms), or null: see `homelab open-window`. */
   private windowUntil: number | null = null;
   /** How many devices can approve with Touch ID (0 = only the phone). */
@@ -59,6 +65,11 @@ export class GatewayApprovals {
     this.timer = null;
   }
 
+  /** What closed lately, newest first; null when the gateway doesn't say. */
+  recent(): GatewaySettled[] | null {
+    return this.recentList;
+  }
+
   current(): GatewayApproval[] {
     return this.pending.filter((p) => p.expires > Date.now());
   }
@@ -76,6 +87,7 @@ export class GatewayApprovals {
     let next: GatewayApproval[];
     let nextWindow: number | null;
     let nextApprovers = this.approverCount;
+    let nextRecent = this.recentList;
     try {
       const query = this.desktopOnline() ? "?desktop=1" : "";
       const res = await this.fetchImpl(`${this.baseUrl}/v1/approvals/pending${query}`, { signal: AbortSignal.timeout(2_500) });
@@ -85,11 +97,26 @@ export class GatewayApprovals {
         window?: number | null;
         approvers?: number;
         url?: string | null;
+        recent?: { id: string; verb: string; summary: string; created: number; settled: number; outcome: string; by?: string | null; pushed?: boolean }[];
       };
       if (typeof body.url === "string" && /^https:\/\/[a-z0-9.-]+$/.test(body.url)) this.publicUrl = body.url;
       nextApprovers = typeof body.approvers === "number" ? body.approvers : 0;
       nextWindow = typeof body.window === "number" ? body.window * 1000 : null;
       next = (body.pending ?? []).map((p) => ({ id: p.id, verb: p.verb, summary: p.summary, created: p.created * 1000, expires: p.expires * 1000 }));
+      if (Array.isArray(body.recent)) {
+        nextRecent = body.recent
+          .filter((r) => r.outcome === "approve" || r.outcome === "deny" || r.outcome === "expired")
+          .map((r) => ({
+            id: r.id,
+            verb: r.verb,
+            summary: r.summary,
+            created: r.created * 1000,
+            settled: r.settled * 1000,
+            outcome: r.outcome as GatewaySettled["outcome"],
+            by: typeof r.by === "string" ? r.by : null,
+            pushed: r.pushed === true,
+          }));
+      }
       if (this.failing) logger.info("gateway approvals reachable again");
       this.failing = false;
     } catch (err) {
@@ -99,8 +126,16 @@ export class GatewayApprovals {
       nextWindow = this.window();
     }
     const key = (l: GatewayApproval[]) => l.map((p) => p.id).join(",");
-    if (key(next) === key(this.pending) && nextWindow === this.windowUntil && nextApprovers === this.approverCount) return;
+    const recentKey = (l: GatewaySettled[] | null) => (l ? l.map((r) => `${r.id}:${r.outcome}`).join(",") : "-");
+    if (
+      key(next) === key(this.pending) &&
+      nextWindow === this.windowUntil &&
+      nextApprovers === this.approverCount &&
+      recentKey(nextRecent) === recentKey(this.recentList)
+    )
+      return;
     this.pending = next;
+    this.recentList = nextRecent;
     this.windowUntil = nextWindow;
     this.approverCount = nextApprovers;
     for (const cb of this.listeners) cb(next, nextWindow, nextApprovers);

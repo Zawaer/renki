@@ -319,6 +319,18 @@ def _resend_path(approval_dir, aid):
     return os.path.join(approval_dir, aid + ".resend")
 
 
+def _pushed_path(approval_dir, aid):
+    """Touched once the phone has been sent the request: whether it ever buzzed (see list_recent)."""
+    return os.path.join(approval_dir, aid + ".pushed")
+
+
+def _touch(path):
+    try:
+        os.close(os.open(path, os.O_WRONLY | os.O_CREAT, 0o600))
+    except OSError:
+        pass
+
+
 # A lost notification is the token lost: it exists nowhere else but in the waiting gateway's memory.
 # So the phone can ask for every open request to be pushed again. Asking needs no token and only
 # ever pushes to the paired phone, so a session asking gets nothing but an extra notification there;
@@ -378,6 +390,49 @@ def list_pending(approval_dir, now=None):
     return sorted(out, key=lambda r: r["created"])
 
 
+RECENT_LIMIT = 10
+RECENT_MAX_AGE = 24 * 3600
+
+
+def list_recent(approval_dir, now=None, limit=RECENT_LIMIT, max_age=RECENT_MAX_AGE):
+    """The last few requests that closed, newest first, with how and when: what the phone shows after
+    its notification was swiped away (it never learned the outcome otherwise) and in its "Recent
+    approvals" list. Like list_pending, summaries only, never a token.
+
+    outcome: "approve", "deny" or "expired". by: who settled it, "phone", "mac", "timeout" or "guard"
+    (five wrong tokens), or None for a decision written before this was recorded. pushed: whether the
+    phone was ever sent it (one approved on the Mac within the grace never reached it)."""
+    now = time.time() if now is None else now
+    out = []
+    try:
+        names = os.listdir(approval_dir)
+    except FileNotFoundError:
+        return out
+    for name in names:
+        aid = name[:-5] if name.endswith(".json") else None
+        if not aid or not ID_RE.match(aid):
+            continue
+        try:
+            with open(_rec_path(approval_dir, aid)) as f:
+                rec = json.load(f)
+        except (OSError, ValueError):
+            continue
+        decision = read_decision(approval_dir, aid)
+        if decision is None and now <= rec["expires"]:
+            continue  # still waiting: that's list_pending's
+        try:
+            settled = os.path.getmtime(_dec_path(approval_dir, aid)) if decision is not None else rec["expires"]
+        except OSError:
+            settled = rec["expires"]
+        if now - settled > max_age:
+            continue
+        out.append({"id": aid, "verb": rec["verb"], "summary": rec["summary"], "created": rec["created"],
+                    "settled": settled, "outcome": decision if decision in ("approve", "deny") else "expired",
+                    "by": read_decided_by(approval_dir, aid) or ("timeout" if decision in (None, "expired") else None),
+                    "pushed": os.path.exists(_pushed_path(approval_dir, aid))})
+    return sorted(out, key=lambda r: r["settled"], reverse=True)[:limit]
+
+
 def create_approval(approval_dir, verb, args, summary, ttl, now=None, password=False, pubkey=None):
     now = time.time() if now is None else now
     os.makedirs(approval_dir, mode=0o700, exist_ok=True)
@@ -396,22 +451,35 @@ def create_approval(approval_dir, verb, args, summary, ttl, now=None, password=F
     return aid, token
 
 
-def read_decision(approval_dir, aid):
+# The decision file holds the decision on its first line ("approve", "deny", or "expired" once nobody
+# answered in time) and, on a second, who made it (see list_recent). Older files have only the first.
+
+def _read_decision_lines(approval_dir, aid):
     try:
         with open(_dec_path(approval_dir, aid)) as f:
-            return f.read().strip()
+            return f.read().strip().split("\n")
     except FileNotFoundError:
         return None
 
 
-def write_decision(approval_dir, aid, decision):
+def read_decision(approval_dir, aid):
+    lines = _read_decision_lines(approval_dir, aid)
+    return lines[0].strip() if lines else None
+
+
+def read_decided_by(approval_dir, aid):
+    lines = _read_decision_lines(approval_dir, aid)
+    return lines[1].strip() or None if lines and len(lines) > 1 else None
+
+
+def write_decision(approval_dir, aid, decision, by=None):
     """First writer wins (O_EXCL); returns False if a decision already exists."""
     try:
         fd = os.open(_dec_path(approval_dir, aid), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
         return False
     with os.fdopen(fd, "w") as f:
-        f.write(decision)
+        f.write(decision + ("\n" + by if by else ""))
     return True
 
 
@@ -477,7 +545,7 @@ def decide(approval_dir, aid, token, decision, now=None, secret=None):
     if not good:
         _bad_attempts[aid] = _bad_attempts.get(aid, 0) + 1
         if _bad_attempts[aid] >= 5:
-            write_decision(approval_dir, aid, "deny")
+            write_decision(approval_dir, aid, "deny", by="guard")
         return 403, {"error": "forbidden"}
     if decision == "approve" and rec.get("password"):
         if not isinstance(secret, str) or not SECRET_RE.match(secret):
@@ -489,7 +557,7 @@ def decide(approval_dir, aid, token, decision, now=None, secret=None):
             return 409, {"error": "already decided"}
         with os.fdopen(fd, "w") as f:
             f.write(secret)
-    if not write_decision(approval_dir, aid, "approve" if decision == "approve" else "deny"):
+    if not write_decision(approval_dir, aid, "approve" if decision == "approve" else "deny", by="phone"):
         return 409, {"error": "already decided"}
     return 200, {"ok": True, "decision": decision, "summary": rec["summary"]}
 
@@ -507,7 +575,10 @@ def peek(approval_dir, aid, token, now=None):
     if not hmac.compare_digest(hashlib.sha256((token or "").encode()).hexdigest(), rec["token_sha256"]):
         return 403, {"error": "forbidden"}
     state = read_decision(approval_dir, aid) or ("expired" if now > rec["expires"] else "pending")
-    return 200, {"summary": rec["summary"], "state": state, "expires": rec["expires"], "password": bool(rec.get("password"))}
+    # by: who settled it ("phone", "mac", "timeout", "guard"), so the phone can say "Approved on the Mac".
+    by = read_decided_by(approval_dir, aid) if state != "pending" else None
+    return 200, {"summary": rec["summary"], "state": state, "expires": rec["expires"], "password": bool(rec.get("password")),
+                 "by": by or ("timeout" if state == "expired" else None)}
 
 
 def push_tokens_from_db(db_path):
@@ -563,6 +634,8 @@ def request_approval(policy, verb, args, summary, notify=None, approval_dir=None
         if not pushed and now() >= push_at:
             delivered = notify(title="Approve on the homelab?", body=summary, data=data)
             pushed, last_sent = True, now()
+            if delivered:
+                _touch(_pushed_path(approval_dir, aid))
         d = read_decision(approval_dir, aid)
         if d is not None:
             sealed = take_secret(approval_dir, aid)
@@ -582,12 +655,17 @@ def request_approval(policy, verb, args, summary, notify=None, approval_dir=None
                 pass
             if pushed and resends < MAX_RESENDS and now() - last_sent >= RESEND_GAP_SECONDS:
                 # The same request and token again, so whichever copy the phone answers counts.
-                delivered = notify(title="Approve on the homelab?", body=summary, data=data) or delivered
+                again = notify(title="Approve on the homelab?", body=summary, data=data)
+                if again:
+                    _touch(_pushed_path(approval_dir, aid))
+                delivered = again or delivered
                 resends, last_sent = resends + 1, now()
             elif not pushed:
                 push_at = now()  # "send to phone" from the Mac: don't wait out the grace
         sleep(1)
-    write_decision(approval_dir, aid, "deny")  # nobody answered: closed for good
+    # Nobody answered: closed for good. "expired", not "deny", so the phone can say it ran out of time
+    # rather than that someone said no (a swiped notification never told you which).
+    write_decision(approval_dir, aid, "expired", by="timeout")
     if not delivered:
         raise Refused("no phone could be notified (is the Renki app registered for push?); denied")
     return False
@@ -868,7 +946,7 @@ class WebApprovals:
             raise Refused("too late: this request expired")
         if decision == "deny":
             # Saying no takes nothing: a chat denying its own request gains nothing.
-            return {"ok": write_decision(self.dir, aid, "deny"), "decision": "deny"}
+            return {"ok": write_decision(self.dir, aid, "deny", by="mac"), "decision": "deny"}
         cred = next((a for a in read_approvers(self.approvers_path) if a["id"] == body.get("id")), None)
         if not cred:
             raise Refused("this device isn't set up to approve; add it with the enroll command")
@@ -901,7 +979,7 @@ class WebApprovals:
                 raise Refused("already answered")
             with os.fdopen(fd, "w") as f:
                 f.write("rsa:" + enc)
-        if not write_decision(self.dir, aid, "approve"):
+        if not write_decision(self.dir, aid, "approve", by="mac"):
             raise Refused("already answered")
         return {"ok": True, "decision": "approve"}
 
@@ -1547,6 +1625,8 @@ class ApprovalHandler(BaseHTTPRequestHandler):
             if "desktop=1" in self.path:
                 mark_desktop(self.approval_dir)
             return self._reply(200, {"pending": list_pending(self.approval_dir), "window": window_until(self.window_path),
+                                     # What closed lately and how, for the phone's "Recent approvals" (see list_recent).
+                                     "recent": list_recent(self.approval_dir),
                                      # Browser passkeys only: Renki's Approve button opens the page that uses them
                                      # (the Mac app pops up by itself).
                                      "approvers": sum(1 for a in read_approvers(self.web.approvers_path) if a.get("kind") != "native") if self.web else 0,

@@ -111,6 +111,8 @@ export type GatewayPeek = {
   expires: number;
   /** A root command: approving needs the user's sudo password. */
   password: boolean;
+  /** Once closed, who closed it: "phone", "mac", "timeout", "guard" (five wrong tokens); null when unknown or still open. */
+  by: string | null;
 };
 
 /**
@@ -122,13 +124,13 @@ export async function peekGatewayApproval(approval: GatewayApproval, fetchImpl: 
   try {
     const res = await withTimeout(fetchImpl, `${approval.url}/v1/approvals/${approval.id}`, { headers: { "x-approval-token": approval.token } });
     // Reached, but the homelab no longer has it (cleaned up long after it closed): closed, not unreachable.
-    if (res.status === 404) return { summary: "This request is no longer on the homelab.", state: "expired", expires: 0, password: false };
+    if (res.status === 404) return { summary: "This request is no longer on the homelab.", state: "expired", expires: 0, password: false, by: null };
     if (!res.ok) return null;
-    const body = (await res.json()) as Partial<GatewayPeek>;
+    const body = (await res.json()) as Partial<GatewayPeek> & { by?: unknown };
     const password = body.password === true;
     if (typeof body.summary !== "string" || typeof body.expires !== "number") return null;
     const state = body.state === "approve" || body.state === "deny" || body.state === "expired" ? body.state : "pending";
-    return { summary: body.summary, state, expires: body.expires, password };
+    return { summary: body.summary, state, expires: body.expires, password, by: typeof body.by === "string" ? body.by : null };
   } catch {
     return null;
   }
@@ -152,4 +154,60 @@ export function describeGatewayOutcome(outcome: GatewayOutcome, decision: "appro
     default:
       return "Couldn't reach the homelab. Try again";
   }
+}
+
+/**
+ * The command out of a gateway summary ("Run on the homelab as zawaer:\n<command>"), on one line,
+ * or the summary itself for other requests (add-app, rm-path…). What a toast or a list row shows.
+ */
+export function gatewaySummaryLine(summary: string, max = 80): string {
+  const flat = summary
+    .replace(/^Run (?:as ROOT )?on the homelab(?: as \w+)?:\s*/, "")
+    .replace(/\s*Enter your sudo password to approve\.$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
+/** Where a request was settled, as said after "Approved" / "Denied": "on the Mac". Empty when it says nothing useful. */
+function where(by: string | null): string {
+  if (by === "mac") return " on the Mac";
+  if (by === "phone") return " on the phone";
+  return "";
+}
+
+/**
+ * How a closed request ended, in a few words: "Approved on the Mac", "Expired, nothing ran",
+ * "Denied after wrong tries". For the phone's approval popup, toasts and its Recent approvals list.
+ */
+export function describeGatewaySettled(outcome: "approve" | "deny" | "expired", by: string | null): string {
+  if (outcome === "expired") return "Expired, nothing ran";
+  if (outcome === "approve") return `Approved${where(by)}`;
+  if (by === "guard") return "Denied after wrong tries, nothing ran";
+  return `Denied${where(by)}, nothing ran`;
+}
+
+/** The fields of a closed request that deciding whether to mention it needs (protocol's GatewaySettled). */
+export type SettledForNotice = { id: string; summary: string; settled: number; outcome: "approve" | "deny" | "expired"; by: string | null; pushed: boolean };
+
+/**
+ * Which closed requests the phone should mention when it opens: closed after `since` (ms), sent to
+ * the phone (one approved on the Mac before it ever buzzed was never news there), and not answered
+ * on the phone, which already said what happened. What's left is a notification that was swiped
+ * away or ignored: it ran out of time, or the Mac settled it after the phone had buzzed.
+ */
+export function settledToMention<T extends SettledForNotice>(recent: T[], since: number, skip: ReadonlySet<string> = new Set()): T[] {
+  return recent.filter((r) => r.settled > since && r.pushed && r.by !== "phone" && !skip.has(r.id));
+}
+
+/** One toast for those: the outcome and command for one, a count for several. */
+export function describeMentions(list: SettledForNotice[]): string | null {
+  if (list.length === 0) return null;
+  if (list.length === 1) {
+    const r = list[0]!;
+    return `Homelab: ${describeGatewaySettled(r.outcome, r.by)}: ${gatewaySummaryLine(r.summary, 60)}`;
+  }
+  const expired = list.filter((r) => r.outcome === "expired").length;
+  const parts = [expired ? `${expired} expired` : "", list.length - expired ? `${list.length - expired} answered elsewhere` : ""].filter(Boolean);
+  return `Homelab: ${list.length} requests closed (${parts.join(", ")}). See Settings > Homelab approvals.`;
 }

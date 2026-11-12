@@ -1,5 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import { answerGatewayApproval, describeGatewayOutcome, formatTimeLeft, parseGatewayApproval, peekGatewayApproval, sealPassword } from "../src/gatewayApproval";
+import {
+  answerGatewayApproval,
+  describeGatewayOutcome,
+  describeGatewaySettled,
+  describeMentions,
+  formatTimeLeft,
+  gatewaySummaryLine,
+  parseGatewayApproval,
+  peekGatewayApproval,
+  sealPassword,
+  settledToMention,
+} from "../src/gatewayApproval";
 
 const good = { kind: "gateway-approval", id: "0123456789", token: "t".repeat(43), url: "https://approvals.internal" };
 
@@ -64,7 +75,7 @@ describe("peekGatewayApproval", () => {
       seen = { url, init };
       return new Response(JSON.stringify({ summary: "Create a private GitHub repo Zawaer/x (empty).", state: "pending", expires: 1_800_000_300 }), { status: 200 });
     }) as unknown as typeof fetch;
-    expect(await peekGatewayApproval(approval, spy)).toEqual({ summary: "Create a private GitHub repo Zawaer/x (empty).", state: "pending", expires: 1_800_000_300, password: false });
+    expect(await peekGatewayApproval(approval, spy)).toEqual({ summary: "Create a private GitHub repo Zawaer/x (empty).", state: "pending", expires: 1_800_000_300, password: false, by: null });
     expect(seen!.url).toBe("https://approvals.internal/v1/approvals/0123456789");
     expect((seen!.init.headers as Record<string, string>)["x-approval-token"]).toBe("t".repeat(43));
     expect(seen!.url).not.toContain("t".repeat(43)); // the token never goes in the URL
@@ -73,6 +84,7 @@ describe("peekGatewayApproval", () => {
   it("reports a request that was already decided or ran out", async () => {
     expect((await peekGatewayApproval(approval, json({ summary: "s", state: "approve", expires: 1 })))?.state).toBe("approve");
     expect((await peekGatewayApproval(approval, json({ summary: "s", state: "expired", expires: 1 })))?.state).toBe("expired");
+    expect((await peekGatewayApproval(approval, json({ summary: "s", state: "approve", expires: 1, by: "mac" })))?.by).toBe("mac");
   });
 
   it("gives null for anything it can't trust: errors, odd bodies, no network", async () => {
@@ -149,5 +161,51 @@ describe("root commands: the sudo password", () => {
   it("peek says when a password is needed", async () => {
     const res = (async () => new Response(JSON.stringify({ summary: "s", state: "pending", expires: 1, password: true }), { status: 200 })) as unknown as typeof fetch;
     expect((await peekGatewayApproval(approval, res))?.password).toBe(true);
+  });
+});
+
+describe("what became of a closed request", () => {
+  const r = (id: string, over: Partial<{ settled: number; outcome: "approve" | "deny" | "expired"; by: string | null; pushed: boolean }> = {}) => ({
+    id,
+    summary: "Run on the homelab as zawaer:\nls -la /srv",
+    settled: 2_000,
+    outcome: "expired" as const,
+    by: "timeout",
+    pushed: true,
+    ...over,
+  });
+
+  it("says how it ended and where", () => {
+    expect(describeGatewaySettled("expired", "timeout")).toBe("Expired, nothing ran");
+    expect(describeGatewaySettled("approve", "mac")).toBe("Approved on the Mac");
+    expect(describeGatewaySettled("deny", "phone")).toBe("Denied on the phone, nothing ran");
+    expect(describeGatewaySettled("deny", "guard")).toBe("Denied after wrong tries, nothing ran");
+    expect(describeGatewaySettled("approve", null)).toBe("Approved");
+  });
+
+  it("shows the command, not the gateway's preamble", () => {
+    expect(gatewaySummaryLine("Run as ROOT on the homelab:\nsystemctl restart x\n\nEnter your sudo password to approve.")).toBe("systemctl restart x");
+    expect(gatewaySummaryLine("Delete folder /a (zawaer): 3 files")).toBe("Delete folder /a (zawaer): 3 files");
+    expect(gatewaySummaryLine("x".repeat(100), 10)).toBe(`${"x".repeat(9)}…`);
+  });
+
+  it("mentions only what reached the phone, closed since it last looked, and wasn't answered there", () => {
+    const list = [
+      r("new-expired"),
+      r("old", { settled: 1_000 }),
+      r("answered-here", { outcome: "approve", by: "phone" }),
+      r("never-buzzed", { outcome: "approve", by: "mac", pushed: false }),
+      r("mac-after-buzz", { outcome: "approve", by: "mac" }),
+      r("in-the-popup"),
+    ];
+    expect(settledToMention(list, 1_500, new Set(["in-the-popup"])).map((x) => x.id)).toEqual(["new-expired", "mac-after-buzz"]);
+  });
+
+  it("puts one in a toast with its command, several as a count", () => {
+    expect(describeMentions([])).toBeNull();
+    expect(describeMentions([r("a")])).toBe("Homelab: Expired, nothing ran: ls -la /srv");
+    expect(describeMentions([r("a"), r("b"), r("c", { outcome: "approve", by: "mac" })])).toBe(
+      "Homelab: 3 requests closed (2 expired, 1 answered elsewhere). See Settings > Homelab approvals.",
+    );
   });
 });

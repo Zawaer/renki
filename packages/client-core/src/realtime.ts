@@ -2,6 +2,7 @@ import {
   type Attachment,
   type ClientMessage,
   type GatewayApproval,
+  type GatewaySettled,
   type UploadRef,
   type PermissionDecision,
   type Session,
@@ -120,6 +121,8 @@ export class RealtimeClient {
   readonly gatewayApprovers = new Store<number>(0);
   /** Where to open a request to approve it with Touch ID (`${url}/r/<id>`); null when unknown. */
   readonly gatewayUrl = new Store<string | null>(null);
+  /** Homelab gateway requests that closed lately, newest first, with how; null when the daemon doesn't report them. */
+  readonly gatewayRecent = new Store<GatewaySettled[] | null>(null);
 
   private ws: WebSocket | null = null;
   private readonly conversations = new Map<string, Store<ConversationState>>();
@@ -640,6 +643,7 @@ export class RealtimeClient {
         this.gatewayWindow.set(msg.window ?? null);
         this.gatewayApprovers.set(msg.approvers ?? 0);
         this.gatewayUrl.set(msg.url ?? null);
+        this.gatewayRecent.set(msg.recent ?? null);
         return;
       case "subscribed":
       case "pong":

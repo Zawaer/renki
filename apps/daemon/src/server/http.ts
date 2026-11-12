@@ -103,7 +103,8 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
   const gatewayApprovals = config.gatewayApprovalsUrl ? new GatewayApprovals(config.gatewayApprovalsUrl, 3_000, fetch, desktopOnline) : null;
   gatewayApprovals?.onChange((pending, window, approvers) => {
     const url = gatewayApprovals?.url() ?? null;
-    for (const conn of liveConnections) conn.notify({ type: "gateway_approvals", pending, window, approvers, url });
+    const recent = gatewayApprovals?.recent() ?? undefined;
+    for (const conn of liveConnections) conn.notify({ type: "gateway_approvals", pending, window, approvers, url, recent });
   });
   gatewayApprovals?.start();
   app.addHook("onClose", async () => gatewayApprovals?.stop());
@@ -746,6 +747,7 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
           window: gatewayApprovals.window(),
           approvers: gatewayApprovals.approvers(),
           url: gatewayApprovals.url(),
+          recent: gatewayApprovals.recent() ?? undefined,
         });
       }
       logger.info("connection opened", { deviceId, deviceName });

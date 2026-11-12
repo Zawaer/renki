@@ -21,6 +21,24 @@ import { SessionEvent } from "./events.js";
 export const GatewayApproval = z.object({ id: z.string(), verb: z.string(), summary: z.string(), created: z.number(), expires: z.number() });
 export type GatewayApproval = z.infer<typeof GatewayApproval>;
 
+/**
+ * One homelab gateway request that closed lately (see ServerMessage gateway_approvals' `recent`):
+ * how and when, so the phone can say what became of a request whose notification was swiped away.
+ * `by`: who settled it ("phone", "mac", "timeout", "guard" for five wrong tokens; null when unknown).
+ * `pushed`: whether the phone was ever sent it. Times in ms.
+ */
+export const GatewaySettled = z.object({
+  id: z.string(),
+  verb: z.string(),
+  summary: z.string(),
+  created: z.number(),
+  settled: z.number(),
+  outcome: z.enum(["approve", "deny", "expired"]),
+  by: z.string().nullable(),
+  pushed: z.boolean(),
+});
+export type GatewaySettled = z.infer<typeof GatewaySettled>;
+
 export const ClientMessage = z.discriminatedUnion("type", [
   /**
    * Start watching a session. `lastSeq` is the highest seq this client already
@@ -244,6 +262,8 @@ export const ServerMessage = z.discriminatedUnion("type", [
     approvers: z.number().optional(),
     /** The approval service's address, where a browser approves with Touch ID. */
     url: z.string().nullable().optional(),
+    /** The last few requests that closed, newest first (missing from an older daemon or gateway). */
+    recent: z.array(GatewaySettled).optional(),
   }),
 
   z.object({ type: z.literal("pong") }),

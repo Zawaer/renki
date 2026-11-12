@@ -177,8 +177,48 @@ class ApprovalTest(unittest.TestCase):
         ok = gateway.request_approval(self.policy, "rm-path", ["/x"], "s", notify=notify, approval_dir=self.dir,
                                       sleep=lambda _: t.__setitem__(0, t[0] + 1), now=lambda: t[0])
         self.assertFalse(ok)
-        self.assertEqual(gateway.read_decision(self.dir, got["data"]["id"]), "deny")
+        # Closed as "expired", not "deny": the phone says it ran out of time, not that someone said no.
+        self.assertEqual(gateway.read_decision(self.dir, got["data"]["id"]), "expired")
         self.assertNotEqual(gateway.decide(self.dir, got["data"]["id"], got["data"]["token"], "approve")[0], 200)
+        code, body = gateway.peek(self.dir, got["data"]["id"], got["data"]["token"])
+        self.assertEqual((code, body["state"], body["by"]), (200, "expired", "timeout"))
+
+    # --- what closed lately, for the phone (a swiped notification never said)
+    def test_recent_lists_closed_requests_with_how_and_who(self):
+        a, ta = gateway.create_approval(self.dir, "sh", ["ls"], "Run ls", 60, now=1000)
+        b, tb = gateway.create_approval(self.dir, "rm-path", ["/x"], "Delete x", 60, now=1000)
+        c, _ = gateway.create_approval(self.dir, "sh", ["df"], "Run df", 10, now=1000)
+        d, _ = gateway.create_approval(self.dir, "sh", ["du"], "Run du", 60, now=1000)  # still open
+        gateway.decide(self.dir, a, ta, "approve", now=1001)
+        gateway.write_decision(self.dir, b, "deny", by="mac")
+        open(os.path.join(self.dir, b + ".pushed"), "w").close()
+        os.utime(os.path.join(self.dir, a + ".decision"), (1001, 1001))
+        os.utime(os.path.join(self.dir, b + ".decision"), (1005, 1005))
+        recent = gateway.list_recent(self.dir, now=1020)
+        self.assertEqual([r["id"] for r in recent], [c, b, a])  # newest first; the open one isn't there
+        by_id = {r["id"]: r for r in recent}
+        self.assertEqual((by_id[a]["outcome"], by_id[a]["by"], by_id[a]["pushed"]), ("approve", "phone", False))
+        self.assertEqual((by_id[b]["outcome"], by_id[b]["by"], by_id[b]["pushed"]), ("deny", "mac", True))
+        self.assertEqual((by_id[c]["outcome"], by_id[c]["by"], by_id[c]["settled"]), ("expired", "timeout", 1010))
+        self.assertNotIn("token_sha256", json.dumps(recent))
+        self.assertEqual(gateway.list_recent(self.dir, now=1060 + gateway.RECENT_MAX_AGE + 1), [])
+        self.assertEqual(len(gateway.list_recent(self.dir, now=1020, limit=2)), 2)
+        self.assertNotIn(d, json.dumps(gateway.list_recent(self.dir, now=1020)))
+
+    def test_decision_files_from_before_who_was_recorded_still_read(self):
+        aid, token = gateway.create_approval(self.dir, "rm-path", ["/x"], "s", 60)
+        with open(os.path.join(self.dir, aid + ".decision"), "w") as f:
+            f.write("approve")
+        self.assertEqual(gateway.read_decision(self.dir, aid), "approve")
+        self.assertIsNone(gateway.read_decided_by(self.dir, aid))
+
+    def test_a_delivered_push_is_marked(self):
+        got, notify = self.cap_notify()
+        def sleeper(_):
+            gateway.decide(self.dir, got["data"]["id"], got["data"]["token"], "deny")
+        gateway.request_approval(self.policy, "rm-path", ["/x"], "Delete x", notify=notify, approval_dir=self.dir, sleep=sleeper)
+        self.assertTrue(os.path.exists(os.path.join(self.dir, got["data"]["id"] + ".pushed")))
+        self.assertEqual(gateway.read_decided_by(self.dir, got["data"]["id"]), "phone")
 
     def test_no_phone_to_notify_is_a_refusal(self):
         t = [0]

@@ -101,7 +101,12 @@ No tier-2 verb runs on a session's say-so (`sh` inside a time window is the one 
    phone through Expo, straight from the gateway. The daemon is not on this path.
 3. Your phone answers the approval service (`https://approvals.internal`, a small service
    on the host behind Caddy) with that token. First answer wins; a request expires after
-   5 minutes (no answer = denied); five wrong tokens deny it.
+   5 minutes (no answer = denied, recorded as "expired"); five wrong tokens deny it. The
+   decision file records who settled it (phone, Mac, timeout, guard), and
+   `/v1/approvals/pending` also lists the last 10 closed in the past day (`recent`:
+   summaries and outcomes only, never tokens). The daemon passes that on, so the phone
+   can say what became of a request whose notification was swiped away (a toast on
+   opening, and Settings > Homelab approvals) without the gateway sending more pushes.
 4. Only on "approve", and only if nothing changed meanwhile (the checks run again), the
    gateway runs one fixed command: `rm -rf --one-file-system -- <path>` or `docker rm <name>`
    (never `-v`, so volumes are kept).

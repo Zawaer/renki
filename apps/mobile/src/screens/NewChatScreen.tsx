@@ -25,6 +25,7 @@ import { Sheet } from "../components/Sheet";
 import { pickDocumentAttachments, pickImageAttachments, type PendingAttachment, type Picked } from "../lib/attachments";
 import { useClient, useStoreValue } from "../lib/client";
 import { loadDeviceDefaults, rememberDeviceDefaults } from "../lib/composerPrefs";
+import { matchesProject } from "../lib/newChatLink";
 import { formatBytes, uploadFile } from "../lib/upload";
 import { radius, softShadow, type ThemeColors, useTheme, withAlpha } from "../theme";
 
@@ -45,11 +46,17 @@ export function NewChatScreen({
   onBack,
   onStarted,
   initialRepoId = null,
+  initialProject = null,
+  initialPrompt = null,
 }: {
   onBack: () => void;
   onStarted: (sessionId: string) => void;
-  /** Preselects this host checkout (the web sidebar's per-repo "+"). */
+  /** Preselects this host checkout (a repo group's "+" in the session list). */
   initialRepoId?: string | null;
+  /** A project named by a /new link (see lib/newChatLink): a folder or GitHub name, not an id. */
+  initialProject?: string | null;
+  /** A /new link's prompt: filled in, never sent until the user presses send. */
+  initialPrompt?: string | null;
 }) {
   const colors = useTheme();
   const styles = makeStyles(colors);
@@ -57,7 +64,7 @@ export function NewChatScreen({
   const { rest, realtime, config } = useClient();
   const connection = useStoreValue(realtime.status);
 
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialPrompt ?? "");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [uploads, setUploads] = useState<PendingUpload[]>([]);
   const uploadCancels = useRef(new Map<string, () => void>());
@@ -114,14 +121,17 @@ export function NewChatScreen({
   // unless something else has been picked since (as on the web).
   const preselected = useRef<string | null>(null);
   useEffect(() => {
-    if (preselected.current === "done" || !initialRepoId || !choices) return;
-    const match = choices.find((c) => c.local?.id === initialRepoId);
+    if (preselected.current === "done" || (!initialRepoId && !initialProject) || !choices) return;
+    const match = choices.find((c) => (initialRepoId ? c.local?.id === initialRepoId : matchesProject(c, initialProject!)));
     const earlier = preselected.current;
     if (match) setRepo((cur) => (cur === null || cur.key === earlier ? match : cur));
     preselected.current = github ? "done" : (match?.key ?? null);
-  }, [initialRepoId, choices, github]);
+  }, [initialRepoId, initialProject, choices, github]);
   /** The asked-for repo isn't found yet: sending now would start a chat with no repo. */
-  const findingRepo = Boolean(initialRepoId) && repo === null && github === null;
+  const findingRepo = Boolean(initialRepoId || initialProject) && repo === null && github === null;
+  /** A link named a project this host and GitHub don't know: say so, rather than quietly starting without one. */
+  const projectMissing =
+    !!initialProject && repo === null && github !== null && choices !== null && !choices.some((c) => matchesProject(c, initialProject));
 
   // Android back steps out of the repo list first. Registered only while the
   // list shows, so it's the newest listener and runs before App's.
@@ -261,7 +271,7 @@ export function NewChatScreen({
   const modelLabel = selectedModel ? modelFullName(selectedModel) : model || "Default";
   const effort = EFFORT_LEVELS.find((e) => e.key === effortKey);
   const mode = PERMISSION_MODES.find((m) => m.key === permissionMode);
-  const status = error ?? progress ?? (connection !== "open" ? "Connecting to the daemon…" : findingRepo ? "Finding the repo…" : null);
+  const status = error ?? progress ?? (connection !== "open" ? "Connecting to the daemon…" : findingRepo ? "Finding the repo…" : projectMissing ? `No project named “${initialProject}” here. Pick one, or send to chat without a repo.` : null);
 
   return (
     <KeyboardAvoidingView style={[styles.fill, { paddingTop: insets.top + 10 }]} behavior="padding" keyboardVerticalOffset={0}>
@@ -349,7 +359,7 @@ export function NewChatScreen({
             </TouchableOpacity>
             {status && (
               <View style={styles.statusRow}>
-                {!error && <ActivityIndicator size="small" color={colors.faint} />}
+                {!error && (progress !== null || connection !== "open" || findingRepo) && <ActivityIndicator size="small" color={colors.faint} />}
                 <Text style={[styles.statusText, error ? { color: colors.danger } : null]}>{status}</Text>
               </View>
             )}

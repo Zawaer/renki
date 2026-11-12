@@ -31,8 +31,8 @@ type Props = {
   onOpenSettings: () => void;
   onOpenStats: () => void;
   onOpenSearch: () => void;
-  /** Opens the full-screen new chat (NewChatScreen). */
-  onNewChat: () => void;
+  /** Opens the full-screen new chat (NewChatScreen), with this repo picked when given (a group's "+"). */
+  onNewChat: (repoId?: string) => void;
   /** With more than one host paired, the header's host name switches between them. */
   hostsState?: HostsState;
   /** The same setter Settings → Hosts uses, so a quick switch is the same switch. */
@@ -104,6 +104,37 @@ function SessionListBody({ onSelect, onOpenSettings, onOpenStats, onOpenSearch, 
       live = false;
     };
   }, []);
+
+  // Renaming a project from its group header: Renki's copy of the repo and the
+  // name its chats are listed under (as the web's RenameProjectDialog).
+  const [renamingProject, setRenamingProject] = useState<{ repoId: string; name: string } | null>(null);
+  const [projectDraft, setProjectDraft] = useState("");
+  const [projectBusy, setProjectBusy] = useState(false);
+  const [projectError, setProjectError] = useState<string | null>(null);
+
+  function openProjectRename(repoId: string, name: string) {
+    setRenamingProject({ repoId, name });
+    setProjectDraft(name);
+    setProjectBusy(false);
+    setProjectError(null);
+  }
+
+  async function commitProjectRename() {
+    const target = renamingProject;
+    const next = projectDraft.trim();
+    if (!target || !next || next === target.name || projectBusy) return;
+    setProjectBusy(true);
+    setProjectError(null);
+    try {
+      await rest.renameRepo(target.repoId, next);
+      setRenamingProject(null);
+      refresh();
+    } catch (e) {
+      setProjectError(e instanceof Error ? e.message : "Couldn't rename the project.");
+    } finally {
+      setProjectBusy(false);
+    }
+  }
 
   function toggleGroup(key: string) {
     animateLayout();
@@ -274,7 +305,7 @@ function SessionListBody({ onSelect, onOpenSettings, onOpenStats, onOpenSearch, 
           <TouchableOpacity style={styles.iconBtn} onPress={onOpenSettings} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Ionicons name="settings-outline" size={19} color={colors.dim} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.newBtn} onPress={onNewChat}>
+          <TouchableOpacity style={styles.newBtn} onPress={() => onNewChat()}>
             <Ionicons name="add" size={16} color={colors.accentFg} />
             <Text style={styles.newBtnText}>New</Text>
           </TouchableOpacity>
@@ -313,7 +344,12 @@ function SessionListBody({ onSelect, onOpenSettings, onOpenStats, onOpenSearch, 
           const isCollapsed = collapsed.has(g.key);
           return (
           <View key={g.key}>
-            <TouchableOpacity style={styles.groupHeader} activeOpacity={0.7} onPress={() => toggleGroup(g.key)}>
+            <TouchableOpacity
+              style={styles.groupHeader}
+              activeOpacity={0.7}
+              onPress={() => toggleGroup(g.key)}
+              onLongPress={g.repoId ? () => openProjectRename(g.repoId!, g.name) : undefined}
+            >
               <Ionicons name={isCollapsed ? "chevron-forward" : "chevron-down"} size={13} color={colors.faint} />
               <Text style={styles.groupName} numberOfLines={1}>
                 {g.name}
@@ -329,7 +365,28 @@ function SessionListBody({ onSelect, onOpenSettings, onOpenStats, onOpenSearch, 
                   <Text style={[styles.groupBadgeText, { color: colors.busy }]}>{g.busy} working</Text>
                 </View>
               ) : null}
+              <View style={styles.flex1} />
               {isCollapsed && <Text style={styles.count}>{g.sessions.length}</Text>}
+              {g.repoId && (
+                <TouchableOpacity
+                  style={styles.groupAction}
+                  hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                  onPress={() => openProjectRename(g.repoId!, g.name)}
+                  accessibilityLabel={`Rename ${g.name}`}
+                >
+                  <Ionicons name="ellipsis-horizontal" size={16} color={colors.faint} />
+                </TouchableOpacity>
+              )}
+              {g.repoId && (
+                <TouchableOpacity
+                  style={styles.groupAction}
+                  hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                  onPress={() => onNewChat(g.repoId!)}
+                  accessibilityLabel={`New chat in ${g.name}`}
+                >
+                  <Ionicons name="add" size={19} color={colors.dim} />
+                </TouchableOpacity>
+              )}
             </TouchableOpacity>
             {!isCollapsed && g.sessions.map((s) => (
               <Row
@@ -411,12 +468,44 @@ function SessionListBody({ onSelect, onOpenSettings, onOpenStats, onOpenSearch, 
       )}
 
       {/* The quick way in, like the Claude app's: tap and type. */}
-      <TouchableOpacity style={styles.askBar} onPress={onNewChat} activeOpacity={0.8}>
+      <TouchableOpacity style={styles.askBar} onPress={() => onNewChat()} activeOpacity={0.8}>
         <Ionicons name="chatbubble-outline" size={16} color={colors.faint} />
         <Text style={styles.askBarText}>Ask Claude anything…</Text>
       </TouchableOpacity>
 
       <AccountsBar />
+
+      <Sheet visible={renamingProject !== null} onClose={() => setRenamingProject(null)} title="Rename project" colors={colors}>
+        <View style={styles.formBody}>
+          <Text style={styles.renameNote}>
+            Renames Renki's copy of {renamingProject?.name}. Its chats carry on where they are. The GitHub repo keeps its name.
+          </Text>
+          <TextInput
+            style={styles.input}
+            value={projectDraft}
+            onChangeText={setProjectDraft}
+            autoFocus
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!projectBusy}
+            onSubmitEditing={commitProjectRename}
+            returnKeyType="done"
+          />
+          {projectError && <Text style={styles.error}>{projectError}</Text>}
+          <View style={styles.modalActions}>
+            <TouchableOpacity style={styles.textBtn} onPress={() => setRenamingProject(null)}>
+              <Text style={styles.link}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.newBtn, (projectBusy || !projectDraft.trim() || projectDraft.trim() === renamingProject?.name) && styles.disabled]}
+              disabled={projectBusy || !projectDraft.trim() || projectDraft.trim() === renamingProject?.name}
+              onPress={commitProjectRename}
+            >
+              <Text style={styles.newBtnText}>{projectBusy ? "Renaming…" : "Rename"}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Sheet>
 
       {canSwitch && (
         <Sheet visible={switchingHost} onClose={() => setSwitchingHost(false)} title="Switch host" colors={colors}>
@@ -893,6 +982,9 @@ const makeStyles = (colors: ThemeColors) =>
       paddingBottom: 4,
     },
     groupName: { color: colors.dim, fontSize: 13, fontWeight: "600", flexShrink: 1 },
+    groupAction: { width: 28, height: 24, alignItems: "center", justifyContent: "center" },
+    flex1: { flex: 1 },
+    renameNote: { color: colors.faint, fontSize: 12, lineHeight: 17, marginBottom: 6 },
     groupBadge: { borderRadius: radius.pill, paddingHorizontal: 8, paddingVertical: 2 },
     groupBadgeText: { fontSize: 10, fontWeight: "700" },
     sheetBody: { paddingHorizontal: 14, gap: 4, paddingTop: 6 },

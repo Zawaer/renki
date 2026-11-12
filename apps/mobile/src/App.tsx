@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, AppState, BackHandler, Keyboard, Platform, StyleSheet, Text, ToastAndroid, View } from "react-native";
+import { ActivityIndicator, Alert, AppState, BackHandler, Keyboard, Linking, Platform, StyleSheet, Text, ToastAndroid, View } from "react-native";
 import {
   addHost,
   answerGatewayApproval,
@@ -33,6 +33,7 @@ import { Setup } from "./screens/Setup";
 import { Settings } from "./screens/Settings";
 import { SearchScreen } from "./screens/SearchScreen";
 import { NewChatScreen } from "./screens/NewChatScreen";
+import { parseIncomingNewChatLink } from "./lib/newChatLink";
 import { SessionList } from "./screens/SessionList";
 import { SessionView } from "./screens/SessionView";
 import { StatsView } from "./screens/StatsView";
@@ -208,6 +209,11 @@ function AppBodyConnected({
   );
 }
 
+type NewChatTarget = { nonce: number; repoId?: string | null; project?: string | null; prompt?: string | null };
+
+/** The link that launched the app is acted on once per run, not again when Main remounts (a host switch). */
+let launchUrlHandled = false;
+
 function Main({
   config,
   hostsState,
@@ -229,7 +235,35 @@ function Main({
   const [showSettings, setShowSettings] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
-  const [showNewChat, setShowNewChat] = useState(false);
+  /**
+   * The new-chat screen, when open: what it opens with (a repo group's "+", or
+   * a /new link's project and prompt). `nonce` remounts it when a second link
+   * arrives while it's already showing.
+   */
+  const [newChat, setNewChat] = useState<NewChatTarget | null>(null);
+  const showNewChat = newChat !== null;
+  const openNewChat = useCallback((target: Omit<NewChatTarget, "nonce"> = {}) => setNewChat({ ...target, nonce: Date.now() }), []);
+
+  // /new links (see lib/newChatLink): renki://new?project=…#prompt=… opens a new
+  // chat with the prompt filled in, never sent. The one that launched the app
+  // is read once per app run; later ones arrive as events.
+  useEffect(() => {
+    const handle = (url: string | null) => {
+      const link = url ? parseIncomingNewChatLink(url) : null;
+      if (!link) return;
+      setSelected(null);
+      setShowSettings(false);
+      setShowStats(false);
+      setShowSearch(false);
+      openNewChat({ project: link.project, prompt: link.prompt });
+    };
+    if (!launchUrlHandled) {
+      launchUrlHandled = true;
+      void Linking.getInitialURL().then(handle).catch(() => {});
+    }
+    const sub = Linking.addEventListener("url", ({ url }) => handle(url));
+    return () => sub.remove();
+  }, [openNewChat]);
   /** A chat opened from a search hit: where in it to scroll. Dropped once found or once that chat is left. */
   const [jump, setJump] = useState<{ sessionId: string; anchor: string; query: string } | null>(null);
   useEffect(() => {
@@ -279,7 +313,7 @@ function Main({
         return true;
       }
       if (showNewChat) {
-        setShowNewChat(false);
+        setNewChat(null);
         return true;
       }
       return false; // at the root session list — let Android exit/minimize as normal
@@ -398,7 +432,7 @@ function Main({
 
   // Which screen is showing, and whether we got here by going deeper or back —
   // the entrance slides the matching way (see Screen).
-  const screenKey = selected ? `session:${selected}` : showSettings ? "settings" : showStats ? "stats" : showSearch ? "search" : showNewChat ? "new" : "list";
+  const screenKey = selected ? `session:${selected}` : showSettings ? "settings" : showStats ? "stats" : showSearch ? "search" : newChat ? `new:${newChat.nonce}` : "list";
   const depth = screenKey === "list" ? 0 : 1;
   const lastDepth = useRef(depth);
   const direction: "push" | "pop" = depth >= lastDepth.current ? "push" : "pop";
@@ -458,14 +492,17 @@ function Main({
       />
     );
   }
-  if (showNewChat) {
+  if (newChat) {
     return (
       <NewChatScreen
-        onBack={() => setShowNewChat(false)}
+        initialRepoId={newChat.repoId ?? null}
+        initialProject={newChat.project ?? null}
+        initialPrompt={newChat.prompt ?? null}
+        onBack={() => setNewChat(null)}
         onStarted={(id) => {
           // Leave the new chat as the session opens, so back from the chat goes to the list.
           Keyboard.dismiss();
-          setShowNewChat(false);
+          setNewChat(null);
           setSelected(id);
         }}
       />
@@ -474,7 +511,7 @@ function Main({
   return (
     <SessionList
       onSelect={setSelected}
-      onNewChat={() => setShowNewChat(true)}
+      onNewChat={(repoId) => openNewChat({ repoId: repoId ?? null })}
       onOpenSettings={() => setShowSettings(true)}
       onOpenStats={() => setShowStats(true)}
       onOpenSearch={() => setShowSearch(true)}

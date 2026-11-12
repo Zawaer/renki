@@ -5,7 +5,8 @@ import { Platform, ScrollView, StyleSheet, Text, type TextStyle, TouchableOpacit
 import MarkdownDisplay, { MarkdownIt } from "react-native-markdown-display";
 import { radius, type ThemeColors, useTheme } from "../theme";
 import { FadeIn } from "./Motion";
-import { parseFileLink, syntaxLanguageForFence, uiFallbackMarkdown } from "@renki/client-core";
+import { isUiFence, parseFileLink, parseUiBlock, syntaxLanguageForFence, uiFallbackMarkdown } from "@renki/client-core";
+import { GenUi, GenUiPending, prepareUiBlocks, UI_PENDING_LANG } from "./GenUi";
 import { useFileLinkTarget } from "../lib/fileLinks";
 import { SyntaxText } from "./SyntaxText";
 import { useOpenReader } from "./TextReader";
@@ -165,6 +166,16 @@ function CopyCodeButton({ text, colors, openReader }: { text: string; colors: Th
 
 function makeCodeRules(colors: ThemeColors, openReader: ReturnType<typeof useOpenReader>): Record<string, RenderRule> {
   const code: RenderRule = (node, _children, _parent, styles, inheritedStyles = {}) => {
+    // A ```renki-ui block draws as its component; one that doesn't parse
+    // stays a code block, so a mistake is still readable.
+    if (node.type === "fence") {
+      const info = (node.sourceInfo ?? "").trim().split(/\s+/)[0];
+      if (info === UI_PENDING_LANG) return <GenUiPending key={node.key} />;
+      if (isUiFence(info)) {
+        const ui = parseUiBlock(node.content ?? "");
+        if (ui) return <GenUi key={node.key} block={ui} />;
+      }
+    }
     const text = (node.content ?? "").replace(/\n$/, "");
     return (
       <View key={node.key}>
@@ -269,10 +280,13 @@ function makeShared(colors: ThemeColors): Record<string, TextStyle | ViewStyle> 
 export const Markdown = memo(function Markdown({
   content,
   muted: isMuted = false,
+  pending = false,
   onLinkPress,
 }: {
   content: string;
   muted?: boolean;
+  /** Still arriving: a ```renki-ui block not closed yet shows as a placeholder rather than being left out. */
+  pending?: boolean;
   /** Intercepts link taps; without it every link opens in the browser. */
   onLinkPress?: LinkPressHandler;
 }) {
@@ -302,9 +316,9 @@ export const Markdown = memo(function Markdown({
       ? StyleSheet.create({ ...shared, body: { color: colors.faint, fontSize: 14, lineHeight: 20, fontStyle: "italic" } })
       : StyleSheet.create({ ...shared, body: { color: colors.text, fontSize: 15, lineHeight: 21 } });
   }, [colors, isMuted]);
-  // The phone doesn't draw generative UI yet (web does): ```renki-ui blocks
-  // show as their plain Markdown version. See client-core genui.ts.
-  const shown = useMemo(() => uiFallbackMarkdown(content), [content]);
+  // ```renki-ui blocks draw as components (GenUi, via the fence rule); one
+  // still being written is held back. See client-core genui.ts.
+  const shown = useMemo(() => prepareUiBlocks(content, pending), [content, pending]);
   return (
     <MD style={style} rules={rules} markdownit={parser} onLinkPress={handleLinkPress}>
       {shown}
@@ -479,11 +493,12 @@ export function StreamingMarkdown({
   const shown = useSmoothReveal(content, streaming);
   if (!everStreamed.current) return <Markdown content={content} muted={muted} onLinkPress={onLinkPress} />;
   const blocks = splitBlocks(shown);
+  const arriving = streaming || shown !== content;
   return (
     <>
       {blocks.map((b, i) => (
         <FadeIn key={i} distance={3}>
-          <Markdown content={b} muted={muted} onLinkPress={onLinkPress} />
+          <Markdown content={b} muted={muted} pending={arriving && i === blocks.length - 1} onLinkPress={onLinkPress} />
         </FadeIn>
       ))}
     </>

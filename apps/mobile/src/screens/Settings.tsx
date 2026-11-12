@@ -1,5 +1,16 @@
-import { DEFAULT_PALETTE, PALETTES, removeHost, setActiveHost, updateHost, type HostsState, type PaletteKey } from "@renki/client-core";
-import type { Account, AccountsResponse, Repo, RotationStatus } from "@renki/protocol";
+import {
+  DEFAULT_PALETTE,
+  PALETTES,
+  describeGatewaySettled,
+  formatTimeLeft,
+  gatewaySummaryLine,
+  removeHost,
+  setActiveHost,
+  updateHost,
+  type HostsState,
+  type PaletteKey,
+} from "@renki/client-core";
+import type { Account, AccountsResponse, GatewaySettled, Repo, RotationStatus } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -16,6 +27,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useClient, useStoreValue } from "../lib/client";
 import { loadPalette, savePalette } from "../lib/composerPrefs";
+import { wantGatewayPopup } from "../lib/gatewayOutcomes";
 import { type PushStatus, getPushStatus, onPushStatus, registerForPush, sendTestPush } from "../lib/push";
 import { radius, type ThemeColors, useTheme, withAlpha } from "../theme";
 import { UsageLimits } from "../components/UsageLimits";
@@ -69,6 +81,7 @@ export function Settings({
         <ThisDeviceSection colors={colors} styles={styles} onSaved={onRenameDevice} />
         <ConnectionSection colors={colors} styles={styles} status={status} />
         <NotificationsSection colors={colors} styles={styles} />
+        <HomelabApprovalsSection colors={colors} styles={styles} />
         <AccountsSection styles={styles} />
         <HomelabAccessSection colors={colors} styles={styles} />
         <Section
@@ -350,6 +363,103 @@ function NotificationsSection({ colors, styles }: { colors: ThemeColors; styles:
       {test && <Text style={styles.faintNote}>{test}</Text>}
     </Section>
   );
+}
+
+/**
+ * Homelab requests waiting for the phone and the last few that closed, with how: approved, denied,
+ * or ran out of time, and where. A notification swiped away used to be the end of it, with no way to
+ * learn what became of the request; this is where to look (the toast on opening the app points here).
+ * The same lists the web's banner works from (gateway_approvals), so it needs a daemon and gateway
+ * new enough to report what closed; before that, only waiting requests show, and none: no section.
+ */
+function HomelabApprovalsSection({ colors, styles }: { colors: ThemeColors; styles: Styles }) {
+  const { realtime, rest } = useClient();
+  const pending = useStoreValue(realtime.gatewayApprovals);
+  const recent = useStoreValue(realtime.gatewayRecent);
+  const [now, setNow] = useState(Date.now());
+  const [resend, setResend] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  const live = pending.filter((p) => p.expires > now);
+
+  useEffect(() => {
+    if (!live.length) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [live.length]);
+
+  if (recent === null && live.length === 0) return null;
+
+  async function sendAgain() {
+    setResend("sending");
+    wantGatewayPopup();
+    try {
+      await rest.resendGatewayApprovals();
+      setResend("sent");
+    } catch {
+      setResend("failed");
+    }
+  }
+
+  return (
+    <Section
+      title="Homelab approvals"
+      description="What the homelab asked this phone to approve lately, and how each one ended."
+      colors={colors}
+      styles={styles}
+    >
+      <View style={styles.accessList}>
+        {live.map((p, i) => (
+          <View key={p.id} style={[styles.approvalRow, i > 0 && styles.accessRowBorder]}>
+            <Ionicons name="hourglass-outline" size={16} color={colors.busy} style={styles.approvalIcon} />
+            <View style={styles.flex1}>
+              <Text style={styles.approvalCommand} numberOfLines={2}>
+                {gatewaySummaryLine(p.summary, 160)}
+              </Text>
+              <Text style={styles.muted}>Waiting, {formatTimeLeft(p.expires / 1000, now)} left</Text>
+            </View>
+            <TouchableOpacity style={styles.saveBtn} disabled={resend === "sending"} onPress={() => void sendAgain()}>
+              <Text style={styles.saveBtnText}>{resend === "sending" ? "…" : resend === "sent" ? "Sent" : resend === "failed" ? "Retry" : "Show"}</Text>
+            </TouchableOpacity>
+          </View>
+        ))}
+        {(recent ?? []).map((r, i) => (
+          <View key={r.id} style={[styles.approvalRow, (i > 0 || live.length > 0) && styles.accessRowBorder]}>
+            <Ionicons name={outcomeIcon(r)} size={16} color={outcomeColor(r, colors)} style={styles.approvalIcon} />
+            <View style={styles.flex1}>
+              <Text style={styles.approvalCommand} numberOfLines={2}>
+                {gatewaySummaryLine(r.summary, 160)}
+              </Text>
+              <Text style={styles.muted}>
+                {describeGatewaySettled(r.outcome, r.by)} · {formatWhen(r.settled)}
+              </Text>
+            </View>
+          </View>
+        ))}
+        {live.length === 0 && (recent ?? []).length === 0 && (
+          <View style={styles.approvalRow}>
+            <Text style={styles.muted}>Nothing in the last day.</Text>
+          </View>
+        )}
+      </View>
+      {live.length > 0 && (
+        <Text style={styles.faintNote}>Show pushes a waiting request to this phone again; it opens here to approve or deny.</Text>
+      )}
+    </Section>
+  );
+}
+
+function outcomeIcon(r: GatewaySettled): React.ComponentProps<typeof Ionicons>["name"] {
+  return r.outcome === "approve" ? "checkmark-circle-outline" : r.outcome === "deny" ? "close-circle-outline" : "time-outline";
+}
+
+function outcomeColor(r: GatewaySettled, colors: ThemeColors): string {
+  return r.outcome === "approve" ? colors.ok : r.outcome === "deny" ? colors.danger : colors.faint;
+}
+
+/** 14:02 today, "Tue 14:02" before that (the list only goes back a day). */
+function formatWhen(ms: number): string {
+  const d = new Date(ms);
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString([], { weekday: "short" })} ${time}`;
 }
 
 function ThisDeviceSection({ colors, styles, onSaved }: { colors: ThemeColors; styles: Styles; onSaved: (name: string) => Promise<void> }) {
@@ -943,6 +1053,9 @@ const makeStyles = (colors: ThemeColors) =>
     accessRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingHorizontal: 12, paddingVertical: 8 },
     accessRowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
     accessLabel: { color: colors.text, fontSize: 13, flex: 1, minWidth: 0 },
+    approvalRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 12, paddingVertical: 10 },
+    approvalIcon: { alignSelf: "flex-start", marginTop: 1 },
+    approvalCommand: { color: colors.text, fontSize: 13, lineHeight: 18 },
     pairBtnText: { color: colors.accent, fontSize: 13, fontWeight: "700" },
     dangerBtn: { backgroundColor: colors.danger, borderRadius: radius.pill, paddingVertical: 10, paddingHorizontal: 18, alignSelf: "flex-start" },
     dangerBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },

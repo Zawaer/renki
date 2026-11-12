@@ -24,7 +24,9 @@ import { loadHosts, saveHosts } from "./lib/hosts";
 import { loadPalette } from "./lib/composerPrefs";
 import { migrateLegacyStorage } from "./lib/storageMigration";
 import { loadGatewayUrl, rememberGatewayUrl } from "./lib/gatewayUrl";
-import { ClientProvider } from "./lib/client";
+import { ClientProvider, useClient, useStoreValue } from "./lib/client";
+import { claimNotificationResponse } from "./lib/notificationResponses";
+import { clearGatewayFromTray, gatewayPopupWanted, takeGatewayMentions } from "./lib/gatewayOutcomes";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { GatewayApprovalSheet, type PendingApproval } from "./components/GatewayApprovalSheet";
 import { Screen } from "./components/Motion";
@@ -283,9 +285,32 @@ function Main({
   function closeApproval(settled: boolean) {
     const current = approvalRef.current;
     setApproval(null);
-    // Answered, or found already settled: clear its notification from the tray too.
+    // Answered, or found already settled: clear its notification from the tray too, and any second
+    // copy of it a resend left there.
     if (settled && current?.notificationId) void Notifications.dismissNotificationAsync(current.notificationId).catch(() => {});
+    if (settled && current) void clearGatewayFromTray(new Set([current.approval.id]));
   }
+
+  // What became of homelab requests whose notification was swiped away or ignored: the daemon passes
+  // on the gateway's list of what closed lately, and while the app is in front, one toast says what it
+  // hasn't said yet (see lib/gatewayOutcomes). Closed ones are taken out of the tray at the same time,
+  // so a stale "Approve on the homelab?" doesn't sit there inviting a tap that can't do anything.
+  const { realtime, rest } = useClient();
+  const gatewayRecent = useStoreValue(realtime.gatewayRecent);
+  const [appActive, setAppActive] = useState(AppState.currentState === "active");
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => setAppActive(state === "active"));
+    return () => sub.remove();
+  }, []);
+  useEffect(() => {
+    if (!gatewayRecent || !appActive) return;
+    void clearGatewayFromTray(new Set(gatewayRecent.map((r) => r.id)));
+    // The popup, when it's showing one of these, already says how it ended.
+    const showing = approvalRef.current ? new Set([approvalRef.current.approval.id]) : new Set<string>();
+    void takeGatewayMentions(gatewayRecent, showing).then((message) => {
+      if (message && Platform.OS === "android") ToastAndroid.show(message, ToastAndroid.LONG);
+    });
+  }, [gatewayRecent, appActive]);
 
   // Android hardware/gesture back should step back through this screen stack
   // (session -> settings/stats -> session list) instead of exiting the app —
@@ -324,8 +349,7 @@ function Main({
   // Register for push, and when a notification is tapped, open its session.
   useEffect(() => {
     void registerForPush(config);
-    // A response can reach both the launch check and the listener; act once.
-    const handled = new Set<string>();
+    let live = true;
     const showApproval = (p: PendingApproval, force = false) => {
       rememberGatewayUrl(p.approval.url);
       // Once per request per app run, unless the user asked for it by tapping.
@@ -367,18 +391,32 @@ function Main({
           // Nothing in the tray, but a request may still be waiting: one whose notification was
           // swiped away. Its token lives only in that notification and the waiting gateway, so ask
           // the gateway to push it again; it arrives while the app is open and pops up as usual.
+          // Not when a popup is up already: coming to the front from a tap on the notification
+          // empties the tray (Android takes a tapped one away) just before the tap itself arrives,
+          // and a resend then left a second copy of the request in the tray behind the popup.
+          await new Promise((r) => setTimeout(r, 1_500));
+          if (!live || approvalRef.current) return;
           const url = await loadGatewayUrl();
+          // No approval seen on this phone yet, so no address for the gateway: the daemon knows it.
           if (url) await requestGatewayResend(url);
+          else await rest.resendGatewayApprovals().catch(() => {});
         })
         .catch(() => {});
     };
-    const open = (res: Notifications.NotificationResponse | null) => {
+    const open = async (res: Notifications.NotificationResponse | null) => {
       if (!res) return;
-      const key = `${res.notification.request.identifier}:${res.actionIdentifier}`;
-      if (handled.has(key)) return;
-      handled.add(key);
+      // Once per tap, however many ways it arrives (see lib/notificationResponses: this used to drop
+      // a tap that launched the app more than a minute after the push was sent).
+      if (!(await claimNotificationResponse(res)) || !live) return;
       const data = res.notification.request.content.data ?? {};
       const gateway = parseGatewayApproval(data);
+      if (!gateway && (data as Record<string, unknown>).kind === "gateway-approval") {
+        // A homelab approval this app can't read (a gateway newer or older than it, or a mangled
+        // push). Say so rather than do nothing, and ask for it again: a fresh copy may read fine.
+        toast("Couldn't open this approval from its notification. Asking the homelab to send it again.");
+        looksForWaiting();
+        return;
+      }
       if (gateway) {
         // A root command needs the sudo password typed in the popup, so its Approve button opens that.
         if (res.actionIdentifier === "deny" || (res.actionIdentifier === "approve" && !gateway.pad)) {
@@ -407,27 +445,29 @@ function Main({
       }
       selectedRef.current(sessionId);
     };
-    // A tap that launched the app from closed lands before this listener
-    // exists, so ask for it once as well — only a recent one, since the last
-    // response can linger and would otherwise reopen that session every launch.
-    void Notifications.getLastNotificationResponseAsync().then((res) => {
-      if (res && Date.now() - res.notification.date < 60_000) open(res);
-    });
-    const sub = Notifications.addNotificationResponseReceivedListener(open);
+    // A tap that launched the app from closed lands before this listener exists, so ask for it once
+    // as well. The last response lingers (and Android replays it when the app is reopened from
+    // Recents); claimNotificationResponse is what keeps it from being acted on twice.
+    void Notifications.getLastNotificationResponseAsync()
+      .then((res) => open(res))
+      .catch(() => {});
+    const sub = Notifications.addNotificationResponseReceivedListener((res) => void open(res));
     // One arriving while the app is open, and one waiting in the tray when the app opens or comes to the front.
     const receivedSub = Notifications.addNotificationReceivedListener((n) => {
       const a = parseGatewayApproval(n.request.content.data);
-      if (a) showApproval({ approval: a, notificationId: n.request.identifier });
+      if (a) showApproval({ approval: a, notificationId: n.request.identifier }, gatewayPopupWanted());
     });
     looksForWaiting();
     const appSub = AppState.addEventListener("change", (state) => {
       if (state === "active") looksForWaiting();
     });
     return () => {
+      live = false;
       sub.remove();
       receivedSub.remove();
       appSub.remove();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config]);
 
   // Which screen is showing, and whether we got here by going deeper or back —
@@ -520,6 +560,11 @@ function Main({
     />
   );
   }
+}
+
+function toast(message: string): void {
+  if (Platform.OS === "android") ToastAndroid.show(message, ToastAndroid.LONG);
+  else Alert.alert(message);
 }
 
 const makeStyles = (colors: ThemeColors) =>

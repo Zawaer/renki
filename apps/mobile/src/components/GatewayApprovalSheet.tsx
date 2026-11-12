@@ -3,6 +3,7 @@ import {
   type GatewayPeek,
   answerGatewayApproval,
   describeGatewayOutcome,
+  describeGatewaySettled,
   formatTimeLeft,
   peekGatewayApproval,
 } from "@renki/client-core";
@@ -121,8 +122,11 @@ export function GatewayApprovalSheet({
         {shown && peek && (expired || settled) && (
           <>
             <Text style={styles.summary}>{peek.summary}</Text>
+            {/* Who settled it, when the gateway says: a request approved on the Mac reads "Approved on the Mac". */}
             <Text style={styles.dim}>
-              {settled ? (peek.state === "approve" ? "Already approved." : "Already denied.") : "This request ran out of time and was denied."}
+              {settled
+                ? `${describeGatewaySettled(peek.state as "approve" | "deny", peek.by)}.`
+                : "This request ran out of time. Nothing ran."}
             </Text>
             <TouchableOpacity style={styles.secondary} onPress={() => onClose(true)}>
               <Text style={styles.secondaryText}>Close</Text>

@@ -530,7 +530,7 @@ describe("LiveClaudeSession steering", () => {
     expect(background).not.toHaveBeenCalled(); // grace period
     await wait(80);
     expect(background).toHaveBeenCalledTimes(1);
-    expect(events.some((e) => e.kind === "notice" && /background/.test((e as { text: string }).text))).toBe(true);
+    expect(events.some((e) => e.kind === "notice" && /background/.test((e as { text: string }).text))).toBe(false); // no notice in the chat for it
 
     // A step that finishes within the grace period isn't touched.
     await fake.emit({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tu-long", content: "ok" }] }, parent_tool_use_id: null } as never);

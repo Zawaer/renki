@@ -501,7 +501,7 @@ export class SessionManager {
     // Only after a crash: the reaper keeps a process with a build running.
     this.events.append(sessionId, {
       kind: "notice",
-      text: "A Mac build finished while Claude wasn't running here. Ask Claude to check mac_build_status for its result.",
+      text: "A Mac build finished while Claude wasn't running here. Ask Claude for its result.",
       level: "info",
     });
   }

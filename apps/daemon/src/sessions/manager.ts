@@ -1448,7 +1448,7 @@ export class SessionManager {
 
     // Big images get shrunk here for the clients that can't do it themselves,
     // then the whole message has to fit in one API request.
-    const { attachments, shrunk } = await shrinkImages(input.attachments);
+    const { attachments } = await shrinkImages(input.attachments);
     input = { ...input, attachments };
     const total = attachments?.reduce((sum, a) => sum + attachmentBytes(a), 0) ?? 0;
     if (total > MAX_PROMPT_ATTACHMENT_BYTES)
@@ -1456,12 +1456,8 @@ export class SessionManager {
         "invalid_request",
         `Attachments are too large together (max ${MAX_PROMPT_ATTACHMENT_BYTES / (1024 * 1024)}MB per message).`,
       );
-    if (shrunk > 0)
-      this.events.append(input.sessionId, {
-        kind: "notice",
-        text: `Shrank ${shrunk} large image${shrunk === 1 ? "" : "s"} to fit.`,
-        level: "info",
-      });
+    // No notice for the shrinking: the image still goes through, and a message sent mid-turn
+    // put its notice in the middle of Claude's reply, one per screenshot, away from the message.
 
     // A new message takes over from a waiting resume: whatever it asks for is
     // what the user wants next, and it hits the same limit (and schedules its

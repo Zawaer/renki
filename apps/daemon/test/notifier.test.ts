@@ -127,6 +127,20 @@ describe("Notifier delivery", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  /** The laptop that sent the message is still connected: it's being watched, no "Done" on the phone. */
+  it("sends no news push while the controlling device is connected, and does once it's gone", async () => {
+    const { emit, devices, fetchMock } = setup("web_1");
+    const done = result({ durationMs: LONG_TURN_MS + 1 });
+    devices.connect("web_1");
+    emit(done);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    devices.disconnect("web_1");
+    emit(done);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  });
+
   it("forgets a device the push service says is gone", async () => {
     const { emit, fetchMock, removed } = setup(null);
     fetchMock.mockImplementationOnce(async () =>

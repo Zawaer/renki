@@ -37,9 +37,10 @@ export const LONG_TURN_MS = 60_000;
 /**
  * When someone is actively driving the session from a connected device, wait
  * this long before buzzing the phone about a request: answered on the laptop
- * by then, it never needs to reach the phone at all.
+ * by then, it never needs to reach the phone at all. A minute, not seconds:
+ * reading what a command does takes a while, and a buzz mid-read was noise.
  */
-export const NEEDS_INPUT_GRACE_MS = 15_000;
+export const NEEDS_INPUT_GRACE_MS = 60_000;
 
 const clip = (s: string, n: number) => {
   const flat = s.replace(/\s+/g, " ").trim();
@@ -166,6 +167,9 @@ export class Notifier {
     if (!message) return;
 
     const driving = session.controller != null && this.devices.isOnline(session.controller);
+    // News (a long turn done or failed) while the device that sent it is still connected: you're
+    // watching it there, so the phone stays quiet. These were most of the buzzes nobody read.
+    if (!message.needsInput && driving) return;
     if (message.requestId && driving) {
       const requestId = message.requestId;
       const timer = setTimeout(() => {

@@ -15,7 +15,7 @@ import {
 import type { AttachRepoRequest, GithubRepo, Repo, Session } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, FlatList, Keyboard, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { animateLayout, FadeIn, Skeleton } from "../components/Motion";
 import { Sheet } from "../components/Sheet";
@@ -23,7 +23,6 @@ import { useClient } from "../lib/client";
 import { loadCollapsedGroups, saveCollapsedGroups } from "../lib/sessionListPrefs";
 import type { AppConfig } from "../lib/config";
 import { ExportSheet } from "../components/ExportSheet";
-import { NewChatSheet } from "../components/NewChatSheet";
 import { radius, statusColorFor, type ThemeColors, useTheme, withAlpha } from "../theme";
 import { AccountsBar } from "./AccountsBar";
 
@@ -32,6 +31,8 @@ type Props = {
   onOpenSettings: () => void;
   onOpenStats: () => void;
   onOpenSearch: () => void;
+  /** Opens the full-screen new chat (NewChatScreen). */
+  onNewChat: () => void;
   /** With more than one host paired, the header's host name switches between them. */
   hostsState?: HostsState;
   /** The same setter Settings → Hosts uses, so a quick switch is the same switch. */
@@ -46,7 +47,7 @@ export function SessionList(props: Props) {
 
 const hostKey = (config: AppConfig) => config.hostId ?? config.baseUrl;
 
-function SessionListBody({ onSelect, onOpenSettings, onOpenStats, onOpenSearch, hostsState, onHostsChange }: Props) {
+function SessionListBody({ onSelect, onOpenSettings, onOpenStats, onOpenSearch, onNewChat, hostsState, onHostsChange }: Props) {
   const colors = useTheme();
   const statusColor = statusColorFor(colors);
   const styles = makeStyles(colors);
@@ -58,7 +59,6 @@ function SessionListBody({ onSelect, onOpenSettings, onOpenStats, onOpenSearch, 
   const [sessions, setSessionsState] = useState<Session[]>(() => cached ?? []);
   const [loaded, setLoaded] = useState(cached !== null);
   const [wasLoadedAtMount] = useState(cached !== null);
-  const [creating, setCreating] = useState(false);
   // Folded repo groups, remembered on the device; Archived and Trash start folded every time, as on the web.
   const [collapsed, setCollapsed] = useState<Set<string>>(() => lastCollapsed ?? new Set());
   const [showArchived, setShowArchived] = useState(false);
@@ -274,7 +274,7 @@ function SessionListBody({ onSelect, onOpenSettings, onOpenStats, onOpenSearch, 
           <TouchableOpacity style={styles.iconBtn} onPress={onOpenSettings} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
             <Ionicons name="settings-outline" size={19} color={colors.dim} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.newBtn} onPress={() => setCreating(true)}>
+          <TouchableOpacity style={styles.newBtn} onPress={onNewChat}>
             <Ionicons name="add" size={16} color={colors.accentFg} />
             <Text style={styles.newBtnText}>New</Text>
           </TouchableOpacity>
@@ -411,29 +411,12 @@ function SessionListBody({ onSelect, onOpenSettings, onOpenStats, onOpenSearch, 
       )}
 
       {/* The quick way in, like the Claude app's: tap and type. */}
-      <TouchableOpacity style={styles.askBar} onPress={() => setCreating(true)} activeOpacity={0.8}>
+      <TouchableOpacity style={styles.askBar} onPress={onNewChat} activeOpacity={0.8}>
         <Ionicons name="chatbubble-outline" size={16} color={colors.faint} />
         <Text style={styles.askBarText}>Ask Claude anything…</Text>
       </TouchableOpacity>
 
       <AccountsBar />
-
-      <NewChatSheet
-        visible={creating}
-        colors={colors}
-        onClose={() => setCreating(false)}
-        onStarted={(id) => {
-          // Dismiss the sheet's own keyboard before navigating into
-          // SessionView's composer — closing a Modal that still owns the soft
-          // keyboard while mounting a new TextInput underneath can leave
-          // Android's IME stuck, so the new composer doesn't respond to a tap
-          // until the screen is revisited.
-          Keyboard.dismiss();
-          setCreating(false);
-          refresh();
-          onSelect(id);
-        }}
-      />
 
       {canSwitch && (
         <Sheet visible={switchingHost} onClose={() => setSwitchingHost(false)} title="Switch host" colors={colors}>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, AppState, BackHandler, Platform, StyleSheet, Text, ToastAndroid, View } from "react-native";
+import { ActivityIndicator, Alert, AppState, BackHandler, Keyboard, Platform, StyleSheet, Text, ToastAndroid, View } from "react-native";
 import {
   addHost,
   answerGatewayApproval,
@@ -32,6 +32,7 @@ import { answerFromNotification, registerForPush } from "./lib/push";
 import { Setup } from "./screens/Setup";
 import { Settings } from "./screens/Settings";
 import { SearchScreen } from "./screens/SearchScreen";
+import { NewChatScreen } from "./screens/NewChatScreen";
 import { SessionList } from "./screens/SessionList";
 import { SessionView } from "./screens/SessionView";
 import { StatsView } from "./screens/StatsView";
@@ -228,6 +229,7 @@ function Main({
   const [showSettings, setShowSettings] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [showNewChat, setShowNewChat] = useState(false);
   /** A chat opened from a search hit: where in it to scroll. Dropped once found or once that chat is left. */
   const [jump, setJump] = useState<{ sessionId: string; anchor: string; query: string } | null>(null);
   useEffect(() => {
@@ -276,10 +278,14 @@ function Main({
         setShowSearch(false);
         return true;
       }
+      if (showNewChat) {
+        setShowNewChat(false);
+        return true;
+      }
       return false; // at the root session list — let Android exit/minimize as normal
     });
     return () => sub.remove();
-  }, [selected, showSettings, showStats, showSearch]);
+  }, [selected, showSettings, showStats, showSearch, showNewChat]);
 
   // Register for push, and when a notification is tapped, open its session.
   useEffect(() => {
@@ -392,7 +398,7 @@ function Main({
 
   // Which screen is showing, and whether we got here by going deeper or back —
   // the entrance slides the matching way (see Screen).
-  const screenKey = selected ? `session:${selected}` : showSettings ? "settings" : showStats ? "stats" : showSearch ? "search" : "list";
+  const screenKey = selected ? `session:${selected}` : showSettings ? "settings" : showStats ? "stats" : showSearch ? "search" : showNewChat ? "new" : "list";
   const depth = screenKey === "list" ? 0 : 1;
   const lastDepth = useRef(depth);
   const direction: "push" | "pop" = depth >= lastDepth.current ? "push" : "pop";
@@ -452,9 +458,23 @@ function Main({
       />
     );
   }
+  if (showNewChat) {
+    return (
+      <NewChatScreen
+        onBack={() => setShowNewChat(false)}
+        onStarted={(id) => {
+          // Leave the new chat as the session opens, so back from the chat goes to the list.
+          Keyboard.dismiss();
+          setShowNewChat(false);
+          setSelected(id);
+        }}
+      />
+    );
+  }
   return (
     <SessionList
       onSelect={setSelected}
+      onNewChat={() => setShowNewChat(true)}
       onOpenSettings={() => setShowSettings(true)}
       onOpenStats={() => setShowStats(true)}
       onOpenSearch={() => setShowSearch(true)}

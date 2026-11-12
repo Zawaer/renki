@@ -29,6 +29,7 @@ import {
   resolvePermissionMode,
   THINKING_VERBS,
   describeTool,
+  toolDisplayName,
   displayBranch,
   formatPurgeCountdown,
   turnTriggerLabel,
@@ -1662,7 +1663,7 @@ function ToolStep({
       )}
       <Reveal open={open}>
         <div className="mt-2 space-y-2 rounded-xl border border-(--renki-border)/70 p-3 text-xs">
-          <div className="text-[13px] text-(--renki-fg)">{block.toolName}</div>
+          <div className="text-[13px] text-(--renki-fg)" title={block.toolName}>{toolDisplayName(block.toolName)}</div>
           {editView ? (
             <div className="overflow-hidden rounded-lg bg-(--renki-bg-inset)/70">
               <DiffView view={editView} />

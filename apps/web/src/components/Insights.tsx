@@ -20,6 +20,7 @@ import {
   planValue,
   recentLines,
   tokensPerMinute,
+  toolDisplayName,
 } from "@renki/client-core";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -301,7 +302,7 @@ function ClaudeSection({ data }: { data: InsightsResponse }) {
         <Table
           head={["Tool", "Calls", "Failed"]}
           rows={data.tools.map((t) => [
-            t.name,
+            toolDisplayName(t.name),
             formatCount(t.count),
             formatCount(t.failed),
           ])}
@@ -337,10 +338,10 @@ function ClaudeSection({ data }: { data: InsightsResponse }) {
           <RankList
             rows={data.tools.slice(0, 10).map((t) => ({
               key: t.name,
-              label: t.name,
+              label: toolDisplayName(t.name),
               value: t.count,
               display: formatCount(t.count),
-              tooltip: `${t.name}\n${formatCount(t.count)} calls · ${formatCount(t.failed)} failed (${formatShare(t.failed, t.count)})`,
+              tooltip: `${toolDisplayName(t.name)}\n${formatCount(t.count)} calls · ${formatCount(t.failed)} failed (${formatShare(t.failed, t.count)})`,
             }))}
           />
         </ChartCard>

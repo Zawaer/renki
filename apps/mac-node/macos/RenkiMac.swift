@@ -158,13 +158,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         let out = Pipe(), err = Pipe()
         p.standardOutput = out
         p.standardError = err
+        // Empty data means the agent closed its end (it exited or was stopped). The handler would
+        // then fire again and again with nothing, and dispatching each one to the main queue
+        // flooded it: the app hung with a spinning cursor after "Lend" was switched off and on.
         out.fileHandleForReading.readabilityHandler = { [weak self] h in
             let data = h.availableData
+            guard !data.isEmpty else {
+                h.readabilityHandler = nil
+                return
+            }
             DispatchQueue.main.async { self?.consume(stdout: data) }
         }
         err.fileHandleForReading.readabilityHandler = { [weak self] h in
             let data = h.availableData
-            guard !data.isEmpty else { return }
+            guard !data.isEmpty else {
+                h.readabilityHandler = nil
+                return
+            }
             Self.appendLog(data)
             if let s = String(data: data, encoding: .utf8) {
                 DispatchQueue.main.async { self?.lastStderr = s.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -188,13 +198,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         guard let p = process else { return }
         process = nil
         p.terminationHandler = nil
+        Self.detachPipes(of: p)
         p.terminate()
         activeCalls = 0
         state = .off
         render()
     }
 
+    /** Stops reading a finished agent's output, so its pipes' handlers don't outlive it. */
+    private static func detachPipes(of p: Process) {
+        (p.standardOutput as? Pipe)?.fileHandleForReading.readabilityHandler = nil
+        (p.standardError as? Pipe)?.fileHandleForReading.readabilityHandler = nil
+    }
+
     private func exited(_ p: Process) {
+        Self.detachPipes(of: p)
         guard process === p else { return }
         process = nil
         activeCalls = 0

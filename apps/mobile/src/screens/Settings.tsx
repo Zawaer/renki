@@ -1,5 +1,5 @@
 import { DEFAULT_PALETTE, PALETTES, removeHost, setActiveHost, updateHost, type HostsState, type PaletteKey } from "@renki/client-core";
-import type { Account, AccountsResponse, RotationStatus } from "@renki/protocol";
+import type { Account, AccountsResponse, Repo, RotationStatus } from "@renki/protocol";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -70,6 +70,7 @@ export function Settings({
         <ConnectionSection colors={colors} styles={styles} status={status} />
         <NotificationsSection colors={colors} styles={styles} />
         <AccountsSection styles={styles} />
+        <HomelabAccessSection colors={colors} styles={styles} />
         <Section
           title="Pair a device"
           description="Show a QR code so another phone or the web app can join without typing the URL and token by hand."
@@ -742,6 +743,96 @@ function AddCodingAccount({ onAdded, colors, styles }: { onAdded: () => void; co
   );
 }
 
+const PLAIN = "@plain";
+
+/**
+ * Which repos' chats may run the `homelab` command (deploy, logs, add-app…).
+ * Saved on the daemon and checked on every command, so a switch applies at
+ * once, also in chats that are already open. "Every chat" means not limited.
+ * Mirror of the web app's HomelabAccessSection: same rows, same wording.
+ */
+function HomelabAccessSection({ colors, styles }: { colors: ThemeColors; styles: Styles }) {
+  const { rest } = useClient();
+  // undefined = still loading; null = every chat may run it.
+  const [allowed, setAllowed] = useState<string[] | null | undefined>(undefined);
+  const [repos, setRepos] = useState<Repo[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    rest
+      .getHomelabAccess()
+      .then((r) => setAllowed(r.repos))
+      .catch(() => setError("Couldn't load homelab access."));
+    rest
+      .listRepos()
+      .then(setRepos)
+      .catch(() => setRepos([]));
+  }, [rest]);
+
+  const rows = [{ key: PLAIN, label: "Chats without a repo" }, ...(repos ?? []).map((r) => ({ key: r.id, label: r.name }))];
+  const has = (key: string, label: string) => allowed == null || allowed.includes(key) || allowed.includes(label.toLowerCase());
+
+  // Flipped before the save and put back if it fails (see RotationSettings).
+  async function save(next: string[] | null) {
+    const before = allowed;
+    setAllowed(next);
+    setError(null);
+    setSaving(true);
+    try {
+      setAllowed((await rest.setHomelabAccess(next)).repos);
+    } catch {
+      setAllowed(before);
+      setError("Couldn't save. Try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function toggle(key: string, label: string) {
+    const current = rows.filter((r) => has(r.key, r.label)).map((r) => r.key);
+    void save(has(key, label) ? current.filter((k) => k !== key) : [...current, key]);
+  }
+
+  const loading = allowed === undefined || repos === null;
+
+  return (
+    <Section
+      title="Homelab access"
+      description="Chats in these repos can run the homelab command: deploy, logs, and asking your phone to add apps or routes. Changes apply right away."
+      colors={colors}
+      styles={styles}
+    >
+      {loading ? (
+        !error && (
+          <View style={styles.accessLoading}>
+            <ActivityIndicator size="small" color={colors.faint} />
+          </View>
+        )
+      ) : (
+        <View style={styles.accessList}>
+          <View style={styles.accessRow}>
+            <Text style={styles.accessLabel} numberOfLines={1}>
+              Every chat
+            </Text>
+            <Switch value={allowed === null} disabled={saving} onValueChange={() => void save(allowed === null ? rows.map((r) => r.key) : null)} />
+          </View>
+          {allowed !== null &&
+            rows.map((r) => (
+              <View key={r.key} style={[styles.accessRow, styles.accessRowBorder]}>
+                <Text style={styles.accessLabel} numberOfLines={1}>
+                  {r.label}
+                </Text>
+                <Switch value={has(r.key, r.label)} disabled={saving} onValueChange={() => toggle(r.key, r.label)} />
+              </View>
+            ))}
+        </View>
+      )}
+      {error && <Text style={[styles.faintNote, { color: colors.danger, fontSize: 12 }]}>{error}</Text>}
+    </Section>
+  );
+}
+
 type Styles = ReturnType<typeof makeStyles>;
 
 const makeStyles = (colors: ThemeColors) =>
@@ -847,6 +938,11 @@ const makeStyles = (colors: ThemeColors) =>
       paddingHorizontal: 14,
       paddingVertical: 9,
     },
+    accessLoading: { backgroundColor: colors.inset, borderRadius: radius.md, height: 96, alignItems: "center", justifyContent: "center" },
+    accessList: { backgroundColor: colors.inset, borderRadius: radius.md, overflow: "hidden" },
+    accessRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingHorizontal: 12, paddingVertical: 8 },
+    accessRowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+    accessLabel: { color: colors.text, fontSize: 13, flex: 1, minWidth: 0 },
     pairBtnText: { color: colors.accent, fontSize: 13, fontWeight: "700" },
     dangerBtn: { backgroundColor: colors.danger, borderRadius: radius.pill, paddingVertical: 10, paddingHorizontal: 18, alignSelf: "flex-start" },
     dangerBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },

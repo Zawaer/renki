@@ -26,6 +26,7 @@ process.stdin.on("end", () => {
     process.exit(1);
   }
   console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 10, output_tokens: 5 } }));
+  if (process.env.TOUCH) fs.writeFileSync(process.env.TOUCH, "changed\\n");
   fs.writeFileSync(out, "Found it: off by one in loop.ts:12\\n");
 });
 `,
@@ -61,12 +62,26 @@ describe("runCodex", () => {
     expect(argv.slice(argv.indexOf("-C"), argv.indexOf("-C") + 2)).toEqual(["-C", tmpdir()]);
   });
 
-  it("asks for Codex's read-only sandbox when readOnly is set", async () => {
+  it("puts a read-only instruction first in the brief when readOnly is set", async () => {
     const log = setup("ok");
     await runCodex({ prompt: "Review", cwd: tmpdir(), readOnly: true, model: "gpt-5-codex" });
-    const { argv } = log();
-    expect(argv).toEqual(expect.arrayContaining(["-s", "read-only", "-m", "gpt-5-codex"]));
-    expect(argv).not.toContain("--dangerously-bypass-approvals-and-sandbox");
+    const { argv, input } = log();
+    expect(argv).toEqual(expect.arrayContaining(["-m", "gpt-5-codex"]));
+    expect(input.startsWith("READ-ONLY TASK.")).toBe(true);
+    expect(input.endsWith("Review")).toBe(true);
+  });
+
+  it("warns when a read-only run changed a file anyway", async () => {
+    const { execFileSync } = await import("node:child_process");
+    const repo = mkdtempSync(join(tmpdir(), "codex-repo-"));
+    execFileSync("git", ["init", "-q"], { cwd: repo });
+    writeFileSync(join(repo, "a.txt"), "one\n");
+    execFileSync("git", ["add", "."], { cwd: repo });
+    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"], { cwd: repo });
+    setup("ok");
+    process.env.TOUCH = join(repo, "a.txt");
+    const r = await runCodex({ prompt: "Review", cwd: repo, readOnly: true });
+    expect(r.text).toContain("Warning: this was a read-only run, but Codex changed 1 file: a.txt");
   });
 
   it("says why when Codex fails", async () => {

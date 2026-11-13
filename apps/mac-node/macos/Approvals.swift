@@ -112,7 +112,7 @@ final class ApprovalService {
     }
 
     /** Touch ID happens inside: signing with the Secure Enclave key asks for it. */
-    func approve(_ id: String, password: String?, key: SecureEnclave.P256.Signing.PrivateKey, keyID: String) throws {
+    func approve(_ id: String, password: String?, key: SecureEnclave.P256.Signing.PrivateKey, keyID: String, onSigned: () -> Void = {}) throws {
         let v = try view(id)
         guard v.state == "pending", let challenge = v.challenge else { throw ApprovalFailure.message("This request has closed.") }
         let message = Data("renki-approval-v1\n\(id)\n\(challenge)\napprove".utf8)
@@ -123,6 +123,8 @@ final class ApprovalService {
             guard let pkcs1 = v.pubkey_pkcs1.flatMap({ Data(base64Encoded: $0) }) else { throw ApprovalFailure.message("Approve this one on your phone.") }
             body["password"] = try encryptPassword(password, pkcs1: pkcs1)
         }
+        // Touch ID is done: the popup can go now, while the answer travels.
+        onSigned()
         _ = try call("/v1/web/\(id)", body: body)
     }
 
@@ -401,13 +403,21 @@ final class ApprovalWindow: NSObject, NSWindowDelegate {
         let id = request.id, svc = service
         let reason = root ? "approve a root command on the homelab" : "approve a command on the homelab"
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let result = Result { try svc.approve(id, password: pw, key: ApproverStore.key(reason: reason), keyID: keyID) }
+            // The popup hides the moment Touch ID succeeds, not after the gateway answers and a
+            // 0.7s "Approved." pause: it lingered for half a second after the fingerprint. If sending
+            // then fails, it comes back with the error.
+            let result = Result {
+                try svc.approve(id, password: pw, key: ApproverStore.key(reason: reason), keyID: keyID, onSigned: {
+                    DispatchQueue.main.async { self?.window.orderOut(nil) }
+                })
+            }
             DispatchQueue.main.async {
                 guard let self else { return }
                 switch result {
-                case .success: self.password.stringValue = ""; self.finish("Approved.", after: 0.7)
+                case .success: self.password.stringValue = ""; self.finish("Approved.", after: 0)
                 case .failure(let e):
                     let cancelled = (e as NSError).code == LAError.userCancel.rawValue || (e as NSError).code == -128
+                    self.reappear()
                     self.setBusy(false, cancelled ? "Touch ID was cancelled. Try again." : e.localizedDescription)
                 }
             }
@@ -417,16 +427,27 @@ final class ApprovalWindow: NSObject, NSWindowDelegate {
     @objc private func deny() {
         guard !finished else { return }
         setBusy(true, "Denying…")
+        // Gone at once, as with approving; back with the error if the deny doesn't go through.
+        window.orderOut(nil)
         let id = request.id, svc = service
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = Result { try svc.deny(id) }
             DispatchQueue.main.async {
                 switch result {
-                case .success: self?.finish("Denied.", after: 0.7)
-                case .failure(let e): self?.setBusy(false, e.localizedDescription)
+                case .success: self?.finish("Denied.", after: 0)
+                case .failure(let e):
+                    self?.reappear()
+                    self?.setBusy(false, e.localizedDescription)
                 }
             }
         }
+    }
+
+    /** Brings a popup hidden while its answer was sent back, to show why it didn't go through. */
+    private func reappear() {
+        guard !finished else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
     }
 
     @objc private func later() {

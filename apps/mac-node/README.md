@@ -77,6 +77,10 @@ A build still runs the repo's own build scripts, and a session can edit those. S
   internet. Otherwise nothing runs.
 - **Nothing comes back through shared files.** Results only come back over stdout, so a build can't
   plant a symlink that makes the agent, which runs as you, read or upload your files.
+- **Its disk grows, never shrinks.** The VM has an 80 GB disk (`"runner": { "diskGb": 80 }` in
+  `mac-node.json`), shared by every project's SDK, caches and checkouts. Raising `diskGb` grows the
+  disk the next time the VM starts (Colima 0.5.3 or newer); lowering it does nothing, since Colima
+  can't shrink one. The disk is a sparse file, so it only takes up what's actually used on the Mac.
 - **Only uses memory while needed.** The VM starts on the first job and stops after 30 idle minutes, or
   as soon as you switch lending off. The SDK, caches and project mirrors stay in a Docker volume.
 - **Signing with your own key.** A job with `"signApks": "/Users/you/.app/signing.properties"` has its

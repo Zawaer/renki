@@ -188,21 +188,26 @@ export class BuildVm {
       .split("\n")
       .map((l) => {
         try {
-          return JSON.parse(l) as { name: string; status: string; cpus: number; memory: number };
+          return JSON.parse(l) as { name: string; status: string; cpus: number; memory: number; disk?: number };
         } catch {
           return null;
         }
       })
       .find((v) => v?.name === profile);
-    if (vmInfo?.status === "Running" && (vmInfo.cpus !== this.cfg.cpus || vmInfo.memory !== this.cfg.memoryGb * 1024 ** 3)) {
+    // Colima can grow a disk (stop, then start with a larger --disk) but never shrink one, so
+    // only a larger setting counts. The disk used to be fixed at creation: 40 GB filled with five
+    // projects' Android builds (2026-11-13) and raising diskGb did nothing.
+    const diskBytes = this.cfg.diskGb * 1024 ** 3;
+    const diskGrows = vmInfo?.disk != null && vmInfo.disk < diskBytes;
+    if (vmInfo?.status === "Running" && (vmInfo.cpus !== this.cfg.cpus || vmInfo.memory !== this.cfg.memoryGb * 1024 ** 3 || diskGrows)) {
       this.log("restarting the build VM with its new size");
       await exec(colima, ["stop", profile], { timeoutMs: 120_000 });
     }
     if ((await exec(colima, ["status", profile], { timeoutMs: 20_000 })).code !== 0) {
-      this.log("starting the build VM");
+      this.log(diskGrows ? `starting the build VM, growing its disk to ${this.cfg.diskGb} GB` : "starting the build VM");
       const created = existsSync(join(homedir(), ".colima", profile, "colima.yaml"));
       const flags = created
-        ? size
+        ? [...size, ...(diskGrows ? ["--disk", String(this.cfg.diskGb)] : [])]
         : ["--vm-type", "vz", "--vz-rosetta", ...size, "--disk", String(this.cfg.diskGb), "--mount", "none", "--port-forwarder", "none"];
       const st = await exec(colima, ["start", profile, "--activate=false", ...flags], { timeoutMs: 10 * 60_000 });
       if (st.code !== 0) return `The build VM didn't start: ${st.out.trim().split("\n").slice(-3).join(" ")}`;

@@ -72,11 +72,11 @@ const File = z.object({
       profile: z.string().regex(/^[\w-]+$/).default("renki-runner"),
       cpus: z.number().int().min(1).max(32).default(6),
       memoryGb: z.number().min(2).max(64).default(8),
-      diskGb: z.number().int().min(20).max(500).default(40),
+      diskGb: z.number().int().min(20).max(500).default(80),
       colima: z.string().default("/opt/homebrew/bin/colima"),
       docker: z.string().default("/opt/homebrew/bin/docker"),
     })
-    .default({ profile: "renki-runner", cpus: 6, memoryGb: 8, diskGb: 40, colima: "/opt/homebrew/bin/colima", docker: "/opt/homebrew/bin/docker" }),
+    .default({ profile: "renki-runner", cpus: 6, memoryGb: 8, diskGb: 80, colima: "/opt/homebrew/bin/colima", docker: "/opt/homebrew/bin/docker" }),
 });
 
 /** The verbs that need an ESP-IDF Python (./serial.ts). */

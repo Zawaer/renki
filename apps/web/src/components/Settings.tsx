@@ -379,6 +379,9 @@ function AccountsSection() {
   }, [refresh]);
 
   const accounts = data?.accounts ?? [];
+  // Connected for usage tracking only: a usage key whose email no coding account has.
+  const codingEmails = new Set(accounts.map((a) => a.email.toLowerCase()));
+  const usageOnly = (data?.usageConnectedEmails ?? []).filter((e) => !codingEmails.has(e.toLowerCase()));
 
   return (
     <Card
@@ -417,6 +420,8 @@ function AccountsSection() {
           ))}
         </div>
       )}
+
+      {data && <UsageOnlyAccounts emails={usageOnly} onChanged={refresh} />}
 
       {data && accounts.length > 1 && <RotationSettings rotation={data.rotation} accounts={accounts} onChanged={refresh} />}
       {data && <ResumeSettings rotation={data.rotation} multiAccount={accounts.length > 1} onChanged={refresh} />}
@@ -735,6 +740,7 @@ function AccountRow({
   const { rest } = useClient();
   const [busy, setBusy] = useState<null | "switch" | "disconnect">(null);
   const [connecting, setConnecting] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   async function makeActive() {
     setBusy("switch");
@@ -785,12 +791,38 @@ function AccountRow({
             </button>
           )}
           {!account.active && (
-            <Button variant="default" size="sm" onClick={makeActive} disabled={busy !== null}>
+            <Button variant="default" size="sm" onClick={makeActive} disabled={busy !== null || removing}>
               {busy === "switch" ? "Switching…" : "Make active"}
             </Button>
           )}
+          <button
+            onClick={() => setRemoving(true)}
+            disabled={account.active || busy !== null || removing}
+            title={account.active ? "This is the account in use. Make another one active to remove it." : "Remove this account"}
+            aria-label={`Remove ${account.email}`}
+            className="shrink-0 rounded-md p-1 text-(--renki-fg-muted) hover:bg-(--renki-danger)/12 hover:text-(--renki-danger) disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-(--renki-fg-muted)"
+          >
+            <span className="codicon codicon-trash text-[13px]" />
+          </button>
         </div>
       </div>
+      {removing && (
+        <ConfirmRemove
+          title={`Remove ${account.email}?`}
+          detail={
+            usageConnected
+              ? "Renki stops switching to it, and cswap deletes its saved copy of this login. Its usage tracking stays connected; remove that below if you don't want it either."
+              : "Renki stops switching to it, and cswap deletes its saved copy of this login. To use it again, add it back."
+          }
+          onCancel={() => setRemoving(false)}
+          onConfirm={async () => {
+            const res = await rest.removeAccount(account.number, account.email);
+            if (!res.ok) throw new Error(res.message ?? "Couldn't remove this account.");
+            setRemoving(false);
+            onChanged();
+          }}
+        />
+      )}
       {connecting ? (
         <div className="mt-3">
           <UsageConnect
@@ -812,6 +844,102 @@ function AccountRow({
             (usageConnected ? "Usage not available right now." : "Usage not tracked — connect it below to see limits.")}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Inline confirm for a destructive account action: names what goes, then
+ * runs `onConfirm`, showing "Removing…" while it's in flight and whatever it
+ * threw right here, so a refusal (say, the account is in use) is read in place.
+ */
+function ConfirmRemove({
+  title,
+  detail,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  detail: string;
+  onCancel: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function confirmRemove() {
+    setPending(true);
+    setError(null);
+    try {
+      await onConfirm();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't remove it.");
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded-lg bg-(--renki-danger)/8 px-3.5 py-3 text-xs ring-1 ring-(--renki-danger)/25" role="alertdialog" aria-label={title}>
+      <div className="text-[13px] font-medium break-all text-(--renki-fg)">{title}</div>
+      <p className="mt-1 leading-relaxed text-(--renki-fg-muted)">{detail}</p>
+      {error && <p className="mt-2 text-(--renki-danger)">{error}</p>}
+      <div className="mt-3 flex items-center justify-end gap-3">
+        <button onClick={onCancel} disabled={pending} className="text-(--renki-fg-muted) hover:text-(--renki-fg) disabled:opacity-40">
+          Cancel
+        </button>
+        <Button variant="danger" size="sm" onClick={confirmRemove} disabled={pending}>
+          {pending ? "Removing…" : "Remove"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Accounts connected only to read their usage (a claude.ai session key with no
+ * coding account behind it). Removing one deletes its usage key; there's no
+ * cswap login to delete.
+ */
+function UsageOnlyAccounts({ emails, onChanged }: { emails: string[]; onChanged: () => void }) {
+  const { rest } = useClient();
+  const [removing, setRemoving] = useState<string | null>(null);
+  if (emails.length === 0) return null;
+
+  return (
+    <div className="mt-4">
+      <div className="mb-2 text-[12.5px] font-medium text-(--renki-fg-muted)">Tracked for usage only</div>
+      <div className="flex flex-col gap-2">
+        {emails.map((email) => (
+          <div key={email} className="rounded-xl bg-(--renki-bg-inset)/70 px-4 py-3">
+            <div className="flex items-center gap-2.5">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--renki-fg-muted)/60" />
+              <span className="truncate text-[13px] text-(--renki-fg)">{email}</span>
+              <button
+                onClick={() => setRemoving(email)}
+                disabled={removing === email}
+                title="Remove this account"
+                aria-label={`Remove ${email}`}
+                className="ml-auto shrink-0 rounded-md p-1 text-(--renki-fg-muted) hover:bg-(--renki-danger)/12 hover:text-(--renki-danger) disabled:opacity-40"
+              >
+                <span className="codicon codicon-trash text-[13px]" />
+              </button>
+            </div>
+            {removing === email && (
+              <ConfirmRemove
+                title={`Remove ${email}?`}
+                detail="Its claude.ai session key is deleted, so its usage stops being tracked. Connect usage again to bring it back."
+                onCancel={() => setRemoving(null)}
+                onConfirm={async () => {
+                  const res = await rest.disconnectUsageKey(email);
+                  if (!res.ok) throw new Error(res.message ?? "Couldn't remove this account.");
+                  setRemoving(null);
+                  onChanged();
+                }}
+              />
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

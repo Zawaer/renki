@@ -573,6 +573,13 @@ All three coexist fine — mix and match per account in the same `cswap`
 install. Rotation, usage %, and the take-control lock all work identically
 regardless of which kind an account uses.
 
+**Removing an account:** the trash button on its row in **Settings → Claude
+accounts** runs `cswap remove <number>` on the daemon host, which deletes
+cswap's saved copy of that login. The account in use can't be removed (make
+another one active first), so the credentials `claude` is running on are never
+touched. Its usage key, if any, stays connected and the account moves to
+**Tracked for usage only**, where the same button deletes that key.
+
 **Docker:** the account list and usage % stay invisible in every client until
 `cswap` is actually reachable *from inside the `daemon` container* — `GET
 /accounts` calls `cswap list` unconditionally (not just when rotation is

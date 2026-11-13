@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { Account, AccountsResponse, RotationStatus, SwitchAccountResponse } from "@renki/protocol";
+import type { Account, AccountsResponse, RemoveAccountResponse, RotationStatus, SwitchAccountResponse } from "@renki/protocol";
 import type { Config } from "../config.js";
 import { logger } from "../logger.js";
 import type { RateLimitHit } from "../claude/runner.js";
@@ -394,6 +394,49 @@ export class AccountRotator {
     const added = after.accounts.find((a) => !beforeEmails.has(a.email.toLowerCase()));
     logger.info("added coding account via setup-token", { email: added?.email ?? null });
     return { ok: true, email: added?.email ?? null, message: null };
+  }
+
+  /**
+   * Take a coding account out of rotation for good: `cswap remove`, which
+   * deletes cswap's saved copy of that login. Never throws; failures come
+   * back as `{ ok: false, message }`.
+   *
+   * The account in use is refused rather than removed: its login is the one
+   * `claude` is running on right now, and cswap would only warn and drop it,
+   * leaving the live credentials pointing at an account nothing manages. So
+   * the live credentials are never part of a removal. `email` guards against
+   * cswap having renumbered its slots since the client listed them.
+   */
+  async removeAccount(number: number, email?: string): Promise<RemoveAccountResponse> {
+    let list: { activeAccountNumber: number | null; accounts: Account[] };
+    try {
+      list = await this.cswap.list();
+    } catch (err) {
+      return { ok: false, email: email ?? null, message: err instanceof Error ? err.message : "Couldn't list accounts." };
+    }
+    const target = list.accounts.find((a) => a.number === number);
+    if (!target) return { ok: false, email: email ?? null, message: `There's no account #${number} any more. Refresh and try again.` };
+    if (email && target.email.toLowerCase() !== email.trim().toLowerCase()) {
+      return { ok: false, email: target.email, message: `Account #${number} is now ${target.email}, not ${email}. Refresh and try again.` };
+    }
+    if (target.active || list.activeAccountNumber === number) {
+      return {
+        ok: false,
+        email: target.email,
+        message: `${target.email} is the account in use. Switch to another account first, then remove it.`,
+      };
+    }
+    try {
+      await this.cswap.remove(number);
+    } catch (err) {
+      return { ok: false, email: target.email, message: err instanceof Error ? err.message : "cswap remove failed" };
+    }
+    if (this.preferredEmail === target.email.toLowerCase()) {
+      this.preferredEmail = null;
+      this.persistSettings();
+    }
+    logger.info("removed coding account", { number, email: target.email });
+    return { ok: true, email: target.email, message: null };
   }
 
   /** Manual switch (REST). Honors the never-mid-flight rule too. */

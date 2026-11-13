@@ -78,6 +78,48 @@ export class Cswap {
     });
   }
 
+  /**
+   * `cswap remove <number>`: drop an account from cswap's roster and delete
+   * cswap's own saved copies of its login (its `.creds-N-email.enc` backup and
+   * config snapshot). It never touches the live credentials `claude` runs on.
+   *
+   * cswap has no --yes or --json for remove; it always asks "Are you sure…
+   * [y/N]" on stdin, so the "y" goes in there. Always by number: given an
+   * email that matches two slots it asks a second question first, which the
+   * "y" would answer as "Cancelled". It prints "Cancelled" and still exits 0
+   * when the answer isn't taken, so success is read from its
+   * "Removed Account-N" line, not from the exit code alone.
+   */
+  async remove(number: number): Promise<void> {
+    const out = await new Promise<string>((resolve, reject) => {
+      const child = spawn(this.bin, ["remove", String(number)], { stdio: ["pipe", "pipe", "pipe"] });
+      let stdout = "";
+      let stderr = "";
+      const timer = setTimeout(() => {
+        child.kill();
+        reject(new CswapError("cswap remove timed out"));
+      }, 30_000);
+      child.stdout.on("data", (d) => (stdout += d));
+      child.stderr.on("data", (d) => (stderr += d));
+      child.on("error", (err) => {
+        clearTimeout(timer);
+        reject(new CswapError(`cswap remove failed to start: ${err.message}`));
+      });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        const said = `${stdout}\n${stderr}`.trim();
+        if (code === 0) return resolve(said);
+        reject(new CswapError(cswapErrorLine(said) ?? `cswap remove failed (exit ${code})`));
+      });
+      child.stdin.on("error", () => {}); // cswap may exit before reading (e.g. account not found)
+      child.stdin.write("y\n");
+      child.stdin.end();
+    });
+    if (!/Removed Account-/i.test(out)) {
+      throw new CswapError(cswapErrorLine(out) ?? "cswap didn't confirm the removal");
+    }
+  }
+
   private run(args: string[]): Promise<any> {
     return new Promise((resolve, reject) => {
       execFile(this.bin, args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
@@ -149,4 +191,19 @@ export function readActiveNumber(raw: any): number | null {
   if (typeof raw?.activeAccountNumber === "number") return raw.activeAccountNumber;
   if (typeof raw?.active?.number === "number") return raw.active.number;
   return null;
+}
+
+/**
+ * The line of cswap's output worth showing a person: its "Error: …" line if
+ * it printed one, else its last line. Prompts and ANSI colour are stripped.
+ */
+export function cswapErrorLine(output: string): string | null {
+  const lines = output
+    .replace(/\x1b\[[0-9;]*m/g, "")
+    .split("\n")
+    .map((l) => l.replace(/^.*\[y\/N\]\s*/i, "").trim())
+    .filter(Boolean);
+  const err = lines.find((l) => /^error:/i.test(l));
+  if (err) return err.replace(/^error:\s*/i, "");
+  return lines.at(-1) ?? null;
 }

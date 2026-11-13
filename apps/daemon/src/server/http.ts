@@ -611,10 +611,28 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
     return accounts.addSetupToken(parsed.data.token, parsed.data.email);
   });
 
-  // Remove a previously-connected usage key (e.g. the wrong org got picked).
-  app.delete<{ Params: { email: string } }>("/accounts/usage-key/:email", async (req, reply) => {
-    const ok = await usage.removeKey(req.params.email);
-    return { ok };
+  // Remove a coding account from rotation (`cswap remove`). ?email= names the
+  // account the client showed, so a slot cswap renumbered meanwhile isn't hit.
+  // The account in use is refused; see AccountRotator.removeAccount.
+  app.delete<{ Params: { number: string }; Querystring: { email?: string } }>("/accounts/:number", async (req, reply) => {
+    const number = Number(req.params.number);
+    if (!Number.isInteger(number) || number < 1) return reply.code(400).send({ error: "invalid_request" });
+    const email = typeof req.query.email === "string" && req.query.email ? req.query.email : undefined;
+    return accounts.removeAccount(number, email);
+  });
+
+  // Remove a connected usage key: the wrong org got picked, or an account
+  // that's only tracked for usage isn't wanted any more. Only the key goes;
+  // a coding account with the same email stays in rotation.
+  app.delete<{ Params: { email: string } }>("/accounts/usage-key/:email", async (req) => {
+    try {
+      const ok = await usage.removeKey(req.params.email);
+      return { ok, message: ok ? null : `No usage key is connected for ${req.params.email}.` };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "could not remove the usage key";
+      logger.warn("usage key remove failed", { err: message });
+      return { ok: false, message };
+    }
   });
 
   // Guided browser login: daemon opens a browser on its own host, user signs

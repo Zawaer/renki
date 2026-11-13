@@ -10,6 +10,7 @@ import type {
   ExportOptions,
   DeleteSessionResponse,
   DisconnectUsageKeyResponse,
+  RemoveAccountResponse,
   EmptyTrashResponse,
   GetTranscriptResponse,
   WorkspaceChangesResponse,
@@ -289,7 +290,21 @@ export class RestClient {
     return this.post<UsageLoginResponse>("/accounts/usage-key/login", {});
   }
 
-  /** Remove a connected usage key (e.g. the wrong org got picked) — stops tracking that account's usage %. */
+  /**
+   * Remove a coding account from rotation (`cswap remove` on the daemon host),
+   * by its cswap number. `email` is the account you're showing: the daemon
+   * refuses if that number now belongs to someone else. The account in use is
+   * refused too (`ok:false` with a message): switch away from it first.
+   */
+  async removeAccount(number: number, email?: string): Promise<RemoveAccountResponse> {
+    const query = email ? `?email=${encodeURIComponent(email)}` : "";
+    return this.request<RemoveAccountResponse>("DELETE", `/accounts/${number}${query}`);
+  }
+
+  /**
+   * Remove a connected usage key (the wrong org got picked, or a usage-only
+   * account you no longer want) — stops tracking that account's usage %.
+   */
   async disconnectUsageKey(email: string): Promise<DisconnectUsageKeyResponse> {
     return this.request<DisconnectUsageKeyResponse>("DELETE", `/accounts/usage-key/${encodeURIComponent(email)}`);
   }

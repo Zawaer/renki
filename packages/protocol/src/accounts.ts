@@ -220,11 +220,32 @@ export const ConnectUsageKeyResponse = z.object({
 });
 export type ConnectUsageKeyResponse = z.infer<typeof ConnectUsageKeyResponse>;
 
-/** Remove a previously-connected claude.ai usage key (e.g. wrong org picked). */
+/**
+ * Remove a previously-connected claude.ai usage key (e.g. wrong org picked, or
+ * an account that's only tracked for usage and no longer wanted). `ok:false`
+ * with a `message` when no key was connected for that email or the removal
+ * failed.
+ */
 export const DisconnectUsageKeyResponse = z.object({
   ok: z.boolean(),
+  message: z.string().nullable().default(null),
 });
 export type DisconnectUsageKeyResponse = z.infer<typeof DisconnectUsageKeyResponse>;
+
+/**
+ * Remove a coding account from rotation: `cswap remove <number>`, which deletes
+ * cswap's saved copy of that account's login. The account currently in use is
+ * refused (switch away first), so the credentials `claude` is running on are
+ * never touched. `email` is the account the client showed, checked against
+ * cswap's current numbering so a renumbered slot isn't removed by mistake.
+ */
+export const RemoveAccountResponse = z.object({
+  ok: z.boolean(),
+  /** The account that was removed (or would have been). */
+  email: z.string().nullable(),
+  message: z.string().nullable(),
+});
+export type RemoveAccountResponse = z.infer<typeof RemoveAccountResponse>;
 
 /**
  * Guided browser login: the daemon opens a real browser (Playwright) on its

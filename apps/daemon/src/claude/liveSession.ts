@@ -1,3 +1,4 @@
+import { CODEX_SERVER, createCodexMcpServer } from "./codex.js";
 import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -98,6 +99,8 @@ export type LiveSessionOptions = {
   homelabAccess?: { request: HomelabAccessRequester; project: () => string };
   /** The `mac` MCP server (phone tools via the user's Mac, see ../mac/tools.ts), when this session may use it. */
   mac?: { server: McpSdkServerConfigWithInstance; callIds: MacCallIds };
+  /** Offer the Codex hand-off tool (./codex.ts): set when the Codex CLI is logged in. */
+  codex?: boolean;
   /** How long a mid-turn message waits behind a running step before it's backgrounded; STEER_BACKGROUND_AFTER_MS unless set (tests). */
   steerBackgroundAfterMs?: number;
   /** Lets the chat move itself into a repo (see ./moveIntoRepo.ts); only for repo-less chats. */
@@ -308,7 +311,7 @@ export class LiveClaudeSession {
       mcpServers: { [RENKI_SERVER]: createRepliesMcpServer([
           ...(opts.moveIntoRepo ? [createMoveIntoRepoTool(opts.moveIntoRepo)] : []),
           ...(opts.homelabAccess ? [createHomelabAccessTool(opts.homelabAccess.request)] : []),
-        ]), ...(opts.mac ? { [MAC_SERVER]: opts.mac.server } : {}) },
+        ]), ...(opts.mac ? { [MAC_SERVER]: opts.mac.server } : {}), ...(opts.codex ? { [CODEX_SERVER]: createCodexMcpServer(opts.cwd) } : {}) },
       allowedTools: [SUGGEST_REPLIES_TOOL, ...(opts.mac ? MAC_FREE_TOOLS : [])],
       // Route every permission decision through the current resolver. Only
       // fires for tools the permission system doesn't auto-resolve (edits,

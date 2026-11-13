@@ -13,6 +13,12 @@ describe("tool names in words", () => {
     expect(describeTool("mcp__something__do_thing", {}).label).toBe("Do thing");
   });
 
+  it("names Codex hand-offs", () => {
+    expect(describeTool("mcp__codex__run", { prompt: "Review the diff\nfor bugs", readOnly: true })).toEqual({ label: "Asked Codex", meta: "Review the diff" });
+    expect(describeTool("mcp__codex__run", { prompt: "Fix it" }).label).toBe("Handed a task to Codex");
+    expect(permissionTitle("mcp__codex__run", { prompt: "Fix it" }).title).toBe("Claude wants to hand a task to Codex");
+  });
+
   it("titles approvals by what they do", () => {
     expect(permissionTitle("mcp__mac__mac_build", { job: "x", install: true })).toEqual({
       title: "Claude wants to build on your Mac and install it on your phone",

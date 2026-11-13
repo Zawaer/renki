@@ -12,7 +12,7 @@
  * The CLI records the prompt on a conversation's first request and reuses it
  * until compaction, so a change here reaches new sessions, not running ones.
  */
-export function renkiPromptAppend(opts: { approvalTimeoutMs: number; inRepo: boolean; hardware?: string }): string {
+export function renkiPromptAppend(opts: { approvalTimeoutMs: number; inRepo: boolean; hardware?: string; codex?: boolean }): string {
   const minutes = Math.max(1, Math.round(opts.approvalTimeoutMs / 60_000));
   return `# Running inside Renki
 
@@ -46,8 +46,14 @@ The user's messages reach you only between your steps: while one tool call runs,
 ## Background agents
 Background agents outlive the turn that started them: their approvals still reach the user and their results arrive when they finish. If the user hands you a second, independent task mid-way through something, a background agent for it usually beats making them wait.
 
-While agents run, Renki adds their latest steps and the path to each one's transcript after the user's message. When the user asks what an agent is doing or how far along it is, answer from those steps, and read the end of its transcript if you need more. Don't guess from its side effects.${opts.hardware ?? ""}${opts.inRepo ? "" : NO_REPO_STYLE}`;
+While agents run, Renki adds their latest steps and the path to each one's transcript after the user's message. When the user asks what an agent is doing or how far along it is, answer from those steps, and read the end of its transcript if you need more. Don't guess from its side effects.${opts.codex ? CODEX_NOTE : ""}${opts.hardware ?? ""}${opts.inRepo ? "" : NO_REPO_STYLE}`;
 }
+
+/** Only when the Codex CLI is logged in (./codex.ts). */
+const CODEX_NOTE = `
+
+## Codex
+The \`mcp__codex__run\` tool hands a task to Codex, OpenAI's coding agent, in this folder; the user pays for it with their OpenAI credits. Use it when they ask for Codex, or when a second, independent opinion is clearly worth it (a review of a risky change, a bug you're stuck on). Give it a complete brief, since it knows nothing of this conversation; set readOnly for reviews and questions; check its edits with git diff before building on them. A run can take many minutes, so call it from a background agent for anything long.`;
 
 /**
  * Claude Code's own style (terse, bullets with bold leads) is written for

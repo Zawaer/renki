@@ -305,6 +305,8 @@ export function describeTool(name: string, input: unknown): ToolDescription {
       return { label: "Proposed a plan", meta: null };
     case "mcp__mac__mac_propose_job":
       return { label: "Proposed a Mac build job", meta: str("job") };
+    case "mcp__codex__run":
+      return { label: inp.readOnly === true ? "Asked Codex" : "Handed a task to Codex", meta: truncateMeta((str("prompt") ?? "").split("\n")[0] ?? "", 72) };
     case "mcp__renki__request_homelab_access":
       return { label: "Asked for homelab access", meta: null };
     default:
@@ -360,6 +362,8 @@ export function permissionTitle(name: string, input: unknown): { title: string; 
       return said("Claude wants to reset the board on your Mac");
     case "mcp__mac__mac_propose_job":
       return said("Claude wants to add a build job on your Mac");
+    case "mcp__codex__run":
+      return said(inp.readOnly === true ? "Claude wants to ask Codex (read-only)" : "Claude wants to hand a task to Codex");
     default:
       return { title: "Claude wants to use a tool", detail: toolDisplayName(name) };
   }

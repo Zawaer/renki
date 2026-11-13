@@ -1,3 +1,4 @@
+import { codexAvailable } from "../claude/codex.js";
 import { homelabAllowed } from "../claude/homelabGuard.js";
 import { HomelabAccess } from "../claude/homelabAccess.js";
 import type { MacBridge } from "../mac/bridge.js";
@@ -2213,6 +2214,8 @@ export class SessionManager {
     const existing = this.live.get(sessionId);
     if (existing && !existing.isClosed) return existing;
 
+    // Checked per session: logging Codex in (or out) takes effect on the next one.
+    const codex = codexAvailable();
     const live = new LiveClaudeSession({
       cwd,
       archiveDir: this.archiveDirFor(sessionId),
@@ -2225,7 +2228,9 @@ export class SessionManager {
         approvalTimeoutMs: this.config.permissionTimeoutMs,
         inRepo: Boolean(this.getSession(sessionId).repoId),
         hardware: this.hardwareNote(),
+        codex,
       }),
+      codex,
       forcePermissionPrompts: this.config.forcePermissionPrompts,
       enableRtk: this.config.enableRtk,
       rtkBin: this.config.rtkBin,

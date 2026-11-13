@@ -141,6 +141,14 @@ RUN set -eux; \
 RUN git config --system credential."https://github.com".helper '!gh auth git-credential' \
     && git config --system credential."https://gist.github.com".helper '!gh auth git-credential'
 
+# Codex CLI, for the hand-off tool sessions get once it's logged in
+# (apps/daemon/src/claude/codex.ts). Pinned: its flags and JSON events are
+# what that tool parses. The login lives on the data volume (CODEX_HOME), so
+# a redeploy keeps it: log in once with `codex login --device-auth`.
+ARG CODEX_VERSION=0.169.0
+RUN npm install -g "@openai/codex@${CODEX_VERSION}" && codex --version
+ENV CODEX_HOME=/data/codex
+
 WORKDIR /app
 COPY --from=builder /app/deploy .
 

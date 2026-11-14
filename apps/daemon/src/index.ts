@@ -1,5 +1,6 @@
 import { Uploads } from "./uploads.js";
 import { AccountRotator } from "./accounts/rotator.js";
+import { AutoDeployer, latestMainSha, readBuildSha, runHomelabDeploy } from "./deploy/autoDeploy.js";
 import { ResetWatcher } from "./accounts/resetWatcher.js";
 import { ServiceUsage } from "./accounts/service.js";
 import { UsageReader, type UsageSource } from "./accounts/usage.js";
@@ -78,8 +79,17 @@ async function main() {
   );
   const resetTimer = setInterval(() => void resetWatcher.check().catch((err) => logger.warn("reset check failed", { err: String(err) })), 30 * 60_000);
   resetTimer.unref();
+  // Off until switched on in Settings. Deploys by itself once main has moved and every chat has been idle a couple of minutes.
+  const autoDeploy = new AutoDeployer({
+    file: join(config.dataDir, "auto-deploy.json"),
+    buildSha: readBuildSha(),
+    latestSha: () => latestMainSha(join(config.reposRoot, "renki")),
+    busyCount: () => manager.busySessionCount(),
+    deploy: runHomelabDeploy,
+  });
+  autoDeploy.start();
 
-  const app = await createServer(config, { manager, broker, pushTokens, devices, accounts, usage: usageReader, notifier, insights: new InsightsCache(db), mac, macJobs, uploads });
+  const app = await createServer(config, { manager, broker, pushTokens, devices, accounts, usage: usageReader, notifier, autoDeploy, insights: new InsightsCache(db), mac, macJobs, uploads });
   await app.listen({ host: config.host, port: config.port });
   logger.info("daemon listening", { url: `http://${config.host}:${config.port}`, reposRoot: config.reposRoot });
 
@@ -107,6 +117,7 @@ async function main() {
     clearInterval(trashSweep);
     accounts.stop();
     clearInterval(resetTimer);
+    autoDeploy.stop();
     // Give running turns a short chance to finish on their own; anything
     // still going after it is continued after the restart, not lost. The
     // process manager's kill timeout must exceed this grace (see

@@ -45,6 +45,14 @@ import type {
  * global fetch, present in browsers and React Native). All calls carry the
  * bearer token; a non-2xx response throws a RestError the UI can display.
  */
+export type AutoDeployStatus = {
+  enabled: boolean;
+  build: string | null;
+  latest: string | null;
+  pending: boolean;
+  state: string;
+};
+
 export class RestError extends Error {
   constructor(
     public readonly status: number,
@@ -237,6 +245,15 @@ export class RestClient {
   async emptyTrash(): Promise<number> {
     const res = await this.request<EmptyTrashResponse>("DELETE", "/sessions/trash");
     return res.purged;
+  }
+
+  /** Settings > Auto-deploy: whether Renki deploys itself when main moves and nothing is running. */
+  async getAutoDeploy(): Promise<AutoDeployStatus> {
+    return this.get<AutoDeployStatus>("/auto-deploy");
+  }
+
+  async setAutoDeploy(enabled: boolean): Promise<AutoDeployStatus> {
+    return this.request<AutoDeployStatus>("PUT", "/auto-deploy", { enabled });
   }
 
   async listAccounts(): Promise<AccountsResponse> {

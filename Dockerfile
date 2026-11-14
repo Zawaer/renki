@@ -71,6 +71,11 @@ RUN pnpm --filter @renki/protocol build && pnpm --filter @renki/client-core buil
 # dependency to its built dist rather than a symlink.
 RUN pnpm --filter @renki/daemon deploy --prod /app/deploy
 
+# Which commit this image is built from, so the daemon can tell whether main has
+# moved on (auto-deploy). Read straight from .git with node: git isn't in this
+# stage. Anything unexpected writes "unknown", which just switches that check off.
+RUN node -e "const fs=require('fs');let out='unknown';try{let h=fs.readFileSync('.git/HEAD','utf8').trim();if(h.startsWith('ref: ')){const r=h.slice(5);try{h=fs.readFileSync('.git/'+r,'utf8').trim()}catch{h=((fs.readFileSync('.git/packed-refs','utf8').split('\\n').find(l=>l.endsWith(' '+r)))||'').split(' ')[0]}}if(/^[0-9a-f]{40}$/.test(h))out=h}catch{}fs.writeFileSync('/app/deploy/BUILD_SHA',out)"
+
 FROM node:20-bookworm-slim AS runtime
 
 # git: the daemon shells out to it (via simple-git) to create a worktree per

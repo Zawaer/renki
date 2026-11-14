@@ -1,3 +1,4 @@
+import type { AutoDeployer } from "../deploy/autoDeploy.js";
 import websocketPlugin from "@fastify/websocket";
 import { createReadStream, createWriteStream, existsSync, statSync, unlinkSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -66,6 +67,7 @@ export type ServerDeps = {
   usage: UsageSource;
   /** Optional so tests can build a server without one; the test-push route then says so. */
   notifier?: Notifier;
+  autoDeploy?: AutoDeployer;
   /** The Stats page's insights; optional for the same reason. */
   insights?: InsightsCache;
   /** The Mac bridge (apps/mac-node); optional for the same reason. */
@@ -85,7 +87,7 @@ export type ServerDeps = {
  * is enforced once, in an onRequest hook, so it covers the WS upgrade too.
  */
 export async function createServer(config: Config, deps: ServerDeps): Promise<FastifyInstance> {
-  const { manager, broker, pushTokens, devices, accounts, usage, notifier } = deps;
+  const { manager, broker, pushTokens, devices, accounts, usage, notifier, autoDeploy } = deps;
   const app = Fastify({ logger: false });
 
   // Every live connection gets every session-roster change, unconditionally —
@@ -571,6 +573,19 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
     const parsed = UpdateHomelabAccessRequest.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: "invalid_request", detail: parsed.error.issues });
     return { repos: manager.homelabAccess.set(parsed.data.repos) };
+  });
+
+  // Settings > Auto-deploy: deploy Renki by itself when main has moved and nothing is running.
+  app.get("/auto-deploy", async (_req, reply) => {
+    if (!autoDeploy) return reply.code(404).send({ error: "not_available" });
+    await autoDeploy.check();
+    return autoDeploy.status();
+  });
+  app.put("/auto-deploy", async (req, reply) => {
+    if (!autoDeploy) return reply.code(404).send({ error: "not_available" });
+    const enabled = (req.body as { enabled?: unknown } | null)?.enabled;
+    if (typeof enabled !== "boolean") return reply.code(400).send({ error: "invalid_request" });
+    return autoDeploy.setEnabled(enabled);
   });
 
   // Toggle auto-rotation on/off and/or change its usage threshold (Settings page).

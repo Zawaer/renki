@@ -1,4 +1,4 @@
-import { removeHost, updateHost, type HostsState } from "@renki/client-core";
+import { removeHost, updateHost, type AutoDeployStatus, type HostsState } from "@renki/client-core";
 import { PALETTES, resolvePalette, type PaletteKey } from "@renki/client-core";
 import type { Account, AccountsResponse, Repo, RotationStatus } from "@renki/protocol";
 import { useCallback, useEffect, useState } from "react";
@@ -426,6 +426,8 @@ function AccountsSection() {
       {data && accounts.length > 1 && <RotationSettings rotation={data.rotation} accounts={accounts} onChanged={refresh} />}
       {data && <ResumeSettings rotation={data.rotation} multiAccount={accounts.length > 1} onChanged={refresh} />}
 
+      <AutoDeploySettings />
+
       <div className="mt-5 flex flex-col items-start gap-2 text-[13px]">
         <UsageConnect configured={data?.usageConfigured ?? false} onConnected={refresh} />
         <AddCodingAccount onAdded={refresh} />
@@ -651,6 +653,50 @@ function RotationSettings({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Deploy Renki by itself when main has moved and no chat has run for a couple of minutes. */
+function AutoDeploySettings() {
+  const { rest } = useClient();
+  const [status, setStatus] = useState<AutoDeployStatus | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => rest.getAutoDeploy().then((s) => alive && setStatus(s)).catch(() => alive && setStatus(null));
+    void load();
+    const t = setInterval(load, 30_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [rest]);
+  if (!status) return null;
+
+  async function toggle() {
+    if (!status) return;
+    const next = !status.enabled;
+    setStatus({ ...status, enabled: next });
+    try {
+      setStatus(await rest.setAutoDeploy(next));
+    } catch (err) {
+      setStatus({ ...status, enabled: !next });
+      alert(err instanceof Error ? err.message : "Couldn't save this setting.");
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-xl bg-(--renki-bg-inset)/70 px-4 py-3">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-[13px] font-medium text-(--renki-fg)">Deploy updates automatically</div>
+          <div className="mt-0.5 text-xs text-(--renki-fg-muted)">
+            When new code lands on main, redeploy Renki by itself once no chat has been running for 2 minutes. Never while one is.
+          </div>
+          {status.enabled && <div className="mt-1 text-xs text-(--renki-fg-muted)">{status.state}</div>}
+        </div>
+        <Switch checked={status.enabled} onChange={() => void toggle()} label="Deploy updates automatically" />
+      </div>
     </div>
   );
 }

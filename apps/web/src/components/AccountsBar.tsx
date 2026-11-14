@@ -1,6 +1,7 @@
 import type { Account, AccountsResponse } from "@renki/protocol";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { resetCountLabel } from "@renki/client-core";
 import { UsageLimits, worstUsagePct } from "./UsageLimits.js";
 import { useClient } from "../lib/client.js";
 
@@ -149,6 +150,14 @@ function AccountRow({
         >
           {account.email}
         </button>
+        {resetCountLabel(account.usage?.resets) && (
+          <span
+            className="shrink-0 rounded-md bg-(--renki-accent)/15 px-1.5 py-px text-[10px] font-medium text-(--renki-accent)"
+            title="Free limit resets you haven't used"
+          >
+            {resetCountLabel(account.usage?.resets)}
+          </span>
+        )}
       </div>
       {account.usage ? (
         <UsageLimits usage={account.usage} className="mt-2 pl-3" />

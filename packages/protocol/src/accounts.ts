@@ -61,6 +61,26 @@ export const AccountUsageLimit = z.object({
 });
 export type AccountUsageLimit = z.infer<typeof AccountUsageLimit>;
 
+/**
+ * A free limit reset claude.ai has granted: "refill my limits once", usable
+ * whenever you choose and gone after its expiry. Easy to never notice (they
+ * live on claude.ai's Usage page only), so Renki lists them per account.
+ */
+export const AccountReset = z.object({
+  id: z.string(),
+  label: z.string(),
+  /** "full" refills everything; claude.ai's Fable resets are "full" too but have `givesBackWeekly`. */
+  type: z.string(),
+  left: z.number(),
+  total: z.number(),
+  expiresAt: z.string().nullable(),
+  /** Usable right now (not paused, not blocked by a cooldown). */
+  usableNow: z.boolean(),
+  /** What it refills, as claude.ai names the windows ("five_hour", "seven_day", ...). */
+  clears: z.array(z.string()).default([]),
+});
+export type AccountReset = z.infer<typeof AccountReset>;
+
 export const AccountUsage = z.object({
   /** 0% with no reset on a plan without a 5-hour window; read `limits` to tell the two apart. */
   fiveHour: AccountUsageWindow,
@@ -71,6 +91,8 @@ export const AccountUsage = z.object({
    * the two fields above.
    */
   limits: z.array(AccountUsageLimit).default([]),
+  /** Free limit resets still unused (empty when none, or on a daemon that predates this). */
+  resets: z.array(AccountReset).default([]),
   extra: AccountUsageExtra.nullable(),
 });
 export type AccountUsage = z.infer<typeof AccountUsage>;

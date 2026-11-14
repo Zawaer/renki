@@ -46,3 +46,37 @@ export function usageSeverity(severity: string | undefined, pct: number): "norma
   if (severity === "critical" || severity === "warning" || severity === "normal") return severity;
   return pct >= 90 ? "critical" : pct >= 70 ? "warning" : "normal";
 }
+
+/** A free limit reset as the clients list it: a title, and when it expires. */
+export type ResetLine = { title: string; left: number; expires: string | null; usableNow: boolean };
+
+type ResetLike = { type: string; label: string; left: number; expiresAt: string | null; usableNow: boolean; clears?: string[] };
+
+/**
+ * One line per free limit reset claude.ai has granted ("Full reset", "Fable
+ * reset"), soonest-expiring first, so an account's unused resets are never
+ * something you only find by luck on claude.ai's Usage page.
+ */
+export function resetLines(resets: ResetLike[] | undefined, now = new Date()): ResetLine[] {
+  return (resets ?? [])
+    .filter((r) => r.left > 0 && (!r.expiresAt || new Date(r.expiresAt).getTime() > now.getTime()))
+    .map((r) => {
+      const at = r.expiresAt ? new Date(r.expiresAt) : null;
+      const day = at && !Number.isNaN(at.getTime()) ? at.toLocaleDateString(undefined, { month: "short", day: "numeric" }) : null;
+      return {
+        title: r.type === "fable" ? "Fable reset" : "Full reset",
+        left: r.left,
+        expires: day ? `expires ${day}` : null,
+        usableNow: r.usableNow,
+        at: at?.getTime() ?? Infinity,
+      };
+    })
+    .sort((a, b) => a.at - b.at)
+    .map(({ at: _at, ...line }) => line);
+}
+
+/** "3 resets" for badges; null when there are none. */
+export function resetCountLabel(resets: ResetLike[] | undefined, now = new Date()): string | null {
+  const n = resetLines(resets, now).reduce((sum, l) => sum + l.left, 0);
+  return n > 0 ? `${n} reset${n === 1 ? "" : "s"}` : null;
+}

@@ -1,4 +1,4 @@
-import { formatResetTime, usageSeverity } from "@renki/client-core";
+import { formatResetTime, resetLines, usageSeverity } from "@renki/client-core";
 import type { AccountUsage, AccountUsageExtra, AccountUsageLimit } from "@renki/protocol";
 
 /**
@@ -88,6 +88,30 @@ function ExtraCard({ extra }: { extra: AccountUsageExtra }) {
   );
 }
 
+function ResetsCard({ usage }: { usage: AccountUsage }) {
+  const lines = resetLines(usage.resets);
+  if (lines.length === 0) return null;
+  const total = lines.reduce((n, l) => n + l.left, 0);
+  return (
+    <div className="rounded-xl bg-(--renki-accent)/10 px-3.5 py-3" data-testid="usage-resets">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-[13px] font-medium text-(--renki-fg)">Free limit resets</span>
+        <span className="shrink-0 text-[13px] font-semibold tabular-nums text-(--renki-accent)">{total} available</span>
+      </div>
+      <ul className="mt-1.5 space-y-0.5 text-[11px] text-(--renki-fg-muted)">
+        {lines.map((l, i) => (
+          <li key={i}>
+            {l.left > 1 ? `${l.left} × ` : ""}
+            {l.title}
+            {l.expires ? ` · ${l.expires}` : ""}
+          </li>
+        ))}
+      </ul>
+      <div className="mt-1 text-[11px] text-(--renki-fg-muted)">Use one on claude.ai → Settings → Usage.</div>
+    </div>
+  );
+}
+
 /**
  * Falls back to the two headline windows when `limits` is empty, which happens
  * on an older claude.ai response shape.
@@ -108,6 +132,7 @@ export function UsageLimits({ usage, className = "" }: { usage: AccountUsage; cl
       {limitsOf(usage).map((l) => (
         <LimitCard key={`${l.kind}:${l.model ?? ""}`} limit={l} />
       ))}
+      <ResetsCard usage={usage} />
       {usage.extra && <ExtraCard extra={usage.extra} />}
     </div>
   );

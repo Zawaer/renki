@@ -117,6 +117,7 @@ function fromLimits(limits: UsageLimit[], extra: { pct: number; usedDollars: num
     fiveHour: window("session"),
     sevenDay: window("weekly_all"),
     limits: mapped,
+    resets: [],
     extra: extra ? { ...extra, severity: "normal" } : null,
   };
 }
@@ -133,7 +134,7 @@ export function toAccountUsage(view: AccountView, now = Date.now()): AccountUsag
   const blocked = view.blockedBy != null && (view.blockedUntil == null || view.blockedUntil > now);
   if (!blocked) return base;
 
-  const usage = base ?? { fiveHour: { pct: 0, resetsAt: null }, sevenDay: { pct: 0, resetsAt: null }, limits: [], extra: null };
+  const usage = base ?? { fiveHour: { pct: 0, resetsAt: null }, sevenDay: { pct: 0, resetsAt: null }, limits: [], resets: [], extra: null };
   const resetsAt = view.blockedUntil ? new Date(view.blockedUntil).toISOString() : null;
   const alreadyFull = usage.limits.some((l) => l.pct >= 100);
   if (alreadyFull) return usage;

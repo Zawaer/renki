@@ -1,4 +1,4 @@
-import { formatResetTime, usageSeverity } from "@renki/client-core";
+import { formatResetTime, resetLines, usageSeverity } from "@renki/client-core";
 import type { AccountUsage, AccountUsageExtra, AccountUsageLimit } from "@renki/protocol";
 import { StyleSheet, Text, View } from "react-native";
 import { radius, type ThemeColors } from "../theme";
@@ -75,6 +75,28 @@ function ExtraCard({ extra, colors }: { extra: AccountUsageExtra; colors: ThemeC
   );
 }
 
+function ResetsCard({ usage, colors }: { usage: AccountUsage; colors: ThemeColors }) {
+  const lines = resetLines(usage.resets);
+  if (lines.length === 0) return null;
+  const total = lines.reduce((n, l) => n + l.left, 0);
+  return (
+    <View style={[styles.card, { backgroundColor: colors.inset }]}>
+      <View style={styles.cardHead}>
+        <Text style={[styles.label, { color: colors.text }]}>Free limit resets</Text>
+        <Text style={[styles.pct, { color: colors.ok }]}>{total} available</Text>
+      </View>
+      {lines.map((l, i) => (
+        <Text key={i} style={[styles.sub, { color: colors.dim }]}>
+          {l.left > 1 ? `${l.left} × ` : ""}
+          {l.title}
+          {l.expires ? ` · ${l.expires}` : ""}
+        </Text>
+      ))}
+      <Text style={[styles.sub, { color: colors.dim }]}>Use one on claude.ai → Settings → Usage.</Text>
+    </View>
+  );
+}
+
 /** Falls back to the two headline windows when `limits` is missing — an older daemon. */
 function limitsOf(usage: AccountUsage): AccountUsageLimit[] {
   if (usage.limits?.length) return usage.limits;
@@ -90,6 +112,7 @@ export function UsageLimits({ usage, colors }: { usage: AccountUsage; colors: Th
       {limitsOf(usage).map((l) => (
         <LimitCard key={`${l.kind}:${l.model ?? ""}`} limit={l} colors={colors} />
       ))}
+      <ResetsCard usage={usage} colors={colors} />
       {usage.extra && <ExtraCard extra={usage.extra} colors={colors} />}
     </View>
   );

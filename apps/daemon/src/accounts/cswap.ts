@@ -147,6 +147,7 @@ function normalizeAccount(a: any): Account {
           // cswap reports only the two headline windows; the per-model weekly
           // caps come from the usage reader, which overwrites this whole object.
           limits: Array.isArray(a.usage.limits) ? a.usage.limits : [],
+          resets: [],
           extra:
             a.usage.extra && typeof a.usage.extra.pct === "number"
               ? {

@@ -1000,7 +1000,7 @@ const TimelineRow = memo(function TimelineRow({ item, animate = false, first = f
       <div className={`${animate ? "renki-enter " : ""}group flex items-center justify-end gap-1`} data-anchor={`p:${item.promptId}`}>
         {item.text && <CopyButton text={item.text} label="Copy message" />}
         <div
-          className="max-w-[85%] rounded-2xl bg-(--renki-surface) px-4 py-3"
+          className="min-w-0 max-w-[85%] rounded-2xl bg-(--renki-surface) px-4 py-3"
           // The home screen's bubble flies here when a chat starts there (see Home's NewChat).
           style={first ? { viewTransitionName: "renki-first-prompt" } : undefined}
           data-first-prompt={first || undefined}
@@ -1011,7 +1011,7 @@ const TimelineRow = memo(function TimelineRow({ item, animate = false, first = f
               the one beside the bubble, so it's suppressed here. */}
           {item.text && (
             <Collapsible text={item.text} collapseLines={14} moreLabel="Show full message" hideCopy>
-              <div className="whitespace-pre-wrap text-[14px] leading-relaxed text-(--renki-fg)">
+              <div className="whitespace-pre-wrap [overflow-wrap:anywhere] text-[14px] leading-relaxed text-(--renki-fg)">
                 {item.text}
               </div>
             </Collapsible>
@@ -1427,11 +1427,11 @@ function SteeredPrompt({ prompt, waiting = false }: { prompt: SteeredPromptView;
   return (
     <div className="renki-enter group flex items-center justify-end gap-1" data-testid="steered-prompt" data-anchor={`p:${prompt.promptId}`}>
       {prompt.text && <CopyButton text={prompt.text} label="Copy message" />}
-      <div className="max-w-[85%] rounded-2xl bg-(--renki-surface) px-4 py-3">
+      <div className="min-w-0 max-w-[85%] rounded-2xl bg-(--renki-surface) px-4 py-3">
         {/* Folded like an ordinary message: sent mid-turn, a long one used to fill the screen. */}
         {prompt.text && (
           <Collapsible text={prompt.text} collapseLines={14} moreLabel="Show full message" hideCopy>
-            <div className="whitespace-pre-wrap text-[14px] leading-relaxed text-(--renki-fg)">
+            <div className="whitespace-pre-wrap [overflow-wrap:anywhere] text-[14px] leading-relaxed text-(--renki-fg)">
               {prompt.text}
             </div>
           </Collapsible>

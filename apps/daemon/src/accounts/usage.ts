@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { Impit } from "impit";
-import type { AccountUsage, AccountUsageExtra, AccountUsageLimit, UsageOrg } from "@renki/protocol";
+import type { AccountReset, AccountUsage, AccountUsageExtra, AccountUsageLimit, UsageOrg } from "@renki/protocol";
 import { logger } from "../logger.js";
 import type { RateLimitHit } from "../claude/runner.js";
 
@@ -64,6 +64,32 @@ export function parseLimits(body: any): AccountUsageLimit[] {
         resetsAt: typeof l.resets_at === "string" ? l.resets_at : null,
         severity: typeof l.severity === "string" ? l.severity : "normal",
         isActive: l.is_active === true,
+      },
+    ];
+  });
+}
+
+/**
+ * Free limit resets from `cedar_ember.grants`: one entry per grant that still
+ * has a reset left. Reverse-engineered like the rest, so every field is checked
+ * and a grant that doesn't look right is skipped rather than shown wrong.
+ */
+export function parseResets(body: any): AccountReset[] {
+  const grants = body?.cedar_ember?.grants;
+  if (!Array.isArray(grants)) return [];
+  return grants.flatMap((g: any) => {
+    const left = Number(g?.resets_left);
+    if (!g || typeof g.id !== "string" || !Number.isFinite(left) || left <= 0) return [];
+    return [
+      {
+        id: g.id,
+        label: typeof g.label === "string" ? g.label : g.id,
+        type: g.gives_back_weekly === true ? "fable" : typeof g.type === "string" ? g.type : "full",
+        left,
+        total: Number.isFinite(Number(g.resets_total)) ? Number(g.resets_total) : left,
+        expiresAt: typeof g.ends_at === "string" ? g.ends_at : null,
+        usableNow: g.usable_now === true && g.paused !== true,
+        clears: Array.isArray(g.clears) ? g.clears.filter((c: unknown) => typeof c === "string") : [],
       },
     ];
   });
@@ -349,6 +375,7 @@ export class UsageReader implements UsageSource {
       fiveHour: fiveHour ?? { pct: 0, resetsAt: null },
       sevenDay: sevenDay ?? { pct: 0, resetsAt: null },
       limits: parseLimits(body),
+      resets: parseResets(body),
       extra: parseExtra(body),
     };
   }

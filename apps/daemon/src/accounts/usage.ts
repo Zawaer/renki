@@ -28,6 +28,22 @@ import type { RateLimitHit } from "../claude/runner.js";
 type UsageEntry = { email: string | null; sessionKey: string; orgId: string | null };
 
 const CACHE_MS = 15_000;
+
+/**
+ * What claude.ai's own web app announces on every API call (copied from a real
+ * browser's /usage request, 14 Nov 2026). The free limit resets block
+ * (cedar_ember) only came back to requests that sent these, not to one with
+ * just the cookie, so they go along. Capabilities are the likely gate; the
+ * version/sha will drift, and a stale value is harmless.
+ */
+export const CLAUDE_WEB_CLIENT_HEADERS: Record<string, string> = {
+  "anthropic-client-platform": "web_claude_ai",
+  "anthropic-client-version": "1.0.0",
+  "anthropic-client-sha": "a7c57076fb8ea4990ac4c9b080b7b8b8fd6ff5e4",
+  "anthropic-client-build": "1794649146",
+  "anthropic-client-capabilities": "mfa_sms_v1, mfa_email_v1, plugin_reach_v2, saved_notice_line_v1, greeting_timed_line_v1, tawny_sandpiper_v1",
+  "content-type": "application/json",
+};
 const HTTP_TIMEOUT_MS = 15_000;
 
 export type ResolvedIdentity = { email: string | null; orgId: string; usage: AccountUsage };
@@ -405,6 +421,7 @@ export class UsageReader implements UsageSource {
         accept: "application/json",
         referer: `${this.baseUrl}/`,
         origin: this.baseUrl,
+        ...CLAUDE_WEB_CLIENT_HEADERS,
       },
     });
     if (!res.ok) throw new HttpError(res.status, `${path} → ${res.status}`);

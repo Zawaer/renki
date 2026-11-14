@@ -1,4 +1,4 @@
-import type { AccountUsage, AccountUsageLimit, UsageOrg } from "@renki/protocol";
+import type { AccountReset, AccountUsage, AccountUsageLimit, UsageOrg } from "@renki/protocol";
 import {
   type AccountView,
   type ClaudeAccounts,
@@ -107,7 +107,7 @@ export class ServiceUsage implements UsageSource {
   }
 }
 
-function fromLimits(limits: UsageLimit[], extra: { pct: number; usedDollars: number; limitDollars: number; currency: string } | null): AccountUsage {
+function fromLimits(limits: UsageLimit[], extra: { pct: number; usedDollars: number; limitDollars: number; currency: string } | null, resets: AccountReset[] = []): AccountUsage {
   const mapped: AccountUsageLimit[] = limits.map((l) => ({ ...l, isActive: l.kind === "session" }));
   const window = (kind: string) => {
     const l = limits.find((x) => x.kind === kind);
@@ -117,7 +117,7 @@ function fromLimits(limits: UsageLimit[], extra: { pct: number; usedDollars: num
     fiveHour: window("session"),
     sevenDay: window("weekly_all"),
     limits: mapped,
-    resets: [],
+    resets,
     extra: extra ? { ...extra, severity: "normal" } : null,
   };
 }
@@ -130,7 +130,7 @@ function fromLimits(limits: UsageLimit[], extra: { pct: number; usedDollars: num
  * gets that block.
  */
 export function toAccountUsage(view: AccountView, now = Date.now()): AccountUsage | null {
-  const base = view.usage ? fromLimits(view.usage.limits, view.usage.extra) : null;
+  const base = view.usage ? fromLimits(view.usage.limits, view.usage.extra, view.usage.resets) : null;
   const blocked = view.blockedBy != null && (view.blockedUntil == null || view.blockedUntil > now);
   if (!blocked) return base;
 

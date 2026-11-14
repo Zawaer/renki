@@ -25,6 +25,26 @@ function offsetLabel(tz: string, now: Date): string | null {
   }
 }
 
+/** A clock note at most this often per chat: every message would churn the prompt cache for nothing. */
+export const CLOCK_NOTE_EVERY_MS = 5 * 60_000;
+
+/**
+ * The current time in the user's zone, for a chat to read instead of
+ * guessing: one told "it's 03:10" in an overnight session was ten minutes off,
+ * since nothing in its context carried the time. `lastToldAt` is when this
+ * chat last got one. Null when the zone is unknown or one went out recently.
+ */
+export function clockNote(userTz: string | undefined, lastToldAt: number | undefined, now: Date = new Date()): { note: string | null; toldAt: number | undefined } {
+  if (!userTz || (lastToldAt !== undefined && now.getTime() - lastToldAt < CLOCK_NOTE_EVERY_MS)) return { note: null, toldAt: lastToldAt };
+  let when: string;
+  try {
+    when = new Intl.DateTimeFormat("en-GB", { timeZone: userTz, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false }).format(now);
+  } catch {
+    return { note: null, toldAt: lastToldAt };
+  }
+  return { note: `<renki-context>The time now is ${when} in the user's zone (${userTz}).</renki-context>\n\n`, toldAt: now.getTime() };
+}
+
 /**
  * What to tell Claude, if anything, for a prompt sent from `userTz`.
  * `lastTold` is the zone Claude last heard about (undefined: none yet, so it

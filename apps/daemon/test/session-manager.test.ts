@@ -1651,6 +1651,27 @@ describe("resuming after a usage limit", () => {
     expect(texts()[1]).toMatch(/^<renki-context>Renki runs you on one of 2 Claude accounts[\s\S]*Don't tell them when a limit resets[\s\S]*<\/renki-context>\n\nfix the bug$/);
   });
 
+  /** It said "it's 03:10" at 03:00: nothing in its context carried the time. */
+  it("gives a chat the time, also on an automatic continuation that carries no zone of its own", async () => {
+    const ctx = setup();
+    ctx.manager.setAutoSwitch(autoSwitch());
+    ctx.manager.setPermissionResolverFactory(() => noopResolve);
+    const s = await newSession(ctx.manager, ctx.repoId);
+    ctx.manager.takeControl(s.id, "d1");
+    runTurn.mockResolvedValueOnce(limited);
+    await ctx.manager.submitPrompt({ sessionId: s.id, deviceId: "d1", promptId: "p1", text: "fix the bug", timeZone: "Europe/Helsinki", resolvePermission: noopResolve });
+    expect(texts()[0]).toMatch(/<renki-context>The time now is [^<]*\(Europe\/Helsinki\)\.<\/renki-context>\n\nfix the bug$/);
+    runTurn.mockResolvedValueOnce(okTurn);
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 10 * 60_000 });
+    try {
+      ctx.manager.resumeAction(s.id, "d1", "now");
+      await vi.waitFor(() => expect(runTurn).toHaveBeenCalledTimes(2));
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(texts()[1]).toMatch(/<renki-context>The time now is [^<]*\(Europe\/Helsinki\)\.<\/renki-context>\n\n/);
+  });
+
   it("re-sends the original prompt when the turn got nowhere", async () => {
     const { manager, s } = await pausedSession();
     runTurn.mockResolvedValueOnce(okTurn);

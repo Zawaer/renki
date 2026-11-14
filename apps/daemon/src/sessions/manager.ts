@@ -52,7 +52,7 @@ import { diskBytes, slimFolder, slimNotices, type SlimOutcome } from "./slim.js"
 import { renkiPromptAppend } from "../claude/systemPrompt.js";
 import { detectHardware, hardwareNote } from "../claude/hardware.js";
 import { accountsNote } from "./accountsNote.js";
-import { hostTimeZone, timeZoneNote } from "./timeZoneNote.js";
+import { clockNote, hostTimeZone, timeZoneNote } from "./timeZoneNote.js";
 import { dueForPurge, purgeAtFor } from "./trash.js";
 
 /**
@@ -246,6 +246,9 @@ export class SessionManager {
   private readonly toldTimeZone = new Map<string, string>();
   /** Sessions that have heard about account rotation since the daemon started — see accountsNote. */
   private readonly toldAccounts = new Set<string>();
+  /** A chat's last known user time zone, and when it last got a clock note — see clockNote. An automatic continuation carries no zone of its own. */
+  private readonly userZone = new Map<string, string>();
+  private readonly toldClock = new Map<string, number>();
   /** Set by closeAll: a shutting-down daemon must not start resumed turns. */
   private stopping = false;
   /** Sessions inside runResume's readiness check, so the timer and "Continue now" can't both start the turn. */
@@ -1055,6 +1058,7 @@ export class SessionManager {
     this.queues.delete(id);
     this.toldTimeZone.delete(id);
     this.toldAccounts.delete(id);
+    this.toldClock.delete(id);
     const trashed = this.getSession(id);
     logger.info("session trashed", { id, purgeAt: trashed.purgeAt });
     return trashed;
@@ -1553,7 +1557,10 @@ export class SessionManager {
     }
     const { note, told } = timeZoneNote(input.timeZone, hostTimeZone(), this.toldTimeZone.get(input.sessionId));
     if (told) this.toldTimeZone.set(input.sessionId, told);
-    return prefix + (note ?? "") + (input.uploadNote ?? "");
+    if (input.timeZone) this.userZone.set(input.sessionId, input.timeZone);
+    const clock = clockNote(this.userZone.get(input.sessionId), this.toldClock.get(input.sessionId));
+    if (clock.toldAt !== undefined) this.toldClock.set(input.sessionId, clock.toldAt);
+    return prefix + (note ?? "") + (clock.note ?? "") + (input.uploadNote ?? "");
   }
 
   /** Runs exactly one Claude turn for an already-idle session. `paused` means it stopped on a limit and a resume is scheduled. */

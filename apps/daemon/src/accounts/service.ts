@@ -129,10 +129,29 @@ function fromLimits(limits: UsageLimit[], extra: { pct: number; usedDollars: num
  * for it. An account the service only knows from reports (no usage key) still
  * gets that block.
  */
+/**
+ * A reported block says "this window is full until T". It's wrong once the
+ * window was refilled early, by a free limit reset: the account's own usage
+ * then shows that window below full, and not resetting at T any more. Without
+ * this the report kept an account at 100% (and out of rotation) until T,
+ * long after the reset was used. A window still near full, or still ending
+ * when the report said, keeps the block.
+ */
+export function reportIsStale(usage: AccountUsage, view: Pick<AccountView, "blockedBy" | "blockedUntil">, now = Date.now()): boolean {
+  if (view.blockedUntil == null) return false;
+  const kind = /5-hour/.test(view.blockedBy ?? "") ? "session" : "weekly_all";
+  const l = usage.limits.find((x) => x.kind === kind);
+  if (!l || l.pct >= 99) return false;
+  const at = l.resetsAt ? Date.parse(l.resetsAt) : null;
+  const sameWindow = at !== null && Number.isFinite(at) && Math.abs(at - view.blockedUntil) < 3 * 60_000;
+  return !sameWindow;
+}
+
 export function toAccountUsage(view: AccountView, now = Date.now()): AccountUsage | null {
   const base = view.usage ? fromLimits(view.usage.limits, view.usage.extra, view.usage.resets) : null;
   const blocked = view.blockedBy != null && (view.blockedUntil == null || view.blockedUntil > now);
   if (!blocked) return base;
+  if (base && reportIsStale(base, view, now)) return base;
 
   const usage = base ?? { fiveHour: { pct: 0, resetsAt: null }, sevenDay: { pct: 0, resetsAt: null }, limits: [], resets: [], extra: null };
   const resetsAt = view.blockedUntil ? new Date(view.blockedUntil).toISOString() : null;

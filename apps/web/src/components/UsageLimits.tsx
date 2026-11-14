@@ -1,4 +1,4 @@
-import { formatResetTime, resetLines, usageSeverity } from "@renki/client-core";
+import { formatResetTime, resetAdvice, resetLines, usageSeverity } from "@renki/client-core";
 import type { AccountUsage, AccountUsageExtra, AccountUsageLimit } from "@renki/protocol";
 
 /**
@@ -91,6 +91,7 @@ function ExtraCard({ extra }: { extra: AccountUsageExtra }) {
 function ResetsCard({ usage }: { usage: AccountUsage }) {
   const lines = resetLines(usage.resets);
   if (lines.length === 0) return null;
+  const advice = resetAdvice(usage);
   const total = lines.reduce((n, l) => n + l.left, 0);
   return (
     <div className="rounded-xl bg-(--renki-accent)/10 px-3.5 py-3" data-testid="usage-resets">
@@ -107,6 +108,9 @@ function ResetsCard({ usage }: { usage: AccountUsage }) {
           </li>
         ))}
       </ul>
+      {advice && (
+        <div className={`mt-1.5 text-[11px] ${advice.kind === "expiring" || advice.kind === "use_now" ? "font-medium text-(--renki-accent)" : "text-(--renki-fg-muted)"}`}>{advice.text}</div>
+      )}
       <div className="mt-1 text-[11px] text-(--renki-fg-muted)">Use one on claude.ai → Settings → Usage.</div>
     </div>
   );

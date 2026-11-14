@@ -200,6 +200,13 @@ export class Notifier {
     await this.send(targets, message, requestId ? { sessionId, requestId } : { sessionId });
   }
 
+  /** News that belongs to no session (a limit reset about to expire): every device that isn't connected. */
+  async pushNews(title: string, body: string): Promise<void> {
+    const targets = this.tokens.all().filter((t) => !this.devices.isOnline(t.deviceId));
+    if (targets.length === 0) return;
+    await this.send(targets, { title, body, channel: "updates", needsInput: false }, {});
+  }
+
   /** A test push to one device, so Settings can show the whole path works. */
   async sendTest(deviceId: string): Promise<{ ok: boolean; error: string | null }> {
     const token = this.tokens.get(deviceId);

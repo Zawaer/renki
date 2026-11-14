@@ -80,3 +80,51 @@ export function resetCountLabel(resets: ResetLike[] | undefined, now = new Date(
   const n = resetLines(resets, now).reduce((sum, l) => sum + l.left, 0);
   return n > 0 ? `${n} reset${n === 1 ? "" : "s"}` : null;
 }
+
+export type ResetAdviceKind = "expiring" | "use_now" | "wait" | "later";
+export type ResetAdvice = { kind: ResetAdviceKind; text: string };
+
+type AdviceUsage = {
+  sevenDay: { pct: number; resetsAt: string | null };
+  limits?: { kind: string; pct: number; resetsAt: string | null }[];
+  resets?: ResetLike[];
+};
+
+const HOUR = 3_600_000;
+/** A reset this close to expiring is used or lost. */
+export const EXPIRY_WARN_MS = 48 * HOUR;
+/** At or past this share of the weekly limit, you're effectively out. */
+export const AT_LIMIT_PCT = 95;
+/** A reset refills what you've used, so it only pays when the natural weekly refill is still far off. */
+export const WORTH_IT_MS = 2 * 24 * HOUR;
+
+/**
+ * When to spend one of an account's free limit resets, or null without any.
+ *
+ * A reset gives back what you've used, so it's worth most when you hit the
+ * weekly limit early in the week, and worth nothing right before the weekly
+ * refill, which brings the same quota back anyway. The one hard deadline is
+ * expiry: unused resets are lost. So the rule is (1) use it before it
+ * expires, (2) otherwise use it when you're at the limit with at least two
+ * days to go, (3) otherwise wait. Advice only: Renki never uses a reset.
+ */
+export function resetAdvice(usage: AdviceUsage | null | undefined, now = new Date()): ResetAdvice | null {
+  const lines = (usage?.resets ?? []).filter((r) => r.left > 0 && r.expiresAt && new Date(r.expiresAt).getTime() > now.getTime());
+  if (!usage || lines.length === 0) return null;
+  const soonest = Math.min(...lines.map((r) => new Date(r.expiresAt as string).getTime()));
+  const untilExpiry = soonest - now.getTime();
+  const weekly = usage.limits?.find((l) => l.kind === "weekly_all") ?? { pct: usage.sevenDay.pct, resetsAt: usage.sevenDay.resetsAt };
+  const untilWeekly = weekly.resetsAt ? new Date(weekly.resetsAt).getTime() - now.getTime() : null;
+  const hours = (ms: number) => (ms < 48 * HOUR ? `${Math.max(1, Math.round(ms / HOUR))} hours` : `${Math.round(ms / (24 * HOUR))} days`);
+
+  if (untilExpiry <= EXPIRY_WARN_MS) {
+    return { kind: "expiring", text: `One expires in ${hours(untilExpiry)}. Use it before then or it's lost.` };
+  }
+  if (weekly.pct >= AT_LIMIT_PCT) {
+    if (untilWeekly === null || untilWeekly >= WORTH_IT_MS) {
+      return { kind: "use_now", text: `At the weekly limit${untilWeekly === null ? "" : ` with ${hours(untilWeekly)} to go`}: a reset now gives back the most.` };
+    }
+    return { kind: "wait", text: `At the limit, but the weekly reset is only ${hours(untilWeekly)} away. Probably wait.` };
+  }
+  return { kind: "later", text: `Best used when you hit the weekly limit with 2+ days left. Use by ${new Date(soonest).toLocaleDateString(undefined, { month: "short", day: "numeric" })}.` };
+}

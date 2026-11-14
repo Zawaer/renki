@@ -1,4 +1,4 @@
-import { formatResetTime, resetLines, usageSeverity } from "@renki/client-core";
+import { formatResetTime, resetAdvice, resetLines, usageSeverity } from "@renki/client-core";
 import type { AccountUsage, AccountUsageExtra, AccountUsageLimit } from "@renki/protocol";
 import { StyleSheet, Text, View } from "react-native";
 import { radius, type ThemeColors } from "../theme";
@@ -78,6 +78,7 @@ function ExtraCard({ extra, colors }: { extra: AccountUsageExtra; colors: ThemeC
 function ResetsCard({ usage, colors }: { usage: AccountUsage; colors: ThemeColors }) {
   const lines = resetLines(usage.resets);
   if (lines.length === 0) return null;
+  const advice = resetAdvice(usage);
   const total = lines.reduce((n, l) => n + l.left, 0);
   return (
     <View style={[styles.card, { backgroundColor: colors.inset }]}>
@@ -92,6 +93,9 @@ function ResetsCard({ usage, colors }: { usage: AccountUsage; colors: ThemeColor
           {l.expires ? ` · ${l.expires}` : ""}
         </Text>
       ))}
+      {advice && (
+        <Text style={[styles.sub, { color: advice.kind === "expiring" || advice.kind === "use_now" ? colors.ok : colors.dim }]}>{advice.text}</Text>
+      )}
       <Text style={[styles.sub, { color: colors.dim }]}>Use one on claude.ai → Settings → Usage.</Text>
     </View>
   );

@@ -1,5 +1,6 @@
 import { Uploads } from "./uploads.js";
 import { AccountRotator } from "./accounts/rotator.js";
+import { ResetWatcher } from "./accounts/resetWatcher.js";
 import { ServiceUsage } from "./accounts/service.js";
 import { UsageReader, type UsageSource } from "./accounts/usage.js";
 import { hasCapabilities, setCapabilities } from "./claude/capabilities.js";
@@ -69,6 +70,14 @@ async function main() {
   setInterval(() => uploads.sweep(), 6 * 60 * 60_000).unref();
   accounts.setOnSwitched(() => manager.recycleIdleLiveSessions()); // idle processes may cache the old account's creds
   accounts.start();
+  // Tell the phone when a free limit reset is about to expire or would pay best. Advice only; Renki never uses one.
+  const resetWatcher = new ResetWatcher(
+    join(config.dataDir, "reset-notices.json"),
+    async () => (await accounts.snapshot()).accounts,
+    (title, body) => notifier.pushNews(title, body),
+  );
+  const resetTimer = setInterval(() => void resetWatcher.check().catch((err) => logger.warn("reset check failed", { err: String(err) })), 30 * 60_000);
+  resetTimer.unref();
 
   const app = await createServer(config, { manager, broker, pushTokens, devices, accounts, usage: usageReader, notifier, insights: new InsightsCache(db), mac, macJobs, uploads });
   await app.listen({ host: config.host, port: config.port });
@@ -97,6 +106,7 @@ async function main() {
     clearInterval(sweep);
     clearInterval(trashSweep);
     accounts.stop();
+    clearInterval(resetTimer);
     // Give running turns a short chance to finish on their own; anything
     // still going after it is continued after the restart, not lost. The
     // process manager's kill timeout must exceed this grace (see

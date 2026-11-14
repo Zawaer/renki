@@ -1714,6 +1714,24 @@ describe("resuming after a usage limit", () => {
     }
   });
 
+  it("starts chats waiting on the same reset one after another, not all at once", async () => {
+    const { manager, s, repoId } = await pausedSession();
+    const s2 = await newSession(manager, repoId);
+    manager.takeControl(s2.id, "d1");
+    runTurn.mockResolvedValueOnce(limited);
+    await manager.submitPrompt({ sessionId: s2.id, deviceId: "d1", promptId: "p2", text: "other work", resolvePermission: noopResolve });
+    const run = (id: string) => (manager as unknown as { runResume(id: string, force: boolean): Promise<void> }).runResume(id, false);
+    runTurn.mockResolvedValue(okTurn);
+    const before = runTurn.mock.calls.length;
+
+    await run(s.id); // first one takes the slot and starts
+    await run(s2.id); // second is pushed back, not started
+    await vi.waitFor(() => expect(runTurn.mock.calls.length).toBe(before + 1));
+    const later = manager.getSession(s2.id).resume;
+    expect(later).not.toBeNull();
+    expect((later?.at ?? 0) - Date.now()).toBeGreaterThan(60_000);
+  });
+
   /** The readiness check found every account still spent: wait again rather than burn an attempt. */
   it("waits again when no account can take it yet", async () => {
     const later = Date.now() + 7_200_000;

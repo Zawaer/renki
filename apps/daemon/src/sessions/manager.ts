@@ -96,6 +96,8 @@ type ResumeState = {
   prompt: ResumePrompt;
   /** Prompts that were queued behind the turn, run after it — kept across a restart. */
   queued?: (ResumePrompt & { promptId: string })[];
+  /** A start slot was already claimed (see RESUME_STAGGER_MS): go when it comes up, don't queue again. */
+  slotted?: boolean;
 };
 
 type ResumePrompt = {
@@ -130,6 +132,13 @@ export function restartContinueText(hadBackgroundAgents: boolean): string {
  * the model, say), which would otherwise be retried forever.
  */
 export const MAX_RESUME_ATTEMPTS = 8;
+
+/**
+ * Paused chats used to restart in the same second the limit cleared, all on one
+ * account, each re-reading a cold million-token context. One account's fresh
+ * window then went in minutes. Resumes now start this far apart instead.
+ */
+export const RESUME_STAGGER_MS = 90_000;
 
 /**
  * Sent instead of the original prompt when the turn got partway before the
@@ -230,6 +239,8 @@ export class SessionManager {
    * agent finishing) must not flip such a session's status underneath it.
    */
   private readonly promptedTurns = new Set<string>();
+  /** When the next resume may start (RESUME_STAGGER_MS after the last one given a slot). */
+  private nextResumeSlot = 0;
   /** sessionId -> the timer that will run its scheduled resume (see scheduleResume). */
   private readonly resumeTimers = new Map<string, NodeJS.Timeout>();
   /** Builds the permission resolver for a resumed turn — the broker's, wired in at startup. */
@@ -1930,6 +1941,17 @@ export class SessionManager {
     if (this.getSession(sessionId).status === "busy") return this.reschedule(sessionId, state, Date.now() + 60_000, null);
 
     if (!ready.proceed && !force) return this.reschedule(sessionId, state, ready.plan.at, ready.plan.reason);
+
+    // Several chats waiting on the same reset would all start now: line them up, not all at once.
+    if (!force && !state.slotted) {
+      const now = Date.now();
+      const slot = Math.max(now, this.nextResumeSlot);
+      this.nextResumeSlot = slot + RESUME_STAGGER_MS;
+      if (slot - now > 2_000) {
+        logger.info("resume staggered", { sessionId, inMs: slot - now });
+        return this.reschedule(sessionId, { ...state, slotted: true }, slot, null);
+      }
+    }
 
     this.clearResume(sessionId);
     if (ready.proceed && ready.note) this.events.append(sessionId, { kind: "notice", text: ready.note, level: "info" });

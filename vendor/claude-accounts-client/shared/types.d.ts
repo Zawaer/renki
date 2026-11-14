@@ -5,7 +5,11 @@
  *
  * Times are epoch milliseconds unless a field says otherwise.
  */
-/** One limit window claude.ai reports for an account: the 5-hour session, the weekly cap, a per-model weekly cap. */
+/**
+ * One limit window claude.ai reports for an account: the 5-hour session, the
+ * weekly cap, a per-model weekly cap. Not every plan has all of them — a
+ * verified Ultra account has no 5-hour session — so never assume one is there.
+ */
 export type UsageLimit = {
     /** "session", "weekly_all", "weekly_scoped", or whatever new kind claude.ai adds. */
     kind: string;
@@ -26,8 +30,20 @@ export type UsageExtra = {
     limitDollars: number;
     currency: string;
 };
+/** A still-unused claude.ai free limit refill grant. */
+export type AccountReset = {
+    id: string;
+    label: string;
+    type: string;
+    left: number;
+    total: number;
+    expiresAt: string | null;
+    usableNow: boolean;
+    clears: string[];
+};
 export type AccountUsage = {
     limits: UsageLimit[];
+    resets: AccountReset[];
     extra: UsageExtra | null;
     /** When claude.ai was last read successfully. */
     fetchedAt: number;

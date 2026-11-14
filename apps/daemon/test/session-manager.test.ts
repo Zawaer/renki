@@ -1641,6 +1641,16 @@ describe("resuming after a usage limit", () => {
     expect(texts()[1]).toBe("again");
   });
 
+  /** It announced "the limit resets at 07:00" from its own account's message, with another account free at 04:29. */
+  it("tells a session about the other accounts again after a limit", async () => {
+    const { manager, s } = await pausedSession(autoSwitch({ rotatingAccounts: 2 }));
+    runTurn.mockResolvedValueOnce(okTurn);
+    manager.resumeAction(s.id, "d1", "now");
+    await vi.waitFor(() => expect(runTurn).toHaveBeenCalledTimes(2));
+    expect(texts()[0]).toMatch(/^<renki-context>Renki runs you on one of 2 Claude accounts/);
+    expect(texts()[1]).toMatch(/^<renki-context>Renki runs you on one of 2 Claude accounts[\s\S]*Don't tell them when a limit resets[\s\S]*<\/renki-context>\n\nfix the bug$/);
+  });
+
   it("re-sends the original prompt when the turn got nowhere", async () => {
     const { manager, s } = await pausedSession();
     runTurn.mockResolvedValueOnce(okTurn);

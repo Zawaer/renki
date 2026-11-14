@@ -1739,6 +1739,7 @@ export class SessionManager {
    * turn runs as if the user had sent it.
    */
   private async scheduleResume(input: SubmitPromptInput, result: RunTurnResult): Promise<boolean> {
+    this.toldAccounts.delete(input.sessionId); // a limit: tell it about the other accounts again with the next prompt
     const auto = this.autoSwitch;
     if (!auto?.autoResumeEnabled) return false;
     const attempt = input.resumeAttempt ?? 0;
@@ -1793,6 +1794,7 @@ export class SessionManager {
    * pause until a reset. Returns whether the session will continue.
    */
   private async continueAfterAutoLimit(sessionId: string, result: RunTurnResult): Promise<boolean> {
+    this.toldAccounts.delete(sessionId); // a limit: tell it about the other accounts again with the next prompt
     const auto = this.autoSwitch;
     if (!auto) return false;
     await auto.reportLimit?.(result.rateLimit ?? null).catch(() => {});

@@ -58,14 +58,17 @@ describe("toAccountUsage", () => {
   });
 
   it("shows a block another app reported as that window at 100% until the reset", () => {
-    const u = toAccountUsage(view({ blockedBy: "the 5-hour limit", blockedUntil: NOW + H }), NOW)!;
+    // The account's own reading hasn't caught up (30%), but it names the same window the other app was refused on.
+    const lagging = view().usage!.limits.map((l) => (l.kind === "session" ? { ...l, resetsAt: new Date(NOW + H).toISOString() } : l));
+    const u = toAccountUsage(view({ blockedBy: "the 5-hour limit", blockedUntil: NOW + H, usage: { ...view().usage!, limits: lagging } }), NOW)!;
     expect(u.fiveHour).toEqual({ pct: 100, resetsAt: new Date(NOW + H).toISOString() });
     expect(u.sevenDay.pct).toBe(60);
     expect(u.limits.at(-1)).toMatchObject({ kind: "reported", pct: 100, severity: "critical" });
   });
 
   it("puts a weekly block on the 7-day window", () => {
-    const u = toAccountUsage(view({ blockedBy: "the weekly limit", blockedUntil: NOW + 24 * H }), NOW)!;
+    const lagging = view().usage!.limits.map((l) => (l.kind === "weekly_all" ? { ...l, resetsAt: new Date(NOW + 24 * H).toISOString() } : l));
+    const u = toAccountUsage(view({ blockedBy: "the weekly limit", blockedUntil: NOW + 24 * H, usage: { ...view().usage!, limits: lagging } }), NOW)!;
     expect(u.fiveHour.pct).toBe(30);
     expect(u.sevenDay.pct).toBe(100);
   });

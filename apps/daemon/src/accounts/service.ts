@@ -143,8 +143,10 @@ export function reportIsStale(usage: AccountUsage, view: Pick<AccountView, "bloc
   const l = usage.limits.find((x) => x.kind === kind);
   if (!l || l.pct >= 99) return false;
   const at = l.resetsAt ? Date.parse(l.resetsAt) : null;
-  const sameWindow = at !== null && Number.isFinite(at) && Math.abs(at - view.blockedUntil) < 3 * 60_000;
-  return !sameWindow;
+  // No reset time: the window hasn't started since the refill. A reset time well after the reported one: a new window.
+  // The same time (or earlier), with the window not full, is just a reading that hasn't caught up with the rejection.
+  if (at === null) return true;
+  return Number.isFinite(at) && at > view.blockedUntil + 3 * 60_000;
 }
 
 export function toAccountUsage(view: AccountView, now = Date.now()): AccountUsage | null {

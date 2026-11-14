@@ -16,6 +16,8 @@ describe("reportIsStale", () => {
   it("keeps a block while the window is still full and ends when reported", () => {
     expect(reportIsStale(usage("session", 100, "2026-11-14T12:36:00Z"), view(null), now)).toBe(false);
     expect(reportIsStale(usage("session", 99.5, "2026-11-14T12:37:00Z"), view(null), now)).toBe(false);
+    // Not caught up with the rejection yet: same window, low reading.
+    expect(reportIsStale(usage("session", 30, "2026-11-14T12:36:00Z"), view(null), now)).toBe(false);
   });
   it("drops it once a reset refilled the window (low use, different or no reset time)", () => {
     expect(reportIsStale(usage("session", 3, null), view(null), now)).toBe(true);

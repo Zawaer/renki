@@ -373,7 +373,7 @@ export class UsageReader implements UsageSource {
   }
 
   private async fetchUsage(sessionKey: string, orgId: string): Promise<AccountUsage | null> {
-    const body = await this.getJson<any>(sessionKey, `/api/organizations/${encodeURIComponent(orgId)}/usage`);
+    const body = await this.getJson<any>(sessionKey, `/api/organizations/${encodeURIComponent(orgId)}/usage?cedar_ember=1&skip_spend=1`);
     // Current claude.ai shape: a `limits` array with an explicit percent (0–100)
     // and resets_at per window ("session" = 5-hour, "weekly" = 7-day). Fall back
     // to the older five_hour/seven_day.utilization fraction if `limits` is absent.

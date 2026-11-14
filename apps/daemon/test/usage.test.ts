@@ -34,7 +34,7 @@ describe("orgId auto-resolve", () => {
     const reader = new UsageReader(configPath);
     (reader as any).http = fakeHttp({
       "/api/organizations": [{ uuid: "org-1", name: "Only Org" }],
-      "/api/organizations/org-1/usage": { limits: [{ group: "session", percent: 42, resets_at: null }] },
+      "/api/organizations/org-1/usage?cedar_ember=1&skip_spend=1": { limits: [{ group: "session", percent: 42, resets_at: null }] },
     });
 
     const usage = await reader.usageByEmail();
@@ -71,7 +71,7 @@ describe("orgId auto-resolve", () => {
     const configPath = withConfig([{ email: "d@example.com", sessionKey: "sk-ant-sid01-w", orgId: "org-9" }]);
     const reader = new UsageReader(configPath);
     const http = fakeHttp({
-      "/api/organizations/org-9/usage": { limits: [{ group: "session", percent: 10, resets_at: null }] },
+      "/api/organizations/org-9/usage?cedar_ember=1&skip_spend=1": { limits: [{ group: "session", percent: 10, resets_at: null }] },
     });
     (reader as any).http = http;
 

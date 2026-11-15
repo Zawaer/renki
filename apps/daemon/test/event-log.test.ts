@@ -175,7 +175,8 @@ describe("statsSummary", () => {
 
     // Sorted descending by cost, same as byRepo.
     expect(stats.byModel[0]?.key).toBe("claude-opus-5-5");
-    expect(stats.byModel[0]?.costUsd).toBeCloseTo(2);
+    // Priced from tokens: 2 × (10 × $4 × 1.25 + 5 × $20) per million.
+    expect(stats.byModel[0]?.costUsd).toBeCloseTo(2 * (10 * 4 * 1.25 + 5 * 20) / 1e6, 9);
   });
 
   it("sums cache reads separately from fresh input, treating a missing field as zero", () => {

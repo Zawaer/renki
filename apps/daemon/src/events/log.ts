@@ -4,6 +4,7 @@ import { and, asc, eq, gt, inArray, like, max, ne, or } from "drizzle-orm";
 import type { DB } from "../db/index.js";
 import { events, sessions } from "../db/schema.js";
 import { ChatSearch } from "./search.js";
+import { withTokenCost } from "../stats/pricing.js";
 
 /**
  * The EventLog is the daemon's single source of truth for session activity.
@@ -242,7 +243,7 @@ export class EventLog {
     let firstTurnAt: number | null = null;
 
     for (const row of rows) {
-      const payload = JSON.parse(row.data) as Extract<EventPayload, { kind: "turn_result" }>;
+      const payload = withTokenCost(JSON.parse(row.data) as Extract<EventPayload, { kind: "turn_result" }>);
       const iso = new Date(row.ts).toISOString();
       accumulate(bucketFor(daily, iso.slice(0, 10)), payload);
       accumulate(bucketFor(monthly, iso.slice(0, 7)), payload);
@@ -321,7 +322,7 @@ function rowToEvent(row: {
   ts: number;
   data: string;
 }): SessionEvent {
-  const payload = JSON.parse(row.data) as EventPayload;
+  const payload = withTokenCost(JSON.parse(row.data) as EventPayload);
   return { seq: row.seq, sessionId: row.sessionId, ts: row.ts, ...payload } as SessionEvent;
 }
 

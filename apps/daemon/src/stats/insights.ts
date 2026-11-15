@@ -4,6 +4,7 @@ import { classifyRateLimit } from "../claude/runner.js";
 import type { DB } from "../db/index.js";
 import { compactions, events, presence, sessions } from "../db/schema.js";
 import { RESTART_INTERRUPTED_MESSAGE, RESUME_CONTINUE_TEXT, restartContinueText } from "../sessions/manager.js";
+import { withTokenCost } from "./pricing.js";
 
 /**
  * The Stats page's insights: everything beyond cost and tokens, worked out
@@ -246,7 +247,7 @@ export function computeInsights(db: DB, tzName: string | undefined, now = Date.n
   const switchesTo = new Map<string, number>();
 
   for (const row of rows) {
-    const e = JSON.parse(row.data) as EventPayload;
+    const e = withTokenCost(JSON.parse(row.data) as EventPayload);
     const at = local(row.ts);
 
     switch (e.kind) {

@@ -182,7 +182,7 @@ describe("LiveClaudeSession turns", () => {
     await fake.emit({ ...okResult, user_message_uuid: fake.sent[0]!.uuid } as never);
 
     const result = await pending;
-    expect(result).toMatchObject({ ok: true, costUsd: 0.01, claudeSessionId: "claude-sess-1", rateLimited: false });
+    expect(result).toMatchObject({ ok: true, costUsd: (5 * 4 * 1.25 + 7 * 20) / 1e6, claudeSessionId: "claude-sess-1", rateLimited: false });
     expect(live.busy).toBe(false);
 
     const turnResult = events.find((e) => e.kind === "turn_result");
@@ -626,19 +626,18 @@ describe("LiveClaudeSession.notify", () => {
 });
 
 describe("LiveClaudeSession cost accounting", () => {
-  it("reports each turn's own cost, since the SDK's total is cumulative for the process", async () => {
+  it("prices each turn from its own tokens, ignoring the SDK's cumulative total (restored on resume)", async () => {
     const { live, fake, events } = makeLive();
-    // Three turns whose cumulative totals climb by ~1 cent each.
-    for (const [i, total] of [0.184893, 0.1945047, 0.2041338].entries()) {
+    // The first total is what a resumed chat reports: its whole earlier history.
+    for (const [i, total] of [1200, 1200.01, 1200.02].entries()) {
       const t = live.runTurn({ prompt: `q${i}`, promptId: `p${i}`, resolvePermission: allow });
       await new Promise((r) => setTimeout(r, 0));
-      await fake.emit({ ...okResult, total_cost_usd: total } as never);
+      await fake.emit({ ...okResult, total_cost_usd: total, usage: { input_tokens: 1000, cache_read_input_tokens: 100_000, output_tokens: 500 } } as never);
       await t;
     }
-    const costs = (events.filter((e) => e.kind === "turn_result") as Array<{ costUsd: number | null }>).map((e) =>
-      Number(e.costUsd!.toFixed(6)),
-    );
-    expect(costs).toEqual([0.184893, 0.009612, 0.009629]);
+    const costs = (events.filter((e) => e.kind === "turn_result") as Array<{ costUsd: number | null }>).map((e) => Number(e.costUsd!.toFixed(6)));
+    // Opus 5.5: 1000 × $4 × 1.25 + 100k × $0.20 + 500 × $20, per million.
+    expect(costs).toEqual([0.035, 0.035, 0.035]);
   });
 
   it("counts what a turn ingested, and reports cache re-reads separately", async () => {

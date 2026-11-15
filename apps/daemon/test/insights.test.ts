@@ -119,10 +119,10 @@ describe("computeInsights", () => {
     addSession("old", "shop", now - 366 * 86_400_000);
     add("old", now - 366 * 86_400_000, { kind: "prompt_submitted", promptId: "p", deviceId: "web_1", text: "build me a shop" });
     addSession("s2", "blog");
-    turn("old", MON + 60_000, { costUsd: 2.5 });
+    turn("old", MON + 60_000, { outputTokens: 125_000 }); // $2.50 of Opus 5.5 output
     turn("s2", MON + 90_000, { durationMs: 120_000 });
     const r = computeInsights(db, "UTC", now);
-    expect(r.records.mostExpensiveTurn).toMatchObject({ value: 2.5, session: { sessionId: "old" } });
+    expect(r.records.mostExpensiveTurn).toMatchObject({ value: expect.closeTo(2.5005, 6), session: { sessionId: "old" } });
     expect(r.records.mostAtOnce?.count).toBe(2);
     expect(r.longestTurn?.value).toBe(120_000);
     expect(r.rememberWhen).toMatchObject({ session: { sessionId: "old" }, ago: "a year ago", firstPrompt: "build me a shop" });

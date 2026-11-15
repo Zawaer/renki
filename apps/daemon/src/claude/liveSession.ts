@@ -30,6 +30,7 @@ import {
 } from "./runner.js";
 import { CLAUDE_SETTINGS, stripUntrustedHooks } from "./settingsHygiene.js";
 import { projectDir } from "./transcripts.js";
+import { turnCostUsd } from "../stats/pricing.js";
 
 /**
  * One long-lived `claude` process for one Renki session.
@@ -258,7 +259,6 @@ export class LiveClaudeSession {
    * every turn got a fresh process — but with one long-lived process per
    * session it climbs forever, so each turn's own cost is the delta.
    */
-  private costUsdSoFar = 0;
   private currentModel: string | undefined;
   private currentPermissionMode: PermissionMode;
   private currentMaxThinkingTokens: number | null | undefined;
@@ -829,9 +829,6 @@ export class LiveClaudeSession {
       return;
     }
     const ok = message.subtype === "success" && !message.is_error;
-    const cumulativeCost = message.total_cost_usd ?? null;
-    const costUsd = cumulativeCost != null ? Math.max(0, cumulativeCost - this.costUsdSoFar) : null;
-    if (cumulativeCost != null) this.costUsdSoFar = cumulativeCost;
     const interrupted = !ok && isInterruptedTerminalReason((message as { terminal_reason?: unknown }).terminal_reason);
     const errorMessage = ok ? null : interrupted ? "Stopped by controller." : summarizeResultError(message);
     const usage = (message as {
@@ -847,6 +844,14 @@ export class LiveClaudeSession {
      */
     const inputTokens = usage == null ? null : (usage.input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
     const cachedInputTokens = usage == null ? null : (usage.cache_read_input_tokens ?? 0);
+    // From tokens, not total_cost_usd: that one restores the chat's earlier total on resume (see stats/pricing.ts).
+    const costUsd = turnCostUsd({
+      inputTokens,
+      cachedInputTokens,
+      outputTokens: usage?.output_tokens ?? null,
+      model: this.inflight?.model ?? null,
+      resolvedModel: this.inflight?.servedModel ?? null,
+    });
     const sawRateLimit = this.inflight?.sawRateLimitError ?? false;
 
     const promptIds = this.takeSteered(target.promptId);

@@ -1118,7 +1118,7 @@ describe("purge", () => {
     const stats = manager.events.statsSummary();
     const repoBucket = stats.byRepo.find((r) => r.repoId === repoId);
     expect(repoBucket?.turnCount).toBe(1);
-    expect(repoBucket?.costUsd).toBeCloseTo(1.23);
+    expect(repoBucket?.costUsd).toBeCloseTo((10 * 4 * 1.25 + 20 * 20) / 1e6, 9); // priced from its tokens
   });
 
   it("refuses any further operation on a deleted session", async () => {

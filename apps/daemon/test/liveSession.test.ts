@@ -182,7 +182,7 @@ describe("LiveClaudeSession turns", () => {
     await fake.emit({ ...okResult, user_message_uuid: fake.sent[0]!.uuid } as never);
 
     const result = await pending;
-    expect(result).toMatchObject({ ok: true, costUsd: (5 * 4 * 1.25 + 7 * 20) / 1e6, claudeSessionId: "claude-sess-1", rateLimited: false });
+    expect(result).toMatchObject({ ok: true, costUsd: (5 * 8 + 7 * 20) / 1e6, claudeSessionId: "claude-sess-1", rateLimited: false });
     expect(live.busy).toBe(false);
 
     const turnResult = events.find((e) => e.kind === "turn_result");
@@ -636,8 +636,31 @@ describe("LiveClaudeSession cost accounting", () => {
       await t;
     }
     const costs = (events.filter((e) => e.kind === "turn_result") as Array<{ costUsd: number | null }>).map((e) => Number(e.costUsd!.toFixed(6)));
-    // Opus 5.5: 1000 × $4 × 1.25 + 100k × $0.20 + 500 × $20, per million.
-    expect(costs).toEqual([0.035, 0.035, 0.035]);
+    // Opus 5.5: 1000 × $8 (no write split recorded: 1-hour) + 100k × $0.20 + 500 × $20, per million.
+    expect(costs).toEqual([0.038, 0.038, 0.038]);
+  });
+
+  it("adds what subagents used, once per API call, priced at their own model", async () => {
+    const { live, fake, events } = makeLive();
+    const t = live.runTurn({ prompt: "q", promptId: "p", resolvePermission: allow });
+    await new Promise((r) => setTimeout(r, 0));
+    const sub = (id: string, out: number) => ({
+      type: "assistant",
+      parent_tool_use_id: "tool-1",
+      message: { id, model: "claude-haiku-5-5", role: "assistant", content: [{ type: "text", text: "x" }], usage: { input_tokens: 10, cache_creation_input_tokens: 90, cache_read_input_tokens: 1000, output_tokens: out, cache_creation: { ephemeral_5m_input_tokens: 90, ephemeral_1h_input_tokens: 0 } } },
+    });
+    // The CLI repeats a message once per content block: msg_a must count once, with its last usage.
+    await fake.emit(sub("msg_a", 5) as never);
+    await fake.emit(sub("msg_a", 50) as never);
+    await fake.emit(sub("msg_b", 50) as never);
+    await fake.emit({ ...okResult, usage: { input_tokens: 0, output_tokens: 0 } } as never);
+    await t;
+    const r = events.find((e) => e.kind === "turn_result") as { subagentUsage?: unknown[]; costUsd: number };
+    expect(r.subagentUsage).toEqual([
+      { model: "claude-haiku-5-5", inputTokens: 200, cachedInputTokens: 2000, outputTokens: 100, cacheWrite5mTokens: 180, cacheWrite1hTokens: 0 },
+    ]);
+    // Haiku 5.5: 20 fresh × $0.10 + 180 5m writes × $0.125 + 2000 reads × $0.01 + 100 out × $0.50, per million.
+    expect(r.costUsd).toBeCloseTo((20 * 0.1 + 180 * 0.125 + 2000 * 0.01 + 100 * 0.5) / 1e6, 12);
   });
 
   it("counts what a turn ingested, and reports cache re-reads separately", async () => {

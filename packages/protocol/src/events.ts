@@ -221,6 +221,32 @@ const payloads = [
      * report millions. Absent on events recorded before this was split out.
      */
     cachedInputTokens: z.number().int().nullable().optional(),
+    /**
+     * The part of `inputTokens` that was written to the prompt cache, split by
+     * cache lifetime (they're priced differently: 1.25x and 2x input). Lets
+     * spend be priced exactly; absent on events from before they were recorded,
+     * which are priced as if all of `inputTokens` were 5-minute writes.
+     */
+    cacheWrite5mTokens: z.number().int().nullable().optional(),
+    cacheWrite1hTokens: z.number().int().nullable().optional(),
+    /**
+     * What subagents (the Agent tool, background agents) used since the last
+     * result, per model. The CLI's own result usage covers the main thread
+     * only, and subagents can use more than it does. Same meaning per field as
+     * the main-thread ones above. Absent on older events.
+     */
+    subagentUsage: z
+      .array(
+        z.object({
+          model: z.string().nullable(),
+          inputTokens: z.number().int(),
+          cachedInputTokens: z.number().int(),
+          outputTokens: z.number().int(),
+          cacheWrite5mTokens: z.number().int().nullable(),
+          cacheWrite1hTokens: z.number().int().nullable(),
+        }),
+      )
+      .optional(),
     /** True when this failure is the controller stopping the turn (the "stop" button), not a real error. */
     interrupted: z.boolean().optional(),
     /** The per-turn model override the client sent, or null when it ran the SDK's own default. Optional so events stored before this field existed still parse. */

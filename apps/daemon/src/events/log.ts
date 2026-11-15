@@ -4,7 +4,7 @@ import { and, asc, eq, gt, inArray, like, max, ne, or } from "drizzle-orm";
 import type { DB } from "../db/index.js";
 import { events, sessions } from "../db/schema.js";
 import { ChatSearch } from "./search.js";
-import { withTokenCost } from "../stats/pricing.js";
+import { partCostUsd, type UsagePart, usageParts, withTokenCost } from "../stats/pricing.js";
 
 /**
  * The EventLog is the daemon's single source of truth for session activity.
@@ -251,7 +251,7 @@ export class EventLog {
 
       const repo = repoBySession.get(row.sessionId) ?? { repoId: "unknown", repoName: "Unknown repo" };
       accumulate(repoBucketFor(byRepo, repo), payload);
-      accumulate(bucketFor(byModel, payload.resolvedModel ?? payload.model ?? "default"), payload);
+      accumulateByModel(byModel, payload);
       accumulate(bucketFor(byClientType, payload.clientType ?? "unknown"), payload);
 
       if (firstTurnAt === null || row.ts < firstTurnAt) firstTurnAt = row.ts;
@@ -369,11 +369,37 @@ type Accumulable = {
   okCount: number;
 };
 
+function addTokens(bucket: Accumulable, u: UsagePart): void {
+  bucket.inputTokens += u.inputTokens;
+  bucket.cachedInputTokens = (bucket.cachedInputTokens ?? 0) + u.cachedInputTokens;
+  bucket.outputTokens += u.outputTokens;
+}
+
+/**
+ * By model: the turn (its count, time, outcome) goes under the main thread's
+ * model with that thread's tokens and cost; each subagent model gets its own
+ * tokens and cost, without counting as a turn.
+ */
+function accumulateByModel(map: Map<string, StatsBucket>, payload: Extract<EventPayload, { kind: "turn_result" }>): void {
+  const [main, ...subs] = usageParts(payload);
+  const key = payload.resolvedModel ?? payload.model ?? "default";
+  const b = bucketFor(map, key);
+  b.costUsd += main ? partCostUsd(main) : (payload.costUsd ?? 0);
+  if (main) addTokens(b, main);
+  b.durationMs += payload.durationMs ?? 0;
+  b.turnCount += 1;
+  if (payload.ok) b.okCount += 1;
+  for (const u of subs) {
+    const sb = bucketFor(map, u.model ?? "default");
+    sb.costUsd += partCostUsd(u);
+    addTokens(sb, u);
+  }
+}
+
 function accumulate(bucket: Accumulable, payload: Extract<EventPayload, { kind: "turn_result" }>): void {
   bucket.costUsd += payload.costUsd ?? 0;
-  bucket.inputTokens += payload.inputTokens ?? 0;
-  bucket.cachedInputTokens = (bucket.cachedInputTokens ?? 0) + (payload.cachedInputTokens ?? 0);
-  bucket.outputTokens += payload.outputTokens ?? 0;
+  // Main thread plus subagents (see usageParts); a turn with no token counts adds none.
+  for (const u of usageParts(payload)) addTokens(bucket, u);
   bucket.durationMs += payload.durationMs ?? 0;
   bucket.turnCount += 1;
   if (payload.ok) bucket.okCount += 1;

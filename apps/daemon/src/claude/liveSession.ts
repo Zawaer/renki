@@ -32,6 +32,16 @@ import { CLAUDE_SETTINGS, stripUntrustedHooks } from "./settingsHygiene.js";
 import { projectDir } from "./transcripts.js";
 import { turnCostUsd } from "../stats/pricing.js";
 
+/** The API's usage block, as the CLI passes it on (results and assistant messages). */
+type ApiUsage = {
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_read_input_tokens?: number;
+  cache_creation_input_tokens?: number;
+  cache_creation?: { ephemeral_5m_input_tokens?: number; ephemeral_1h_input_tokens?: number } | null;
+};
+type SubagentUsage = NonNullable<Extract<EventPayload, { kind: "turn_result" }>["subagentUsage"]>[number];
+
 /**
  * One long-lived `claude` process for one Renki session.
  *
@@ -685,6 +695,7 @@ export class LiveClaudeSession {
           const served = (message.message as { model?: unknown }).model;
           if (typeof served === "string" && served) this.inflight.servedModel = served;
         }
+        if (message.parent_tool_use_id) this.noteSubagentUsage(message.message);
         const turnId = this.turnFor(message.parent_tool_use_id);
         const t = this.trackingFor(message.parent_tool_use_id);
         if (message.parent_tool_use_id) this.agentWatch.message(message.parent_tool_use_id, (message.message as { content?: unknown }).content);
@@ -818,6 +829,37 @@ export class LiveClaudeSession {
     return !this.echoesPromptUuids;
   }
 
+  /**
+   * Subagent API calls since the last result, by message id. The CLI repeats
+   * an assistant message once per content block with the same usage, so the
+   * last copy of each id wins rather than adding them up.
+   */
+  private subagentCalls = new Map<string, { model: string | null; usage: ApiUsage }>();
+
+  private noteSubagentUsage(m: unknown): void {
+    const msg = m as { id?: unknown; model?: unknown; usage?: ApiUsage } | null;
+    if (!msg?.usage || typeof msg.id !== "string") return;
+    this.subagentCalls.set(msg.id, { model: typeof msg.model === "string" ? msg.model : null, usage: msg.usage });
+  }
+
+  /** What subagents used since the last result, per model; clears it so each call is counted once. */
+  private takeSubagentUsage(): SubagentUsage[] {
+    const byModel = new Map<string | null, SubagentUsage>();
+    for (const { model, usage: u } of this.subagentCalls.values()) {
+      let s = byModel.get(model);
+      if (!s) byModel.set(model, (s = { model, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, cacheWrite5mTokens: null, cacheWrite1hTokens: null }));
+      s.inputTokens += (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+      s.cachedInputTokens += u.cache_read_input_tokens ?? 0;
+      s.outputTokens += u.output_tokens ?? 0;
+      if (u.cache_creation) {
+        s.cacheWrite5mTokens = (s.cacheWrite5mTokens ?? 0) + (u.cache_creation.ephemeral_5m_input_tokens ?? 0);
+        s.cacheWrite1hTokens = (s.cacheWrite1hTokens ?? 0) + (u.cache_creation.ephemeral_1h_input_tokens ?? 0);
+      }
+    }
+    this.subagentCalls.clear();
+    return [...byModel.values()];
+  }
+
   private endTurn(message: Extract<SDKMessage, { type: "result" }>): void {
     if (this.inflight && !this.isOurResult(message, this.inflight)) {
       logger.info("result from a turn the CLI started itself; still waiting for ours", { cwd: this.opts.cwd, turnId: this.inflight.turnId });
@@ -832,7 +874,7 @@ export class LiveClaudeSession {
     const interrupted = !ok && isInterruptedTerminalReason((message as { terminal_reason?: unknown }).terminal_reason);
     const errorMessage = ok ? null : interrupted ? "Stopped by controller." : summarizeResultError(message);
     const usage = (message as {
-      usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
+      usage?: ApiUsage;
     }).usage;
     /**
      * What this turn actually ingested: fresh input plus whatever it wrote to
@@ -844,6 +886,9 @@ export class LiveClaudeSession {
      */
     const inputTokens = usage == null ? null : (usage.input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
     const cachedInputTokens = usage == null ? null : (usage.cache_read_input_tokens ?? 0);
+    const cacheWrite5mTokens = usage?.cache_creation ? (usage.cache_creation.ephemeral_5m_input_tokens ?? 0) : null;
+    const cacheWrite1hTokens = usage?.cache_creation ? (usage.cache_creation.ephemeral_1h_input_tokens ?? 0) : null;
+    const subagentUsage = this.takeSubagentUsage();
     // From tokens, not total_cost_usd: that one restores the chat's earlier total on resume (see stats/pricing.ts).
     const costUsd = turnCostUsd({
       inputTokens,
@@ -851,6 +896,9 @@ export class LiveClaudeSession {
       outputTokens: usage?.output_tokens ?? null,
       model: this.inflight?.model ?? null,
       resolvedModel: this.inflight?.servedModel ?? null,
+      cacheWrite5mTokens,
+      cacheWrite1hTokens,
+      subagentUsage,
     });
     const sawRateLimit = this.inflight?.sawRateLimitError ?? false;
 
@@ -868,6 +916,9 @@ export class LiveClaudeSession {
       inputTokens,
       cachedInputTokens,
       outputTokens: usage?.output_tokens ?? null,
+      cacheWrite5mTokens,
+      cacheWrite1hTokens,
+      ...(subagentUsage.length ? { subagentUsage } : {}),
       interrupted,
       model: this.inflight?.model ?? null,
       resolvedModel: this.inflight?.servedModel ?? null,

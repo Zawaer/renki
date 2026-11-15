@@ -285,7 +285,8 @@ export function computeInsights(db: DB, tzName: string | undefined, now = Date.n
 
         const model = e.resolvedModel ?? e.model ?? "default";
         const out = e.outputTokens ?? 0;
-        outputTokensTotal += out;
+        // Everything Claude wrote, subagents included; speed and the monthly split below stay main-thread.
+        outputTokensTotal += out + (e.subagentUsage ?? []).reduce((n, s) => n + s.outputTokens, 0);
         if (e.ok && out > 0 && durationMs > 0) {
           const sp = speed.get(model) ?? { outputTokens: 0, durationMs: 0 };
           sp.outputTokens += out;
@@ -300,6 +301,10 @@ export function computeInsights(db: DB, tzName: string | undefined, now = Date.n
         if (e.cachedInputTokens != null) {
           cache.inputTokens += e.inputTokens ?? 0;
           cache.cachedInputTokens += e.cachedInputTokens;
+        }
+        for (const s of e.subagentUsage ?? []) {
+          cache.inputTokens += s.inputTokens;
+          cache.cachedInputTokens += s.cachedInputTokens;
         }
         break;
       }

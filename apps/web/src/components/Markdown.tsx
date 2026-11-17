@@ -1,8 +1,9 @@
 import { Children, cloneElement, type ComponentProps, isValidElement, memo, type ReactElement, type ReactNode } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import ReactMarkdown, { type Components, defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Collapsible } from "./ui.js";
-import { isUiFence, parseFileLink, parseUiBlock, type UiBlock } from "@renki/client-core";
+import { isUiFence, parseChatLink, parseFileLink, parseUiBlock, type UiBlock } from "@renki/client-core";
+import { ChatChip } from "./ChatChip.js";
 import { GenUi, GenUiPending } from "./GenUi.js";
 import { useFileLinkTarget } from "../lib/fileLinks.js";
 
@@ -62,6 +63,11 @@ function hastText(node: unknown): string {
   return (n.children ?? []).map(hastText).join("");
 }
 
+/** react-markdown blanks unknown schemes; chat references (`renki://chat/…`) are ours to keep. */
+function keepChatLinks(url: string): string {
+  return parseChatLink(url) ? url : defaultUrlTransform(url);
+}
+
 /**
  * Every link in rendered Markdown goes through here — the one place to
  * intercept particular hrefs (say, local file paths) before they fall through
@@ -69,6 +75,9 @@ function hastText(node: unknown): string {
  */
 function MarkdownLink(p: ComponentProps<"a">) {
   const fileTarget = useFileLinkTarget();
+  // Another Renki chat (`[@Title](renki://chat/<id>)`): a chip that opens it.
+  const chatId = parseChatLink(p.href);
+  if (chatId) return <ChatChip id={chatId} title={hastText((p as { node?: unknown }).node).replace(/^@/, "") || "Chat"} />;
   // A link to a file in the session's working tree (`[notes.md](notes.md)`,
   // `src/foo.ts#L42`, an absolute path inside the worktree) opens in the Files
   // panel. Without a panel to open it in, it stays inert text — following it
@@ -209,7 +218,7 @@ export const Markdown = memo(function Markdown({
       {streaming ? (
         streamingChunks(content).map((chunk, i) => <StreamingChunk key={i} content={chunk} />)
       ) : (
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={components} urlTransform={keepChatLinks}>
           {content}
         </ReactMarkdown>
       )}
@@ -235,7 +244,7 @@ const streamingComponents: Components = {
 /** One finished paragraph (or list, table, code block) of a streaming reply; parsed once. */
 const StreamingChunk = memo(function StreamingChunk({ content }: { content: string }) {
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={wrapWordsPlugins} components={streamingComponents}>
+    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={wrapWordsPlugins} components={streamingComponents} urlTransform={keepChatLinks}>
       {content}
     </ReactMarkdown>
   );

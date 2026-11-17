@@ -2269,6 +2269,21 @@ export class SessionManager {
       mac: this.macFor(sessionId, cwd),
       moveIntoRepo: this.getSession(sessionId).repoId ? undefined : (repo) => this.requestMove(sessionId, repo),
       moveIntoRepoNote: (repo) => this.moveAccessNote(sessionId, repo),
+      chatTools: {
+        currentId: sessionId,
+        getSession: (id) => {
+          try {
+            return this.getSession(id);
+          } catch {
+            return null;
+          }
+        },
+        listSessions: () => this.listSessions(),
+        readEvents: (id) => this.events.readLight(id),
+        search: (q, limit) => this.events.search.search(q, limit),
+        // The zone the user last wrote from in this chat, else the host's.
+        timeZone: () => this.toldTimeZone.get(sessionId) ?? hostTimeZone(),
+      },
       homelabAccess: {
         request: async () => this.grantHomelabAccess(sessionId),
         project: () => this.getSession(sessionId).repoName || "chats without a repo",

@@ -1,4 +1,5 @@
 import { pickAnchor as pickScrollAnchor, restoreAnchor, type ScrollAnchor } from "../lib/scrollAnchor.js";
+import { TextWithChatRefs } from "./ChatChip.js";
 import { formatBytes, uploadFile } from "../lib/upload.js";
 import { MAX_UPLOAD_BYTES, type UploadRef } from "@renki/protocol";
 import {
@@ -63,6 +64,9 @@ import {
   segmentImages,
   timelineWithSending,
   permissionTitle,
+  chatMentionAt,
+  chatRefMarkdown,
+  matchChats,
 } from "@renki/client-core";
 import type { Account, AttachmentView, CapabilitiesResponse, Session, SessionComposer, SessionResume } from "@renki/protocol";
 import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, Fragment } from "react";
@@ -1012,7 +1016,7 @@ const TimelineRow = memo(function TimelineRow({ item, animate = false, first = f
           {item.text && (
             <Collapsible text={item.text} collapseLines={14} moreLabel="Show full message" hideCopy>
               <div className="whitespace-pre-wrap [overflow-wrap:anywhere] text-[14px] leading-relaxed text-(--renki-fg)">
-                {item.text}
+                <TextWithChatRefs text={item.text} />
               </div>
             </Collapsible>
           )}
@@ -1432,7 +1436,7 @@ function SteeredPrompt({ prompt, waiting = false }: { prompt: SteeredPromptView;
         {prompt.text && (
           <Collapsible text={prompt.text} collapseLines={14} moreLabel="Show full message" hideCopy>
             <div className="whitespace-pre-wrap [overflow-wrap:anywhere] text-[14px] leading-relaxed text-(--renki-fg)">
-              {prompt.text}
+              <TextWithChatRefs text={prompt.text} />
             </div>
           </Collapsible>
         )}
@@ -2782,6 +2786,48 @@ export function Composer({
     commands: [],
   });
   const [suggestionIndex, setSuggestionIndex] = useState(0);
+  /** Where the caret is, for the `@` chat picker. */
+  const [caret, setCaret] = useState(0);
+  /** Every chat, fetched the first time `@` is typed (and again each time a new mention starts). */
+  const [chatList, setChatList] = useState<Session[] | null>(null);
+  const mention = caret < 0 ? null : chatMentionAt(text, caret);
+  const mentionOpen = mention !== null;
+  useEffect(() => {
+    if (!mentionOpen) return;
+    let live = true;
+    rest
+      .listSessions()
+      .then((list) => live && setChatList(list))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [mentionOpen, rest]);
+  const chatSuggestions =
+    mention && chatList
+      ? matchChats(
+          chatList.filter((c) => c.id !== sessionId && c.status !== "trashed" && c.status !== "deleted"),
+          mention.query,
+        )
+      : [];
+
+  /** Replace the `@query` being typed with a reference to `chat`. */
+  function pickChat(chat: Session) {
+    if (!mention) return;
+    const ref = `${chatRefMarkdown(chat.id, chat.title ?? "")} `;
+    const next = text.slice(0, mention.start) + ref + text.slice(caret);
+    const at = mention.start + ref.length;
+    setText(next);
+    setCaret(at);
+    setSuggestionIndex(0);
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (el) {
+        el.focus();
+        el.setSelectionRange(at, at);
+      }
+    });
+  }
   const [openMenu, setOpenMenu] = useState<"model" | "effort" | "mode" | null>(
     null,
   );
@@ -3157,6 +3203,25 @@ export function Composer({
       }}
     >
       <div className="relative mx-auto w-full max-w-3xl">
+        {chatSuggestions.length > 0 && (
+          <div className="renki-enter absolute bottom-full left-4 right-4 z-10 mb-2 max-h-56 overflow-y-auto rounded-xl border border-(--renki-border) bg-(--renki-surface) p-1 shadow-(--renki-shadow-lg)">
+            <div className="px-3 pt-1 pb-1.5 text-[11px] text-(--renki-fg-muted)">Reference a chat</div>
+            {chatSuggestions.map((c, i) => (
+              <button
+                key={c.id}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => pickChat(c)}
+                className={`flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-xs ${
+                  i === suggestionIndex ? "bg-(--renki-selected) text-(--renki-selected-fg)" : "text-(--renki-fg)"
+                }`}
+              >
+                <span className="codicon codicon-comment-discussion text-[12px] text-(--renki-fg-muted)" />
+                <span className="truncate">{c.title?.trim() || "Untitled chat"}</span>
+                <span className="ml-auto shrink-0 text-(--renki-fg-muted)">{c.repoId ? c.repoName : "No repo"}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {suggestions.length > 0 && (
           <div className="renki-enter absolute bottom-full left-4 right-4 z-10 mb-2 max-h-48 overflow-y-auto rounded-xl border border-(--renki-border) bg-(--renki-surface) p-1 shadow-(--renki-shadow-lg)">
             {suggestions.map((c, i) => (
@@ -3231,10 +3296,32 @@ export function Composer({
             value={text}
             onChange={(e) => {
               setText(e.target.value);
+              setCaret(e.target.selectionStart ?? e.target.value.length);
               setSuggestionIndex(0);
             }}
+            onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
             onPaste={handlePaste}
             onKeyDown={(e) => {
+              if (chatSuggestions.length > 0) {
+                const n = chatSuggestions.length;
+                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setSuggestionIndex((i) => (i + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+                  return;
+                }
+                if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+                  e.preventDefault();
+                  const picked = chatSuggestions[Math.min(suggestionIndex, n - 1)];
+                  if (picked) pickChat(picked);
+                  return;
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  // Close the picker by stepping the caret past the mention's reach.
+                  setCaret(-1);
+                  return;
+                }
+              }
               if (suggestions.length > 0) {
                 if (e.key === "ArrowDown") {
                   e.preventDefault();
@@ -3376,7 +3463,7 @@ export function Composer({
           </div>
         </div>
         <div className="mt-2 text-center text-[11px] text-(--renki-fg-muted)">
-          Enter to send · Shift+Enter newline · / for commands
+          Enter to send · Shift+Enter newline · / for commands · @ to reference a chat
         </div>
       </div>
     </div>

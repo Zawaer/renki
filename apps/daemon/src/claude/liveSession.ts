@@ -32,6 +32,7 @@ import { CLAUDE_SETTINGS, stripUntrustedHooks } from "./settingsHygiene.js";
 import { projectDir } from "./transcripts.js";
 import { turnCostUsd } from "../stats/pricing.js";
 import { type Effort, effortFromBudget, sameEffort } from "./effort.js";
+import { type ChatToolDeps, READ_CHAT_TOOL, SEARCH_CHATS_TOOL, createChatTools } from "./chatTools.js";
 
 /** The API's usage block, as the CLI passes it on (results and assistant messages). */
 type ApiUsage = {
@@ -117,6 +118,8 @@ export type LiveSessionOptions = {
   steerBackgroundAfterMs?: number;
   /** Lets the chat move itself into a repo (see ./moveIntoRepo.ts); only for repo-less chats. */
   moveIntoRepo?: MoveRequester;
+  /** read_chat / search_chats over the user's other chats (see chatTools.ts). */
+  chatTools?: ChatToolDeps;
   /** Added to the move's approval card (e.g. a warning that the repo lacks homelab access). */
   moveIntoRepoNote?: MoveNote;
   /** Only obtainable from a live Query object — the caller opts in when it doesn't already have this cached daemon-wide. */
@@ -325,8 +328,10 @@ export class LiveClaudeSession {
       mcpServers: { [RENKI_SERVER]: createRepliesMcpServer([
           ...(opts.moveIntoRepo ? [createMoveIntoRepoTool(opts.moveIntoRepo)] : []),
           ...(opts.homelabAccess ? [createHomelabAccessTool(opts.homelabAccess.request)] : []),
+          ...(opts.chatTools ? createChatTools(opts.chatTools) : []),
         ]), ...(opts.mac ? { [MAC_SERVER]: opts.mac.server } : {}), ...(opts.codex ? { [CODEX_SERVER]: createCodexMcpServer(opts.cwd) } : {}) },
-      allowedTools: [SUGGEST_REPLIES_TOOL, ...(opts.mac ? MAC_FREE_TOOLS : [])],
+      // Reading the user's own chats is read-only, so it doesn't ask.
+      allowedTools: [SUGGEST_REPLIES_TOOL, ...(opts.chatTools ? [READ_CHAT_TOOL, SEARCH_CHATS_TOOL] : []), ...(opts.mac ? MAC_FREE_TOOLS : [])],
       // Route every permission decision through the current resolver. Only
       // fires for tools the permission system doesn't auto-resolve (edits,
       // bash, etc.) — exactly the set a human controller should see. Also

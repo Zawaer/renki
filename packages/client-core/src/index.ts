@@ -23,6 +23,7 @@ export * from "./trash.js";
 export * from "./models.js";
 export * from "./turnLayout.js";
 export * from "./fileLinks.js";
+export * from "./chatRefs.js";
 export * from "./search.js";
 export * from "./gatewayApproval.js";
 export * from "./repoChoices.js";

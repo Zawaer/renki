@@ -236,6 +236,13 @@ describe("suggestedReplies", () => {
     queuedPrompts: Array.from({ length: extra.queued ?? 0 }, () => ({}) as never),
   });
 
+  it("shows nothing for a call the guard refused", () => {
+    const refused = { ...suggest(["Yes", "No"]), result: { ok: false, summary: "Not shown" } } as BlockView;
+    expect(suggestedReplies(conv([turnItem([text("Deploy?"), refused])]))).toBeNull();
+    const shown = { ...suggest(["Yes", "No"]), result: { ok: true, summary: "Shown" } } as BlockView;
+    expect(suggestedReplies(conv([turnItem([text("Deploy?"), shown])]))?.replies).toEqual(["Yes", "No"]);
+  });
+
   it("offers the newest finished turn's replies, past notices after it", () => {
     const timeline = [turnItem([text("Deploy?"), suggest(["Yes, deploy", " ", "Not yet"])]), { type: "notice", text: "x", level: "info" } as TimelineItem];
     expect(suggestedReplies(conv(timeline))).toEqual({ turnId: "t1", question: null, replies: ["Yes, deploy", "Not yet"] });

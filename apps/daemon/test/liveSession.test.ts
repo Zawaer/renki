@@ -23,7 +23,7 @@ type Fake = {
   interrupt: ReturnType<typeof vi.fn>;
   setModel: ReturnType<typeof vi.fn>;
   setPermissionMode: ReturnType<typeof vi.fn>;
-  setMaxThinkingTokens: ReturnType<typeof vi.fn>;
+  applyFlagSettings: ReturnType<typeof vi.fn>;
   close: ReturnType<typeof vi.fn>;
 };
 
@@ -57,7 +57,7 @@ function fakeQueryFactory(): { factory: (p: { prompt: AsyncIterable<SDKUserMessa
       interrupt: vi.fn(async () => ({ still_queued: [] })),
       setModel: vi.fn(async () => {}),
       setPermissionMode: vi.fn(async () => {}),
-      setMaxThinkingTokens: vi.fn(async () => {}),
+      applyFlagSettings: vi.fn(async () => {}),
       getContextUsage: vi.fn(async () => ({ totalTokens: 12_000, maxTokens: 200_000, percentage: 6, isAutoCompactEnabled: true })),
       supportedModels: vi.fn(async () => []),
       supportedCommands: vi.fn(async () => []),
@@ -83,7 +83,7 @@ function fakeQueryFactory(): { factory: (p: { prompt: AsyncIterable<SDKUserMessa
       interrupt: (query as unknown as { interrupt: ReturnType<typeof vi.fn> }).interrupt,
       setModel: (query as unknown as { setModel: ReturnType<typeof vi.fn> }).setModel,
       setPermissionMode: (query as unknown as { setPermissionMode: ReturnType<typeof vi.fn> }).setPermissionMode,
-      setMaxThinkingTokens: (query as unknown as { setMaxThinkingTokens: ReturnType<typeof vi.fn> }).setMaxThinkingTokens,
+      applyFlagSettings: (query as unknown as { applyFlagSettings: ReturnType<typeof vi.fn> }).applyFlagSettings,
       close: (query as unknown as { close: ReturnType<typeof vi.fn> }).close,
     };
     return query;
@@ -222,7 +222,7 @@ describe("LiveClaudeSession turns", () => {
     await t1;
     expect(fake.setModel).not.toHaveBeenCalled();
     expect(fake.setPermissionMode).not.toHaveBeenCalled();
-    expect(fake.setMaxThinkingTokens).not.toHaveBeenCalled();
+    expect(fake.applyFlagSettings).not.toHaveBeenCalled();
 
     const t2 = live.runTurn({
       prompt: "b",
@@ -235,7 +235,8 @@ describe("LiveClaudeSession turns", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(fake.setModel).toHaveBeenCalledWith("m2");
     expect(fake.setPermissionMode).toHaveBeenCalledWith("acceptEdits");
-    expect(fake.setMaxThinkingTokens).toHaveBeenCalledWith(2048);
+    // 2048 is below Medium's code (4000): Low.
+    expect(fake.applyFlagSettings).toHaveBeenCalledWith({ effortLevel: "low", ultracode: false });
     // The knobs are applied BEFORE the prompt hits stdin.
     expect(fake.sent).toHaveLength(2);
     await fake.emit(okResult as never);
@@ -638,6 +639,42 @@ describe("LiveClaudeSession cost accounting", () => {
     const costs = (events.filter((e) => e.kind === "turn_result") as Array<{ costUsd: number | null }>).map((e) => Number(e.costUsd!.toFixed(6)));
     // Opus 5.5: 1000 × $8 (no write split recorded: 1-hour) + 100k × $0.20 + 500 × $20, per million.
     expect(costs).toEqual([0.038, 0.038, 0.038]);
+  });
+
+  it("starts with the picked effort and summarized thinking, and switches Ultracode on and off with the level", async () => {
+    const { live, fake } = makeLive({ maxThinkingTokens: 32_000 });
+    expect(fake.options.effort).toBe("xhigh");
+    expect(fake.options.thinking).toEqual({ type: "adaptive", display: "summarized" });
+    expect((fake.options.settings as { ultracode?: boolean }).ultracode).toBeUndefined();
+    const run = async (maxThinkingTokens: number | null) => {
+      const t = live.runTurn({ prompt: "x", promptId: `p${maxThinkingTokens}`, resolvePermission: allow, maxThinkingTokens });
+      await new Promise((r) => setTimeout(r, 0));
+      await fake.emit(okResult as never);
+      await t;
+    };
+    await run(64_000);
+    expect(fake.applyFlagSettings).toHaveBeenLastCalledWith({ effortLevel: "max", ultracode: true });
+    await run(60_000);
+    expect(fake.applyFlagSettings).toHaveBeenLastCalledWith({ effortLevel: "max", ultracode: false });
+    await run(null);
+    expect(fake.applyFlagSettings).toHaveBeenLastCalledWith({ effortLevel: null, ultracode: null });
+    expect(fake.applyFlagSettings).toHaveBeenCalledTimes(3);
+  });
+
+  it("judges suggest_replies by the stream up to that call, even when the hook runs before Renki has read it", async () => {
+    const { live, fake } = makeLive();
+    const t = live.runTurn({ prompt: "q", promptId: "p", resolvePermission: allow });
+    await new Promise((r) => setTimeout(r, 0));
+    const guard = (fake.options.hooks!.PreToolUse!.at(-1)!.hooks[0]!) as (i: unknown, id: string, o: unknown) => Promise<unknown>;
+    // The CLI asks the hook first; the reply text and the call's start arrive in the stream after.
+    const decision = guard({ hook_event_name: "PreToolUse", tool_name: "mcp__renki__suggest_replies", tool_input: {}, tool_use_id: "toolu_9" }, "toolu_9", { signal: new AbortController().signal });
+    const ev = (event: unknown) => ({ type: "stream_event", parent_tool_use_id: null, event });
+    await fake.emit(ev({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }) as never);
+    await fake.emit(ev({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Deploy now?" } }) as never);
+    await fake.emit(ev({ type: "content_block_start", index: 1, content_block: { type: "tool_use", id: "toolu_9", name: "mcp__renki__suggest_replies", input: {} } }) as never);
+    expect(await decision).toEqual({ continue: true });
+    await fake.emit(okResult as never);
+    await t;
   });
 
   it("adds what subagents used, once per API call, priced at their own model", async () => {

@@ -19,7 +19,7 @@ describe("createRepliesStopHook", () => {
 });
 
 const guard = (hasReply: boolean, extra: Record<string, unknown> = {}) =>
-  createRepliesGuardHook(() => hasReply).hooks[0]!(
+  createRepliesGuardHook(async () => hasReply).hooks[0]!(
     { hook_event_name: "PreToolUse", tool_name: SUGGEST_REPLIES_TOOL, tool_input: {}, session_id: "s", transcript_path: "", cwd: "/", ...extra } as never,
     "toolu_1",
     { signal: new AbortController().signal },

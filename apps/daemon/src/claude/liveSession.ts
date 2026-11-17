@@ -13,7 +13,7 @@ import { createHomelabGuardHook } from "./homelabGuard.js";
 import { createHomelabAccessHook, createHomelabAccessTool, type HomelabAccessRequester } from "./homelabAccessRequest.js";
 import { createMoveIntoRepoHook, createMoveIntoRepoTool, type MoveNote, type MoveRequester } from "./moveIntoRepo.js";
 import { MAC_FREE_TOOLS, MAC_SERVER, type MacCallIds, createMacApprovalHook } from "../mac/tools.js";
-import { RENKI_SERVER, SUGGEST_REPLIES_TOOL, createRepliesGuardHook, createRepliesMcpServer, createRepliesStopHook, replyStateAfter } from "./replies.js";
+import { RENKI_SERVER, SUGGEST_REPLIES_TOOL, createRepliesGuardHook, createRepliesMcpServer, createRepliesStopHook, replyStateAfter, suggestRepliesCallId } from "./replies.js";
 import {
   type BlockTracking,
   type PermissionResolver,
@@ -31,6 +31,7 @@ import {
 import { CLAUDE_SETTINGS, stripUntrustedHooks } from "./settingsHygiene.js";
 import { projectDir } from "./transcripts.js";
 import { turnCostUsd } from "../stats/pricing.js";
+import { type Effort, effortFromBudget, sameEffort } from "./effort.js";
 
 /** The API's usage block, as the CLI passes it on (results and assistant messages). */
 type ApiUsage = {
@@ -271,7 +272,7 @@ export class LiveClaudeSession {
    */
   private currentModel: string | undefined;
   private currentPermissionMode: PermissionMode;
-  private currentMaxThinkingTokens: number | null | undefined;
+  private currentEffort: Effort | null;
   private closed = false;
   private _claudeSessionId: string | null;
   private _lastActivityAt = Date.now();
@@ -283,7 +284,7 @@ export class LiveClaudeSession {
     this._claudeSessionId = opts.resumeSessionId;
     this.currentModel = opts.model;
     this.currentPermissionMode = opts.permissionMode ?? "default";
-    this.currentMaxThinkingTokens = opts.maxThinkingTokens;
+    this.currentEffort = effortFromBudget(opts.maxThinkingTokens);
 
     // Repo-defined hooks run unconditionally regardless of settingSources or
     // canUseTool — see settingsHygiene.ts for why this runs before every spawn.
@@ -296,7 +297,7 @@ export class LiveClaudeSession {
       ...(opts.moveIntoRepo ? [createMoveIntoRepoHook(opts.moveIntoRepoNote)] : []),
       ...(opts.homelabAccess ? [createHomelabAccessHook(opts.homelabAccess.project)] : []),
       ...(opts.enableRtk ? [createRtkPreToolUseHook(opts.rtkBin ?? "rtk")] : []),
-      createRepliesGuardHook(() => this.replyWritten),
+      createRepliesGuardHook((id) => this.replyBeforeCall(id)),
     ];
 
     if (opts.archiveDir) mkdirSync(opts.archiveDir, { recursive: true });
@@ -306,7 +307,10 @@ export class LiveClaudeSession {
       // Claude Code's own prompt, as the CLI uses it: left out, the SDK sends an empty one.
       systemPrompt: { type: "preset", preset: "claude_code", ...(opts.systemPromptAppend ? { append: opts.systemPromptAppend } : {}) },
       ...(opts.archiveDir ? { additionalDirectories: [opts.archiveDir] } : {}),
-      settings: CLAUDE_SETTINGS,
+      settings: { ...CLAUDE_SETTINGS, ...(this.currentEffort?.ultracode ? { ultracode: true } : {}) },
+      // Adaptive thinking with readable summaries: Opus 5.5 and later return
+      // empty thinking blocks unless asked, so the transcript showed nothing.
+      thinking: { type: "adaptive", display: "summarized" },
       includePartialMessages: true,
       permissionMode: this.currentPermissionMode,
       // Forward a subagent's own thinking/text as it happens (not just its
@@ -315,7 +319,7 @@ export class LiveClaudeSession {
       forwardSubagentText: true,
       ...(opts.resumeSessionId ? { resume: opts.resumeSessionId } : {}),
       ...(opts.model ? { model: opts.model } : {}),
-      ...(opts.maxThinkingTokens != null ? { maxThinkingTokens: opts.maxThinkingTokens } : {}),
+      ...(this.currentEffort ? { effort: this.currentEffort.level } : {}),
       ...(opts.forcePermissionPrompts ? { settingSources: [] } : {}),
       hooks: { ...(preToolUseHooks.length ? { PreToolUse: preToolUseHooks } : {}), PostToolUse: [createRepliesStopHook()] },
       mcpServers: { [RENKI_SERVER]: createRepliesMcpServer([
@@ -562,7 +566,7 @@ export class LiveClaudeSession {
 
   // ── internals ────────────────────────────────────────────────────────────────
 
-  /** Bring the process's model/permission mode/thinking budget in line with what this prompt asked for. */
+  /** Bring the process's model/permission mode/effort in line with what this prompt asked for. */
   private async applyKnobs(args: LiveTurnArgs): Promise<void> {
     const wantedMode = args.permissionMode ?? "default";
     if (wantedMode !== this.currentPermissionMode) {
@@ -573,12 +577,14 @@ export class LiveClaudeSession {
       await this.q.setModel(args.model).catch((err) => logger.warn("setModel failed", { err: String(err) }));
       this.currentModel = args.model;
     }
-    const wantedThinking = args.maxThinkingTokens ?? null;
-    if (wantedThinking !== (this.currentMaxThinkingTokens ?? null)) {
+    const wanted = effortFromBudget(args.maxThinkingTokens);
+    if (!sameEffort(wanted, this.currentEffort)) {
+      // null for a key puts it back to the model's default / off. Both keys
+      // together, or a level change alone would also turn ultracode off.
       await this.q
-        .setMaxThinkingTokens(wantedThinking)
-        .catch((err) => logger.warn("setMaxThinkingTokens failed", { err: String(err) }));
-      this.currentMaxThinkingTokens = wantedThinking;
+        .applyFlagSettings({ effortLevel: wanted?.level ?? null, ultracode: wanted?.ultracode ?? null })
+        .catch((err) => logger.warn("setting effort failed", { err: String(err) }));
+      this.currentEffort = wanted;
     }
   }
 
@@ -677,7 +683,11 @@ export class LiveClaudeSession {
       }
 
       case "stream_event": {
-        if (!message.parent_tool_use_id) this.replyWritten = replyStateAfter(message.event) ?? this.replyWritten;
+        if (!message.parent_tool_use_id) {
+          this.replyWritten = replyStateAfter(message.event) ?? this.replyWritten;
+          const id = suggestRepliesCallId(message.event);
+          if (id) this.settleReplyCheck(id, this.replyWritten);
+        }
         const turnId = this.turnFor(message.parent_tool_use_id);
         const t = this.trackingFor(message.parent_tool_use_id);
         handleStreamEvent(message.event, turnId, t.blockKinds, t.globalOffset, message.parent_tool_use_id, this.opts.emit, t.startedAt);
@@ -834,6 +844,37 @@ export class LiveClaudeSession {
    * an assistant message once per content block with the same usage, so the
    * last copy of each id wins rather than adding them up.
    */
+  /** For each suggest_replies call, whether a reply was written before it, as read from the stream at that call. */
+  private replyAtCall = new Map<string, boolean>();
+  private replyWaiters = new Map<string, (v: boolean) => void>();
+
+  private settleReplyCheck(id: string, written: boolean): void {
+    this.replyAtCall.set(id, written);
+    this.replyWaiters.get(id)?.(written);
+    this.replyWaiters.delete(id);
+  }
+
+  /**
+   * Whether the reply came before this suggest_replies call. Waits (briefly)
+   * for the stream to reach the call; if it never shows, falls back to the
+   * state now, which is what the guard used before.
+   */
+  private replyBeforeCall(id: string | undefined): Promise<boolean> {
+    if (!id) return Promise.resolve(this.replyWritten);
+    const known = this.replyAtCall.get(id);
+    if (known !== undefined) return Promise.resolve(known);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.replyWaiters.delete(id);
+        resolve(this.replyWritten);
+      }, 3_000);
+      this.replyWaiters.set(id, (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      });
+    });
+  }
+
   private subagentCalls = new Map<string, { model: string | null; usage: ApiUsage }>();
 
   private noteSubagentUsage(m: unknown): void {

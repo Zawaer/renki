@@ -274,6 +274,8 @@ function lastSuggestion(turn: TurnView): { question: string | null; replies: str
   for (let j = turn.blocks.length - 1; j >= 0; j--) {
     const b = turn.blocks[j];
     if (b?.kind !== "tool_use") continue;
+    // A refused call (Renki's guard turns it away when no reply was written) showed nothing.
+    if (b.result && !b.result.ok) return null;
     const suggested = parseSuggestedReplies(b.toolName, b.toolInput);
     return suggested ? { ...suggested, blockIndex: j } : null;
   }

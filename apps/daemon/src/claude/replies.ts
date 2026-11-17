@@ -85,14 +85,18 @@ export function createRepliesStopHook(): HookCallbackMatcher {
  * grey aside, or wrote its reply and then kept working, which turns that reply
  * into mid-turn narration; either way the buttons sat under nothing. Told so,
  * it writes the reply and calls again. Main thread only, like the stop hook.
+ *
+ * `hasReply` answers for this particular call. The CLI asks the hook as soon
+ * as the call arrives, which can be before Renki has read the text streamed
+ * just ahead of it; judging by "now" then refused calls that did have a reply.
  */
-export function createRepliesGuardHook(hasReply: () => boolean): HookCallbackMatcher {
+export function createRepliesGuardHook(hasReply: (toolUseId: string | undefined) => Promise<boolean>): HookCallbackMatcher {
   return {
     matcher: SUGGEST_REPLIES_TOOL,
     hooks: [
       async (input): Promise<HookJSONOutput> => {
         if (input.hook_event_name !== "PreToolUse" || input.tool_name !== SUGGEST_REPLIES_TOOL || input.agent_id) return { continue: true };
-        if (hasReply()) return { continue: true };
+        if (await hasReply((input as { tool_use_id?: string }).tool_use_id)) return { continue: true };
         return {
           hookSpecificOutput: {
             hookEventName: "PreToolUse",
@@ -116,4 +120,10 @@ export function replyStateAfter(event: unknown): boolean | undefined {
   if (e.type === "content_block_start" && e.content_block?.type === "tool_use") return e.content_block.name === SUGGEST_REPLIES_TOOL ? undefined : false;
   if (e.type === "content_block_delta" && e.delta?.type === "text_delta" && e.delta.text?.trim()) return true;
   return undefined;
+}
+
+/** The id of a suggest_replies call, if this main-thread stream event starts one. */
+export function suggestRepliesCallId(event: unknown): string | null {
+  const e = event as { type?: string; content_block?: { type?: string; name?: string; id?: string } };
+  return e.type === "content_block_start" && e.content_block?.type === "tool_use" && e.content_block.name === SUGGEST_REPLIES_TOOL && e.content_block.id ? e.content_block.id : null;
 }

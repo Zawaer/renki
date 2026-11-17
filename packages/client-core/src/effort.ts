@@ -1,19 +1,15 @@
 /**
  * Effort levels, mirroring Claude Code's own Low/Medium/High/Extra High/Max/
- * Ultracode convention. The Agent SDK has no "effort" concept — this maps
- * each label to a `maxThinkingTokens` budget (Low disables thinking; the rest
- * roughly follow Claude Code's think / think hard / think harder tiers).
- *
- * "Ultracode" in Claude Code's own UI implies multi-agent workflow
- * orchestration, which is a harness-level capability — NOT something a
- * thinking-token budget produces on its own. It's mapped to the same budget
- * as Max here; picking it does not enable any kind of automatic sub-agent
- * orchestration.
+ * Ultracode menu. They travel to the daemon as a `maxThinkingTokens` number
+ * (a field every client build already sends); the daemon turns each value
+ * into Claude Code's real effort level, and Ultracode into its standing
+ * multi-agent workflow orchestration (apps/daemon/src/claude/effort.ts).
+ * So the numbers are codes, not budgets: keep the two tables in step.
  */
 export type EffortLevel = {
   key: string;
   label: string;
-  /** null = don't send maxThinkingTokens at all (the SDK's own default). */
+  /** The code the daemon maps to an effort level; null = send none (the model's own default). */
   maxThinkingTokens: number | null;
 };
 
@@ -23,7 +19,7 @@ export const EFFORT_LEVELS: EffortLevel[] = [
   { key: "high", label: "High", maxThinkingTokens: 10_000 },
   { key: "xhigh", label: "Extra High", maxThinkingTokens: 32_000 },
   { key: "max", label: "Max", maxThinkingTokens: 60_000 },
-  { key: "ultracode", label: "Ultracode", maxThinkingTokens: 60_000 },
+  { key: "ultracode", label: "Ultracode", maxThinkingTokens: 64_000 },
 ];
 
 export const DEFAULT_EFFORT_KEY = "medium";

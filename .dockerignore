@@ -10,7 +10,14 @@ data
 *.sqlite-wal
 *.sqlite-shm
 
-.git
+# Not .git as a whole: the build reads HEAD and refs to stamp BUILD_SHA (see the
+# Dockerfile). Only the bulky parts stay out.
+.git/objects
+.git/lfs
+.git/logs
+.git/modules
+.git/worktrees
+.git/index
 .env
 .env.*
 !.env.example

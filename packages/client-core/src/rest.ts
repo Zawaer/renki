@@ -91,6 +91,11 @@ export class RestClient {
     return (await this.get<ListSessionsResponse>("/sessions")).sessions;
   }
 
+  /** The overview chat: the one standing chat that knows about all the others. Made on first call. */
+  async openOverview(composer?: CreateSessionRequest["composer"]): Promise<Session> {
+    return (await this.post<CreateSessionResponse>("/overview", composer ? { composer } : {})).session;
+  }
+
   async createSession(body: CreateSessionRequest): Promise<Session> {
     return (await this.post<CreateSessionResponse>("/sessions", body)).session;
   }

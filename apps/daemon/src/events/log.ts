@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { EventPayload, RepoStatsBucket, SessionEvent, StatsBucket, StatsResponse } from "@renki/protocol";
-import { and, asc, eq, gt, inArray, like, max, ne, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, like, max, ne, or } from "drizzle-orm";
 import type { DB } from "../db/index.js";
 import { events, sessions } from "../db/schema.js";
 import { ChatSearch } from "./search.js";
@@ -48,6 +48,20 @@ export class EventLog {
     this.emitter.emit(channel(sessionId), event);
     this.emitter.emit(ANY, event);
     return event;
+  }
+
+  /** The newest message the user sent in a session, or null. */
+  lastPrompt(sessionId: string): { text: string; ts: number } | null {
+    const row = this.db
+      .select({ data: events.data, ts: events.ts })
+      .from(events)
+      .where(and(eq(events.sessionId, sessionId), eq(events.kind, "prompt_submitted")))
+      .orderBy(desc(events.seq))
+      .limit(1)
+      .get();
+    if (!row) return null;
+    const text = (JSON.parse(row.data) as { text?: string }).text ?? "";
+    return { text, ts: row.ts };
   }
 
   /** Read stored events for a session with seq strictly greater than `afterSeq`. */

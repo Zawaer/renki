@@ -253,10 +253,27 @@ export function Home() {
     <div className="flex h-full flex-col">
       <div className={`min-h-0 flex-1 overflow-y-auto ${leaving ? "renki-home-out" : ""}`} aria-hidden={leaving || undefined}>
       <div className="mx-auto w-full max-w-2xl px-6 pt-16 pb-12">
-        <h1 className="flex items-center gap-3 text-2xl font-semibold tracking-tight text-(--renki-fg)">
-          <span className="codicon codicon-sparkle-filled text-[22px] text-(--renki-accent)" />
-          {greeting()}
-        </h1>
+        <div className="flex items-center gap-3">
+          <h1 className="flex min-w-0 flex-1 items-center gap-3 text-2xl font-semibold tracking-tight text-(--renki-fg)">
+            <span className="codicon codicon-sparkle-filled text-[22px] text-(--renki-accent)" />
+            {greeting()}
+          </h1>
+          {/* The overview chat: one standing chat that knows about all the others. */}
+          <button
+            type="button"
+            onClick={() => {
+              void rest
+                .openOverview()
+                .then((s) => navigate(`/session/${encodeURIComponent(s.id)}`))
+                .catch(() => {});
+            }}
+            title="Ask about all your chats: what you're working on, what's waiting on you, or start and steer chats"
+            className="flex shrink-0 items-center gap-1.5 rounded-full bg-(--renki-surface) px-3 py-1.5 text-[13px] text-(--renki-fg) shadow-(--renki-shadow-sm) transition-colors hover:bg-(--renki-hover)"
+          >
+            <span className="codicon codicon-layers text-[14px] text-(--renki-accent)" />
+            Overview
+          </button>
+        </div>
 
         {attention.length > 0 && (
           <section className="renki-enter mt-8" aria-label="Needs your attention">

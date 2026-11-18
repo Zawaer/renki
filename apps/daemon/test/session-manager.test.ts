@@ -2073,3 +2073,48 @@ describe("renaming a project", () => {
     expect(manager.getSession(s.id).repoId).toBe(repoId);
   });
 });
+
+describe("overview chat", () => {
+  it("sends to a chat nobody controls, as a turn there, marked as from the overview", async () => {
+    const { manager, repoId } = setup();
+    manager.setPermissionResolverFactory(() => noopResolve);
+    const target = await newSession(manager, repoId);
+    runTurn.mockResolvedValueOnce(okTurn);
+    expect(await manager.sendOnBehalf(target.id, "carry on with the deploy", { from: "s_overview" })).toBe("started");
+    await vi.waitFor(() => expect(runTurn).toHaveBeenCalled());
+    const sent = manager.events.read(target.id).find((e) => e.kind === "prompt_submitted") as { text: string } | undefined;
+    expect(sent?.text).toBe("[Sent from the overview chat]\n\ncarry on with the deploy");
+    // The overview's tools are only in the overview chat.
+    expect(liveInstances.at(-1)!.opts.overview).toBeUndefined();
+    expect(liveInstances.at(-1)!.opts.chatTools?.currentId).toBe(target.id);
+  });
+
+  it("refuses archived chats", async () => {
+    const { manager, repoId } = setup();
+    manager.setPermissionResolverFactory(() => noopResolve);
+    const target = await newSession(manager, repoId);
+    await manager.archiveSession(target.id);
+    await expect(manager.sendOnBehalf(target.id, "hi", { from: "x" })).rejects.toMatchObject({ code: "invalid_request" });
+  });
+
+  it("starts a fresh Claude conversation on a new day, and gives only the overview its tools", async () => {
+    const { manager, db } = setup();
+    const ov = await manager.openOverview();
+    manager.takeControl(ov.id, "d1");
+    db.update(sessions).set({ claudeSessionId: "yesterday" }).where(eq(sessions.id, ov.id)).run();
+    manager.overview.startsNewDay("2000-01-01");
+    runTurn.mockResolvedValueOnce(okTurn);
+    await manager.submitPrompt({ sessionId: ov.id, deviceId: "d1", promptId: "p1", text: "what's up?", timeZone: "UTC", resolvePermission: noopResolve });
+    const notices = manager.events.read(ov.id).filter((e) => e.kind === "notice") as { text: string }[];
+    expect(notices.map((n) => n.text)).toContain("New day: a fresh conversation, with NOTES.md carried over.");
+    const live = liveInstances.at(-1)!;
+    expect(live.opts.resumeSessionId).toBeNull();
+    expect(live.opts.overview?.currentId).toBe(ov.id);
+    expect(live.opts.systemPromptAppend).toContain("This is the overview chat");
+
+    // Same day again: no new start.
+    runTurn.mockResolvedValueOnce(okTurn);
+    await manager.submitPrompt({ sessionId: ov.id, deviceId: "d1", promptId: "p2", text: "and now?", timeZone: "UTC", resolvePermission: noopResolve });
+    expect((manager.events.read(ov.id).filter((e) => e.kind === "notice") as { text: string }[]).filter((n) => n.text.startsWith("New day"))).toHaveLength(1);
+  });
+});

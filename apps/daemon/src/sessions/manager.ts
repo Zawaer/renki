@@ -35,6 +35,7 @@ import { createWorktree, removeWorktree, restoreWorktree } from "../git/worktree
 import { newSessionId } from "../ids.js";
 import { logger } from "../logger.js";
 import { findRepo, repoSlug, scanRepos } from "../repos.js";
+import { dayIn, OVERVIEW_TITLE, OverviewStore, overviewPromptAppend, seedNotes } from "./overview.js";
 import { cloneGithubRepo, parseRepoRef } from "../github.js";
 import { hasCapabilities, setCapabilities } from "../claude/capabilities.js";
 import { LiveClaudeSession } from "../claude/liveSession.js";
@@ -184,6 +185,8 @@ export type SubmitPromptInput = {
   timeZone?: string;
   /** Set on a prompt the daemon re-sent after a limit reset: how many waits came before it. */
   resumeAttempt?: number;
+  /** Sent by Renki itself on the user's behalf (the overview chat's send_to_chat): no device has to hold control. */
+  internal?: boolean;
 };
 
 export type SessionBroadcast = {
@@ -213,6 +216,8 @@ export class SessionManager {
   private readonly pendingMoves = new Map<string, MoveTarget>();
   /** Settings > Homelab access. */
   readonly homelabAccess: HomelabAccess;
+  /** Which chat is the overview chat, and the day its conversation began (see overview.ts). */
+  readonly overview: OverviewStore;
   /** The machine sessions run on (./claude/hardware.ts), detected on first use. */
   private hardware: string | undefined;
   private hardwareNote(): string {
@@ -272,6 +277,7 @@ export class SessionManager {
     this.events = new EventLog(db);
     this.folded = new FoldedChats(this.events);
     this.homelabAccess = new HomelabAccess(config.dataDir, config.homelabRepos);
+    this.overview = new OverviewStore(resolve(config.dataDir, "overview.json"));
   }
 
   /**
@@ -678,6 +684,84 @@ export class SessionManager {
     const worktreePath = resolve(this.config.dataDir, "chats", id);
     mkdirSync(worktreePath, { recursive: true });
     return { repoId: null, repoName: "No repo", baseBranch: null, branch: null, worktreePath };
+  }
+
+  /** The overview chat, made on first use (and brought back from the archive if it was archived). */
+  async openOverview(composer?: SessionComposerPatch): Promise<Session> {
+    const id = this.overview.sessionId;
+    if (id) {
+      const s = this.tryGetSession(id);
+      if (s && s.status !== "trashed" && s.status !== "deleted") return s.status === "archived" ? this.unarchiveSession(id) : s;
+    }
+    const s = await this.createSession({ title: OVERVIEW_TITLE, ...(composer ? { composer } : {}) });
+    seedNotes(s.worktreePath);
+    this.overview.setSession(s.id);
+    return s;
+  }
+
+  isOverview(id: string): boolean {
+    return this.overview.sessionId === id;
+  }
+
+  private tryGetSession(id: string): Session | null {
+    try {
+      return this.getSession(id);
+    } catch {
+      return null;
+    }
+  }
+
+  /** A new day in the overview chat: drop yesterday's Claude conversation, so it starts again from NOTES.md. */
+  private maybeStartOverviewDay(input: SubmitPromptInput): void {
+    const id = input.sessionId;
+    const zone = input.timeZone ?? this.userZone.get(id) ?? hostTimeZone();
+    if (!this.overview.startsNewDay(dayIn(zone))) return;
+    if (!this.getSession(id).claudeSessionId) return;
+    this.live.get(id)?.close("new day");
+    this.live.delete(id);
+    this.patch(id, { claudeSessionId: null });
+    this.toldAccounts.delete(id);
+    this.toldTimeZone.delete(id);
+    this.toldClock.delete(id);
+    this.events.append(id, { kind: "notice", text: "New day: a fresh conversation, with NOTES.md carried over.", level: "info" });
+    logger.info("overview chat: new day, fresh conversation", { sessionId: id });
+  }
+
+  /**
+   * Send a message into chat `id` on the user's behalf (the overview chat's
+   * send_to_chat). It runs like one the user typed: a turn now, folded into
+   * the turn in progress, or queued, with the chat's own pinned settings.
+   */
+  async sendOnBehalf(id: string, text: string, opts: { from: string }): Promise<"started" | "steered" | "queued"> {
+    const s = this.getSession(id);
+    if (s.status === "archived" || s.status === "trashed") throw new SessionError("invalid_request", `That chat is ${s.status}.`);
+    const resolvePermission = this.resolverFor?.(id);
+    if (!resolvePermission) throw new SessionError("invalid_request", "Renki can't take approvals for that chat right now.");
+    const row = this.db.select().from(sessions).where(eq(sessions.id, id)).get();
+    const live = this.live.get(id);
+    const how = s.status !== "busy" ? "started" : live && live.busy && !live.isClosed ? "steered" : "queued";
+    const pinned = row ? pinnedPrompt(row) : { deviceId: "overview" };
+    const input: SubmitPromptInput = {
+      ...pinned,
+      sessionId: id,
+      deviceId: s.controller ?? "overview",
+      promptId: `overview_${randomUUID()}`,
+      text: `[Sent from the overview chat]\n\n${text}`,
+      resolvePermission,
+      timeZone: this.userZone.get(opts.from),
+      internal: true,
+    };
+    // Not awaited: a started turn runs for as long as it runs. Anything wrong
+    // with the message itself was checked above or throws before the turn.
+    const done = this.submitPrompt(input);
+    done.catch((err) => logger.warn("overview send failed", { sessionId: id, err: String(err) }));
+    await Promise.race([done, new Promise((r) => setTimeout(r, 300))]);
+    return how;
+  }
+
+  /** The newest message the user sent in a chat. */
+  lastPrompt(id: string): { text: string; ts: number } | null {
+    return this.events.lastPrompt(id);
   }
 
   listSessions(): Session[] {
@@ -1443,7 +1527,7 @@ export class SessionManager {
     const session = this.getSession(input.sessionId);
     if (session.status === "archived") throw new SessionError("session_archived", "Session is archived.");
     if (session.status === "trashed") throw new SessionError("session_trashed", "Session is in the trash. Restore it first.");
-    if (session.controller !== input.deviceId)
+    if (!input.internal && session.controller !== input.deviceId)
       throw new SessionError("not_controller", "Only the controlling device can send prompts.");
     if (!input.text.trim() && !input.attachments?.length && !input.uploads?.length)
       throw new SessionError("invalid_request", "Prompt text or at least one attachment is required.");
@@ -1478,6 +1562,8 @@ export class SessionManager {
     // own wait) if the limit is still in force.
     // No notice: the message itself, right below the pause, says the wait is over.
     if (session.resume) this.clearResume(input.sessionId);
+
+    if (this.isOverview(input.sessionId) && session.status !== "busy") this.maybeStartOverviewDay(input);
 
     if (session.status === "busy") {
       const live = this.live.get(input.sessionId);
@@ -2260,7 +2346,7 @@ export class SessionManager {
         inRepo: Boolean(this.getSession(sessionId).repoId),
         hardware: this.hardwareNote(),
         codex,
-      }),
+      }) + (this.isOverview(sessionId) ? overviewPromptAppend() : ""),
       codex,
       forcePermissionPrompts: this.config.forcePermissionPrompts,
       enableRtk: this.config.enableRtk,
@@ -2269,6 +2355,24 @@ export class SessionManager {
       mac: this.macFor(sessionId, cwd),
       moveIntoRepo: this.getSession(sessionId).repoId ? undefined : (repo) => this.requestMove(sessionId, repo),
       moveIntoRepoNote: (repo) => this.moveAccessNote(sessionId, repo),
+      ...(this.isOverview(sessionId)
+        ? {
+            overview: {
+              currentId: sessionId,
+              listSessions: () => this.listSessions(),
+              lastPrompt: (id: string) => this.lastPrompt(id),
+              repos: async () => (await scanRepos(this.config)).map((r) => ({ id: r.id, name: r.name })),
+              startChat: async ({ repo, prompt, title }: { repo: string | null; prompt: string; title?: string }) => {
+                const r = repo ? await findRepo(this.config, repo) : null;
+                const created = await this.createSession({ ...(r ? { repoId: r.id, baseBranch: r.defaultBranch } : {}), ...(title ? { title } : {}) });
+                await this.sendOnBehalf(created.id, prompt, { from: sessionId });
+                return { id: created.id, title: created.title ?? title ?? "New chat" };
+              },
+              sendToChat: (id: string, text: string) => this.sendOnBehalf(id, text, { from: sessionId }),
+              timeZone: () => this.userZone.get(sessionId) ?? hostTimeZone(),
+            },
+          }
+        : {}),
       chatTools: {
         currentId: sessionId,
         getSession: (id) => {
@@ -2282,7 +2386,7 @@ export class SessionManager {
         readEvents: (id) => this.events.readLight(id),
         search: (q, limit) => this.events.search.search(q, limit),
         // The zone the user last wrote from in this chat, else the host's.
-        timeZone: () => this.toldTimeZone.get(sessionId) ?? hostTimeZone(),
+        timeZone: () => this.userZone.get(sessionId) ?? hostTimeZone(),
       },
       homelabAccess: {
         request: async () => this.grantHomelabAccess(sessionId),

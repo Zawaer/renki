@@ -291,6 +291,17 @@ export async function createServer(config: Config, deps: ServerDeps): Promise<Fa
     }
   });
 
+  // The overview chat (see sessions/overview.ts): made on first open, the same one ever after.
+  app.post("/overview", async (req, reply) => {
+    const parsed = CreateSessionRequest.pick({ composer: true }).partial().safeParse(req.body ?? {});
+    try {
+      const session = await manager.openOverview(parsed.success ? parsed.data.composer : undefined);
+      return reply.send({ session });
+    } catch (err) {
+      return sendSessionError(reply, err);
+    }
+  });
+
   // Older timeline items of a chat opened from a snapshot (see FoldedChats).
   app.get<{ Params: { id: string }; Querystring: { end?: string; limit?: string } }>("/sessions/:id/history", async (req, reply) => {
     try {
